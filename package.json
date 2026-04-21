@@ -1,0 +1,9 @@
+{
+  "name": "domera3",
+  "private": true,
+  "scripts": {
+    "dev": "node tools/dev-all.cjs",
+    "dev:backend": "npm --prefix back-end run start:dev",
+    "dev:frontend": "npm --prefix frontendd run dev"
+  }
+}
