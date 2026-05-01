@@ -238,6 +238,7 @@ export class InvitationsService {
         {
           uid,
           ...(email ? { email } : {}),
+          ...(typeof invitation.companyId === 'string' && invitation.companyId ? { companyId: invitation.companyId } : {}),
           role: 'Resident',
           apartmentId,
           apartmentIds: [apartmentId],

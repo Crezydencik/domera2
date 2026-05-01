@@ -19,10 +19,10 @@ interface AlertModalProps {
 }
 
 const iconMap: Record<AlertVariant, { icon: string; color: string }> = {
-  info:    { icon: "ℹ", color: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
-  success: { icon: "✓", color: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
-  warning: { icon: "⚠", color: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
-  error:   { icon: "✕", color: "bg-rose-500/15 text-rose-400 border-rose-500/30" },
+  info:    { icon: "ℹ", color: "bg-blue-50 text-blue-600 border-blue-200" },
+  success: { icon: "✓", color: "bg-emerald-50 text-emerald-600 border-emerald-200" },
+  warning: { icon: "⚠", color: "bg-amber-50 text-amber-600 border-amber-200" },
+  error:   { icon: "✕", color: "bg-rose-50 text-rose-600 border-rose-200" },
 };
 
 export function AlertModal({
@@ -64,7 +64,7 @@ export function AlertModal({
   return (
     <dialog
       ref={dialogRef}
-      className="m-auto max-w-md rounded-3xl border border-white/10 bg-slate-900 p-0 shadow-2xl shadow-slate-950/50 backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm"
+      className="m-auto max-w-md rounded-3xl border border-slate-200 bg-white p-0 shadow-2xl shadow-slate-900/20 backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm"
     >
       <div className="p-6">
         <div className="flex items-start gap-4">
@@ -72,8 +72,8 @@ export function AlertModal({
             {icon}
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-lg font-semibold text-white">{title}</h3>
-            <div className="mt-2 text-sm leading-relaxed text-slate-300">{children}</div>
+            <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+            <div className="mt-2 text-sm leading-relaxed text-slate-600">{children}</div>
           </div>
         </div>
 

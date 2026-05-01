@@ -8,11 +8,15 @@ export declare class CompanyService {
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService);
     private assertAuthenticated;
     private enforceRateLimit;
+    private normalizeCompanyPayload;
     create(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{
-        name: string;
-        userId: string;
+        companyName: string;
+        manager: any[];
+        companyId: string;
+        userIds: string[];
         buildings: any[];
         createdAt: Date;
+        updatedAt: Date;
         id: string;
     }>;
     byId(request: Request, user: RequestUser, companyId: string): Promise<{

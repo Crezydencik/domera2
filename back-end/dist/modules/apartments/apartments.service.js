@@ -11,23 +11,93 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ApartmentsService = void 0;
 const common_1 = require("@nestjs/common");
+const fast_xml_parser_1 = require("fast-xml-parser");
 const node_crypto_1 = require("node:crypto");
 const firestore_1 = require("firebase-admin/firestore");
 const XLSX = require("xlsx");
+const role_constants_1 = require("../../common/auth/role.constants");
 const firebase_admin_service_1 = require("../../common/infrastructure/firebase/firebase-admin.service");
 const audit_log_service_1 = require("../../common/services/audit-log.service");
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
+const invitation_token_1 = require("../../common/utils/invitation-token");
+const email_service_1 = require("../emails/email.service");
 let ApartmentsService = class ApartmentsService {
-    constructor(firebaseAdminService, rateLimitService, auditLogService) {
+    constructor(firebaseAdminService, rateLimitService, auditLogService, emailService) {
         this.firebaseAdminService = firebaseAdminService;
         this.rateLimitService = rateLimitService;
         this.auditLogService = auditLogService;
+        this.emailService = emailService;
     }
     async enforceRateLimit(request, scope, discriminator, limit) {
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, scope, discriminator), limit, 60_000);
         if (!rl.allowed) {
             throw new common_1.BadRequestException('Too many requests');
         }
+    }
+    assertAuthenticated(user) {
+        if (!user?.uid || !user.role) {
+            throw new common_1.UnauthorizedException('Authentication required');
+        }
+    }
+    isStaff(user) {
+        return (0, role_constants_1.isStaffRole)(user.role);
+    }
+    async getAccessibleApartmentIds(user) {
+        const apartmentIds = new Set();
+        const addApartmentId = (value) => {
+            if (typeof value === 'string' && value.trim()) {
+                apartmentIds.add(value.trim());
+            }
+        };
+        addApartmentId(user.apartmentId);
+        const userSnap = await this.firebaseAdminService.firestore.collection('users').doc(user.uid).get();
+        const userData = userSnap.exists ? userSnap.data() : {};
+        addApartmentId(userData.apartmentId);
+        if (Array.isArray(userData.apartmentIds)) {
+            for (const apartmentId of userData.apartmentIds) {
+                addApartmentId(apartmentId);
+            }
+        }
+        const normalizedEmail = (0, invitation_token_1.normalizeEmail)((typeof user.email === 'string' ? user.email : typeof userData.email === 'string' ? userData.email : '') ?? '');
+        if (normalizedEmail) {
+            const [residentSnap, ownerSnap] = await Promise.all([
+                this.firebaseAdminService.firestore.collection('apartments').where('residentId', '==', user.uid).get(),
+                this.firebaseAdminService.firestore.collection('apartments').where('ownerEmail', '==', normalizedEmail).get(),
+            ]);
+            for (const doc of [...residentSnap.docs, ...ownerSnap.docs]) {
+                apartmentIds.add(doc.id);
+            }
+        }
+        const tenantSnap = await this.firebaseAdminService.firestore.collection('apartments').get();
+        for (const doc of tenantSnap.docs) {
+            const apartment = doc.data();
+            const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+            const isTenant = tenants.some((tenant) => {
+                if (!tenant || typeof tenant !== 'object')
+                    return false;
+                return typeof tenant.userId === 'string'
+                    && tenant.userId === user.uid;
+            });
+            if (isTenant) {
+                apartmentIds.add(doc.id);
+            }
+        }
+        return Array.from(apartmentIds);
+    }
+    canManageTenants(user, apartmentId, apartment) {
+        if (this.isStaff(user)) {
+            const companyIds = Array.isArray(apartment.companyIds)
+                ? apartment.companyIds.filter((x) => typeof x === 'string')
+                : [];
+            const companyId = typeof apartment.companyId === 'string' ? apartment.companyId : undefined;
+            return !user.companyId || companyIds.includes(user.companyId) || companyId === user.companyId;
+        }
+        if (user.role !== 'Landlord') {
+            return false;
+        }
+        const normalizedUserEmail = (0, invitation_token_1.normalizeEmail)(user.email ?? '');
+        const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
+        return Boolean(normalizedUserEmail && ownerEmail && normalizedUserEmail === ownerEmail);
     }
     normalizeHeader(value) {
         return value
@@ -39,6 +109,32 @@ let ApartmentsService = class ApartmentsService {
     }
     normalizeApartmentNumber(value) {
         return value.trim().replace(/\s+/g, ' ').toLowerCase();
+    }
+    normalizeReadingConfigOverride(payload) {
+        const raw = payload.readingConfigOverride;
+        if (!raw || typeof raw !== 'object') {
+            return undefined;
+        }
+        const config = raw;
+        const useBuildingDefaults = config.useBuildingDefaults !== false;
+        const hotWaterMeters = Math.max(0, Math.trunc(Number(config.hotWaterMeters ?? 0) || 0));
+        const coldWaterMeters = Math.max(0, Math.trunc(Number(config.coldWaterMeters ?? 0) || 0));
+        return {
+            useBuildingDefaults,
+            hotWaterMeters: useBuildingDefaults ? 0 : hotWaterMeters,
+            coldWaterMeters: useBuildingDefaults ? 0 : coldWaterMeters,
+        };
+    }
+    generateApartmentReadableId(apartmentNumber, companyId) {
+        const companyCode = companyId
+            ? companyId.substring(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, 'X')
+            : 'UNK';
+        let aptNum = 'APT';
+        if (apartmentNumber) {
+            const normalized = String(apartmentNumber).toUpperCase().replace(/[^A-Z0-9]/g, '');
+            aptNum = normalized.substring(0, 3) || 'APT';
+        }
+        return `APT${companyCode}${aptNum}`;
     }
     getCellStringByHeader(row, headerCandidates) {
         for (const header of headerCandidates) {
@@ -215,7 +311,248 @@ let ApartmentsService = class ApartmentsService {
             history,
         };
     }
-    async importFromSpreadsheet(input) {
+    getFileExtension(file) {
+        const fileName = typeof file?.originalname === 'string' ? file.originalname.toLowerCase() : '';
+        const dotIndex = fileName.lastIndexOf('.');
+        return dotIndex >= 0 ? fileName.slice(dotIndex) : '';
+    }
+    getValueByPath(source, paths) {
+        for (const path of paths) {
+            const segments = path.split('.');
+            let current = source;
+            for (const segment of segments) {
+                if (!current || typeof current !== 'object' || !(segment in current)) {
+                    current = undefined;
+                    break;
+                }
+                current = current[segment];
+            }
+            if (current !== undefined && current !== null && String(current).trim() !== '') {
+                return current;
+            }
+        }
+        return undefined;
+    }
+    asStructuredObject(value) {
+        return value && typeof value === 'object' && !Array.isArray(value)
+            ? value
+            : undefined;
+    }
+    asStructuredArray(value) {
+        if (Array.isArray(value)) {
+            return value;
+        }
+        return value === undefined || value === null ? [] : [value];
+    }
+    sanitizeImportedText(value) {
+        return String(value ?? '')
+            .replace(/[\u200B-\u200D\uFEFF]/g, '')
+            .trim();
+    }
+    appendStructuredWaterReadings(row, entry, options) {
+        let meterGroup;
+        for (const path of options.paths) {
+            const candidate = this.getValueByPath(entry, [path]);
+            meterGroup = this.asStructuredObject(candidate);
+            if (meterGroup)
+                break;
+        }
+        if (!meterGroup) {
+            return;
+        }
+        const serialNumber = this.sanitizeImportedText(meterGroup.serialNumber);
+        if (serialNumber) {
+            row[options.serialNumberKey] = serialNumber;
+        }
+        const checkDueDate = this.sanitizeImportedText(meterGroup.checkDueDate);
+        if (checkDueDate) {
+            row[options.checkDueDateKey] = checkDueDate;
+        }
+        const history = this.asStructuredArray(meterGroup.history);
+        for (const historyEntry of history) {
+            const historyRecord = this.asStructuredObject(historyEntry);
+            if (!historyRecord)
+                continue;
+            const month = Number(historyRecord.month);
+            const year = Number(historyRecord.year);
+            const readingValue = Number(historyRecord.currentValue ?? historyRecord.value ?? historyRecord.reading ?? historyRecord.meterValue);
+            if (!Number.isInteger(month) || month < 1 || month > 12)
+                continue;
+            if (!Number.isInteger(year) || year < 2000 || year > 3000)
+                continue;
+            if (!Number.isFinite(readingValue))
+                continue;
+            const label = `${options.targetPrefix} ${String(month).padStart(2, '0')}/${year}`;
+            row[label] = readingValue;
+        }
+    }
+    looksLikeImportEntry(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return false;
+        }
+        const entry = value;
+        return Boolean(this.getValueByPath(entry, [
+            'number',
+            'apartmentNumber',
+            'dz',
+            'apartment.number',
+            'address',
+            'owner',
+        ]));
+    }
+    extractImportEntries(value) {
+        if (Array.isArray(value)) {
+            return value.flatMap((item) => this.extractImportEntries(item));
+        }
+        if (!value || typeof value !== 'object') {
+            return [];
+        }
+        const record = value;
+        for (const key of ['apartments', 'apartment', 'items', 'item', 'records', 'record', 'rows', 'row']) {
+            if (key in record) {
+                const nested = this.extractImportEntries(record[key]);
+                if (nested.length > 0) {
+                    return nested;
+                }
+            }
+        }
+        if (this.looksLikeImportEntry(record)) {
+            return [record];
+        }
+        for (const nestedValue of Object.values(record)) {
+            const nested = this.extractImportEntries(nestedValue);
+            if (nested.length > 0) {
+                return nested;
+            }
+        }
+        return [];
+    }
+    normalizeStructuredImportRow(entry) {
+        const row = {};
+        const assign = (target, paths) => {
+            const value = this.getValueByPath(entry, paths);
+            if (value !== undefined && value !== null && String(value).trim() !== '') {
+                row[target] = typeof value === 'string' ? this.sanitizeImportedText(value) : value;
+            }
+        };
+        assign('Kadastra numurs', ['cadastralNumber', 'apartment.cadastralNumber']);
+        assign('DZ', ['number', 'apartmentNumber', 'dz', 'apartment.number', 'apartmentNumberLabel']);
+        assign('Adrese', ['address', 'apartment.address']);
+        assign('Domājamā daļa', ['cadastralPart', 'apartment.cadastralPart']);
+        assign('Daļa (kopīpašums)', ['commonPropertyShare', 'apartment.commonPropertyShare']);
+        assign('Stavs', ['floor', 'apartment.floor']);
+        assign('Īpašnieks', ['owner', 'ownerName', 'residentName']);
+        assign('E pasts Reķiniem', ['ownerEmail', 'email', 'billingEmail']);
+        assign('Dekl iedz', ['declaredResidents', 'registeredResidents']);
+        assign('DZ t', ['apartmentType', 'type']);
+        assign('Apkure', ['heatingArea']);
+        assign('Apsaimn', ['managementArea', 'area']);
+        assign('Kartsais NR', [
+            'hotWaterMeterNumber',
+            'meters.hotWater.number',
+            'water.hot.number',
+            'waterReadings.hotmeterwater.serialNumber',
+        ]);
+        assign('Aukstais NR', [
+            'coldWaterMeterNumber',
+            'meters.coldWater.number',
+            'water.cold.number',
+            'waterReadings.coldmeterwater.serialNumber',
+        ]);
+        assign('Kartsais derig lidz', [
+            'hotWaterCheckDueDate',
+            'meters.hotWater.checkDueDate',
+            'water.hot.checkDueDate',
+            'waterReadings.hotmeterwater.checkDueDate',
+        ]);
+        assign('Aukstais derig lidz', [
+            'coldWaterCheckDueDate',
+            'meters.coldWater.checkDueDate',
+            'water.cold.checkDueDate',
+            'waterReadings.coldmeterwater.checkDueDate',
+        ]);
+        this.appendStructuredWaterReadings(row, entry, {
+            targetPrefix: 'Kartsais',
+            serialNumberKey: 'Kartsais NR',
+            checkDueDateKey: 'Kartsais derig lidz',
+            paths: ['waterReadings.hotmeterwater', 'waterReadings.hotWater', 'meters.hotWater'],
+        });
+        this.appendStructuredWaterReadings(row, entry, {
+            targetPrefix: 'Aukstais',
+            serialNumberKey: 'Aukstais NR',
+            checkDueDateKey: 'Aukstais derig lidz',
+            paths: ['waterReadings.coldmeterwater', 'waterReadings.coldWater', 'meters.coldWater'],
+        });
+        return row;
+    }
+    parseJsonImportRows(file) {
+        let parsed;
+        try {
+            parsed = JSON.parse(file.buffer.toString('utf-8'));
+        }
+        catch {
+            throw new common_1.BadRequestException('Invalid JSON file');
+        }
+        const entries = this.extractImportEntries(parsed);
+        if (entries.length === 0) {
+            throw new common_1.BadRequestException('JSON file does not contain apartment records');
+        }
+        return entries.map((entry) => this.normalizeStructuredImportRow(entry));
+    }
+    parseXmlImportRows(file) {
+        const parser = new fast_xml_parser_1.XMLParser({
+            ignoreAttributes: false,
+            trimValues: true,
+            parseTagValue: true,
+        });
+        let parsed;
+        try {
+            parsed = parser.parse(file.buffer.toString('utf-8'));
+        }
+        catch {
+            throw new common_1.BadRequestException('Invalid XML file');
+        }
+        const entries = this.extractImportEntries(parsed);
+        if (entries.length === 0) {
+            throw new common_1.BadRequestException('XML file does not contain apartment records');
+        }
+        return entries.map((entry) => this.normalizeStructuredImportRow(entry));
+    }
+    parseSpreadsheetImportRows(file) {
+        try {
+            const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+            if (!sheetName || !sheet) {
+                throw new Error('Spreadsheet file does not contain any worksheets');
+            }
+            return XLSX.utils.sheet_to_json(sheet, { defval: '' });
+        }
+        catch {
+            throw new common_1.BadRequestException('Invalid spreadsheet file');
+        }
+    }
+    parseImportRows(file) {
+        const extension = this.getFileExtension(file);
+        const mimeType = typeof file.mimetype === 'string' ? file.mimetype.toLowerCase() : '';
+        if (extension === '.json' || mimeType.includes('json')) {
+            return this.parseJsonImportRows(file);
+        }
+        if (extension === '.xml' || mimeType.includes('xml')) {
+            try {
+                return this.parseXmlImportRows(file);
+            }
+            catch (error) {
+                if (error instanceof common_1.BadRequestException &&
+                    ['Invalid XML file', 'XML file does not contain apartment records'].includes(String(error.message))) {
+                    return this.parseSpreadsheetImportRows(file);
+                }
+                throw error;
+            }
+        }
+        return this.parseSpreadsheetImportRows(file);
+    }
+    async importFromFile(input) {
         const { request, user, file, buildingId, companyId } = input;
         if (!user?.uid || !user.role)
             throw new common_1.UnauthorizedException('Authentication required');
@@ -241,10 +578,7 @@ let ApartmentsService = class ApartmentsService {
         if (!importBuildingCompanyId || importBuildingCompanyId !== companyId) {
             throw new common_1.ForbiddenException('Access denied for building/company ownership');
         }
-        const workbook = XLSX.read(file.buffer, { type: 'buffer' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+        const rows = this.parseImportRows(file);
         const existingApartmentsSnapshot = await db
             .collection('apartments')
             .where('buildingId', '==', buildingId)
@@ -329,6 +663,7 @@ let ApartmentsService = class ApartmentsService {
                     buildingId,
                     number: apartmentNumber,
                     companyIds: [companyId],
+                    readableId: this.generateApartmentReadableId(apartmentNumber, companyId),
                     createdAt: new Date(),
                     updatedAt: new Date(),
                 };
@@ -505,8 +840,7 @@ let ApartmentsService = class ApartmentsService {
         };
     }
     async byId(request, user, apartmentId) {
-        if (!user?.uid || !user.role)
-            throw new common_1.UnauthorizedException('Authentication required');
+        this.assertAuthenticated(user);
         if (!apartmentId?.trim())
             throw new common_1.BadRequestException('apartmentId is required');
         await this.enforceRateLimit(request, 'apartments:by-id', `${user.uid}:${apartmentId}`, 60);
@@ -518,8 +852,19 @@ let ApartmentsService = class ApartmentsService {
             ? data.companyIds.filter((x) => typeof x === 'string')
             : [];
         const companyId = typeof data.companyId === 'string' ? data.companyId : undefined;
-        if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
+        if (this.isStaff(user)) {
+            if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
+                throw new common_1.ForbiddenException('Access denied for company');
+            }
+        }
+        else if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
+            const accessibleApartmentIds = await this.getAccessibleApartmentIds(user);
+            if (!accessibleApartmentIds.includes(snap.id)) {
+                throw new common_1.ForbiddenException('Access denied for apartment');
+            }
+        }
+        else {
+            throw new common_1.ForbiddenException('Insufficient permissions');
         }
         return this.mapApartmentDoc(snap.id, data);
     }
@@ -550,11 +895,15 @@ let ApartmentsService = class ApartmentsService {
             throw new common_1.BadRequestException('Квартира с таким номером уже существует в этом доме');
         }
         const ref = db.collection('apartments').doc();
+        const readingConfigOverride = this.normalizeReadingConfigOverride(payload);
+        const readableId = this.generateApartmentReadableId(number, companyId);
         const data = {
             ...payload,
             number,
             buildingId,
             companyIds: [companyId],
+            readableId,
+            ...(readingConfigOverride ? { readingConfigOverride } : {}),
             createdAt: new Date(),
             updatedAt: new Date(),
         };
@@ -581,7 +930,16 @@ let ApartmentsService = class ApartmentsService {
         if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
-        await ref.set({ ...payload, updatedAt: new Date() }, { merge: true });
+        const readingConfigOverride = this.normalizeReadingConfigOverride(payload);
+        const updatedNumber = typeof payload.number === 'string' ? payload.number : (typeof current.number === 'string' ? current.number : undefined);
+        const updatedCompanyId = typeof payload.companyId === 'string' ? payload.companyId : companyId;
+        const readableId = this.generateApartmentReadableId(updatedNumber, updatedCompanyId);
+        await ref.set({
+            ...payload,
+            readableId,
+            ...(readingConfigOverride ? { readingConfigOverride } : {}),
+            updatedAt: new Date(),
+        }, { merge: true });
         return { success: true };
     }
     async remove(request, user, apartmentId) {
@@ -622,9 +980,88 @@ let ApartmentsService = class ApartmentsService {
         }, { merge: true });
         return { success: true };
     }
-    async addOrInviteTenant(request, user, apartmentId, emailInput) {
-        if (!user?.uid || !user.role)
-            throw new common_1.UnauthorizedException('Authentication required');
+    async updateOwner(request, user, apartmentId, ownerEmail, ownerData) {
+        this.assertAuthenticated(user);
+        if (!apartmentId?.trim())
+            throw new common_1.BadRequestException('apartmentId is required');
+        const email = ownerEmail?.trim().toLowerCase();
+        if (!email)
+            throw new common_1.BadRequestException('email is required');
+        await this.enforceRateLimit(request, 'apartments:update-owner', `${user.uid}:${apartmentId}`, 20);
+        const db = this.firebaseAdminService.firestore;
+        const apartmentRef = db.collection('apartments').doc(apartmentId);
+        const apartmentSnap = await apartmentRef.get();
+        if (!apartmentSnap.exists)
+            throw new common_1.NotFoundException('Apartment not found');
+        const apartment = apartmentSnap.data();
+        if (!this.canManageTenants(user, apartmentId, apartment)) {
+            throw new common_1.ForbiddenException('Insufficient permissions');
+        }
+        const firstName = typeof ownerData?.firstName === 'string' ? ownerData.firstName.trim() : '';
+        const lastName = typeof ownerData?.lastName === 'string' ? ownerData.lastName.trim() : '';
+        const contractNumber = typeof ownerData?.contractNumber === 'string' ? ownerData.contractNumber.trim() : '';
+        const fullName = [firstName, lastName].filter(Boolean).join(' ') || email;
+        let ownerId = '';
+        try {
+            const existing = await this.firebaseAdminService.auth.getUserByEmail(email);
+            ownerId = existing.uid;
+        }
+        catch {
+            const created = await this.firebaseAdminService.auth.createUser({
+                email,
+                password: Math.random().toString(36).slice(-12),
+            });
+            ownerId = created.uid;
+            await db.collection('users').doc(ownerId).set({
+                uid: ownerId,
+                email,
+                role: 'Landlord',
+                accountType: 'Landlord',
+                companyId: typeof apartment.companyId === 'string' ? apartment.companyId : undefined,
+                createdAt: new Date().toISOString(),
+            }, { merge: true });
+        }
+        await apartmentRef.set({
+            ownerEmail: email,
+            ownerId: ownerId,
+            owner: fullName,
+            ownerFirstName: firstName || undefined,
+            ownerLastName: lastName || undefined,
+            ownerContractNumber: contractNumber || undefined,
+            ownerInvitedAt: new Date(),
+            updatedAt: new Date(),
+        }, { merge: true });
+        try {
+            const companyName = typeof apartment.managementCompanyName === 'string'
+                ? apartment.managementCompanyName
+                : typeof apartment.companyName === 'string'
+                    ? apartment.companyName
+                    : 'Property Management';
+            const senderName = typeof user.email === 'string' ? user.email : 'Manager';
+            await this.emailService.sendOwnerInvitation({
+                to: email,
+                companyName,
+                invitationLink: `${process.env.FRONTEND_URL || 'https://domera.app'}/login`,
+                senderName,
+                language: 'lv',
+            });
+        }
+        catch (error) {
+            console.error('Failed to send owner invitation email:', error);
+        }
+        this.auditLogService.write({
+            action: 'updateOwner',
+            apartmentId,
+            actorUid: user.uid,
+            actorRole: user.role,
+            companyId: user.companyId,
+            status: 'success',
+            metadata: { ownerEmail: email },
+        });
+        return { success: true };
+    }
+    async addOrInviteTenant(request, user, apartmentId, emailInput, tenantData) {
+        this.assertAuthenticated(user);
         if (!apartmentId?.trim())
             throw new common_1.BadRequestException('apartmentId is required');
         const email = emailInput?.trim().toLowerCase();
@@ -636,6 +1073,15 @@ let ApartmentsService = class ApartmentsService {
         const apartmentSnap = await apartmentRef.get();
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
+        const apartment = apartmentSnap.data();
+        if (!this.canManageTenants(user, apartmentId, apartment)) {
+            throw new common_1.ForbiddenException('Insufficient permissions');
+        }
+        if (typeof apartment.ownerEmail === 'string' && apartment.ownerEmail.trim()) {
+            if (email.toLowerCase() === apartment.ownerEmail.toLowerCase()) {
+                throw new common_1.BadRequestException('Email арендатора не может совпадать с email владельца квартиры');
+            }
+        }
         let authUserId = '';
         try {
             const existing = await this.firebaseAdminService.auth.getUserByEmail(email);
@@ -651,32 +1097,79 @@ let ApartmentsService = class ApartmentsService {
                 uid: authUserId,
                 email,
                 role: 'Resident',
+                accountType: 'Resident',
+                companyId: (Array.isArray(apartment.companyIds)
+                    ? apartment.companyIds.find((value) => typeof value === 'string' && value.trim().length > 0)
+                    : undefined) ??
+                    (typeof apartment.companyId === 'string' ? apartment.companyId : undefined),
                 createdAt: new Date().toISOString(),
             }, { merge: true });
         }
-        const apartment = apartmentSnap.data();
         const tenants = Array.isArray(apartment.tenants)
             ? apartment.tenants
             : [];
         if (tenants.some((t) => t.userId === authUserId)) {
             throw new common_1.BadRequestException('Этот пользователь уже имеет доступ');
         }
+        if (tenants.some((t) => typeof t.email === 'string' && email.toLowerCase() === t.email.toLowerCase())) {
+            throw new common_1.BadRequestException('Этот email уже приглашен в качестве арендатора');
+        }
+        const firstName = typeof tenantData?.firstName === 'string' ? tenantData.firstName.trim() : '';
+        const lastName = typeof tenantData?.lastName === 'string' ? tenantData.lastName.trim() : '';
+        const phone = typeof tenantData?.phone === 'string' ? tenantData.phone.trim() : '';
+        const contractNumber = typeof tenantData?.contractNumber === 'string' ? tenantData.contractNumber.trim() : '';
+        const fullName = [firstName, lastName].filter(Boolean).join(' ') || email;
         const nextTenants = [
             ...tenants,
             {
                 userId: authUserId,
                 email,
-                name: email,
+                name: fullName,
+                firstName: firstName || undefined,
+                lastName: lastName || undefined,
+                phone: phone || undefined,
+                contractNumber: contractNumber || undefined,
                 permissions: ['submitMeter'],
+                apartmentId,
+                status: 'Active',
                 invitedAt: new Date(),
             },
         ];
         await apartmentRef.set({ tenants: nextTenants, updatedAt: new Date() }, { merge: true });
+        try {
+            const companyName = typeof apartment.managementCompanyName === 'string'
+                ? apartment.managementCompanyName
+                : typeof apartment.companyName === 'string'
+                    ? apartment.companyName
+                    : 'Property Management';
+            const buildingName = typeof apartment.building === 'string'
+                ? apartment.building
+                : typeof apartment.buildingName === 'string'
+                    ? apartment.buildingName
+                    : 'Building';
+            const apartmentNumber = typeof apartment.number === 'string'
+                ? apartment.number
+                : typeof apartment.apartmentNumber === 'string'
+                    ? apartment.apartmentNumber
+                    : 'Apartment';
+            const senderName = typeof user.email === 'string' ? user.email : 'Manager';
+            await this.emailService.sendTenantInvitation({
+                to: email,
+                companyName,
+                buildingName,
+                apartmentNumber,
+                invitationLink: `${process.env.FRONTEND_URL || 'https://domera.app'}/login`,
+                senderName,
+                language: 'lv',
+            });
+        }
+        catch (error) {
+            console.error('Failed to send tenant invitation email:', error);
+        }
         return { success: true };
     }
     async removeTenant(request, user, apartmentId, userId) {
-        if (!user?.uid || !user.role)
-            throw new common_1.UnauthorizedException('Authentication required');
+        this.assertAuthenticated(user);
         if (!apartmentId?.trim() || !userId?.trim()) {
             throw new common_1.BadRequestException('apartmentId and userId are required');
         }
@@ -687,12 +1180,209 @@ let ApartmentsService = class ApartmentsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
+        if (!this.canManageTenants(user, apartmentId, apartment)) {
+            throw new common_1.ForbiddenException('Insufficient permissions');
+        }
         const tenants = Array.isArray(apartment.tenants)
             ? apartment.tenants
             : [];
         const next = tenants.filter((t) => t.userId !== userId);
-        await apartmentRef.set({ tenants: next, updatedAt: new Date() }, { merge: true });
+        const updateData = {
+            tenants: next,
+            updatedAt: new Date(),
+        };
+        if (next.length === 0) {
+            updateData.residentId = null;
+        }
+        const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : undefined;
+        if (ownerId && ownerId === userId) {
+            updateData.ownerEmail = null;
+            updateData.ownerId = null;
+            updateData.owner = null;
+            updateData.ownerFirstName = null;
+            updateData.ownerLastName = null;
+            updateData.ownerContractNumber = null;
+            updateData.ownerInvitedAt = null;
+            updateData.ownerActivated = null;
+        }
+        await apartmentRef.set(updateData, { merge: true });
         return { success: true };
+    }
+    async resendOwnerInvitation(request, user, apartmentId, ownerEmail) {
+        this.assertAuthenticated(user);
+        if (!apartmentId?.trim() || !ownerEmail?.trim()) {
+            throw new common_1.BadRequestException('apartmentId and ownerEmail are required');
+        }
+        await this.enforceRateLimit(request, 'apartments:resend-owner-invitation', `${user.uid}:${apartmentId}`, 30);
+        const db = this.firebaseAdminService.firestore;
+        const apartmentRef = db.collection('apartments').doc(apartmentId);
+        const apartmentSnap = await apartmentRef.get();
+        if (!apartmentSnap.exists)
+            throw new common_1.NotFoundException('Apartment not found');
+        const apartment = apartmentSnap.data();
+        if (!this.canManageTenants(user, apartmentId, apartment)) {
+            throw new common_1.ForbiddenException('Insufficient permissions');
+        }
+        const currentOwnerEmail = typeof apartment.ownerEmail === 'string' ? apartment.ownerEmail.toLowerCase() : '';
+        if (currentOwnerEmail !== ownerEmail.toLowerCase()) {
+            throw new common_1.NotFoundException('Owner not found in this apartment');
+        }
+        try {
+            const companyName = typeof apartment.managementCompanyName === 'string'
+                ? apartment.managementCompanyName
+                : typeof apartment.companyName === 'string'
+                    ? apartment.companyName
+                    : 'Property Management';
+            const senderName = typeof user.email === 'string' ? user.email : 'Manager';
+            await this.emailService.sendOwnerInvitation({
+                to: ownerEmail,
+                companyName,
+                invitationLink: `${process.env.FRONTEND_URL || 'https://domera.app'}/login`,
+                senderName,
+                language: 'lv',
+            });
+        }
+        catch (error) {
+            console.error('Failed to send owner invitation email:', error);
+        }
+        await apartmentRef.set({
+            ownerInvitedAt: new Date(),
+            updatedAt: new Date(),
+        }, { merge: true });
+        this.auditLogService.write({
+            action: 'resendOwnerInvitation',
+            apartmentId,
+            actorUid: user.uid,
+            actorRole: user.role,
+            companyId: user.companyId,
+            status: 'success',
+            metadata: { ownerEmail },
+        });
+        return { success: true };
+    }
+    async resendTenantInvitation(request, user, apartmentId, tenantEmail) {
+        this.assertAuthenticated(user);
+        if (!apartmentId?.trim() || !tenantEmail?.trim()) {
+            throw new common_1.BadRequestException('apartmentId and tenantEmail are required');
+        }
+        await this.enforceRateLimit(request, 'apartments:resend-tenant-invitation', `${user.uid}:${apartmentId}`, 30);
+        const db = this.firebaseAdminService.firestore;
+        const apartmentRef = db.collection('apartments').doc(apartmentId);
+        const apartmentSnap = await apartmentRef.get();
+        if (!apartmentSnap.exists)
+            throw new common_1.NotFoundException('Apartment not found');
+        const apartment = apartmentSnap.data();
+        if (!this.canManageTenants(user, apartmentId, apartment)) {
+            throw new common_1.ForbiddenException('Insufficient permissions');
+        }
+        const tenants = Array.isArray(apartment.tenants)
+            ? apartment.tenants
+            : [];
+        const tenant = tenants.find((t) => typeof t.email === 'string' && t.email.toLowerCase() === tenantEmail.toLowerCase());
+        if (!tenant) {
+            throw new common_1.NotFoundException('Tenant not found in this apartment');
+        }
+        try {
+            const companyName = typeof apartment.managementCompanyName === 'string'
+                ? apartment.managementCompanyName
+                : typeof apartment.companyName === 'string'
+                    ? apartment.companyName
+                    : 'Property Management';
+            const buildingName = typeof apartment.buildingName === 'string' ? apartment.buildingName : 'Building';
+            const apartmentNumber = typeof apartment.number === 'string' ? apartment.number : typeof apartment.apartmentNumber === 'string' ? apartment.apartmentNumber : 'Apartment';
+            const senderName = typeof user.email === 'string' ? user.email : 'Manager';
+            await this.emailService.sendTenantInvitation({
+                to: tenantEmail,
+                companyName,
+                buildingName,
+                apartmentNumber,
+                invitationLink: `${process.env.FRONTEND_URL || 'https://domera.app'}/login`,
+                senderName,
+                language: 'lv',
+            });
+        }
+        catch (error) {
+            console.error('Failed to send tenant invitation email:', error);
+        }
+        const updatedTenants = tenants.map((t) => typeof t.email === 'string' && t.email.toLowerCase() === tenantEmail.toLowerCase()
+            ? { ...t, invitedAt: new Date() }
+            : t);
+        await apartmentRef.set({ tenants: updatedTenants, updatedAt: new Date() }, { merge: true });
+        this.auditLogService.write({
+            action: 'resendTenantInvitation',
+            apartmentId,
+            actorUid: user.uid,
+            actorRole: user.role,
+            companyId: user.companyId,
+            status: 'success',
+            metadata: { tenantEmail },
+        });
+        return { success: true };
+    }
+    async getAuditLogs(request, user, apartmentId, limit = 50) {
+        this.assertAuthenticated(user);
+        if (!apartmentId?.trim())
+            throw new common_1.BadRequestException('apartmentId is required');
+        if (!this.isStaff(user)) {
+            throw new common_1.ForbiddenException('Audit logs are only available for management company');
+        }
+        await this.enforceRateLimit(request, 'apartments:audit-logs', `${user.uid}:${apartmentId}`, 60);
+        const db = this.firebaseAdminService.firestore;
+        const apartmentSnap = await db.collection('apartments').doc(apartmentId).get();
+        if (!apartmentSnap.exists)
+            throw new common_1.NotFoundException('Apartment not found');
+        const apartment = apartmentSnap.data();
+        const companyIds = Array.isArray(apartment.companyIds)
+            ? apartment.companyIds.filter((x) => typeof x === 'string')
+            : [];
+        const companyId = typeof apartment.companyId === 'string' ? apartment.companyId : undefined;
+        if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
+        const logs = await db
+            .collection('audit_logs')
+            .where('apartmentId', '==', apartmentId)
+            .get();
+        const sortedDocs = logs.docs.sort((a, b) => {
+            const aTime = a.data().createdAt instanceof Date ? a.data().createdAt.getTime() : 0;
+            const bTime = b.data().createdAt instanceof Date ? b.data().createdAt.getTime() : 0;
+            return bTime - aTime;
+        }).slice(0, limit);
+        return {
+            items: sortedDocs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+                createdAt: doc.data().createdAt instanceof Date
+                    ? doc.data().createdAt.toISOString()
+                    : typeof doc.data().createdAt === 'string'
+                        ? doc.data().createdAt
+                        : new Date().toISOString(),
+            })),
+        };
+    }
+    async migrateApartmentReadableIds() {
+        const db = this.firebaseAdminService.firestore;
+        const snapshot = await db.collection('apartments').get();
+        let updated = 0;
+        const batch = db.batch();
+        for (const doc of snapshot.docs) {
+            const apartment = doc.data();
+            if (!apartment.readableId) {
+                const number = typeof apartment.number === 'string' ? apartment.number : '';
+                const companyId = typeof apartment.companyId === 'string'
+                    ? apartment.companyId
+                    : (Array.isArray(apartment.companyIds) && apartment.companyIds.length > 0
+                        ? apartment.companyIds[0]
+                        : '');
+                const readableId = this.generateApartmentReadableId(number, companyId);
+                batch.set(doc.ref, { readableId, updatedAt: new Date() }, { merge: true });
+                updated++;
+            }
+        }
+        if (updated > 0) {
+            await batch.commit();
+        }
+        return { updated, total: snapshot.size };
     }
 };
 exports.ApartmentsService = ApartmentsService;
@@ -700,5 +1390,6 @@ exports.ApartmentsService = ApartmentsService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService,
         rate_limit_service_1.RateLimitService,
-        audit_log_service_1.AuditLogService])
+        audit_log_service_1.AuditLogService,
+        email_service_1.EmailService])
 ], ApartmentsService);

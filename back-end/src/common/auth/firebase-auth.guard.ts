@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { parse as parseCookie } from 'cookie';
 import { FirebaseAdminService } from '../infrastructure/firebase/firebase-admin.service';
-import { resolveAccountType, normalizeUserRole } from './role.constants';
+import { resolveAccountType, resolveUserRole } from './role.constants';
 import { RequestUser } from './request-user.type';
 
 const SESSION_COOKIE_NAME = '__session';
@@ -37,7 +37,7 @@ export class FirebaseAuthGuard implements CanActivate {
         ? await this.firebaseAdminService.auth.verifySessionCookie(token.value, true)
         : await this.firebaseAdminService.auth.verifyIdToken(token.value, true);
 
-      let role = normalizeUserRole(decoded.role);
+      let role = resolveUserRole({ role: decoded.role });
       let accountType = resolveAccountType({ role, accountType: decoded.accountType });
       let companyId = toOptionalString(decoded.companyId);
       let apartmentId = toOptionalString(decoded.apartmentId);
@@ -47,7 +47,7 @@ export class FirebaseAuthGuard implements CanActivate {
           const userDoc = await this.firebaseAdminService.firestore.collection('users').doc(decoded.uid).get();
           if (userDoc.exists) {
             const userData = userDoc.data() as Record<string, unknown>;
-            role = role ?? normalizeUserRole(userData.role ?? userData.accountType);
+            role = role ?? resolveUserRole({ role: userData.role, accountType: userData.accountType });
             accountType = accountType ?? resolveAccountType({
               role: userData.role,
               accountType: userData.accountType,

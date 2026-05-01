@@ -2,6 +2,7 @@ import { createHash, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
+import { FieldValue } from 'firebase-admin/firestore';
 import { Resend } from 'resend';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
@@ -13,7 +14,7 @@ import { SendPasswordResetDto } from './dto/send-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
-import { normalizeUserRole, resolveAccountType } from '../../common/auth/role.constants';
+import { normalizeUserRole, resolveAccountType, resolveUserRole } from '../../common/auth/role.constants';
 
 const CODE_TTL_MS = 60 * 60 * 1000;
 const TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -53,6 +54,39 @@ export class AuthService {
 
   private hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
+  }
+
+  private async validateRegistrationVerification(email: string, verificationToken: string) {
+    const db = this.firebaseAdminService.firestore;
+    const docRef = db.collection(COLLECTION).doc(this.makeDocId(email));
+    const snap = await docRef.get();
+
+    if (!snap.exists) {
+      throw this.createServiceError('Email confirmation is required before registration', 400);
+    }
+
+    const data = snap.data() as {
+      verified?: boolean;
+      verificationTokenHash?: string;
+      tokenExpiresAt?: FirebaseFirestore.Timestamp;
+    };
+
+    if (!data?.verified || !data.verificationTokenHash) {
+      throw this.createServiceError('Email confirmation is required before registration', 400);
+    }
+
+    const tokenExpiresAtMs = data.tokenExpiresAt?.toMillis?.() ?? 0;
+    if (!tokenExpiresAtMs || Date.now() > tokenExpiresAtMs) {
+      await docRef.delete();
+      throw this.createServiceError('Email confirmation expired. Please request a new code.', 410);
+    }
+
+    const tokenHash = this.hashToken(String(verificationToken ?? ''));
+    if (!this.safeEqual(tokenHash, data.verificationTokenHash)) {
+      throw this.createServiceError('Invalid email confirmation token', 400);
+    }
+
+    return { docRef };
   }
 
   private safeEqual(a: string, b: string): boolean {
@@ -271,12 +305,15 @@ export class AuthService {
     uid: string;
     email: string;
     accountType?: string;
+    role?: string;
     firstName?: string;
     lastName?: string;
     phone?: string;
     companyName?: string;
     registrationNumber?: string;
     apartmentId?: string;
+    acceptedPrivacyPolicyAt?: Date;
+    acceptedTermsAt?: Date;
   }) {
     const ref = this.firebaseAdminService.firestore.collection('users').doc(input.uid);
     const snap = await ref.get();
@@ -285,7 +322,11 @@ export class AuthService {
     const accountType =
       resolveAccountType({ role: current.role, accountType: input.accountType ?? current.accountType }) ??
       this.inferAccountTypeFromEmail(input.email);
-    const role = normalizeUserRole(current.role ?? accountType) ?? accountType;
+    const role =
+      resolveUserRole({
+        role: input.role ?? current.role,
+        accountType: input.accountType ?? current.accountType ?? accountType,
+      }) ?? accountType;
 
     const firstName =
       (typeof input.firstName === 'string' && input.firstName.trim()) ||
@@ -305,6 +346,16 @@ export class AuthService {
     const apartmentId =
       (typeof input.apartmentId === 'string' && input.apartmentId.trim()) ||
       (typeof current.apartmentId === 'string' ? current.apartmentId : undefined);
+    const acceptedPrivacyPolicyAt =
+      input.acceptedPrivacyPolicyAt ||
+      (current.acceptedPrivacyPolicyAt instanceof Date
+        ? current.acceptedPrivacyPolicyAt
+        : ((current.acceptedPrivacyPolicyAt as { toDate?: () => Date } | undefined)?.toDate?.() ?? undefined));
+    const acceptedTermsAt =
+      input.acceptedTermsAt ||
+      (current.acceptedTermsAt instanceof Date
+        ? current.acceptedTermsAt
+        : ((current.acceptedTermsAt as { toDate?: () => Date } | undefined)?.toDate?.() ?? undefined));
 
     const nextData = Object.fromEntries(
       Object.entries({
@@ -325,6 +376,87 @@ export class AuthService {
         registrationNumber:
           (typeof input.registrationNumber === 'string' && input.registrationNumber.trim()) ||
           (typeof current.registrationNumber === 'string' ? current.registrationNumber : undefined),
+        acceptedPrivacyPolicyAt,
+        acceptedTermsAt,
+        createdAt: current.createdAt ?? new Date(),
+        updatedAt: new Date(),
+      }).filter(([, value]) => value !== undefined && value !== ''),
+    );
+
+    await ref.set(nextData, { merge: true });
+    return nextData as Record<string, unknown>;
+  }
+
+  private async ensureManagementCompanyDocument(input: {
+    uid: string;
+    email: string;
+    companyEmail?: string;
+    phone?: string;
+    companyName?: string;
+    registrationNumber?: string;
+  }) {
+    const ref = this.firebaseAdminService.firestore.collection('companies').doc(input.uid);
+    const snap = await ref.get();
+    const current = snap.exists ? (snap.data() as Record<string, unknown>) : {};
+    const companyName =
+      (typeof input.companyName === 'string' && input.companyName.trim()) ||
+      (typeof current.companyName === 'string' ? current.companyName : undefined) ||
+      (typeof current.name === 'string' ? current.name : undefined) ||
+      input.email;
+    const companyEmail =
+      (typeof input.companyEmail === 'string' && input.companyEmail.trim()
+        ? this.normalizeEmail(input.companyEmail)
+        : undefined) ||
+      (typeof current.companyEmail === 'string' && current.companyEmail.trim()
+        ? this.normalizeEmail(current.companyEmail)
+        : undefined) ||
+      (typeof current.email === 'string' && current.email.trim()
+        ? this.normalizeEmail(current.email)
+        : undefined) ||
+      (typeof current.contactEmail === 'string' && current.contactEmail.trim()
+        ? this.normalizeEmail(current.contactEmail)
+        : undefined) ||
+      input.email;
+    const companyPhone =
+      (typeof input.phone === 'string' && input.phone.trim()) ||
+      (typeof current.companyPhone === 'string' ? current.companyPhone : undefined) ||
+      (typeof current.phone === 'string' ? current.phone : undefined) ||
+      (typeof current.contactPhone === 'string' ? current.contactPhone : undefined);
+    const registrationNumber =
+      (typeof input.registrationNumber === 'string' && input.registrationNumber.trim()) ||
+      (typeof current.registrationNumber === 'string' ? current.registrationNumber : undefined);
+    const currentManagers = Array.isArray(current.manager)
+      ? current.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const manager = Array.from(new Set([...currentManagers, input.uid]));
+    const currentUserIds = Array.isArray(current.userIds)
+      ? current.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const userIds = Array.from(new Set([...currentUserIds, input.uid]));
+
+    const nextData = Object.fromEntries(
+      Object.entries({
+        ...current,
+        manager,
+        companyId: input.uid,
+        userIds,
+        userId: FieldValue.delete(),
+        role: FieldValue.delete(),
+        accountType: FieldValue.delete(),
+        companyName,
+        companyEmail,
+        companyPhone,
+        name: FieldValue.delete(),
+        email: FieldValue.delete(),
+        phone: FieldValue.delete(),
+        contactEmail: FieldValue.delete(),
+        contactPhone: FieldValue.delete(),
+        registrationNumber,
+        firstName: FieldValue.delete(),
+        lastName: FieldValue.delete(),
+        fullName: FieldValue.delete(),
+        contactName: FieldValue.delete(),
+        buildings: Array.isArray(current.buildings) ? current.buildings : [],
         createdAt: current.createdAt ?? new Date(),
         updatedAt: new Date(),
       }).filter(([, value]) => value !== undefined && value !== ''),
@@ -352,7 +484,7 @@ export class AuthService {
       throw new Error('email does not match token subject');
     }
 
-    let role = normalizeUserRole(decoded.role);
+    let role = resolveUserRole({ role: decoded.role });
     let accountType = resolveAccountType({ role, accountType: decoded.accountType });
     let companyId = typeof decoded.companyId === 'string' ? decoded.companyId : undefined;
     let apartmentId = typeof decoded.apartmentId === 'string' ? decoded.apartmentId : undefined;
@@ -362,7 +494,7 @@ export class AuthService {
         const userDoc = await this.firebaseAdminService.firestore.collection('users').doc(decoded.uid).get();
         if (userDoc.exists) {
           const userData = userDoc.data() as Record<string, unknown>;
-          role = role ?? normalizeUserRole(userData.role ?? userData.accountType);
+          role = role ?? resolveUserRole({ role: userData.role, accountType: userData.accountType });
           accountType = accountType ?? resolveAccountType({
             role: userData.role,
             accountType: userData.accountType,
@@ -585,11 +717,17 @@ export class AuthService {
 
   async registerWithEmailPassword(request: Request, input: RegisterDto) {
     const email = this.normalizeEmail(input.email ?? '');
+    if (!input.acceptedPrivacyPolicy || !input.acceptedTerms) {
+      throw this.createServiceError('You must accept the privacy policy and terms of use', 400);
+    }
     const accountType = resolveAccountType({ accountType: input.accountType }) ?? 'Resident';
+    const role = resolveUserRole({ role: input.accountType, accountType }) ?? accountType;
     const fullName = [input.firstName?.trim(), input.lastName?.trim()]
       .filter((value): value is string => Boolean(value))
       .join(' ')
       .trim();
+    const legalAcceptedAt = new Date();
+    const verification = await this.validateRegistrationVerification(email, input.verificationToken);
 
     let uid: string;
 
@@ -615,12 +753,28 @@ export class AuthService {
       uid,
       email,
       accountType,
+      role,
       firstName: input.firstName,
       lastName: input.lastName,
       phone: input.phone,
       companyName: input.companyName,
       registrationNumber: input.registrationNumber,
+      acceptedPrivacyPolicyAt: legalAcceptedAt,
+      acceptedTermsAt: legalAcceptedAt,
     });
+
+    if (accountType === 'ManagementCompany') {
+      await this.ensureManagementCompanyDocument({
+        uid,
+        email,
+        companyEmail: input.companyEmail,
+        phone: input.phone,
+        companyName: input.companyName,
+        registrationNumber: input.registrationNumber,
+      });
+    }
+
+    await verification.docRef.delete();
 
     const authResult = await this.callIdentityToolkit<{
       idToken: string;

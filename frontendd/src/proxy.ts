@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { ROUTES } from "@/shared/lib/routes";
-import { authRoutes, isAllowedPath, isProtectedPath, resolveDashboardRole, roleCookieValues } from "@/shared/api/access";
+import { isAllowedPath, isAuthRoute, isProtectedPath, resolveDashboardRole, roleCookieValues } from "@/shared/api/access";
 
 export default function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -23,14 +23,13 @@ export default function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (authRoutes.has(pathname as "/login") && sessionCookie && userId) {
+  if (isAuthRoute(pathname) && sessionCookie && userId) {
     const dashboardUrl = new URL(ROUTES.dashboard, request.url);
     return NextResponse.redirect(dashboardUrl);
   }
 
   if (isProtectedPath(pathname) && !isAllowedPath(pathname, resolvedRole)) {
     const dashboardUrl = new URL(ROUTES.dashboard, request.url);
-    dashboardUrl.searchParams.set("denied", "1");
     return NextResponse.redirect(dashboardUrl);
   }
 

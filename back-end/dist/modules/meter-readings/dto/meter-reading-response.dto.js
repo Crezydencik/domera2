@@ -23,6 +23,22 @@ __decorate([
     __metadata("design:type", String)
 ], MeterReadingItemDto.prototype, "apartmentId", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Human-readable apartment number' }),
+    __metadata("design:type", String)
+], MeterReadingItemDto.prototype, "apartmentNumber", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    __metadata("design:type", String)
+], MeterReadingItemDto.prototype, "buildingId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    __metadata("design:type", String)
+], MeterReadingItemDto.prototype, "buildingName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    __metadata("design:type", String)
+], MeterReadingItemDto.prototype, "buildingAddress", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", String)
 ], MeterReadingItemDto.prototype, "meterId", void 0);
@@ -46,6 +62,14 @@ __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Number)
 ], MeterReadingItemDto.prototype, "year", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'ISO 8601 timestamp' }),
+    __metadata("design:type", Object)
+], MeterReadingItemDto.prototype, "submittedAt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: '98063287' }),
+    __metadata("design:type", String)
+], MeterReadingItemDto.prototype, "serialNumber", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ example: 'coldmeterwater' }),
     __metadata("design:type", String)

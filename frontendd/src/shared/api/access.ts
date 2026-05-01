@@ -7,7 +7,7 @@ export const roleCookieValues: Record<DashboardRole, string> = {
   landlord: "Landlord",
 };
 
-export const authRoutes = new Set([
+export const authRoutes = new Set<string>([
   ROUTES.login,
   ROUTES.register,
   ROUTES.forgotPassword,
@@ -51,6 +51,10 @@ export const allowedRoutesByRole: Record<DashboardRole, string[]> = {
 
 export function resolveDashboardRole(value?: string | null) {
   return normalizeDashboardRole(value);
+}
+
+export function isAuthRoute(pathname: string) {
+  return authRoutes.has(pathname);
 }
 
 export function matchesPath(pathname: string, route: string) {

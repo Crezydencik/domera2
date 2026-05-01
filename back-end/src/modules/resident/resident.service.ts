@@ -100,6 +100,24 @@ export class ResidentService {
       }
     }
 
+    const tenantApartmentsSnap = await db.collection('apartments').get();
+    for (const doc of tenantApartmentsSnap.docs) {
+      const apartment = doc.data() as Record<string, unknown>;
+      const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+      const isTenant = tenants.some((tenant) => {
+        if (!tenant || typeof tenant !== 'object') return false;
+        return typeof (tenant as Record<string, unknown>).userId === 'string'
+          && (tenant as Record<string, unknown>).userId === user.uid;
+      });
+
+      if (isTenant) {
+        mergedApartments.set(doc.id, {
+          id: doc.id,
+          ...apartment,
+        });
+      }
+    }
+
     const apartments = Array.from(mergedApartments.values());
     const buildingIds = Array.from(
       new Set(

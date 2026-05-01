@@ -1,4 +1,3 @@
-'use clients';
 import { getRoleDataBundle } from "@/shared/lib/domera-api.server";
 import { ApartmentsManagementView } from "./_management-view";
 import { ApartmentsResidentView } from "./_resident-view";

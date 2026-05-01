@@ -15,6 +15,14 @@ const config_1 = require("@nestjs/config");
 const app_1 = require("firebase-admin/app");
 const auth_1 = require("firebase-admin/auth");
 const firestore_1 = require("firebase-admin/firestore");
+const normalizePrivateKey = (value) => {
+    const trimmed = value.trim();
+    const unwrapped = (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+        (trimmed.startsWith("'") && trimmed.endsWith("'"))
+        ? trimmed.slice(1, -1)
+        : trimmed;
+    return unwrapped.replace(/\\n/g, '\n').trim();
+};
 let FirebaseAdminService = class FirebaseAdminService {
     constructor(configService) {
         this.configService = configService;
@@ -41,7 +49,10 @@ let FirebaseAdminService = class FirebaseAdminService {
         if (!projectId || !clientEmail || !privateKeyRaw) {
             throw new Error('Firebase Admin credentials are missing. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY');
         }
-        const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
+        const privateKey = normalizePrivateKey(privateKeyRaw);
+        if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
+            throw new Error('FIREBASE_PRIVATE_KEY is malformed. Use the service account private key in PEM format.');
+        }
         return (0, app_1.initializeApp)({
             credential: (0, app_1.cert)({
                 projectId,

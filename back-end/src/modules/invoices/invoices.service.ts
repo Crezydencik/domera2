@@ -68,6 +68,21 @@ export class InvoicesService {
       }
     }
 
+    const tenantSnap = await this.firebaseAdminService.firestore.collection('apartments').get();
+    for (const doc of tenantSnap.docs) {
+      const apartment = doc.data() as Record<string, unknown>;
+      const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+      const isTenant = tenants.some((tenant) => {
+        if (!tenant || typeof tenant !== 'object') return false;
+        return typeof (tenant as Record<string, unknown>).userId === 'string'
+          && (tenant as Record<string, unknown>).userId === user.uid;
+      });
+
+      if (isTenant) {
+        apartmentIds.add(doc.id);
+      }
+    }
+
     return Array.from(apartmentIds);
   }
 

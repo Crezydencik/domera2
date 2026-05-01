@@ -90,6 +90,23 @@ let ResidentService = class ResidentService {
                 });
             }
         }
+        const tenantApartmentsSnap = await db.collection('apartments').get();
+        for (const doc of tenantApartmentsSnap.docs) {
+            const apartment = doc.data();
+            const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+            const isTenant = tenants.some((tenant) => {
+                if (!tenant || typeof tenant !== 'object')
+                    return false;
+                return typeof tenant.userId === 'string'
+                    && tenant.userId === user.uid;
+            });
+            if (isTenant) {
+                mergedApartments.set(doc.id, {
+                    id: doc.id,
+                    ...apartment,
+                });
+            }
+        }
         const apartments = Array.from(mergedApartments.values());
         const buildingIds = Array.from(new Set(apartments
             .map((apartment) => this.toOptionalString(apartment.buildingId))

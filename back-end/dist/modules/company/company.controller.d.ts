@@ -5,10 +5,13 @@ export declare class CompanyController {
     private readonly companyService;
     constructor(companyService: CompanyService);
     create(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<{
-        name: string;
-        userId: string;
+        companyName: string;
+        manager: any[];
+        companyId: string;
+        userIds: string[];
         buildings: any[];
         createdAt: Date;
+        updatedAt: Date;
         id: string;
     }>;
     byId(request: Request, user: RequestUser, companyId: string): Promise<{

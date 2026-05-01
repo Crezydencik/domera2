@@ -208,6 +208,7 @@ let InvitationsService = class InvitationsService {
             await db.collection('users').doc(uid).set({
                 uid,
                 ...(email ? { email } : {}),
+                ...(typeof invitation.companyId === 'string' && invitation.companyId ? { companyId: invitation.companyId } : {}),
                 role: 'Resident',
                 apartmentId,
                 apartmentIds: [apartmentId],

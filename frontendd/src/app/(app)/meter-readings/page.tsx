@@ -1,35 +1,12 @@
-import { getTranslations } from "next-intl/server";
-import { DataTable } from "@/components/data-table";
-import { SectionCard } from "@/components/section-card";
-import { getRoleDataBundle } from "@/shared/lib/domera-api.server";
+"use client";
+import dynamic from "next/dynamic";
+import { useAuthSession } from "@/shared/hooks/use-auth";
 
-export default async function MeterReadingsPage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ role?: string }>;
-}) {
-  const t = await getTranslations("meterReadings");
-  const params = (await searchParams) ?? {};
-  const data = await getRoleDataBundle(params.role);
+const ManagementCompanyPage = dynamic(() => import("./management-company/page"), { ssr: false });
+const OwnerLandlordPage = dynamic(() => import("./owner-landlord/page"), { ssr: false });
 
-  return (
-    <div className="space-y-6">
-      <SectionCard title={t("title")} description={t("description")}>
-        <DataTable
-          columns={[t("colApartment"), t("colValue"), t("colSubmitted"), t("colTrend")]}
-          rows={data.meterReadings.map((item) => [
-            item.apartment,
-            item.value,
-            item.submittedAt,
-            <span
-              key={`${item.id}-trend`}
-              className="rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700"
-            >
-              {item.trend} m³
-            </span>,
-          ])}
-        />
-      </SectionCard>
-    </div>
-  );
+export default function MeterReadingsPage() {
+  const session = useAuthSession();
+  const isResident = session.dashboardRole === "resident" || session.dashboardRole === "landlord";
+  return isResident ? <OwnerLandlordPage /> : <ManagementCompanyPage />;
 }

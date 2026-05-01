@@ -89,6 +89,19 @@ export function normalizeAccountType(value: unknown): AccountType | undefined {
   return ACCOUNT_TYPE_ALIASES[trimmed.toLowerCase()];
 }
 
+export function resolveUserRole(input: {
+  role?: unknown;
+  accountType?: unknown;
+}): UserRole | undefined {
+  const normalizedRole = normalizeUserRole(input.role);
+  if (normalizedRole) return normalizedRole;
+
+  const normalizedAccountType = normalizeAccountType(input.accountType);
+  if (!normalizedAccountType) return undefined;
+
+  return normalizedAccountType;
+}
+
 export function resolveAccountType(input: {
   role?: unknown;
   accountType?: unknown;

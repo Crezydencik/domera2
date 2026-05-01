@@ -9,9 +9,12 @@ export const ROUTES = {
   // ── Auth ────────────────────────────────────────────────
   login: "/login",
   register: "/register",
+  registerVerify: "/register/verify",
   forgotPassword: "/forgot-password",
   resetPassword: "/reset-password",
   acceptInvitation: "/accept-invitation",
+  privacyPolicy: "/privacy-policy",
+  termsOfUse: "/terms-of-use",
 
   // ── App (requires authentication) ───────────────────────
   dashboard: "/dashboard",

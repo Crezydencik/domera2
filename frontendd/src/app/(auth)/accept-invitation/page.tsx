@@ -10,7 +10,7 @@ import {
   accountTypeToDashboardRole,
   establishUserSession,
   saveUserProfile,
-  signUpWithEmailPassword,
+  signInWithEmailPassword,
 } from "@/shared/lib/auth-client";
 import { apiFetch } from "@/shared/lib/domera-api";
 import { isStrongPassword } from "@/shared/lib/password-validation";
@@ -94,7 +94,16 @@ function AcceptInvitationContent() {
         throw new Error("Invitation is invalid.");
       }
 
-      const result = await signUpWithEmailPassword(info.email, password, "Resident");
+      await apiFetch("/invitations/accept", {
+        method: "POST",
+        body: JSON.stringify({
+          token: info.token,
+          password,
+          gdprConsent: true,
+        }),
+      });
+
+      const result = await signInWithEmailPassword(info.email, password);
 
       await establishUserSession({
         idToken: result.idToken,
@@ -111,11 +120,6 @@ function AcceptInvitationContent() {
         role: "Resident",
         accountType: "Resident",
         apartmentId: info.apartmentId,
-      });
-
-      await apiFetch("/invitations/accept", {
-        method: "POST",
-        body: JSON.stringify({ token: info.token, gdprConsent: true }),
       });
 
       setAccepted(true);

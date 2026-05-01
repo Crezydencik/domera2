@@ -18,11 +18,13 @@ const audit_log_service_1 = require("../../common/services/audit-log.service");
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
 const meter_reading_history_1 = require("../../common/utils/meter-reading-history");
 const invitation_token_1 = require("../../common/utils/invitation-token");
+const email_service_1 = require("../emails/email.service");
 let MeterReadingsService = class MeterReadingsService {
-    constructor(firebaseAdminService, rateLimitService, auditLogService) {
+    constructor(firebaseAdminService, rateLimitService, auditLogService, emailService) {
         this.firebaseAdminService = firebaseAdminService;
         this.rateLimitService = rateLimitService;
         this.auditLogService = auditLogService;
+        this.emailService = emailService;
     }
     assertAuthenticated(user) {
         if (!user?.uid || !user.role)
@@ -50,15 +52,61 @@ let MeterReadingsService = class MeterReadingsService {
             });
         return isOwner || isClaimApartment || isPrimaryResident || isTenantWithSubmit;
     }
-    extractApartmentReadings(apartmentId, apartment) {
+    extractApartmentReadings(apartmentId, apartment, buildingInfo) {
         const wr = (apartment.waterReadings ?? {});
         const entries = [];
+        const pickNumber = (...vals) => {
+            for (const v of vals) {
+                if (typeof v === 'string' && v.trim() !== '')
+                    return v.trim();
+                if (typeof v === 'number' && Number.isFinite(v))
+                    return String(v);
+            }
+            return '';
+        };
+        const apartmentNumber = pickNumber(apartment.number, apartment.apartmentNumber, apartment.apartmentNo, apartment.no, apartment.flatNumber, apartment.readableId);
+        const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : '';
+        const buildingName = buildingInfo?.name ?? '';
+        const buildingAddress = buildingInfo?.address ?? (typeof apartment.address === 'string' ? apartment.address : '');
         for (const key of ['coldmeterwater', 'hotmeterwater']) {
             const group = wr[key];
             if (!group || !Array.isArray(group.history))
                 continue;
+            const serialNumber = typeof group.serialNumber === 'string' ? group.serialNumber : '';
             for (const item of group.history) {
-                entries.push({ ...item, apartmentId: String(item.apartmentId ?? apartmentId), meterKey: key });
+                let submittedAt;
+                if (item.submittedAt) {
+                    if (item.submittedAt instanceof Date) {
+                        submittedAt = item.submittedAt.toISOString();
+                    }
+                    else if (typeof item.submittedAt === 'string') {
+                        const parsed = new Date(item.submittedAt);
+                        if (!Number.isNaN(parsed.getTime())) {
+                            submittedAt = parsed.toISOString();
+                        }
+                        else {
+                            submittedAt = item.submittedAt;
+                        }
+                    }
+                    else if (item.submittedAt && typeof item.submittedAt === 'object') {
+                        const ts = item.submittedAt;
+                        if (typeof ts._seconds === 'number') {
+                            const ms = ts._seconds * 1000 + ((typeof ts._nanoseconds === 'number' ? ts._nanoseconds : 0) / 1000000);
+                            submittedAt = new Date(ms).toISOString();
+                        }
+                    }
+                }
+                entries.push({
+                    ...item,
+                    apartmentId: String(item.apartmentId ?? apartmentId),
+                    apartmentNumber,
+                    buildingId,
+                    buildingName,
+                    buildingAddress,
+                    meterKey: key,
+                    serialNumber,
+                    submittedAt,
+                });
             }
         }
         return entries;
@@ -82,7 +130,7 @@ let MeterReadingsService = class MeterReadingsService {
             else if (user.companyId && !companyIds.includes(user.companyId)) {
                 throw new common_1.ForbiddenException('Access denied for company');
             }
-            return { items: this.extractApartmentReadings(apartmentId, apartment) };
+            return { items: this.extractApartmentReadings(apartmentId, apartment, await this.loadBuildingInfo(apartment)) };
         }
         if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
             return { items: [] };
@@ -94,8 +142,46 @@ let MeterReadingsService = class MeterReadingsService {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         const snap = await db.collection('apartments').where('companyIds', 'array-contains', effectiveCompanyId).get();
-        const items = snap.docs.flatMap((doc) => this.extractApartmentReadings(doc.id, doc.data()));
+        const buildingIds = Array.from(new Set(snap.docs
+            .map((doc) => doc.data().buildingId)
+            .filter((b) => typeof b === 'string' && b !== '')));
+        const buildingMap = await this.loadBuildings(buildingIds);
+        const items = snap.docs.flatMap((doc) => {
+            const data = doc.data();
+            const bId = typeof data.buildingId === 'string' ? data.buildingId : '';
+            return this.extractApartmentReadings(doc.id, data, buildingMap.get(bId));
+        });
         return { items };
+    }
+    async loadBuildingInfo(apartment) {
+        const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : '';
+        if (!buildingId)
+            return undefined;
+        const map = await this.loadBuildings([buildingId]);
+        return map.get(buildingId);
+    }
+    async loadBuildings(buildingIds) {
+        const map = new Map();
+        if (buildingIds.length === 0)
+            return map;
+        const db = this.firebaseAdminService.firestore;
+        const snaps = await Promise.all(buildingIds.map((id) => db.collection('buildings').doc(id).get()));
+        for (const s of snaps) {
+            if (!s.exists)
+                continue;
+            const d = s.data();
+            map.set(s.id, {
+                name: typeof d.name === 'string' ? d.name : typeof d.title === 'string' ? d.title : undefined,
+                address: typeof d.address === 'string'
+                    ? d.address
+                    : typeof d.street === 'string'
+                        ? d.street
+                        : typeof d.location === 'string'
+                            ? d.location
+                            : undefined,
+            });
+        }
+        return map;
     }
     async create(request, user, payload) {
         this.assertAuthenticated(user);
@@ -127,11 +213,14 @@ let MeterReadingsService = class MeterReadingsService {
         const now = new Date();
         const month = typeof payload.month === 'number' ? payload.month : now.getMonth() + 1;
         const year = typeof payload.year === 'number' ? payload.year : now.getFullYear();
+        const submittedAt = month !== now.getMonth() + 1 || year !== now.getFullYear()
+            ? new Date(year, month, 0, 12, 0, 0)
+            : now;
         const reading = {
             id: (0, node_crypto_1.randomUUID)(),
             apartmentId,
             meterId,
-            submittedAt: now,
+            submittedAt,
             previousValue: Number(payload.previousValue ?? 0),
             currentValue: Number(payload.currentValue ?? 0),
             consumption: Number(payload.consumption ?? 0),
@@ -150,6 +239,21 @@ let MeterReadingsService = class MeterReadingsService {
         const duplicate = history.some((h) => Number(h.month) === month && Number(h.year) === year);
         if (duplicate) {
             throw new common_1.ForbiddenException('Reading already exists for current month');
+        }
+        const lastEntry = history.length
+            ? [...history].sort((a, b) => {
+                const ay = Number(a.year ?? 0);
+                const by = Number(b.year ?? 0);
+                if (ay !== by)
+                    return by - ay;
+                return Number(b.month ?? 0) - Number(a.month ?? 0);
+            })[0]
+            : null;
+        const lastValue = lastEntry
+            ? Number(lastEntry.currentValue ?? lastEntry.previousValue ?? 0)
+            : Number(meterGroup.currentValue ?? 0);
+        if (Number.isFinite(lastValue) && reading.currentValue < lastValue) {
+            throw new common_1.BadRequestException(`Current reading (${reading.currentValue}) cannot be lower than the previous (${lastValue})`);
         }
         history.push(reading);
         const { history: recalculatedHistory, latestReading } = (0, meter_reading_history_1.buildMeterHistorySnapshot)(history);
@@ -290,11 +394,13 @@ let MeterReadingsService = class MeterReadingsService {
                     ? submittedAtRaw.toDate()
                     : null;
         const now = new Date();
-        if (!submittedAt ||
-            Number.isNaN(submittedAt.getTime()) ||
-            submittedAt.getFullYear() !== now.getFullYear() ||
-            submittedAt.getMonth() !== now.getMonth()) {
-            throw new common_1.ForbiddenException('Cannot delete readings from previous months');
+        if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
+            if (!submittedAt ||
+                Number.isNaN(submittedAt.getTime()) ||
+                submittedAt.getFullYear() !== now.getFullYear() ||
+                submittedAt.getMonth() !== now.getMonth()) {
+                throw new common_1.ForbiddenException('Cannot delete readings from previous months');
+            }
         }
         const history = foundGroup.history.filter((h) => String(h.id ?? '') !== readingId);
         const { history: recalculatedHistory, latestReading } = (0, meter_reading_history_1.buildMeterHistorySnapshot)(history);
@@ -312,11 +418,43 @@ let MeterReadingsService = class MeterReadingsService {
         }, { merge: true });
         return { success: true };
     }
+    async sendTestReminder(user) {
+        this.assertAuthenticated(user);
+        const db = this.firebaseAdminService.firestore;
+        const companyEmail = user.email;
+        if (!companyEmail) {
+            throw new common_1.BadRequestException('Company email not found');
+        }
+        const companyId = user.companyId || '';
+        if (!companyId) {
+            throw new common_1.BadRequestException('Company ID not found for this user');
+        }
+        const [snap1, snap2] = await Promise.all([
+            db.collection('buildings').where('companyId', '==', companyId).limit(1).get(),
+            db.collection('buildings').where('managedBy.companyId', '==', companyId).limit(1).get(),
+        ]);
+        const buildingsSnapshot = !snap1.empty ? snap1 : snap2;
+        if (buildingsSnapshot.empty) {
+            throw new common_1.NotFoundException('No buildings found for this company');
+        }
+        const building = buildingsSnapshot.docs[0].data();
+        const buildingName = building.name || building.address || 'Test Building';
+        await this.emailService.sendMeterReadingReminder({
+            to: companyEmail,
+            language: 'en',
+            submissionLink: '',
+            buildingName: buildingName,
+            apartmentNumber: 'Apt 1',
+            deadline: '27.05.2026',
+        });
+        return { success: true, message: 'Test reminder sent to ' + companyEmail };
+    }
 };
 exports.MeterReadingsService = MeterReadingsService;
 exports.MeterReadingsService = MeterReadingsService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService,
         rate_limit_service_1.RateLimitService,
-        audit_log_service_1.AuditLogService])
+        audit_log_service_1.AuditLogService,
+        email_service_1.EmailService])
 ], MeterReadingsService);

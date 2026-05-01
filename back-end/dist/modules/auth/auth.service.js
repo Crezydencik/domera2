@@ -13,6 +13,7 @@ exports.AuthService = void 0;
 const node_crypto_1 = require("node:crypto");
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
+const firestore_1 = require("firebase-admin/firestore");
 const resend_1 = require("resend");
 const audit_log_service_1 = require("../../common/services/audit-log.service");
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
@@ -49,6 +50,28 @@ let AuthService = class AuthService {
     }
     hashToken(token) {
         return (0, node_crypto_1.createHash)('sha256').update(token).digest('hex');
+    }
+    async validateRegistrationVerification(email, verificationToken) {
+        const db = this.firebaseAdminService.firestore;
+        const docRef = db.collection(COLLECTION).doc(this.makeDocId(email));
+        const snap = await docRef.get();
+        if (!snap.exists) {
+            throw this.createServiceError('Email confirmation is required before registration', 400);
+        }
+        const data = snap.data();
+        if (!data?.verified || !data.verificationTokenHash) {
+            throw this.createServiceError('Email confirmation is required before registration', 400);
+        }
+        const tokenExpiresAtMs = data.tokenExpiresAt?.toMillis?.() ?? 0;
+        if (!tokenExpiresAtMs || Date.now() > tokenExpiresAtMs) {
+            await docRef.delete();
+            throw this.createServiceError('Email confirmation expired. Please request a new code.', 410);
+        }
+        const tokenHash = this.hashToken(String(verificationToken ?? ''));
+        if (!this.safeEqual(tokenHash, data.verificationTokenHash)) {
+            throw this.createServiceError('Invalid email confirmation token', 400);
+        }
+        return { docRef };
     }
     safeEqual(a, b) {
         const buffA = Buffer.from(a);
@@ -222,7 +245,10 @@ let AuthService = class AuthService {
         const current = snap.exists ? snap.data() : {};
         const accountType = (0, role_constants_1.resolveAccountType)({ role: current.role, accountType: input.accountType ?? current.accountType }) ??
             this.inferAccountTypeFromEmail(input.email);
-        const role = (0, role_constants_1.normalizeUserRole)(current.role ?? accountType) ?? accountType;
+        const role = (0, role_constants_1.resolveUserRole)({
+            role: input.role ?? current.role,
+            accountType: input.accountType ?? current.accountType ?? accountType,
+        }) ?? accountType;
         const firstName = (typeof input.firstName === 'string' && input.firstName.trim()) ||
             (typeof current.firstName === 'string' ? current.firstName : undefined);
         const lastName = (typeof input.lastName === 'string' && input.lastName.trim()) ||
@@ -235,6 +261,14 @@ let AuthService = class AuthService {
             (accountType === 'ManagementCompany' ? input.uid : undefined);
         const apartmentId = (typeof input.apartmentId === 'string' && input.apartmentId.trim()) ||
             (typeof current.apartmentId === 'string' ? current.apartmentId : undefined);
+        const acceptedPrivacyPolicyAt = input.acceptedPrivacyPolicyAt ||
+            (current.acceptedPrivacyPolicyAt instanceof Date
+                ? current.acceptedPrivacyPolicyAt
+                : (current.acceptedPrivacyPolicyAt?.toDate?.() ?? undefined));
+        const acceptedTermsAt = input.acceptedTermsAt ||
+            (current.acceptedTermsAt instanceof Date
+                ? current.acceptedTermsAt
+                : (current.acceptedTermsAt?.toDate?.() ?? undefined));
         const nextData = Object.fromEntries(Object.entries({
             ...current,
             uid: input.uid,
@@ -251,6 +285,71 @@ let AuthService = class AuthService {
                 (typeof current.companyName === 'string' ? current.companyName : undefined),
             registrationNumber: (typeof input.registrationNumber === 'string' && input.registrationNumber.trim()) ||
                 (typeof current.registrationNumber === 'string' ? current.registrationNumber : undefined),
+            acceptedPrivacyPolicyAt,
+            acceptedTermsAt,
+            createdAt: current.createdAt ?? new Date(),
+            updatedAt: new Date(),
+        }).filter(([, value]) => value !== undefined && value !== ''));
+        await ref.set(nextData, { merge: true });
+        return nextData;
+    }
+    async ensureManagementCompanyDocument(input) {
+        const ref = this.firebaseAdminService.firestore.collection('companies').doc(input.uid);
+        const snap = await ref.get();
+        const current = snap.exists ? snap.data() : {};
+        const companyName = (typeof input.companyName === 'string' && input.companyName.trim()) ||
+            (typeof current.companyName === 'string' ? current.companyName : undefined) ||
+            (typeof current.name === 'string' ? current.name : undefined) ||
+            input.email;
+        const companyEmail = (typeof input.companyEmail === 'string' && input.companyEmail.trim()
+            ? this.normalizeEmail(input.companyEmail)
+            : undefined) ||
+            (typeof current.companyEmail === 'string' && current.companyEmail.trim()
+                ? this.normalizeEmail(current.companyEmail)
+                : undefined) ||
+            (typeof current.email === 'string' && current.email.trim()
+                ? this.normalizeEmail(current.email)
+                : undefined) ||
+            (typeof current.contactEmail === 'string' && current.contactEmail.trim()
+                ? this.normalizeEmail(current.contactEmail)
+                : undefined) ||
+            input.email;
+        const companyPhone = (typeof input.phone === 'string' && input.phone.trim()) ||
+            (typeof current.companyPhone === 'string' ? current.companyPhone : undefined) ||
+            (typeof current.phone === 'string' ? current.phone : undefined) ||
+            (typeof current.contactPhone === 'string' ? current.contactPhone : undefined);
+        const registrationNumber = (typeof input.registrationNumber === 'string' && input.registrationNumber.trim()) ||
+            (typeof current.registrationNumber === 'string' ? current.registrationNumber : undefined);
+        const currentManagers = Array.isArray(current.manager)
+            ? current.manager.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const manager = Array.from(new Set([...currentManagers, input.uid]));
+        const currentUserIds = Array.isArray(current.userIds)
+            ? current.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const userIds = Array.from(new Set([...currentUserIds, input.uid]));
+        const nextData = Object.fromEntries(Object.entries({
+            ...current,
+            manager,
+            companyId: input.uid,
+            userIds,
+            userId: firestore_1.FieldValue.delete(),
+            role: firestore_1.FieldValue.delete(),
+            accountType: firestore_1.FieldValue.delete(),
+            companyName,
+            companyEmail,
+            companyPhone,
+            name: firestore_1.FieldValue.delete(),
+            email: firestore_1.FieldValue.delete(),
+            phone: firestore_1.FieldValue.delete(),
+            contactEmail: firestore_1.FieldValue.delete(),
+            contactPhone: firestore_1.FieldValue.delete(),
+            registrationNumber,
+            firstName: firestore_1.FieldValue.delete(),
+            lastName: firestore_1.FieldValue.delete(),
+            fullName: firestore_1.FieldValue.delete(),
+            contactName: firestore_1.FieldValue.delete(),
+            buildings: Array.isArray(current.buildings) ? current.buildings : [],
             createdAt: current.createdAt ?? new Date(),
             updatedAt: new Date(),
         }).filter(([, value]) => value !== undefined && value !== ''));
@@ -265,7 +364,7 @@ let AuthService = class AuthService {
         if (input.email && decoded.email && input.email.toLowerCase() !== decoded.email.toLowerCase()) {
             throw new Error('email does not match token subject');
         }
-        let role = (0, role_constants_1.normalizeUserRole)(decoded.role);
+        let role = (0, role_constants_1.resolveUserRole)({ role: decoded.role });
         let accountType = (0, role_constants_1.resolveAccountType)({ role, accountType: decoded.accountType });
         let companyId = typeof decoded.companyId === 'string' ? decoded.companyId : undefined;
         let apartmentId = typeof decoded.apartmentId === 'string' ? decoded.apartmentId : undefined;
@@ -274,7 +373,7 @@ let AuthService = class AuthService {
                 const userDoc = await this.firebaseAdminService.firestore.collection('users').doc(decoded.uid).get();
                 if (userDoc.exists) {
                     const userData = userDoc.data();
-                    role = role ?? (0, role_constants_1.normalizeUserRole)(userData.role ?? userData.accountType);
+                    role = role ?? (0, role_constants_1.resolveUserRole)({ role: userData.role, accountType: userData.accountType });
                     accountType = accountType ?? (0, role_constants_1.resolveAccountType)({
                         role: userData.role,
                         accountType: userData.accountType,
@@ -449,11 +548,17 @@ let AuthService = class AuthService {
     }
     async registerWithEmailPassword(request, input) {
         const email = this.normalizeEmail(input.email ?? '');
+        if (!input.acceptedPrivacyPolicy || !input.acceptedTerms) {
+            throw this.createServiceError('You must accept the privacy policy and terms of use', 400);
+        }
         const accountType = (0, role_constants_1.resolveAccountType)({ accountType: input.accountType }) ?? 'Resident';
+        const role = (0, role_constants_1.resolveUserRole)({ role: input.accountType, accountType }) ?? accountType;
         const fullName = [input.firstName?.trim(), input.lastName?.trim()]
             .filter((value) => Boolean(value))
             .join(' ')
             .trim();
+        const legalAcceptedAt = new Date();
+        const verification = await this.validateRegistrationVerification(email, input.verificationToken);
         let uid;
         try {
             const created = await this.firebaseAdminService.auth.createUser({
@@ -477,12 +582,26 @@ let AuthService = class AuthService {
             uid,
             email,
             accountType,
+            role,
             firstName: input.firstName,
             lastName: input.lastName,
             phone: input.phone,
             companyName: input.companyName,
             registrationNumber: input.registrationNumber,
+            acceptedPrivacyPolicyAt: legalAcceptedAt,
+            acceptedTermsAt: legalAcceptedAt,
         });
+        if (accountType === 'ManagementCompany') {
+            await this.ensureManagementCompanyDocument({
+                uid,
+                email,
+                companyEmail: input.companyEmail,
+                phone: input.phone,
+                companyName: input.companyName,
+                registrationNumber: input.registrationNumber,
+            });
+        }
+        await verification.docRef.delete();
         const authResult = await this.callIdentityToolkit('signInWithPassword', {
             email,
             password: input.password,

@@ -24,6 +24,9 @@ let BuildingsController = class BuildingsController {
     constructor(buildingsService) {
         this.buildingsService = buildingsService;
     }
+    creationAccess(request, user, companyId) {
+        return this.buildingsService.getCreationAccess(request, user, companyId);
+    }
     list(request, user, companyId) {
         return this.buildingsService.list(request, user, companyId);
     }
@@ -41,6 +44,17 @@ let BuildingsController = class BuildingsController {
     }
 };
 exports.BuildingsController = BuildingsController;
+__decorate([
+    (0, common_1.Get)('creation-access'),
+    (0, swagger_1.ApiOperation)({ summary: 'Check whether the company can create a building' }),
+    (0, swagger_1.ApiQuery)({ name: 'companyId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Query)('companyId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:returntype", void 0)
+], BuildingsController.prototype, "creationAccess", null);
 __decorate([
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: 'List buildings by company' }),

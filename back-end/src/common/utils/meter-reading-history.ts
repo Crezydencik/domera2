@@ -41,8 +41,20 @@ export const buildMeterHistorySnapshot = (history: MeterHistoryEntry[]) => {
     return dateA - dateB;
   });
 
+  // Группируем по месяцам/годам, оставляя только последнее значение в каждом месяце
+  const monthlyMap = new Map<string, MeterHistoryEntry>();
+  for (const item of sorted) {
+    const year = toNumberOrNull(item.year) ?? 0;
+    const month = toNumberOrNull(item.month) ?? 0;
+    const key = `${year}-${month}`;
+    // Берем последнюю запись для каждого месяца
+    monthlyMap.set(key, item);
+  }
+
+  const uniqueByMonth = Array.from(monthlyMap.values());
+
   let prevCurrentValue: number | null = null;
-  const normalized = sorted.map((item) => {
+  const normalized = uniqueByMonth.map((item) => {
     const currentValue = toNumberOrNull(item.currentValue);
     const previousValue = prevCurrentValue;
     const consumption =

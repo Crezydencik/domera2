@@ -15,6 +15,7 @@ const firebase_admin_service_1 = require("../../common/infrastructure/firebase/f
 const audit_log_service_1 = require("../../common/services/audit-log.service");
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
 const invitation_token_1 = require("../../common/utils/invitation-token");
+const role_constants_1 = require("../../common/auth/role.constants");
 let CompanyInvitationsService = class CompanyInvitationsService {
     constructor(firebaseAdminService, rateLimitService, auditLogService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -142,9 +143,43 @@ let CompanyInvitationsService = class CompanyInvitationsService {
         const invitation = invitationSnap.data();
         const invitationEmail = typeof invitation.email === 'string' ? (0, invitation_token_1.normalizeEmail)(invitation.email) : '';
         const authEmail = (0, invitation_token_1.normalizeEmail)(user.email);
+        const companyId = typeof invitation.companyId === 'string' ? invitation.companyId.trim() : '';
+        const invitedRole = invitation.role === 'ManagementCompany' || invitation.role === 'Accountant'
+            ? invitation.role
+            : undefined;
         if (!invitationEmail || invitationEmail !== authEmail) {
             throw new common_1.ForbiddenException('You cannot accept this invitation');
         }
+        if (!companyId || !invitedRole) {
+            throw new common_1.BadRequestException('Invitation is missing company data');
+        }
+        const companyRef = db.collection('companies').doc(companyId);
+        const companySnap = await companyRef.get();
+        if (!companySnap.exists) {
+            throw new common_1.NotFoundException('Company not found');
+        }
+        const company = companySnap.data();
+        const currentUserIds = Array.isArray(company.userIds)
+            ? company.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const userIds = currentUserIds.includes(user.uid) ? currentUserIds : [...currentUserIds, user.uid];
+        const userRef = db.collection('users').doc(user.uid);
+        const userSnap = await userRef.get();
+        const currentUserData = userSnap.exists ? userSnap.data() : {};
+        await userRef.set({
+            ...currentUserData,
+            uid: user.uid,
+            email: authEmail,
+            companyId,
+            role: invitedRole,
+            accountType: (0, role_constants_1.resolveAccountType)({ role: invitedRole }),
+            updatedAt: new Date(),
+            createdAt: currentUserData.createdAt ?? new Date(),
+        }, { merge: true });
+        await companyRef.set({
+            userIds,
+            updatedAt: new Date(),
+        }, { merge: true });
         await invitationRef.set({
             status: 'accepted',
             acceptedAt: new Date(),
@@ -158,9 +193,10 @@ let CompanyInvitationsService = class CompanyInvitationsService {
             actorRole: user.role,
             invitationId,
             targetEmail: invitationEmail,
-            companyId: typeof invitation.companyId === 'string' ? invitation.companyId : undefined,
+            companyId,
             metadata: {
                 buildingId: typeof invitation.buildingId === 'string' ? invitation.buildingId : undefined,
+                role: invitedRole,
             },
         });
         return { success: true };

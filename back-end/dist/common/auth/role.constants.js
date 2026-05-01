@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ROLE_CATALOG = exports.PUBLIC_REGISTRATION_ROLES = exports.PROPERTY_MEMBER_ROLES = exports.STAFF_ROLES = exports.ACCOUNT_TYPES = exports.USER_ROLES = void 0;
 exports.normalizeUserRole = normalizeUserRole;
 exports.normalizeAccountType = normalizeAccountType;
+exports.resolveUserRole = resolveUserRole;
 exports.resolveAccountType = resolveAccountType;
 exports.isStaffRole = isStaffRole;
 exports.isPropertyMemberRole = isPropertyMemberRole;
@@ -84,6 +85,15 @@ function normalizeAccountType(value) {
         return trimmed;
     }
     return ACCOUNT_TYPE_ALIASES[trimmed.toLowerCase()];
+}
+function resolveUserRole(input) {
+    const normalizedRole = normalizeUserRole(input.role);
+    if (normalizedRole)
+        return normalizedRole;
+    const normalizedAccountType = normalizeAccountType(input.accountType);
+    if (!normalizedAccountType)
+        return undefined;
+    return normalizedAccountType;
 }
 function resolveAccountType(input) {
     const normalizedAccountType = normalizeAccountType(input.accountType);

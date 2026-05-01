@@ -34,7 +34,7 @@ let FirebaseAuthGuard = class FirebaseAuthGuard {
             const decoded = token.source === 'session'
                 ? await this.firebaseAdminService.auth.verifySessionCookie(token.value, true)
                 : await this.firebaseAdminService.auth.verifyIdToken(token.value, true);
-            let role = (0, role_constants_1.normalizeUserRole)(decoded.role);
+            let role = (0, role_constants_1.resolveUserRole)({ role: decoded.role });
             let accountType = (0, role_constants_1.resolveAccountType)({ role, accountType: decoded.accountType });
             let companyId = toOptionalString(decoded.companyId);
             let apartmentId = toOptionalString(decoded.apartmentId);
@@ -43,7 +43,7 @@ let FirebaseAuthGuard = class FirebaseAuthGuard {
                     const userDoc = await this.firebaseAdminService.firestore.collection('users').doc(decoded.uid).get();
                     if (userDoc.exists) {
                         const userData = userDoc.data();
-                        role = role ?? (0, role_constants_1.normalizeUserRole)(userData.role ?? userData.accountType);
+                        role = role ?? (0, role_constants_1.resolveUserRole)({ role: userData.role, accountType: userData.accountType });
                         accountType = accountType ?? (0, role_constants_1.resolveAccountType)({
                             role: userData.role,
                             accountType: userData.accountType,

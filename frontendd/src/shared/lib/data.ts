@@ -1,5 +1,13 @@
 export type UserRole = "admin" | "management" | "resident";
 
+export interface BuildingReadingConfig {
+  waterEnabled: boolean;
+  electricityEnabled: boolean;
+  heatingEnabled: boolean;
+  hotWaterMetersPerResident: number;
+  coldWaterMetersPerResident: number;
+}
+
 export interface Building {
   id: string;
   name: string;
@@ -7,6 +15,10 @@ export interface Building {
   apartments: number;
   occupancy: string;
   status: string;
+  readingConfig?: BuildingReadingConfig;
+  companyId?: string;
+  companyName?: string;
+  managedBy?: Record<string, unknown>;
 }
 
 export interface Resident {

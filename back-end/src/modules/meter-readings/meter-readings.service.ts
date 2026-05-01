@@ -14,6 +14,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
 import { buildMeterHistorySnapshot } from '../../common/utils/meter-reading-history';
 import { normalizeEmail } from '../../common/utils/invitation-token';
+import { EmailService } from '../emails/email.service';
 
 @Injectable()
 export class MeterReadingsService {
@@ -21,6 +22,7 @@ export class MeterReadingsService {
     private readonly firebaseAdminService: FirebaseAdminService,
     private readonly rateLimitService: RateLimitService,
     private readonly auditLogService: AuditLogService,
+    private readonly emailService: EmailService,
   ) {}
 
   private assertAuthenticated(user: RequestUser | undefined): asserts user is RequestUser {
@@ -52,15 +54,71 @@ export class MeterReadingsService {
     return isOwner || isClaimApartment || isPrimaryResident || isTenantWithSubmit;
   }
 
-  private extractApartmentReadings(apartmentId: string, apartment: Record<string, unknown>) {
+  private extractApartmentReadings(
+    apartmentId: string,
+    apartment: Record<string, unknown>,
+    buildingInfo?: { name?: string; address?: string },
+  ) {
     const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
     const entries: Record<string, unknown>[] = [];
+    const pickNumber = (...vals: unknown[]): string => {
+      for (const v of vals) {
+        if (typeof v === 'string' && v.trim() !== '') return v.trim();
+        if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+      }
+      return '';
+    };
+    const apartmentNumber = pickNumber(
+      apartment.number,
+      apartment.apartmentNumber,
+      apartment.apartmentNo,
+      apartment.no,
+      apartment.flatNumber,
+      apartment.readableId,
+    );
+    const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : '';
+    const buildingName = buildingInfo?.name ?? '';
+    const buildingAddress = buildingInfo?.address ?? (typeof apartment.address === 'string' ? apartment.address : '');
 
     for (const key of ['coldmeterwater', 'hotmeterwater'] as const) {
       const group = wr[key] as Record<string, unknown> | undefined;
       if (!group || !Array.isArray(group.history)) continue;
+      const serialNumber = typeof group.serialNumber === 'string' ? group.serialNumber : '';
       for (const item of group.history as Record<string, unknown>[]) {
-        entries.push({ ...item, apartmentId: String(item.apartmentId ?? apartmentId), meterKey: key });
+        // Нормализуем submittedAt в ISO 8601 формат
+        let submittedAt: string | undefined;
+        if (item.submittedAt) {
+          if (item.submittedAt instanceof Date) {
+            submittedAt = item.submittedAt.toISOString();
+          } else if (typeof item.submittedAt === 'string') {
+            // Если уже строка, пробуем парсить как дату и обратно в ISO
+            const parsed = new Date(item.submittedAt);
+            if (!Number.isNaN(parsed.getTime())) {
+              submittedAt = parsed.toISOString();
+            } else {
+              submittedAt = item.submittedAt;
+            }
+          } else if (item.submittedAt && typeof item.submittedAt === 'object') {
+            // Firestore Timestamp: { _seconds: 1234567890, _nanoseconds: 0 }
+            const ts = item.submittedAt as Record<string, unknown>;
+            if (typeof ts._seconds === 'number') {
+              const ms = ts._seconds * 1000 + ((typeof ts._nanoseconds === 'number' ? ts._nanoseconds : 0) / 1000000);
+              submittedAt = new Date(ms).toISOString();
+            }
+          }
+        }
+        
+        entries.push({ 
+          ...item, 
+          apartmentId: String(item.apartmentId ?? apartmentId), 
+          apartmentNumber,
+          buildingId,
+          buildingName,
+          buildingAddress,
+          meterKey: key,
+          serialNumber,
+          submittedAt,
+        });
       }
     }
 
@@ -88,7 +146,7 @@ export class MeterReadingsService {
         throw new ForbiddenException('Access denied for company');
       }
 
-      return { items: this.extractApartmentReadings(apartmentId, apartment) };
+      return { items: this.extractApartmentReadings(apartmentId, apartment, await this.loadBuildingInfo(apartment)) };
     }
 
     if (isPropertyMemberRole(user.role)) {
@@ -102,9 +160,51 @@ export class MeterReadingsService {
     }
 
     const snap = await db.collection('apartments').where('companyIds', 'array-contains', effectiveCompanyId).get();
-    const items = snap.docs.flatMap((doc) => this.extractApartmentReadings(doc.id, doc.data() as Record<string, unknown>));
+    const buildingIds = Array.from(
+      new Set(
+        snap.docs
+          .map((doc) => (doc.data() as Record<string, unknown>).buildingId)
+          .filter((b): b is string => typeof b === 'string' && b !== ''),
+      ),
+    );
+    const buildingMap = await this.loadBuildings(buildingIds);
+    const items = snap.docs.flatMap((doc) => {
+      const data = doc.data() as Record<string, unknown>;
+      const bId = typeof data.buildingId === 'string' ? data.buildingId : '';
+      return this.extractApartmentReadings(doc.id, data, buildingMap.get(bId));
+    });
 
     return { items };
+  }
+
+  private async loadBuildingInfo(apartment: Record<string, unknown>): Promise<{ name?: string; address?: string } | undefined> {
+    const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : '';
+    if (!buildingId) return undefined;
+    const map = await this.loadBuildings([buildingId]);
+    return map.get(buildingId);
+  }
+
+  private async loadBuildings(buildingIds: string[]): Promise<Map<string, { name?: string; address?: string }>> {
+    const map = new Map<string, { name?: string; address?: string }>();
+    if (buildingIds.length === 0) return map;
+    const db = this.firebaseAdminService.firestore;
+    const snaps = await Promise.all(buildingIds.map((id) => db.collection('buildings').doc(id).get()));
+    for (const s of snaps) {
+      if (!s.exists) continue;
+      const d = s.data() as Record<string, unknown>;
+      map.set(s.id, {
+        name: typeof d.name === 'string' ? d.name : typeof d.title === 'string' ? d.title : undefined,
+        address:
+          typeof d.address === 'string'
+            ? d.address
+            : typeof d.street === 'string'
+              ? d.street
+              : typeof d.location === 'string'
+                ? d.location
+                : undefined,
+      });
+    }
+    return map;
   }
 
   async create(request: Request, user: RequestUser, payload: Record<string, unknown>) {
@@ -145,11 +245,18 @@ export class MeterReadingsService {
     const month = typeof payload.month === 'number' ? payload.month : now.getMonth() + 1;
     const year = typeof payload.year === 'number' ? payload.year : now.getFullYear();
 
+    // If the submission targets a past/future month, anchor submittedAt to that month
+    // (last day at 12:00) so history listings show the correct period.
+    const submittedAt =
+      month !== now.getMonth() + 1 || year !== now.getFullYear()
+        ? new Date(year, month, 0, 12, 0, 0)
+        : now;
+
     const reading = {
       id: randomUUID(),
       apartmentId,
       meterId,
-      submittedAt: now,
+      submittedAt,
       previousValue: Number(payload.previousValue ?? 0),
       currentValue: Number(payload.currentValue ?? 0),
       consumption: Number(payload.consumption ?? 0),
@@ -172,6 +279,24 @@ export class MeterReadingsService {
     const duplicate = history.some((h) => Number(h.month) === month && Number(h.year) === year);
     if (duplicate) {
       throw new ForbiddenException('Reading already exists for current month');
+    }
+
+    // Запрет: текущее показание не может быть меньше последнего отправленного.
+    const lastEntry = history.length
+      ? [...history].sort((a, b) => {
+          const ay = Number(a.year ?? 0);
+          const by = Number(b.year ?? 0);
+          if (ay !== by) return by - ay;
+          return Number(b.month ?? 0) - Number(a.month ?? 0);
+        })[0]
+      : null;
+    const lastValue = lastEntry
+      ? Number(lastEntry.currentValue ?? lastEntry.previousValue ?? 0)
+      : Number((meterGroup as Record<string, unknown>).currentValue ?? 0);
+    if (Number.isFinite(lastValue) && reading.currentValue < lastValue) {
+      throw new BadRequestException(
+        `Current reading (${reading.currentValue}) cannot be lower than the previous (${lastValue})`,
+      );
     }
 
     history.push(reading);
@@ -343,13 +468,17 @@ export class MeterReadingsService {
             ? submittedAtRaw.toDate()
             : null;
     const now = new Date();
-    if (
-      !submittedAt ||
-      Number.isNaN(submittedAt.getTime()) ||
-      submittedAt.getFullYear() !== now.getFullYear() ||
-      submittedAt.getMonth() !== now.getMonth()
-    ) {
-      throw new ForbiddenException('Cannot delete readings from previous months');
+    // Property members (residents/owners/tenants) can only delete current-month readings.
+    // Staff (ManagementCompany / Accountant) can delete readings from any period.
+    if (isPropertyMemberRole(user.role)) {
+      if (
+        !submittedAt ||
+        Number.isNaN(submittedAt.getTime()) ||
+        submittedAt.getFullYear() !== now.getFullYear() ||
+        submittedAt.getMonth() !== now.getMonth()
+      ) {
+        throw new ForbiddenException('Cannot delete readings from previous months');
+      }
     }
 
     const history = (foundGroup.history as Record<string, unknown>[]).filter((h) => String(h.id ?? '') !== readingId);
@@ -372,5 +501,48 @@ export class MeterReadingsService {
     );
 
     return { success: true };
+  }
+
+  async sendTestReminder(user: RequestUser) {
+    this.assertAuthenticated(user);
+
+    // Получаем информацию об УК пользователя
+    const db = this.firebaseAdminService.firestore;
+    
+    const companyEmail = user.email;
+    if (!companyEmail) {
+      throw new BadRequestException('Company email not found');
+    }
+
+    // Получаем первое здание компании для примера
+    const companyId = user.companyId || '';
+    if (!companyId) {
+      throw new BadRequestException('Company ID not found for this user');
+    }
+
+    const [snap1, snap2] = await Promise.all([
+      db.collection('buildings').where('companyId', '==', companyId).limit(1).get(),
+      db.collection('buildings').where('managedBy.companyId', '==', companyId).limit(1).get(),
+    ]);
+    const buildingsSnapshot = !snap1.empty ? snap1 : snap2;
+
+    if (buildingsSnapshot.empty) {
+      throw new NotFoundException('No buildings found for this company');
+    }
+
+    const building = buildingsSnapshot.docs[0].data();
+    const buildingName = building.name || building.address || 'Test Building';
+
+    // Отправляем тестовое письмо
+    await this.emailService.sendMeterReadingReminder({
+      to: companyEmail,
+      language: 'en',
+      submissionLink: '',
+      buildingName: buildingName,
+      apartmentNumber: 'Apt 1',
+      deadline: '27.05.2026',
+    });
+
+    return { success: true, message: 'Test reminder sent to ' + companyEmail };
   }
 }

@@ -72,6 +72,7 @@ __decorate([
 ], CompanyInvitationsController.prototype, "send", null);
 __decorate([
     (0, common_1.Post)('accept'),
+    (0, roles_decorator_1.Roles)('ManagementCompany', 'Accountant', 'Resident', 'Landlord'),
     (0, swagger_1.ApiOperation)({ summary: 'Accept a company invitation' }),
     (0, swagger_1.ApiBody)({ type: accept_company_invitation_dto_1.AcceptCompanyInvitationDto }),
     (0, swagger_1.ApiOkResponse)({

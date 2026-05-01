@@ -30,4 +30,8 @@ export declare class MeterReadingsController {
     remove(request: Request, user: RequestUser, readingId: string, apartmentId?: string): Promise<{
         success: boolean;
     }>;
+    sendTestReminder(user: RequestUser): Promise<{
+        success: boolean;
+        message: string;
+    }>;
 }

@@ -22,14 +22,28 @@ export declare class ApartmentsController {
         id: string;
     }>;
     create(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<{
+        createdAt: Date;
+        updatedAt: Date;
+        readingConfigOverride?: {
+            useBuildingDefaults: boolean;
+            hotWaterMeters: number;
+            coldWaterMeters: number;
+        } | undefined;
         number: string;
         buildingId: string;
         companyIds: string[];
-        createdAt: Date;
-        updatedAt: Date;
+        readableId: string;
         id: string;
     }>;
     update(request: Request, user: RequestUser, apartmentId: string, body: Record<string, unknown>): Promise<{
+        success: boolean;
+    }>;
+    updateOwner(request: Request, user: RequestUser, apartmentId: string, body: {
+        email?: string;
+        firstName?: string;
+        lastName?: string;
+        contractNumber?: string;
+    }): Promise<{
         success: boolean;
     }>;
     remove(request: Request, user: RequestUser, apartmentId: string): Promise<{
@@ -37,10 +51,20 @@ export declare class ApartmentsController {
     }>;
     inviteTenant(request: Request, user: RequestUser, apartmentId: string, body: {
         email?: string;
+        firstName?: string;
+        lastName?: string;
+        phone?: string;
+        contractNumber?: string;
     }): Promise<{
         success: boolean;
     }>;
     removeTenant(request: Request, user: RequestUser, apartmentId: string, tenantUserId: string): Promise<{
+        success: boolean;
+    }>;
+    resendOwnerInvitation(request: Request, user: RequestUser, apartmentId: string, ownerEmail: string): Promise<{
+        success: boolean;
+    }>;
+    resendTenantInvitation(request: Request, user: RequestUser, apartmentId: string, tenantEmail: string): Promise<{
         success: boolean;
     }>;
     unassignResident(request: Request, user: RequestUser, apartmentId: string): Promise<{
@@ -54,6 +78,16 @@ export declare class ApartmentsController {
             skippedDuplicates: string[];
             createdApartments: string[];
         };
+    }>;
+    auditLogs(request: Request, user: RequestUser, apartmentId: string, limit?: string): Promise<{
+        items: {
+            createdAt: any;
+            id: string;
+        }[];
+    }>;
+    migrateReadableIds(user: RequestUser): Promise<{
+        updated: number;
+        total: number;
     }>;
 }
 export {};

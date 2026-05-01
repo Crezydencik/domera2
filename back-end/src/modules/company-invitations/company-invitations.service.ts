@@ -11,6 +11,7 @@ import { RequestUser } from '../../common/auth/request-user.type';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
 import { normalizeEmail } from '../../common/utils/invitation-token';
+import { resolveAccountType } from '../../common/auth/role.constants';
 
 @Injectable()
 export class CompanyInvitationsService {
@@ -174,9 +175,55 @@ export class CompanyInvitationsService {
     const invitation = invitationSnap.data() as Record<string, unknown>;
     const invitationEmail = typeof invitation.email === 'string' ? normalizeEmail(invitation.email) : '';
     const authEmail = normalizeEmail(user.email);
+    const companyId = typeof invitation.companyId === 'string' ? invitation.companyId.trim() : '';
+    const invitedRole =
+      invitation.role === 'ManagementCompany' || invitation.role === 'Accountant'
+        ? invitation.role
+        : undefined;
     if (!invitationEmail || invitationEmail !== authEmail) {
       throw new ForbiddenException('You cannot accept this invitation');
     }
+    if (!companyId || !invitedRole) {
+      throw new BadRequestException('Invitation is missing company data');
+    }
+
+    const companyRef = db.collection('companies').doc(companyId);
+    const companySnap = await companyRef.get();
+    if (!companySnap.exists) {
+      throw new NotFoundException('Company not found');
+    }
+
+    const company = companySnap.data() as Record<string, unknown>;
+    const currentUserIds = Array.isArray(company.userIds)
+      ? company.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const userIds = currentUserIds.includes(user.uid) ? currentUserIds : [...currentUserIds, user.uid];
+
+    const userRef = db.collection('users').doc(user.uid);
+    const userSnap = await userRef.get();
+    const currentUserData = userSnap.exists ? (userSnap.data() as Record<string, unknown>) : {};
+
+    await userRef.set(
+      {
+        ...currentUserData,
+        uid: user.uid,
+        email: authEmail,
+        companyId,
+        role: invitedRole,
+        accountType: resolveAccountType({ role: invitedRole }),
+        updatedAt: new Date(),
+        createdAt: currentUserData.createdAt ?? new Date(),
+      },
+      { merge: true },
+    );
+
+    await companyRef.set(
+      {
+        userIds,
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
 
     await invitationRef.set(
       {
@@ -195,9 +242,10 @@ export class CompanyInvitationsService {
       actorRole: user.role,
       invitationId,
       targetEmail: invitationEmail,
-      companyId: typeof invitation.companyId === 'string' ? invitation.companyId : undefined,
+      companyId,
       metadata: {
         buildingId: typeof invitation.buildingId === 'string' ? invitation.buildingId : undefined,
+        role: invitedRole,
       },
     });
 

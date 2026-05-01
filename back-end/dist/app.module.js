@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
+const schedule_1 = require("@nestjs/schedule");
 const common_module_1 = require("./common/common.module");
 const domain_event_bus_1 = require("./common/events/domain-event-bus");
 const in_memory_domain_event_bus_1 = require("./common/events/in-memory-domain-event-bus");
@@ -18,6 +19,7 @@ const auth_module_1 = require("./modules/auth/auth.module");
 const buildings_module_1 = require("./modules/buildings/buildings.module");
 const company_module_1 = require("./modules/company/company.module");
 const company_invitations_module_1 = require("./modules/company-invitations/company-invitations.module");
+const email_module_1 = require("./modules/emails/email.module");
 const invoices_module_1 = require("./modules/invoices/invoices.module");
 const invitations_module_1 = require("./modules/invitations/invitations.module");
 const meter_readings_module_1 = require("./modules/meter-readings/meter-readings.module");
@@ -32,6 +34,7 @@ exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
         imports: [
+            schedule_1.ScheduleModule.forRoot(),
             config_1.ConfigModule.forRoot({
                 isGlobal: true,
                 envFilePath: ['.env', '.env.local'],
@@ -39,6 +42,7 @@ exports.AppModule = AppModule = __decorate([
             common_module_1.CommonModule,
             firebase_admin_module_1.FirebaseAdminModule,
             auth_module_1.AuthModule,
+            email_module_1.EmailModule,
             buildings_module_1.BuildingsModule,
             company_module_1.CompanyModule,
             invitations_module_1.InvitationsModule,

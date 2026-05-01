@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 interface ApartmentOption {
   id: string;
@@ -14,12 +15,13 @@ export function ApartmentSelector({
   apartments: ApartmentOption[];
   currentId: string;
 }) {
+  const t = useTranslations("apartments.selector");
   const router = useRouter();
 
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
       <label htmlFor="apartment-selector" className="text-sm font-medium text-slate-700">
-        Izvēlieties dzīvokli:
+        {t("label")}
       </label>
       <select
         id="apartment-selector"

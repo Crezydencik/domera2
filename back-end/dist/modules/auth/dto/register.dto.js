@@ -23,6 +23,11 @@ __decorate([
     __metadata("design:type", String)
 ], RegisterDto.prototype, "email", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Verification token issued after confirming the email code' }),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], RegisterDto.prototype, "verificationToken", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ minLength: 8 }),
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.MinLength)(8),
@@ -35,6 +40,16 @@ __decorate([
     (0, class_validator_1.IsIn)([...role_constants_1.ACCOUNT_TYPES]),
     __metadata("design:type", String)
 ], RegisterDto.prototype, "accountType", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Confirms that the user accepted the privacy policy' }),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], RegisterDto.prototype, "acceptedPrivacyPolicy", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Confirms that the user accepted the terms of use' }),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], RegisterDto.prototype, "acceptedTerms", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),
@@ -59,6 +74,12 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], RegisterDto.prototype, "companyName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEmail)(),
+    __metadata("design:type", String)
+], RegisterDto.prototype, "companyEmail", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),

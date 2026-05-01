@@ -7,6 +7,18 @@ export class MeterReadingItemDto {
   @ApiProperty()
   apartmentId!: string;
 
+  @ApiPropertyOptional({ description: 'Human-readable apartment number' })
+  apartmentNumber?: string;
+
+  @ApiPropertyOptional()
+  buildingId?: string;
+
+  @ApiPropertyOptional()
+  buildingName?: string;
+
+  @ApiPropertyOptional()
+  buildingAddress?: string;
+
   @ApiProperty()
   meterId!: string;
 
@@ -24,6 +36,12 @@ export class MeterReadingItemDto {
 
   @ApiProperty()
   year!: number;
+
+  @ApiPropertyOptional({ description: 'ISO 8601 timestamp' })
+  submittedAt?: string | Date;
+
+  @ApiPropertyOptional({ example: '98063287' })
+  serialNumber?: string;
 
   @ApiPropertyOptional({ example: 'coldmeterwater' })
   meterKey?: string;

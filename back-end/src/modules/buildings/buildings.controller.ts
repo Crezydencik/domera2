@@ -24,6 +24,17 @@ import { BuildingsService } from './buildings.service';
 export class BuildingsController {
   constructor(private readonly buildingsService: BuildingsService) {}
 
+  @Get('creation-access')
+  @ApiOperation({ summary: 'Check whether the company can create a building' })
+  @ApiQuery({ name: 'companyId', required: true, type: String })
+  creationAccess(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Query('companyId') companyId: string,
+  ) {
+    return this.buildingsService.getCreationAccess(request, user, companyId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List buildings by company' })
   @ApiQuery({ name: 'companyId', required: true, type: String })

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsIn, IsOptional, IsString, Matches, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, Matches, MinLength } from 'class-validator';
 import { ACCOUNT_TYPES } from '../../../common/auth/role.constants';
 import { PASSWORD_COMPLEXITY_MESSAGE, PASSWORD_COMPLEXITY_REGEX } from '../../../common/auth/password-policy';
 
@@ -7,6 +7,10 @@ export class RegisterDto {
   @ApiProperty()
   @IsEmail()
   email!: string;
+
+  @ApiProperty({ description: 'Verification token issued after confirming the email code' })
+  @IsString()
+  verificationToken!: string;
 
   @ApiProperty({ minLength: 8 })
   @IsString()
@@ -18,6 +22,14 @@ export class RegisterDto {
   @IsString()
   @IsIn([...ACCOUNT_TYPES])
   accountType!: string;
+
+  @ApiProperty({ description: 'Confirms that the user accepted the privacy policy' })
+  @IsBoolean()
+  acceptedPrivacyPolicy!: boolean;
+
+  @ApiProperty({ description: 'Confirms that the user accepted the terms of use' })
+  @IsBoolean()
+  acceptedTerms!: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -38,6 +50,11 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   companyName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEmail()
+  companyEmail?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

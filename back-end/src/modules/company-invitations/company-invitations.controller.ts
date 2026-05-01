@@ -64,6 +64,7 @@ export class CompanyInvitationsController {
   }
 
   @Post('accept')
+  @Roles('ManagementCompany', 'Accountant', 'Resident', 'Landlord')
   @ApiOperation({ summary: 'Accept a company invitation' })
   @ApiBody({ type: AcceptCompanyInvitationDto })
   @ApiOkResponse({

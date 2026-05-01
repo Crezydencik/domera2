@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import type {
   Building,
+  BuildingReadingConfig,
   DocumentItem,
   Invoice,
   MeterReading,
@@ -48,6 +49,23 @@ export class DomeraApiError extends Error {
   }
 }
 
+async function parseJsonResponse<T>(response: Response, path: string): Promise<T> {
+  if (response.status === 204 || response.status === 205) {
+    return {} as T;
+  }
+
+  const raw = await response.text();
+  if (!raw.trim()) {
+    return {} as T;
+  }
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new DomeraApiError(`Invalid JSON response for ${path}`, response.status || 500);
+  }
+}
+
 function firstString(...values: unknown[]): string {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) {
@@ -56,6 +74,26 @@ function firstString(...values: unknown[]): string {
   }
 
   return "—";
+}
+
+function joinNameParts(...values: unknown[]): string | undefined {
+  const parts = values
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim());
+
+  return parts.length ? parts.join(" ") : undefined;
+}
+
+function resolvePersonName(item: UnknownRecord, fallback?: string): string {
+  return firstString(
+    item.fullName,
+    joinNameParts(item.firstName, item.lastName),
+    item.name,
+    item.displayName,
+    item.owner,
+    item.email,
+    fallback,
+  );
 }
 
 function firstNumber(...values: unknown[]): number {
@@ -103,6 +141,18 @@ function toBuilding(item: UnknownRecord): Building {
   const apartmentIds = Array.isArray(item.apartmentIds)
     ? item.apartmentIds.filter((entry): entry is string => typeof entry === "string")
     : [];
+  const rawReadingConfig = item.readingConfig && typeof item.readingConfig === "object"
+    ? (item.readingConfig as UnknownRecord)
+    : null;
+  const readingConfig: BuildingReadingConfig | undefined = rawReadingConfig
+    ? {
+        waterEnabled: Boolean(rawReadingConfig.waterEnabled),
+        electricityEnabled: Boolean(rawReadingConfig.electricityEnabled),
+        heatingEnabled: Boolean(rawReadingConfig.heatingEnabled),
+        hotWaterMetersPerResident: Math.max(0, firstNumber(rawReadingConfig.hotWaterMetersPerResident)),
+        coldWaterMetersPerResident: Math.max(0, firstNumber(rawReadingConfig.coldWaterMetersPerResident)),
+      }
+    : undefined;
 
   const apartmentCount = firstNumber(item.apartmentsCount, apartmentIds.length, item.apartments);
   const occupied = firstNumber(item.occupiedApartments, item.occupied);
@@ -112,18 +162,27 @@ function toBuilding(item: UnknownRecord): Building {
     name: firstString(item.name, item.title, item.address, item.id),
     address: firstString(item.address, item.street, item.location),
     apartments: apartmentCount,
-    occupancy: apartmentCount > 0 ? `${occupied || apartmentCount} / ${apartmentCount}` : "—",
+    occupancy: apartmentCount > 0 ? `${Math.max(0, occupied)} / ${apartmentCount}` : "—",
     status: String(item.status ?? "Healthy"),
+    readingConfig,
+    companyId: typeof item.companyId === "string" ? item.companyId : undefined,
+    companyName: typeof item.companyName === "string" ? item.companyName : undefined,
+    managedBy: item.managedBy && typeof item.managedBy === "object" ? (item.managedBy as Record<string, unknown>) : undefined,
   };
 }
 
-function toResident(item: UnknownRecord): Resident {
+function toResident(
+  item: UnknownRecord,
+  context?: { apartment?: string; building?: string; role?: string; fallbackId?: string },
+): Resident {
+  const residentId = firstString(item.id, item.uid, item.email, context?.fallbackId);
+
   return {
-    id: firstString(item.id, item.uid, item.email),
-    fullName: firstString(item.fullName, item.name, item.displayName, item.owner, item.email),
-    apartment: firstString(item.apartment, item.apartmentNumber, item.apartmentId),
-    building: firstString(item.building, item.buildingName, item.companyId),
-    role: firstString(item.role, item.accountType),
+    id: residentId,
+    fullName: resolvePersonName(item, residentId),
+    apartment: firstString(item.apartment, item.apartmentNumber, item.apartmentId, context?.apartment),
+    building: firstString(item.building, item.buildingName, item.companyId, context?.building),
+    role: firstString(item.role, item.accountType, context?.role, "Resident"),
     invitationStatus: firstString(item.invitationStatus, item.status, "Active"),
   };
 }
@@ -178,10 +237,26 @@ function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] 
     const apartmentLabel = firstString(apartment.number, apartment.apartmentNumber, apartment.id);
     const buildingLabel = firstString(apartment.address, apartment.buildingName, apartment.buildingId);
 
+    if (typeof apartment.residentId === "string" && apartment.residentId.trim()) {
+      output.push({
+        id: apartment.residentId.trim(),
+        fullName: firstString(
+          joinNameParts(apartment.residentFirstName, apartment.residentLastName),
+          apartment.residentName,
+          apartment.residentEmail,
+          apartment.residentId,
+        ),
+        apartment: apartmentLabel,
+        building: buildingLabel,
+        role: "Resident",
+        invitationStatus: "Active",
+      });
+    }
+
     if (typeof apartment.ownerEmail === "string" && apartment.ownerEmail.trim()) {
       output.push({
         id: apartment.ownerEmail,
-        fullName: firstString(apartment.owner, apartment.ownerEmail),
+        fullName: firstString(joinNameParts(apartment.ownerFirstName, apartment.ownerLastName), apartment.owner, apartment.ownerEmail),
         apartment: apartmentLabel,
         building: buildingLabel,
         role: "Landlord",
@@ -195,7 +270,12 @@ function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] 
         const tenantRecord = tenant as UnknownRecord;
         output.push({
           id: firstString(tenantRecord.userId, tenantRecord.email),
-          fullName: firstString(tenantRecord.name, tenantRecord.email),
+          fullName: firstString(
+            joinNameParts(tenantRecord.firstName, tenantRecord.lastName),
+            tenantRecord.fullName,
+            tenantRecord.name,
+            tenantRecord.email,
+          ),
           apartment: apartmentLabel,
           building: buildingLabel,
           role: "Resident",
@@ -226,7 +306,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     throw new DomeraApiError(`Request failed for ${path}`, response.status);
   }
 
-  return (await response.json()) as T;
+  return parseJsonResponse<T>(response, path);
 }
 
 async function apiFetchSafe<T>(path: string): Promise<T | null> {
@@ -291,7 +371,51 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
 
     const liveBuildings = Array.isArray(buildingsResponse?.items) ? buildingsResponse.items.map(toBuilding) : [];
     const liveApartments = Array.isArray(apartmentsResponse?.items) ? apartmentsResponse.items : [];
-    const liveResidents = Array.isArray(residentsResponse?.items) ? residentsResponse.items.map(toResident) : [];
+    const liveResidents = Array.isArray(residentsResponse?.items) ? residentsResponse.items.map((item) => toResident(item)) : [];
+    const residentApartmentContext = new Map<string, { apartment: string; building: string }>();
+
+    for (const apartment of liveApartments) {
+      const residentId = typeof apartment.residentId === "string" ? apartment.residentId.trim() : "";
+      if (!residentId) continue;
+
+      residentApartmentContext.set(residentId, {
+        apartment: firstString(apartment.number, apartment.apartmentNumber, apartment.id),
+        building: firstString(apartment.address, apartment.buildingName, apartment.buildingId),
+      });
+    }
+
+    const liveResidentIds = new Set(liveResidents.map((resident) => resident.id));
+    const missingResidentIds = [...residentApartmentContext.keys()].filter((residentId) => !liveResidentIds.has(residentId));
+    const missingResidentProfiles = await Promise.all(
+      missingResidentIds.map((residentId) => apiFetchSafe<UnknownRecord>(`/users/${encodeURIComponent(residentId)}`)),
+    );
+
+    const supplementalResidents = missingResidentIds.map((residentId, index) => {
+      const profile = missingResidentProfiles[index];
+      const context = residentApartmentContext.get(residentId);
+
+      if (profile) {
+        return toResident(profile, {
+          apartment: context?.apartment,
+          building: context?.building,
+          role: "Resident",
+          fallbackId: residentId,
+        });
+      }
+
+      return {
+        id: residentId,
+        fullName: residentId,
+        apartment: context?.apartment ?? "—",
+        building: context?.building ?? "—",
+        role: "Resident",
+        invitationStatus: "Active",
+      } satisfies Resident;
+    });
+
+    const mergedResidents = Array.from(
+      new Map([...liveResidents, ...supplementalResidents].map((resident) => [resident.id, resident])).values(),
+    );
     const liveInvoices = Array.isArray(invoicesResponse?.items) ? invoicesResponse.items.map(toInvoice) : [];
     const liveMeterReadings = Array.isArray(meterReadingsResponse?.items)
       ? meterReadingsResponse.items.map(toMeterReading)
@@ -310,7 +434,7 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
       apartmentId,
       buildings: liveBuildings,
       apartments: liveApartments,
-      residents: liveResidents,
+      residents: mergedResidents,
       invoices: liveInvoices,
       meterReadings: liveMeterReadings,
       documents: liveDocuments,

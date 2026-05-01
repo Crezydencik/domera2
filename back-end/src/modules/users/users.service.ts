@@ -12,6 +12,7 @@ import {
   isPublicRegistrationRole,
   isStaffRole,
   normalizeUserRole,
+  resolveUserRole,
   resolveAccountType,
 } from '../../common/auth/role.constants';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
@@ -54,13 +55,15 @@ export class UsersService {
     const hasRole = Object.prototype.hasOwnProperty.call(payload, 'role');
     const hasAccountType = Object.prototype.hasOwnProperty.call(payload, 'accountType');
 
-    const requestedRole = normalizeUserRole(
-      hasRole
-        ? payload.role
-        : hasAccountType
-          ? payload.accountType
-          : currentData.role ?? currentData.accountType ?? currentUser.role ?? currentUser.accountType,
-    );
+    const requestedRole = hasRole
+      ? normalizeUserRole(payload.role)
+      : resolveUserRole({
+          role: currentData.role ?? currentUser.role,
+          accountType:
+            currentData.accountType ??
+            currentUser.accountType ??
+            (hasAccountType ? payload.accountType : undefined),
+        });
 
     const requestedAccountType = resolveAccountType({
       role: hasRole ? payload.role : requestedRole ?? currentData.role ?? currentUser.role,

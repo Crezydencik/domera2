@@ -4,6 +4,17 @@ import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 
+const normalizePrivateKey = (value: string): string => {
+  const trimmed = value.trim();
+  const unwrapped =
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+      ? trimmed.slice(1, -1)
+      : trimmed;
+
+  return unwrapped.replace(/\\n/g, '\n').trim();
+};
+
 @Injectable()
 export class FirebaseAdminService {
   private app?: App;
@@ -41,7 +52,13 @@ export class FirebaseAdminService {
       );
     }
 
-    const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
+    const privateKey = normalizePrivateKey(privateKeyRaw);
+
+    if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
+      throw new Error(
+        'FIREBASE_PRIVATE_KEY is malformed. Use the service account private key in PEM format.',
+      );
+    }
 
     return initializeApp({
       credential: cert({

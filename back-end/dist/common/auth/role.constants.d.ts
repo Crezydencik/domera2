@@ -13,6 +13,10 @@ export declare const ROLE_CATALOG: Array<{
 }>;
 export declare function normalizeUserRole(value: unknown): UserRole | undefined;
 export declare function normalizeAccountType(value: unknown): AccountType | undefined;
+export declare function resolveUserRole(input: {
+    role?: unknown;
+    accountType?: unknown;
+}): UserRole | undefined;
 export declare function resolveAccountType(input: {
     role?: unknown;
     accountType?: unknown;

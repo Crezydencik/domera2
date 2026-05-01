@@ -21,6 +21,7 @@ export declare class AuthService {
     private makeDocId;
     private hashCode;
     private hashToken;
+    private validateRegistrationVerification;
     private safeEqual;
     private extractEmailFromFromField;
     private isAllowedSenderDomain;
@@ -33,6 +34,7 @@ export declare class AuthService {
     private getFirebaseWebApiKey;
     private callIdentityToolkit;
     private ensureUserProfileDocument;
+    private ensureManagementCompanyDocument;
     createSessionCookie(input: SetSessionDto): Promise<{
         cookie: string;
         maxAgeSeconds: number;

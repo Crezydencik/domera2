@@ -10,11 +10,13 @@ exports.ApartmentsModule = void 0;
 const common_1 = require("@nestjs/common");
 const apartments_controller_1 = require("./apartments.controller");
 const apartments_service_1 = require("./apartments.service");
+const email_module_1 = require("../emails/email.module");
 let ApartmentsModule = class ApartmentsModule {
 };
 exports.ApartmentsModule = ApartmentsModule;
 exports.ApartmentsModule = ApartmentsModule = __decorate([
     (0, common_1.Module)({
+        imports: [email_module_1.EmailModule],
         controllers: [apartments_controller_1.ApartmentsController],
         providers: [apartments_service_1.ApartmentsService],
     })

@@ -47,6 +47,39 @@
     "footerRights": "© 2026 Domera. All rights reserved."
   },
   "appShell": {
+    "header": {
+      "currentWorkspace": "Current workspace: {role}",
+      "pageTitles": {
+        "dashboard": "Dashboard",
+        "buildings": "Buildings",
+        "apartments": "Apartments",
+        "residents": "Residents",
+        "invoices": "Invoices",
+        "meterReadings": "Meter readings",
+        "debts": "Debts",
+        "documents": "Documents",
+        "notificationsPage": "Notifications",
+        "settings": "Settings"
+      },
+      "roles": {
+        "managementCompany": "Management company",
+        "resident": "Resident",
+        "landlord": "Landlord"
+      },
+      "notifications": {
+        "title": "Notifications",
+        "openAria": "Open notifications",
+        "refresh": "Refresh",
+        "loading": "Loading notifications...",
+        "empty": "No notifications yet.",
+        "viewAll": "Open notifications page"
+      },
+      "profile": {
+        "openAria": "Open profile menu",
+        "title": "Profile",
+        "settings": "Settings"
+      }
+    },
     "brand": "Domera",
     "title": "Property operations workspace",
     "description": "Modular frontend for management teams, accountants and residents.",
@@ -82,13 +115,86 @@
   "buildings": {
     "title": "Buildings and apartments",
     "description": "Portfolio overview for management companies",
+    "addButton": "Add building",
     "colBuilding": "Building",
     "colAddress": "Address",
     "colApartments": "Apartments",
     "colOccupancy": "Occupancy",
-    "colStatus": "Status",
+    "colActions": "Actions",
     "healthy": "Healthy",
-    "needsReview": "Needs review"
+    "needsReview": "Needs review",
+    "emptyTitle": "No buildings yet",
+    "emptyDescription": "Add the first building to the company portfolio using the button above.",
+    "fields": {
+      "name": "Building name",
+      "apartmentsCount": "Apartment count",
+      "occupiedApartments": "Occupied apartments",
+      "status": "Status",
+      "hotWaterMetersPerResident": "Hot water meters in the apartment",
+      "coldWaterMetersPerResident": "Cold water meters in the apartment"
+    },
+    "tabs": {
+      "general": "General",
+      "readings": "Readings"
+    },
+    "readings": {
+      "water": {
+        "title": "Water reading submissions",
+        "description": "Residents will submit water readings for the apartment."
+      },
+      "electricity": {
+        "title": "Electricity reading submissions",
+        "description": "Enable this if residents must submit electricity readings."
+      },
+      "heating": {
+        "title": "Heating reading submissions",
+        "description": "Enable this if residents must submit heating readings."
+      }
+    },
+    "dialogs": {
+      "create": {
+        "title": "Add building",
+        "description": "Fill in the main building information to add it to the company portfolio.",
+        "submit": "Create building",
+        "submitting": "Creating..."
+      },
+      "edit": {
+        "title": "Edit building information",
+        "description": "Update the building details. More advanced settings can be added here later.",
+        "submitting": "Saving..."
+      },
+      "delete": {
+        "title": "Delete building",
+        "description": "Delete building {building}? This action cannot be undone.",
+        "warning": "If apartments or other data are still linked to this building, the server may reject deletion.",
+        "deleting": "Deleting..."
+      }
+    },
+    "feedback": {
+      "created": "Building {building} was created.",
+      "updated": "Building {building} was updated.",
+      "deleted": "Building {building} was deleted."
+    },
+    "errors": {
+      "companyMissing": "companyId is missing for building management.",
+      "creationAccessFailed": "Failed to verify building creation access.",
+      "buildingMissing": "No building was selected for editing.",
+      "nameRequired": "Please enter the building name.",
+      "addressRequired": "Please enter the building address.",
+      "apartmentsCountInvalid": "Apartment count must be 0 or greater.",
+      "hotWaterMetersInvalid": "Hot water meter count must be 0 or greater.",
+      "coldWaterMetersInvalid": "Cold water meter count must be 0 or greater.",
+      "occupiedApartmentsInvalid": "Occupied apartment count must be 0 or greater.",
+      "occupiedExceedsTotal": "Occupied apartments cannot exceed the total apartment count.",
+      "createFailed": "Failed to create the building.",
+      "updateFailed": "Failed to update the building information.",
+      "deleteFailed": "Failed to delete the building."
+    },
+    "gating": {
+      "title": "Building creation is temporarily restricted",
+      "defaultMessage": "The company can currently add buildings without a subscription, but a dedicated access check is already in place.",
+      "futureHint": "Later, adding a building can require an active subscription or an access code without redesigning the interface."
+    }
   },
   "residents": {
     "title": "Residents and users",
@@ -118,7 +224,411 @@
     "colApartment": "Apartment",
     "colValue": "Value",
     "colSubmitted": "Submitted",
-    "colTrend": "Trend"
+    "colTrend": "Trend",
+    "managementCompanyTitle": "Management Company",
+    "managementCompanyDescription": "Meter readings from all properties",
+    "ownerLandlordTitle": "Owner/Landlord",
+    "ownerLandlordDescription": "Your meter readings"
+  },
+  "apartments": {
+    "common": {
+      "apartment": "Apartment",
+      "myApartment": "My apartment",
+      "myApartments": "My apartments",
+      "address": "Address",
+      "floor": "Floor",
+      "rooms": "Rooms",
+      "area": "Area",
+      "email": "Email",
+      "phone": "Phone",
+      "managementCompany": "MANAGEMENT COMPANY",
+      "viewDetails": "View details",
+      "backToApartments": "Back to apartments",
+      "addressNotSpecified": "Address not specified",
+      "notSpecified": "Not specified"
+    },
+    "selector": {
+      "label": "Choose apartment:",
+      "optionLabel": "Apartment № {number} — {address}"
+    },
+    "resident": {
+      "emptyTitle": "My apartment",
+      "emptyDescription": "No apartment is currently assigned to you.",
+      "emptyHint": "If you should have access to an apartment, please contact the management company.",
+      "residentTitle": "My apartment",
+      "residentDescription": "The apartment you are registered in.",
+      "landlordTitle": "My apartments",
+      "landlordDescription": "Apartments that you own."
+    },
+    "management": {
+      "registryTitle": "Apartment register",
+      "registryDescription": "Full list of apartments with occupancy and owner overview.",
+      "noApartments": "No apartments yet",
+      "occupied": "Occupied",
+      "vacant": "Vacant",
+      "actions": {
+        "info": "Information",
+        "manageAccess": "Manage access",
+        "assignResident": "Assign resident",
+        "delete": "Delete apartment"
+      },
+      "dialogs": {
+        "assignResident": {
+          "title": "Assign resident",
+          "description": "Choose who should be linked to apartment {apartment}.",
+          "currentResidentLabel": "Current resident",
+          "noneAssigned": "No resident assigned",
+          "fieldLabel": "Resident",
+          "noneOption": "No assigned resident",
+          "hint": "Choose “No assigned resident” to remove the current resident.",
+          "empty": "There are no residents available for assignment yet.",
+          "saving": "Saving..."
+        },
+        "deleteApartment": {
+          "title": "Delete apartment",
+          "description": "Delete apartment {apartment}? This action cannot be undone.",
+          "occupiedHint": "This apartment still has an assigned resident. Remove the resident first.",
+          "deleting": "Deleting..."
+        },
+        "tenantAccess": {
+          "title": "Manage access",
+          "description": "Manage owner and residents for apartment {apartment}."
+        },
+        "apartmentInfo": {
+          "title": "Apartment № {apartment}",
+          "description": "All available apartment information in one place.",
+          "generalTableTitle": "General information",
+          "metersTitle": "Water meters",
+          "coldWaterTitle": "Cold water",
+          "hotWaterTitle": "Hot water",
+          "historyTitle": "Reading history",
+          "tableColumns": {
+            "field": "Field",
+            "value": "Value"
+          },
+          "historyColumns": {
+            "month": "Month",
+            "year": "Year",
+            "currentValue": "Current reading",
+            "previousValue": "Previous",
+            "consumption": "Consumption",
+            "submittedAt": "Submitted"
+          },
+          "fields": {
+            "number": "Apartment number",
+            "address": "Address",
+            "floor": "Floor",
+            "owner": "Owner",
+            "ownerEmail": "Owner email",
+            "cadastralNumber": "Cadastral number",
+            "cadastralPart": "Ownership share",
+            "commonPropertyShare": "Common property share",
+            "apartmentType": "Apartment type",
+            "heatingArea": "Heating area",
+            "managementArea": "Management area",
+            "declaredResidents": "Declared residents",
+            "residentId": "Resident ID",
+            "buildingId": "Building ID",
+            "companyIds": "Company IDs",
+            "createdAt": "Created at",
+            "updatedAt": "Updated at",
+            "serialNumber": "Serial number",
+            "checkDueDate": "Valid until",
+            "currentValue": "Current reading",
+            "previousValue": "Previous reading",
+            "lastSubmitted": "Last submitted"
+          }
+        }
+      },
+      "feedback": {
+        "residentAssigned": "Resident {resident} was assigned to apartment {apartment}.",
+        "residentUnassigned": "Resident access was removed from apartment {apartment}.",
+        "apartmentDeleted": "Apartment {apartment} was deleted."
+      },
+      "errors": {
+        "residentSaveFailed": "Failed to update the apartment resident.",
+        "apartmentDeleteFailed": "Failed to delete the apartment."
+      },
+      "filters": {
+        "building": "Building",
+        "allBuildings": "All buildings"
+      },
+      "menu": {
+        "openMenu": "Open actions menu",
+        "items": {
+          "export": "Export",
+          "import": "Import",
+          "importLoading": "Importing...",
+          "addResident": "Add resident",
+          "addApartment": "Add apartment",
+          "deleteAll": "Delete all apartments",
+          "invitations": "Invitation list"
+        },
+        "dialogs": {
+          "import": {
+            "title": "Import apartments",
+            "description": "Upload an apartment file for the selected building. Excel, JSON and XML are supported.",
+            "hint": "For Excel and CSV you can use spreadsheet columns. For JSON and XML use the fields listed below.",
+            "selectedBuilding": "Selected building from the selector: {building}",
+            "selectBuildingFirst": "Choose a building in the selector first.",
+            "selectionHint": "The import is always applied to the building currently selected in the top selector.",
+            "buildingLabel": "Building for import",
+            "buildingPlaceholder": "Choose a building",
+            "buildingHint": "You can choose the building right here — the import will be applied to it.",
+            "formatLabel": "Choose import format",
+            "summaryBuildingLabel": "Building",
+            "summaryFormatLabel": "Format",
+            "summaryNotSelected": "Not selected",
+            "allowedFiles": "Allowed files: {formats}",
+            "fieldsLabel": "Fields you can import",
+            "structureLabel": "File structure",
+            "structureHint": "When JSON or XML is selected, the file should match one of the structures below.",
+            "structureFieldsLabel": "Fields inside each apartment object",
+            "submit": "Choose file",
+            "formats": {
+              "excel": {
+                "label": "Excel / CSV",
+                "description": "Supports .xlsx, .xls and .csv apartment tables."
+              },
+              "json": {
+                "label": "JSON",
+                "description": "Array of apartments or an object with items/apartments."
+              },
+              "xml": {
+                "label": "XML",
+                "description": "Structure with apartment/item/record nodes inside a root element."
+              }
+            },
+            "fields": {
+              "cadastralNumber": { "label": "Kadastra numurs", "description": "Apartment cadastral number." },
+              "number": { "label": "DZ", "description": "Apartment number. Required field." },
+              "address": { "label": "Adrese", "description": "Apartment address." },
+              "cadastralPart": { "label": "Domājamā daļa", "description": "Ownership share / undivided share." },
+              "commonPropertyShare": { "label": "Daļa (kopīpašums)", "description": "Common property share." },
+              "floor": { "label": "Stavs", "description": "Apartment floor inside the building." },
+              "owner": { "label": "Īpašnieks", "description": "Apartment owner name." },
+              "ownerEmail": { "label": "E pasts Reķiniem", "description": "Email used for invoices and notifications." },
+              "apartmentType": { "label": "DZ t", "description": "Apartment type." },
+              "heatingArea": { "label": "Apkure", "description": "Heating area or heating-related value." },
+              "managementArea": { "label": "Apsaimn", "description": "Management area." },
+              "declaredResidents": { "label": "Dekl iedz", "description": "Number of declared residents." },
+              "area": { "label": "Area / management area", "description": "Can be used for apartment area or management area." },
+              "hotWaterMeter": { "label": "Kartsais NR", "description": "Hot water meter number." },
+              "coldWaterMeter": { "label": "Aukstais NR", "description": "Cold water meter number." },
+              "hotWaterReadings": { "label": "Kartsais + menesis", "description": "Hot water reading and month. These column pairs can be repeated multiple times." },
+              "coldWaterReadings": { "label": "Aukstais + menesis", "description": "Cold water reading and month. These column pairs can be repeated multiple times." }
+            },
+            "examples": {
+              "title": "How to import",
+              "excel": "Excel/CSV: use columns Kadastra numurs, Adrese, Domājamā daļa, Daļa (kopīpašums), Īpašnieks, E pasts Reķiniem, DZ, Stavs, DZ t, Apkure, Apsaimn, Dekl iedz, Kartsais NR, Aukstais NR, plus repeated Kartsais + menesis and Aukstais + menesis pairs.",
+              "json": "{\n  \"apartments\": [\n    {\n      \"number\": \"16\",\n      \"cadastralNumber\": \"1009086439\",\n      \"address\": \"Silciema iela 13 k-3-16\",\n      \"cadastralPart\": \"3063/261802\",\n      \"commonPropertyShare\": \"46023\",\n      \"owner\": \"Mārtiņš Mihailovs\",\n      \"ownerEmail\": \"martins@example.com\",\n      \"floor\": \"4\",\n      \"apartmentType\": \"46026\",\n      \"heatingArea\": 30.7,\n      \"managementArea\": 30.7,\n      \"declaredResidents\": 1,\n      \"waterReadings\": {\n        \"coldmeterwater\": {\n          \"serialNumber\": \"2526524\",\n          \"history\": [\n            { \"month\": 1, \"year\": 2026, \"currentValue\": 430.432 },\n            { \"month\": 2, \"year\": 2026, \"currentValue\": 432.99 },\n            { \"month\": 3, \"year\": 2026, \"currentValue\": 435.501 }\n          ]\n        },\n        \"hotmeterwater\": {\n          \"serialNumber\": \"1720368800\",\n          \"history\": [\n            { \"month\": 1, \"year\": 2026, \"currentValue\": 276.86 },\n            { \"month\": 2, \"year\": 2026, \"currentValue\": 278.6 },\n            { \"month\": 3, \"year\": 2026, \"currentValue\": 280.285 }\n          ]\n        }\n      }\n    }\n  ]\n}",
+              "xml": "<apartments>\n  <apartment>\n    <number>16</number>\n    <cadastralNumber>1009086439</cadastralNumber>\n    <address>Silciema iela 13 k-3-16</address>\n    <cadastralPart>3063/261802</cadastralPart>\n    <commonPropertyShare>46023</commonPropertyShare>\n    <owner>Mārtiņš Mihailovs</owner>\n    <ownerEmail>martins@example.com</ownerEmail>\n    <floor>4</floor>\n    <apartmentType>46026</apartmentType>\n    <heatingArea>30.7</heatingArea>\n    <managementArea>30.7</managementArea>\n    <declaredResidents>1</declaredResidents>\n    <waterReadings>\n      <coldmeterwater>\n        <serialNumber>2526524</serialNumber>\n        <history>\n          <reading><month>1</month><year>2026</year><currentValue>430.432</currentValue></reading>\n          <reading><month>2</month><year>2026</year><currentValue>432.99</currentValue></reading>\n          <reading><month>3</month><year>2026</year><currentValue>435.501</currentValue></reading>\n        </history>\n      </coldmeterwater>\n      <hotmeterwater>\n        <serialNumber>1720368800</serialNumber>\n        <history>\n          <reading><month>1</month><year>2026</year><currentValue>276.86</currentValue></reading>\n          <reading><month>2</month><year>2026</year><currentValue>278.6</currentValue></reading>\n          <reading><month>3</month><year>2026</year><currentValue>280.285</currentValue></reading>\n        </history>\n      </hotmeterwater>\n    </waterReadings>\n  </apartment>\n</apartments>"
+            }
+          },
+          "export": {
+            "title": "Export data",
+            "description": "Choose the file format and which data to export.",
+            "hint": "Apartment exports include all available backend fields, even if they are not visible in the table.",
+            "formatLabel": "File format",
+            "scopeLabel": "What to export",
+            "submit": "Export",
+            "exporting": "Exporting...",
+            "formats": {
+              "json": {
+                "label": "JSON",
+                "description": "Best for full exports with nested fields preserved."
+              },
+              "csv": {
+                "label": "CSV",
+                "description": "Easy to open in Excel; nested values will be serialized as text."
+              }
+            },
+            "scopes": {
+              "apartments": {
+                "label": "Apartments only",
+                "description": "Export all apartment data from the current list."
+              },
+              "meterReadings": {
+                "label": "Meter readings only",
+                "description": "Export meter readings for apartments in the current list."
+              },
+              "apartmentsAndMeterReadings": {
+                "label": "Apartments + meter readings",
+                "description": "Full export of apartments and related meter readings."
+              }
+            }
+          },
+          "createApartment": {
+            "title": "Add apartment",
+            "submit": "Create apartment",
+            "creating": "Creating...",
+            "fields": {
+              "number": "Apartment number",
+              "floor": "Floor",
+              "area": "Area",
+              "declaredResidents": "Declared residents"
+            },
+            "readings": {
+              "title": "Meter exception",
+              "description": "If this apartment has different meter counts than the building default, set an override here.",
+              "useBuildingDefaults": "Use building defaults",
+              "buildingDefaultsHint": "Current building default: hot water meters — {hot}, cold water meters — {cold}.",
+              "hotWaterMeters": "Hot water meters in the apartment",
+              "coldWaterMeters": "Cold water meters in the apartment"
+            }
+          },
+          "deleteAll": {
+            "title": "Delete apartments",
+            "description": "Delete all apartments in the current list?",
+            "scope": "There are currently {count} apartments in this list.",
+            "hint": "Occupied apartments will be skipped automatically.",
+            "deleting": "Deleting..."
+          },
+          "invitations": {
+            "title": "Invitation list",
+            "loading": "Loading invitations...",
+            "empty": "No invitations yet.",
+            "apartment": "Apartment: {apartment}"
+          }
+        },
+        "feedback": {
+          "exportSuccess": "Data export completed.",
+          "importSuccess": "Apartment import completed.",
+          "apartmentCreated": "Apartment {apartment} was created.",
+          "nothingToExport": "There is no data to export.",
+          "noVacantApartmentsToDelete": "There are no vacant apartments to delete.",
+          "bulkDeleteSuccess": "Deleted apartments: {deleted}. Skipped: {skipped}."
+        },
+        "errors": {
+          "companyMissing": "The companyId for this action is missing.",
+          "chooseBuildingFirst": "Choose a building first for this action.",
+          "chooseBuildingForDelete": "Choose a specific building before bulk deletion.",
+          "apartmentNumberRequired": "Enter the apartment number.",
+          "hotWaterMetersInvalid": "Hot water meter count must be 0 or greater.",
+          "coldWaterMetersInvalid": "Cold water meter count must be 0 or greater.",
+          "exportFailed": "Failed to export data.",
+          "importFailed": "Failed to import apartments.",
+          "createFailed": "Failed to create apartment.",
+          "bulkDeleteFailed": "Failed to delete apartments.",
+          "invitationsLoadFailed": "Failed to load invitations."
+        }
+      },
+      "columns": {
+        "apartment": "APARTMENT",
+        "buildingAddress": "BUILDING / ADDRESS",
+        "area": "AREA",
+        "declaredResidents": "DECLARED",
+        "floor": "FLOOR",
+        "responsiblePerson": "RESPONSIBLE PERSON",
+        "status": "STATUS",
+        "actions": "ACTIONS"
+      }
+    },
+    "tenantAccess": {
+      "tabs": {
+        "owner": "Owner",
+        "tenants": "Tenants"
+      },
+      "fields": {
+        "firstName": "First name",
+        "lastName": "Last name",
+        "phone": "Phone",
+        "email": "Email",
+        "from": "From date",
+        "to": "To date",
+        "perpetual": "Perpetual contract",
+        "ownerFirstName": "Owner's first name",
+        "ownerLastName": "Owner's last name",
+        "ownerContractNumber": "Contract number",
+        "ownerContractFile": "Contract"
+      },
+      "placeholders": {
+        "firstName": "Enter first name",
+        "lastName": "Enter last name",
+        "phone": "Enter phone",
+        "email": "tenant@example.com"
+      },
+      "actions": {
+        "addTenant": "Add tenant",
+        "adding": "Adding...",
+        "delete": "Delete",
+        "resend": "Resend"
+      },
+      "owner": {
+        "activated": "Activated",
+        "notActivated": "Not activated"
+      },
+      "errors": {
+        "emailRequired": "Enter tenant email.",
+        "firstNameRequired": "Enter tenant first name.",
+        "lastNameRequired": "Enter tenant last name.",
+        "emailCantBeCompanyEmail": "Tenant email cannot be the same as the management company email.",
+        "emailCantBeOwnerEmail": "Tenant email cannot be the same as the apartment owner email.",
+        "emailCantBeTenantEmail": "This email is already invited as a tenant.",
+        "inviteFailed": "Failed to add tenant."
+      },
+      "success": {
+        "invited": "Tenant {email} was granted access to apartment {apartment}."
+      },
+      "alerts": {
+        "deleteConfirmTitle": "Confirm deletion",
+        "deleteConfirm": "Are you sure you want to delete this user?",
+        "deleteSuccess": "User successfully deleted",
+        "deleteError": "Error deleting user",
+        "resendConfirmTitle": "Resend invitation",
+        "resendConfirm": "Send invitation again?",
+        "resendSuccess": "Invitation resent successfully",
+        "resendError": "Error sending invitation",
+        "confirm": "Confirm",
+        "cancel": "Cancel"
+      }
+    },
+    "details": {
+      "notFoundTitle": "Apartment information",
+      "notFoundDescription": "The requested apartment was not found.",
+      "managementTitle": "APARTMENT № {apartment}",
+      "landlordTitle": "MY APARTMENT № {apartment}",
+      "residentTitle": "MY APARTMENT № {apartment}",
+      "basicInfo": "Apartment basic information",
+      "apartmentInfo": "Apartment information",
+      "more": "More",
+      "yourApartment": "Your apartment",
+      "owner": "Owner",
+      "ownerEmail": "Owner email",
+      "tenantManagement": "Tenant management",
+      "tenants": "Tenants",
+      "tenantTypeResident": "Resident",
+      "active": "Active",
+      "pending": "Awaiting Confirmation",
+      "noTenants": "No tenants",
+      "landlordTenantDescription": "Tenants registered in this apartment.",
+      "invoices": "Invoices",
+      "noInvoices": "No invoices",
+      "meterReadings": "Meter readings",
+      "companyQuestions": "If you have any questions, contact the management company.",
+      "columns": {
+        "firstName": "FIRST NAME",
+        "lastName": "LAST NAME",
+        "email": "EMAIL",
+        "fromDate": "FROM",
+        "toDate": "TO",
+        "type": "TYPE",
+        "status": "STATUS"
+      },
+      "invoiceColumns": {
+        "id": "ID",
+        "amount": "AMOUNT",
+        "dueDate": "DUE DATE",
+        "status": "STATUS"
+      },
+      "meterColumns": {
+        "id": "ID",
+        "value": "READING",
+        "submitted": "SUBMITTED",
+        "consumption": "CONSUMPTION"
+      },
+      "auditLogs": "Action History"
+    }
   },
   "ui": {
     "ok": "OK",
@@ -180,6 +690,7 @@
       "password": "Password",
       "confirmPassword": "Confirm password",
       "companyName": "Company name",
+      "companyEmail": "Company email",
       "fullname": "Name and surname",
       "firstName": "First name",
       "lastName": "Last name",
@@ -192,6 +703,7 @@
       "search": "Search...",
       "apartmentNumber": "Enter apartment number",
       "companyName": "Enter company name",
+      "companyEmail": "Enter company email",
       "firstName": "Enter first name",
       "lastName": "Enter last name",
       "phone": "Enter phone number",
@@ -223,12 +735,44 @@
     "rememberMe": "Remember me?",
     "registerTitle": "Create an account",
     "registerSubtitle": "Register to get started with Domera",
+    "registerCompanyEmailHint": "Optional: use this if the company email differs from your login email",
+    "registerLegalConsentPrefix": "I agree to the",
+    "registerLegalConsentAnd": "and",
+    "registerLegalConsentHint": "To complete registration, please confirm your agreement with the privacy policy and the user terms.",
+    "privacyPolicyTitle": "Privacy policy",
+    "privacyPolicySubtitle": "How Domera collects, uses, and protects your data.",
+    "privacyPolicySectionDataTitle": "What data we collect",
+    "privacyPolicySectionDataBody": "Domera stores account registration details, contact information, company information, and service data required to operate the platform.",
+    "privacyPolicySectionUsageTitle": "How data is used",
+    "privacyPolicySectionUsageBody": "Your data is used for authentication, access control, property management workflows, notifications, documents, and overall service improvement.",
+    "privacyPolicySectionRightsTitle": "Your rights",
+    "privacyPolicySectionRightsBody": "You may request updates, corrections, or deletion of your personal data in accordance with applicable law and platform policies.",
+    "termsOfUseTitle": "User terms",
+    "termsOfUseSubtitle": "The main rules for using the Domera platform.",
+    "termsOfUseSectionAccessTitle": "Access to the service",
+    "termsOfUseSectionAccessBody": "Users must provide accurate information and keep their account credentials and login methods secure.",
+    "termsOfUseSectionResponsibilitiesTitle": "User responsibilities",
+    "termsOfUseSectionResponsibilitiesBody": "Users are responsible for the accuracy of submitted data, the legality of their actions, and using the platform only for intended service-related purposes.",
+    "termsOfUseSectionRestrictionsTitle": "Restrictions",
+    "termsOfUseSectionRestrictionsBody": "It is prohibited to compromise platform security, interfere with service operations, use another person's data without permission, or violate applicable law.",
+    "registerVerificationTitle": "Confirm your email",
+    "registerVerificationSubtitle": "Enter the 6-digit code we sent to finish creating your account",
+    "registerVerificationSentTo": "We sent a confirmation code to {email}",
+    "registerVerificationCodeLabel": "Verification code",
+    "registerVerificationCodeHint": "Enter the 6-digit code from your email",
+    "registerVerificationSubmit": "Confirm and create account",
+    "registerVerificationSubmitting": "Confirming...",
+    "registerVerificationResend": "Resend code",
+    "registerVerificationResent": "A new confirmation code has been sent.",
+    "registerVerificationMissing": "Your pending registration was not found. Please return to the registration form and try again.",
+    "registerVerificationInvalidCode": "Enter the 6-digit confirmation code.",
+    "registerVerificationUnexpected": "Verification could not be completed. Please request a new code.",
     "accountTypeManager": "Management company",
     "accountTypeManagerDesc": "Manage buildings, apartments and billing from one workspace",
-    "accountTypeResident": "Resident",
-    "accountTypeResidentDesc": "Track invoices and stay connected with building management",
-    "accountTypeLandlord": "Landlord",
-    "accountTypeLandlordDesc": "Oversee owned apartments, tenants and property activity",
+    "accountTypeResident": "Resident / tenant",
+    "accountTypeResidentDesc": "Track invoices, submit meter readings and stay connected with building management",
+    "accountTypeLandlord": "Apartment owner",
+    "accountTypeLandlordDesc": "Manage your apartments and grant access to tenants",
     "forgotTitle": "Reset password",
     "forgotSubtitle": "Enter your email and we'll send you a reset link",
     "checkEmail": "Check your email",

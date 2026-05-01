@@ -111,4 +111,16 @@ export class MeterReadingsController {
     if (!apartmentId) throw new BadRequestException('apartmentId is required');
     return this.meterReadingsService.remove(request, user, readingId, apartmentId);
   }
+
+  @Post('test-reminder')
+  @ApiOperation({ summary: 'Send test meter reading reminder email' })
+  @ApiOkResponse({
+    description: 'Test reminder sent successfully.',
+    type: SuccessResponseDto,
+  })
+  async sendTestReminder(
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.meterReadingsService.sendTestReminder(user);
+  }
 }

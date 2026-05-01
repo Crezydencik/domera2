@@ -61,10 +61,25 @@ export function deleteApartment(apartmentId: string) {
   });
 }
 
-export function inviteApartmentTenant(apartmentId: string, email: string) {
+export function inviteApartmentTenant(
+  apartmentId: string,
+  email: string,
+  tenantData?: { firstName?: string; lastName?: string; phone?: string; contractNumber?: string },
+) {
   return apiFetch<ApartmentMutationResponse>(`/apartments/${encodeURIComponent(apartmentId)}/tenants/invite`, {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, ...tenantData }),
+  });
+}
+
+export function updateApartmentOwner(
+  apartmentId: string,
+  email: string,
+  ownerData?: { firstName?: string; lastName?: string; contractNumber?: string },
+) {
+  return apiFetch<ApartmentMutationResponse>(`/apartments/${encodeURIComponent(apartmentId)}/owner`, {
+    method: "PATCH",
+    body: JSON.stringify({ email, ...ownerData }),
   });
 }
 
@@ -73,6 +88,15 @@ export function removeApartmentTenant(apartmentId: string, tenantUserId: string)
     `/apartments/${encodeURIComponent(apartmentId)}/tenants/${encodeURIComponent(tenantUserId)}`,
     {
       method: "DELETE",
+    },
+  );
+}
+
+export function resendApartmentTenantInvitation(apartmentId: string, tenantEmail: string) {
+  return apiFetch<ApartmentMutationResponse>(
+    `/apartments/${encodeURIComponent(apartmentId)}/tenants/${encodeURIComponent(tenantEmail)}/resend-invitation`,
+    {
+      method: "POST",
     },
   );
 }
@@ -93,4 +117,19 @@ export function importApartments(params: ImportApartmentsParams) {
     method: "POST",
     body: formData,
   });
+}
+
+export function resendOwnerInvitation(apartmentId: string, ownerEmail: string) {
+  return apiFetch<ApartmentMutationResponse>(
+    `/apartments/${encodeURIComponent(apartmentId)}/owner/${encodeURIComponent(ownerEmail)}/resend-invitation`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export function getApartmentAuditLogs(apartmentId: string, limit: number = 50) {
+  return apiFetch<{ items: Record<string, unknown>[] }>(
+    `/apartments/${encodeURIComponent(apartmentId)}/audit-logs?limit=${limit}`,
+  );
 }

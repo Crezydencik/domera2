@@ -32,6 +32,7 @@ export function ToastProvider() {
       draggable
       pauseOnHover
       theme={theme}
+      style={{ zIndex: 2147483647 }}
     />
   );
 }

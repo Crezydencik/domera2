@@ -3,6 +3,7 @@ import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
+import { EmailService } from '../emails/email.service';
 type ImportInput = {
     request: Request;
     user: RequestUser;
@@ -19,10 +20,17 @@ export declare class ApartmentsService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
     private readonly auditLogService;
-    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService);
+    private readonly emailService;
+    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService);
     private enforceRateLimit;
+    private assertAuthenticated;
+    private isStaff;
+    private getAccessibleApartmentIds;
+    private canManageTenants;
     private normalizeHeader;
     private normalizeApartmentNumber;
+    private normalizeReadingConfigOverride;
+    private generateApartmentReadableId;
     private getCellStringByHeader;
     private parseReadingPeriod;
     private parsePeriodFromDateCell;
@@ -30,7 +38,20 @@ export declare class ApartmentsService {
     private buildSubmittedAtFromPeriod;
     private findDueDateFromRow;
     private buildWaterReadingGroup;
-    importFromSpreadsheet(input: ImportInput): Promise<{
+    private getFileExtension;
+    private getValueByPath;
+    private asStructuredObject;
+    private asStructuredArray;
+    private sanitizeImportedText;
+    private appendStructuredWaterReadings;
+    private looksLikeImportEntry;
+    private extractImportEntries;
+    private normalizeStructuredImportRow;
+    private parseJsonImportRows;
+    private parseXmlImportRows;
+    private parseSpreadsheetImportRows;
+    private parseImportRows;
+    importFromFile(input: ImportInput): Promise<{
         success: boolean;
         results: {
             imported: number;
@@ -51,11 +72,17 @@ export declare class ApartmentsService {
         id: string;
     }>;
     create(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{
+        createdAt: Date;
+        updatedAt: Date;
+        readingConfigOverride?: {
+            useBuildingDefaults: boolean;
+            hotWaterMeters: number;
+            coldWaterMeters: number;
+        } | undefined;
         number: string;
         buildingId: string;
         companyIds: string[];
-        createdAt: Date;
-        updatedAt: Date;
+        readableId: string;
         id: string;
     }>;
     update(request: Request, user: RequestUser, apartmentId: string, payload: Record<string, unknown>): Promise<{
@@ -67,11 +94,39 @@ export declare class ApartmentsService {
     unassignResident(request: Request, user: RequestUser, apartmentId: string): Promise<{
         success: boolean;
     }>;
-    addOrInviteTenant(request: Request, user: RequestUser, apartmentId: string, emailInput: string): Promise<{
+    updateOwner(request: Request, user: RequestUser, apartmentId: string, ownerEmail: string, ownerData?: {
+        firstName?: string;
+        lastName?: string;
+        contractNumber?: string;
+    }): Promise<{
+        success: boolean;
+    }>;
+    addOrInviteTenant(request: Request, user: RequestUser, apartmentId: string, emailInput: string, tenantData?: {
+        firstName?: string;
+        lastName?: string;
+        phone?: string;
+        contractNumber?: string;
+    }): Promise<{
         success: boolean;
     }>;
     removeTenant(request: Request, user: RequestUser, apartmentId: string, userId: string): Promise<{
         success: boolean;
+    }>;
+    resendOwnerInvitation(request: Request, user: RequestUser, apartmentId: string, ownerEmail: string): Promise<{
+        success: boolean;
+    }>;
+    resendTenantInvitation(request: Request, user: RequestUser, apartmentId: string, tenantEmail: string): Promise<{
+        success: boolean;
+    }>;
+    getAuditLogs(request: Request, user: RequestUser, apartmentId: string, limit?: number): Promise<{
+        items: {
+            createdAt: any;
+            id: string;
+        }[];
+    }>;
+    migrateApartmentReadableIds(): Promise<{
+        updated: number;
+        total: number;
     }>;
 }
 export {};

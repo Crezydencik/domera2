@@ -57,6 +57,20 @@ let InvoicesService = class InvoicesService {
                 apartmentIds.add(doc.id);
             }
         }
+        const tenantSnap = await this.firebaseAdminService.firestore.collection('apartments').get();
+        for (const doc of tenantSnap.docs) {
+            const apartment = doc.data();
+            const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+            const isTenant = tenants.some((tenant) => {
+                if (!tenant || typeof tenant !== 'object')
+                    return false;
+                return typeof tenant.userId === 'string'
+                    && tenant.userId === user.uid;
+            });
+            if (isTenant) {
+                apartmentIds.add(doc.id);
+            }
+        }
         return Array.from(apartmentIds);
     }
     async create(request, user, payload) {

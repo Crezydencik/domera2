@@ -42,11 +42,14 @@ let UsersService = class UsersService {
         const nextPayload = { ...payload };
         const hasRole = Object.prototype.hasOwnProperty.call(payload, 'role');
         const hasAccountType = Object.prototype.hasOwnProperty.call(payload, 'accountType');
-        const requestedRole = (0, role_constants_1.normalizeUserRole)(hasRole
-            ? payload.role
-            : hasAccountType
-                ? payload.accountType
-                : currentData.role ?? currentData.accountType ?? currentUser.role ?? currentUser.accountType);
+        const requestedRole = hasRole
+            ? (0, role_constants_1.normalizeUserRole)(payload.role)
+            : (0, role_constants_1.resolveUserRole)({
+                role: currentData.role ?? currentUser.role,
+                accountType: currentData.accountType ??
+                    currentUser.accountType ??
+                    (hasAccountType ? payload.accountType : undefined),
+            });
         const requestedAccountType = (0, role_constants_1.resolveAccountType)({
             role: hasRole ? payload.role : requestedRole ?? currentData.role ?? currentUser.role,
             accountType: hasAccountType ? payload.accountType : currentData.accountType ?? currentUser.accountType,

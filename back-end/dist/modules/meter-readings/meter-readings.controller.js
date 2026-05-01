@@ -43,6 +43,9 @@ let MeterReadingsController = class MeterReadingsController {
             throw new common_1.BadRequestException('apartmentId is required');
         return this.meterReadingsService.remove(request, user, readingId, apartmentId);
     }
+    async sendTestReminder(user) {
+        return this.meterReadingsService.sendTestReminder(user);
+    }
 };
 exports.MeterReadingsController = MeterReadingsController;
 __decorate([
@@ -110,6 +113,18 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, String, String]),
     __metadata("design:returntype", void 0)
 ], MeterReadingsController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('test-reminder'),
+    (0, swagger_1.ApiOperation)({ summary: 'Send test meter reading reminder email' }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Test reminder sent successfully.',
+        type: success_response_dto_1.SuccessResponseDto,
+    }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], MeterReadingsController.prototype, "sendTestReminder", null);
 exports.MeterReadingsController = MeterReadingsController = __decorate([
     (0, swagger_1.ApiTags)('Meter Readings'),
     (0, common_1.Controller)('meter-readings'),

@@ -94,6 +94,7 @@
       "password": "Parole",
       "confirmPassword": "Apstiprināt paroli",
       "companyName": "Uzņēmuma nosaukums",
+      "companyEmail": "Uzņēmuma e-pasts",
       "fullname": "Vārds un uzvārds",
       "firstName": "Vārds",
       "lastName": "Uzvārds",
@@ -106,6 +107,7 @@
       "search": "Meklēt...",
       "apartmentNumber": "Ievadiet dzīvokļa numuru",
       "companyName": "Ievadiet uzņēmuma nosaukumu",
+      "companyEmail": "Ievadiet uzņēmuma e-pastu",
       "firstName": "Ievadiet vārdu",
       "lastName": "Ievadiet uzvārdu",
       "phone": "Ievadiet tālruņa numuru",
@@ -129,6 +131,39 @@
     "confirmDeleteProfile": "Apstiprināt profila dzēšanu. Šo darbību nevar atcelt."
   },
   "appShell": {
+    "header": {
+      "currentWorkspace": "Pašreizējā darba vide: {role}",
+      "pageTitles": {
+        "dashboard": "Panelis",
+        "buildings": "Ēkas",
+        "apartments": "Dzīvokļi",
+        "residents": "Iedzīvotāji",
+        "invoices": "Rēķini",
+        "meterReadings": "Skaitītāju rādījumi",
+        "debts": "Parādi",
+        "documents": "Dokumenti",
+        "notificationsPage": "Paziņojumi",
+        "settings": "Iestatījumi"
+      },
+      "roles": {
+        "managementCompany": "Pārvaldības uzņēmums",
+        "resident": "Iedzīvotājs",
+        "landlord": "Īpašnieks"
+      },
+      "notifications": {
+        "title": "Paziņojumi",
+        "openAria": "Atvērt paziņojumus",
+        "refresh": "Atjaunot",
+        "loading": "Ielādē paziņojumus...",
+        "empty": "Pagaidām nav paziņojumu.",
+        "viewAll": "Atvērt paziņojumu lapu"
+      },
+      "profile": {
+        "openAria": "Atvērt profila izvēlni",
+        "title": "Profils",
+        "settings": "Iestatījumi"
+      }
+    },
     "brand": "Domera",
     "title": "Nekustamā īpašuma pārvaldības darba vide",
     "description": "Modulāra saskarne pārvaldības komandām, grāmatvežiem un iedzīvotājiem.",
@@ -164,13 +199,86 @@
   "buildings": {
     "title": "Ēkas un dzīvokļi",
     "description": "Portfeļa pārskats pārvaldības uzņēmumiem",
+    "addButton": "Pievienot ēku",
     "colBuilding": "Ēka",
     "colAddress": "Adrese",
     "colApartments": "Dzīvokļi",
     "colOccupancy": "Noslogotība",
-    "colStatus": "Statuss",
+    "colActions": "Darbības",
     "healthy": "Kārtībā",
-    "needsReview": "Nepieciešama pārskatīšana"
+    "needsReview": "Nepieciešama pārskatīšana",
+    "emptyTitle": "Pagaidām nav ēku",
+    "emptyDescription": "Pievienojiet pirmo ēku uzņēmuma portfelim ar pogu augstāk.",
+    "fields": {
+      "name": "Ēkas nosaukums",
+      "apartmentsCount": "Dzīvokļu skaits",
+      "occupiedApartments": "Aizņemtie dzīvokļi",
+      "status": "Statuss",
+      "hotWaterMetersPerResident": "Karstā ūdens skaitītāji dzīvoklī",
+      "coldWaterMetersPerResident": "Aukstā ūdens skaitītāji dzīvoklī"
+    },
+    "tabs": {
+      "general": "Pamata",
+      "readings": "Rādījumi"
+    },
+    "readings": {
+      "water": {
+        "title": "Ūdens rādījumu iesniegšana",
+        "description": "Iedzīvotāji iesniegs ūdens rādījumus par savu dzīvokli."
+      },
+      "electricity": {
+        "title": "Elektrības rādījumu iesniegšana",
+        "description": "Ieslēdziet šo, ja iedzīvotājiem jāiesniedz elektrības rādījumi."
+      },
+      "heating": {
+        "title": "Apkures rādījumu iesniegšana",
+        "description": "Ieslēdziet šo, ja iedzīvotājiem jāiesniedz apkures rādījumi."
+      }
+    },
+    "dialogs": {
+      "create": {
+        "title": "Pievienot ēku",
+        "description": "Aizpildiet galveno informāciju par ēku, lai pievienotu to uzņēmuma portfelim.",
+        "submit": "Izveidot ēku",
+        "submitting": "Izveido..."
+      },
+      "edit": {
+        "title": "Rediģēt ēkas informāciju",
+        "description": "Atjauniniet ēkas datus. Vēlāk šeit varēs pievienot paplašinātus iestatījumus.",
+        "submitting": "Saglabā..."
+      },
+      "delete": {
+        "title": "Dzēst ēku",
+        "description": "Vai dzēst ēku {building}? Šo darbību nevar atsaukt.",
+        "warning": "Ja ēkai joprojām ir piesaistīti dzīvokļi vai citi dati, serveris var noraidīt dzēšanu.",
+        "deleting": "Dzēš..."
+      }
+    },
+    "feedback": {
+      "created": "Ēka {building} ir izveidota.",
+      "updated": "Ēkas {building} informācija ir atjaunināta.",
+      "deleted": "Ēka {building} ir dzēsta."
+    },
+    "errors": {
+      "companyMissing": "Ēku pārvaldībai trūkst companyId.",
+      "creationAccessFailed": "Neizdevās pārbaudīt ēkas izveides piekļuvi.",
+      "buildingMissing": "Rediģēšanai nav izvēlēta ēka.",
+      "nameRequired": "Lūdzu, ievadiet ēkas nosaukumu.",
+      "addressRequired": "Lūdzu, ievadiet ēkas adresi.",
+      "apartmentsCountInvalid": "Dzīvokļu skaitam jābūt 0 vai lielākam.",
+      "hotWaterMetersInvalid": "Karstā ūdens skaitītāju skaitam jābūt 0 vai lielākam.",
+      "coldWaterMetersInvalid": "Aukstā ūdens skaitītāju skaitam jābūt 0 vai lielākam.",
+      "occupiedApartmentsInvalid": "Aizņemto dzīvokļu skaitam jābūt 0 vai lielākam.",
+      "occupiedExceedsTotal": "Aizņemto dzīvokļu skaits nevar pārsniegt kopējo dzīvokļu skaitu.",
+      "createFailed": "Neizdevās izveidot ēku.",
+      "updateFailed": "Neizdevās atjaunināt ēkas informāciju.",
+      "deleteFailed": "Neizdevās dzēst ēku."
+    },
+    "gating": {
+      "title": "Ēkas pievienošana īslaicīgi ierobežota",
+      "defaultMessage": "Pašlaik uzņēmums var pievienot ēkas bez abonementa, bet atsevišķa piekļuves pārbaude jau ir sagatavota.",
+      "futureHint": "Nākotnē pirms ēkas pievienošanas varēs prasīt aktīvu abonementu vai piekļuves kodu bez interfeisa pārbūves."
+    }
   },
   "residents": {
     "title": "Iedzīvotāji un lietotāji",
@@ -200,7 +308,406 @@
     "colApartment": "Dzīvoklis",
     "colValue": "Vērtība",
     "colSubmitted": "Iesniegts",
-    "colTrend": "Tendence"
+    "colTrend": "Tendence",
+    "managementCompanyTitle": "Pārvaldības uzņēmums",
+    "managementCompanyDescription": "Skaitītāju rādījumi no visiem objektiem",
+    "ownerLandlordTitle": "Īpašnieks/Īrnieks",
+    "ownerLandlordDescription": "Jūsu skaitītāju rādījumi"
+  },
+  "apartments": {
+    "common": {
+      "apartment": "Dzīvoklis",
+      "myApartment": "Mans dzīvoklis",
+      "myApartments": "Mani dzīvokļi",
+      "address": "Adrese",
+      "floor": "Stāvs",
+      "rooms": "Istabas",
+      "area": "Platība",
+      "email": "E-pasts",
+      "phone": "Tālrunis",
+      "managementCompany": "APSAIMNIEKOŠANAS UZŅĒMUMS",
+      "viewDetails": "Skatīt detaļas",
+      "backToApartments": "Atpakaļ uz dzīvokļiem",
+      "addressNotSpecified": "Adrese nav norādīta",
+      "notSpecified": "Nav norādīts"
+    },
+    "selector": {
+      "label": "Izvēlieties dzīvokli:",
+      "optionLabel": "Dzīvoklis № {number} — {address}"
+    },
+    "resident": {
+      "emptyTitle": "Mans dzīvoklis",
+      "emptyDescription": "Jums pašlaik nav piesaistīts neviens dzīvoklis.",
+      "emptyHint": "Ja jums vajadzētu būt piekļuvei dzīvoklim, sazinieties ar apsaimniekošanas uzņēmumu.",
+      "residentTitle": "Mans dzīvoklis",
+      "residentDescription": "Dzīvoklis, kurā esat reģistrēts.",
+      "landlordTitle": "Mani dzīvokļi",
+      "landlordDescription": "Dzīvokļi, kas ir jūsu īpašumā."
+    },
+    "management": {
+      "registryTitle": "Dzīvokļu reģistrs",
+      "registryDescription": "Visu dzīvokļu saraksts ar aizņemtību un īpašnieku pārskatu.",
+      "noApartments": "Dzīvokļu pagaidām nav",
+      "occupied": "Aizņemts",
+      "vacant": "Brīvs",
+      "actions": {
+        "info": "Informācija",
+        "assignResident": "Piesaistīt iedzīvotāju",
+        "delete": "Dzēst dzīvokli"
+      },
+      "dialogs": {
+        "assignResident": {
+          "title": "Piesaistīt iedzīvotāju",
+          "description": "Izvēlieties, kuru iedzīvotāju piesaistīt dzīvoklim {apartment}.",
+          "currentResidentLabel": "Pašreizējais iedzīvotājs",
+          "noneAssigned": "Iedzīvotājs nav piesaistīts",
+          "fieldLabel": "Iedzīvotājs",
+          "noneOption": "Nav piesaistīta iedzīvotāja",
+          "hint": "Izvēlieties “Nav piesaistīta iedzīvotāja”, lai noņemtu pašreizējo piesaisti.",
+          "empty": "Pašlaik nav pieejamu iedzīvotāju piesaistei.",
+          "saving": "Saglabā..."
+        },
+        "deleteApartment": {
+          "title": "Dzēst dzīvokli",
+          "description": "Vai tiešām dzēst dzīvokli {apartment}? Šo darbību nevar atsaukt.",
+          "occupiedHint": "Šim dzīvoklim joprojām ir piesaistīts iedzīvotājs. Vispirms noņemiet piesaisti.",
+          "deleting": "Dzēš..."
+        },
+        "apartmentInfo": {
+          "title": "Dzīvoklis № {apartment}",
+          "description": "Visa pieejamā informācija par dzīvokli vienā logā.",
+          "generalTableTitle": "Pamatinformācija",
+          "metersTitle": "Ūdens skaitītāji",
+          "coldWaterTitle": "Aukstais ūdens",
+          "hotWaterTitle": "Karstais ūdens",
+          "historyTitle": "Rādījumu vēsture",
+          "tableColumns": {
+            "field": "Lauks",
+            "value": "Vērtība"
+          },
+          "historyColumns": {
+            "month": "Mēnesis",
+            "year": "Gads",
+            "currentValue": "Pašreizējais rādījums",
+            "previousValue": "Iepriekšējais",
+            "consumption": "Patēriņš",
+            "submittedAt": "Iesniegts"
+          },
+          "fields": {
+            "number": "Dzīvokļa numurs",
+            "address": "Adrese",
+            "floor": "Stāvs",
+            "owner": "Īpašnieks",
+            "ownerEmail": "Īpašnieka e-pasts",
+            "cadastralNumber": "Kadastra numurs",
+            "cadastralPart": "Domājamā daļa",
+            "commonPropertyShare": "Daļa (kopīpašums)",
+            "apartmentType": "Dzīvokļa tips",
+            "heatingArea": "Apkures platība",
+            "managementArea": "Apsaimniekošanas platība",
+            "declaredResidents": "Deklarētie iedzīvotāji",
+            "residentId": "Iedzīvotāja ID",
+            "buildingId": "Ēkas ID",
+            "companyIds": "Uzņēmuma ID",
+            "createdAt": "Izveidots",
+            "updatedAt": "Atjaunināts",
+            "serialNumber": "Sērijas numurs",
+            "checkDueDate": "Verificēt līdz",
+            "currentValue": "Pašreizējais rādījums",
+            "previousValue": "Iepriekšējais rādījums",
+            "lastSubmitted": "Pēdējā iesniegšana"
+          }
+        }
+      },
+      "feedback": {
+        "residentAssigned": "Iedzīvotājs {resident} tika piesaistīts dzīvoklim {apartment}.",
+        "residentUnassigned": "Iedzīvotāja piekļuve dzīvoklim {apartment} tika noņemta.",
+        "apartmentDeleted": "Dzīvoklis {apartment} tika dzēsts."
+      },
+      "errors": {
+        "residentSaveFailed": "Neizdevās atjaunināt dzīvokļa iedzīvotāju.",
+        "apartmentDeleteFailed": "Neizdevās dzēst dzīvokli."
+      },
+      "filters": {
+        "building": "Ēka",
+        "allBuildings": "Visas ēkas"
+      },
+      "menu": {
+        "openMenu": "Atvērt darbību izvēlni",
+        "items": {
+          "export": "Eksports",
+          "import": "Imports",
+          "importLoading": "Importē...",
+          "addResident": "Pievienot iedzīvotāju",
+          "addApartment": "Pievienot dzīvokli",
+          "deleteAll": "Dzēst visus dzīvokļus",
+          "invitations": "Uzaicinājumu saraksts"
+        },
+        "dialogs": {
+          "import": {
+            "title": "Importēt dzīvokļus",
+            "description": "Augšupielādējiet dzīvokļu failu izvēlētajai ēkai. Tiek atbalstīti Excel, JSON un XML.",
+            "hint": "Excel un CSV failiem var izmantot tabulas kolonnas. JSON un XML failiem izmantojiet zemāk uzskaitītos laukus.",
+            "selectedBuilding": "Izvēlētā ēka no selektora: {building}",
+            "selectBuildingFirst": "Vispirms izvēlieties ēku selektorā.",
+            "selectionHint": "Imports vienmēr tiek piemērots tai ēkai, kas pašlaik ir izvēlēta augšējā selektorā.",
+            "buildingLabel": "Ēka importam",
+            "buildingPlaceholder": "Izvēlieties ēku",
+            "buildingHint": "Ēku var izvēlēties arī šeit — imports tiks veikts tieši tajā.",
+            "formatLabel": "Izvēlieties importa formātu",
+            "summaryBuildingLabel": "Ēka",
+            "summaryFormatLabel": "Formāts",
+            "summaryNotSelected": "Nav izvēlēts",
+            "allowedFiles": "Atļautie faili: {formats}",
+            "fieldsLabel": "Importējamie lauki",
+            "structureLabel": "Faila struktūra",
+            "structureHint": "Ja ir izvēlēts JSON vai XML, failam jāatbilst kādai no zemāk redzamajām struktūrām.",
+            "structureFieldsLabel": "Lauki dzīvokļa objektā",
+            "submit": "Izvēlēties failu",
+            "formats": {
+              "excel": {
+                "label": "Excel / CSV",
+                "description": "Atbalsta .xlsx, .xls un .csv dzīvokļu tabulas."
+              },
+              "json": {
+                "label": "JSON",
+                "description": "Dzīvokļu masīvs vai objekts ar items/apartments." 
+              },
+              "xml": {
+                "label": "XML",
+                "description": "Struktūra ar apartment/item/record mezgliem zem saknes elementa."
+              }
+            },
+            "fields": {
+              "cadastralNumber": { "label": "Kadastra numurs", "description": "Dzīvokļa kadastra numurs." },
+              "number": { "label": "DZ", "description": "Dzīvokļa numurs. Obligāts lauks." },
+              "address": { "label": "Adrese", "description": "Dzīvokļa adrese." },
+              "cadastralPart": { "label": "Domājamā daļa", "description": "Domājamā daļa īpašumā." },
+              "commonPropertyShare": { "label": "Daļa (kopīpašums)", "description": "Kopīpašuma daļa." },
+              "floor": { "label": "Stavs", "description": "Dzīvokļa stāvs ēkā." },
+              "owner": { "label": "Īpašnieks", "description": "Dzīvokļa īpašnieka vārds." },
+              "ownerEmail": { "label": "E pasts Reķiniem", "description": "E-pasts rēķiniem un paziņojumiem." },
+              "apartmentType": { "label": "DZ t", "description": "Dzīvokļa tips." },
+              "heatingArea": { "label": "Apkure", "description": "Apkures platība vai ar apkuri saistītā vērtība." },
+              "managementArea": { "label": "Apsaimn", "description": "Apsaimniekošanas platība." },
+              "declaredResidents": { "label": "Dekl iedz", "description": "Deklarēto iedzīvotāju skaits." },
+              "area": { "label": "Platība / apsaimniekošanas platība", "description": "Var izmantot dzīvokļa platībai vai apsaimniekošanas platībai." },
+              "hotWaterMeter": { "label": "Kartsais NR", "description": "Karstā ūdens skaitītāja numurs." },
+              "coldWaterMeter": { "label": "Aukstais NR", "description": "Aukstā ūdens skaitītāja numurs." },
+              "hotWaterReadings": { "label": "Kartsais + menesis", "description": "Karstā ūdens rādījums un mēnesis. Kolonnu pārus var atkārtot vairākas reizes." },
+              "coldWaterReadings": { "label": "Aukstais + menesis", "description": "Aukstā ūdens rādījums un mēnesis. Kolonnu pārus var atkārtot vairākas reizes." }
+            },
+            "examples": {
+              "title": "Kā importēt",
+              "excel": "Excel/CSV: izmantojiet kolonnas Kadastra numurs, Adrese, Domājamā daļa, Daļa (kopīpašums), Īpašnieks, E pasts Reķiniem, DZ, Stavs, DZ t, Apkure, Apsaimn, Dekl iedz, Kartsais NR, Aukstais NR, kā arī pārus Kartsais + menesis un Aukstais + menesis.",
+              "json": "{\n  \"apartments\": [\n    {\n      \"number\": \"16\",\n      \"cadastralNumber\": \"1009086439\",\n      \"address\": \"Silciema iela 13 k-3-16\",\n      \"cadastralPart\": \"3063/261802\",\n      \"commonPropertyShare\": \"46023\",\n      \"owner\": \"Mārtiņš Mihailovs\",\n      \"ownerEmail\": \"martins@example.com\",\n      \"floor\": \"4\",\n      \"apartmentType\": \"46026\",\n      \"heatingArea\": 30.7,\n      \"managementArea\": 30.7,\n      \"declaredResidents\": 1,\n      \"waterReadings\": {\n        \"coldmeterwater\": {\n          \"serialNumber\": \"2526524\",\n          \"history\": [\n            { \"month\": 1, \"year\": 2026, \"currentValue\": 430.432 },\n            { \"month\": 2, \"year\": 2026, \"currentValue\": 432.99 },\n            { \"month\": 3, \"year\": 2026, \"currentValue\": 435.501 }\n          ]\n        },\n        \"hotmeterwater\": {\n          \"serialNumber\": \"1720368800\",\n          \"history\": [\n            { \"month\": 1, \"year\": 2026, \"currentValue\": 276.86 },\n            { \"month\": 2, \"year\": 2026, \"currentValue\": 278.6 },\n            { \"month\": 3, \"year\": 2026, \"currentValue\": 280.285 }\n          ]\n        }\n      }\n    }\n  ]\n}",
+              "xml": "<apartments>\n  <apartment>\n    <number>16</number>\n    <cadastralNumber>1009086439</cadastralNumber>\n    <address>Silciema iela 13 k-3-16</address>\n    <cadastralPart>3063/261802</cadastralPart>\n    <commonPropertyShare>46023</commonPropertyShare>\n    <owner>Mārtiņš Mihailovs</owner>\n    <ownerEmail>martins@example.com</ownerEmail>\n    <floor>4</floor>\n    <apartmentType>46026</apartmentType>\n    <heatingArea>30.7</heatingArea>\n    <managementArea>30.7</managementArea>\n    <declaredResidents>1</declaredResidents>\n    <waterReadings>\n      <coldmeterwater>\n        <serialNumber>2526524</serialNumber>\n        <history>\n          <reading><month>1</month><year>2026</year><currentValue>430.432</currentValue></reading>\n          <reading><month>2</month><year>2026</year><currentValue>432.99</currentValue></reading>\n          <reading><month>3</month><year>2026</year><currentValue>435.501</currentValue></reading>\n        </history>\n      </coldmeterwater>\n      <hotmeterwater>\n        <serialNumber>1720368800</serialNumber>\n        <history>\n          <reading><month>1</month><year>2026</year><currentValue>276.86</currentValue></reading>\n          <reading><month>2</month><year>2026</year><currentValue>278.6</currentValue></reading>\n          <reading><month>3</month><year>2026</year><currentValue>280.285</currentValue></reading>\n        </history>\n      </hotmeterwater>\n    </waterReadings>\n  </apartment>\n</apartments>"
+            }
+          },
+          "export": {
+            "title": "Datu eksports",
+            "description": "Izvēlieties faila formātu un eksportējamos datus.",
+            "hint": "Dzīvokļu eksports ietver visus pieejamos backend laukus, arī tos, kas tabulā nav redzami.",
+            "formatLabel": "Faila formāts",
+            "scopeLabel": "Ko eksportēt",
+            "submit": "Eksportēt",
+            "exporting": "Eksportē...",
+            "formats": {
+              "json": {
+                "label": "JSON",
+                "description": "Vislabāk pilnam eksportam ar saglabātiem ligzdotiem laukiem."
+              },
+              "csv": {
+                "label": "CSV",
+                "description": "Ērti atvērt Excel; ligzdotās vērtības tiks serializētas kā teksts."
+              }
+            },
+            "scopes": {
+              "apartments": {
+                "label": "Tikai dzīvokļi",
+                "description": "Eksportēt visus dzīvokļu datus no pašreizējā saraksta."
+              },
+              "meterReadings": {
+                "label": "Tikai rādījumi",
+                "description": "Eksportēt skaitītāju rādījumus pašreizējā saraksta dzīvokļiem."
+              },
+              "apartmentsAndMeterReadings": {
+                "label": "Dzīvokļi + rādījumi",
+                "description": "Pilns dzīvokļu un saistīto skaitītāju rādījumu eksports."
+              }
+            }
+          },
+          "createApartment": {
+            "title": "Pievienot dzīvokli",
+            "submit": "Izveidot dzīvokli",
+            "creating": "Veido...",
+            "fields": {
+              "number": "Dzīvokļa numurs",
+              "floor": "Stāvs",
+              "area": "Platība",
+              "declaredResidents": "Deklarētie iedzīvotāji"
+            },
+            "readings": {
+              "title": "Skaitītāju izņēmums",
+              "description": "Ja šajā dzīvoklī skaitītāji atšķiras no ēkas noklusējuma iestatījumiem, norādiet izņēmumu šeit.",
+              "useBuildingDefaults": "Lietot ēkas noklusējuma iestatījumus",
+              "buildingDefaultsHint": "Pašreizējais ēkas noklusējums: karstā ūdens skaitītāji — {hot}, aukstā ūdens skaitītāji — {cold}.",
+              "hotWaterMeters": "Karstā ūdens skaitītāji dzīvoklī",
+              "coldWaterMeters": "Aukstā ūdens skaitītāji dzīvoklī"
+            }
+          },
+          "deleteAll": {
+            "title": "Dzēst dzīvokļus",
+            "description": "Vai dzēst visus dzīvokļus pašreizējā sarakstā?",
+            "scope": "Šajā sarakstā pašlaik ir {count} dzīvokļi.",
+            "hint": "Aizņemtie dzīvokļi tiks automātiski izlaisti.",
+            "deleting": "Dzēš..."
+          },
+          "invitations": {
+            "title": "Uzaicinājumu saraksts",
+            "loading": "Ielādē uzaicinājumus...",
+            "empty": "Uzaicinājumu vēl nav.",
+            "apartment": "Dzīvoklis: {apartment}"
+          }
+        },
+        "feedback": {
+          "exportSuccess": "Datu eksports pabeigts.",
+          "importSuccess": "Dzīvokļu imports pabeigts.",
+          "apartmentCreated": "Dzīvoklis {apartment} tika izveidots.",
+          "nothingToExport": "Nav datu eksportēšanai.",
+          "noVacantApartmentsToDelete": "Nav brīvu dzīvokļu dzēšanai.",
+          "bulkDeleteSuccess": "Dzēsti dzīvokļi: {deleted}. Izlaisti: {skipped}."
+        },
+        "errors": {
+          "companyMissing": "Šai darbībai trūkst companyId.",
+          "chooseBuildingFirst": "Vispirms izvēlieties ēku šai darbībai.",
+          "chooseBuildingForDelete": "Pirms masveida dzēšanas izvēlieties konkrētu ēku.",
+          "apartmentNumberRequired": "Ievadiet dzīvokļa numuru.",
+          "hotWaterMetersInvalid": "Karstā ūdens skaitītāju skaitam jābūt 0 vai lielākam.",
+          "coldWaterMetersInvalid": "Aukstā ūdens skaitītāju skaitam jābūt 0 vai lielākam.",
+          "exportFailed": "Neizdevās eksportēt datus.",
+          "importFailed": "Neizdevās importēt dzīvokļus.",
+          "createFailed": "Neizdevās izveidot dzīvokli.",
+          "bulkDeleteFailed": "Neizdevās dzēst dzīvokļus.",
+          "invitationsLoadFailed": "Neizdevās ielādēt uzaicinājumus."
+        }
+      },
+      "columns": {
+        "apartment": "DZĪVOKLIS",
+        "buildingAddress": "ĒKA / ADRESE",
+        "area": "PLATĪBA",
+        "declaredResidents": "DEKLAR.",
+        "floor": "STĀVS",
+        "responsiblePerson": "ATBILDĪGĀ PERSONA",
+        "status": "STATUSS",
+        "actions": "DARBĪBAS"
+      }
+    },
+    "tenantAccess": {
+      "tabs": {
+        "owner": "Īpašnieks",
+        "tenants": "Iemītnieki"
+      },
+      "fields": {
+        "firstName": "Vārds",
+        "lastName": "Uzvārds",
+        "phone": "Tālrunis",
+        "email": "E-pasts",
+        "from": "No datuma",
+        "to": "Līdz datumam",
+        "perpetual": "Beztermiņa līgums",
+        "ownerFirstName": "Īpašnieka vārds",
+        "ownerLastName": "Īpašnieka uzvārds",
+        "ownerContractNumber": "Līguma numurs",
+        "ownerContractFile": "Līgums"
+      },
+      "placeholders": {
+        "firstName": "Ievadiet vārdu",
+        "lastName": "Ievadiet uzvārdu",
+        "phone": "Ievadiet tālruni",
+        "email": "tenant@example.com"
+      },
+      "actions": {
+        "addTenant": "Pievienot īrnieku",
+        "adding": "Pievieno...",
+        "delete": "Dzēst",
+        "resend": "Nosūtīt vēlreiz"
+      },
+      "owner": {
+        "activated": "Aktivizēts",
+        "notActivated": "Nav aktivizēts"
+      },
+      "errors": {
+        "emailRequired": "Ievadiet īrnieka e-pastu.",
+        "firstNameRequired": "Ievadiet īrnieka vārdu.",
+        "lastNameRequired": "Ievadiet īrnieka uzvārdu.",
+        "emailCantBeCompanyEmail": "Īrnieka e-pasts nevar sakrist ar pārvaldības uzņēmuma e-pastu.",
+        "emailCantBeOwnerEmail": "Īrnieka e-pasts nevar sakrist ar dzīvokļa īpašnieka e-pastu.",
+        "emailCantBeTenantEmail": "Šis e-pasts jau tiek uzaicināts kā īrnieks.",
+        "inviteFailed": "Neizdevās pievienot īrnieku."
+      },
+      "success": {
+        "invited": "Īrniekam {email} piešķirta piekļuve dzīvoklim {apartment}."
+      },
+      "alerts": {
+        "deleteConfirmTitle": "Apstipriniet dzēšanu",
+        "deleteConfirm": "Vai tiešām vēlaties dzēst šo lietotāju?",
+        "deleteSuccess": "Lietotājs veiksmīgi izdzēsts",
+        "deleteError": "Kļūda dzēšot lietotāju",
+        "resendConfirmTitle": "Nosūtīt uzaicinājumu vēlreiz",
+        "resendConfirm": "Nosūtīt uzaicinājumu vēlreiz?",
+        "resendSuccess": "Uzaicinājums veiksmīgi nosūtīts",
+        "resendError": "Kļūda nosūtot uzaicinājumu",
+        "confirm": "Apstiprināt",
+        "cancel": "Atcelt"
+      }
+    },
+    "details": {
+      "notFoundTitle": "Dzīvokļa informācija",
+      "notFoundDescription": "Pieprasītais dzīvoklis netika atrasts.",
+      "managementTitle": "DZĪVOKLIS № {apartment}",
+      "landlordTitle": "MANS DZĪVOKLIS № {apartment}",
+      "residentTitle": "MANS DZĪVOKLIS № {apartment}",
+      "basicInfo": "Dzīvokļa pamatinformācija",
+      "apartmentInfo": "Dzīvokļa informācija",
+      "more": "Vairāk",
+      "yourApartment": "Jūsu dzīvoklis",
+      "owner": "Īpašnieks",
+      "ownerEmail": "Īpašnieka e-pasts",
+      "tenantManagement": "Iemītnieku pārvaldība",
+      "tenants": "Īrnieki",
+      "tenantTypeResident": "Iedzīvotājs",
+      "active": "Aktīvs",
+      "pending": "Gaida apstiprinājumu",
+      "noTenants": "Nav iemītnieku",
+      "landlordTenantDescription": "Šajā dzīvoklī reģistrētie īrnieki.",
+      "invoices": "Rēķini",
+      "noInvoices": "Nav rēķinu",
+      "meterReadings": "Skaitītāju rādījumi",
+      "companyQuestions": "Ja jums ir jautājumi, sazinieties ar apsaimniekošanas uzņēmumu.",
+      "columns": {
+        "firstName": "VĀRDS",
+        "lastName": "UZVĀRDS",
+        "email": "E-PASTS",
+        "fromDate": "DATUMS NO",
+        "toDate": "DATUMS LĪDZ",
+        "type": "VEIDS",
+        "status": "STATUSS"
+      },
+      "invoiceColumns": {
+        "id": "ID",
+        "amount": "SUMMA",
+        "dueDate": "APMAKSAS TERMIŅŠ",
+        "status": "STATUSS"
+      },
+      "meterColumns": {
+        "id": "ID",
+        "value": "RĀDĪJUMS",
+        "submitted": "IESNIEGTS",
+        "consumption": "PATĒRIŅŠ"
+      },
+      "auditLogs": "Darbību vēsture"
+    }
   },
   "ui": {
     "ok": "Labi",
@@ -221,12 +728,44 @@
     "rememberMe": "Atcerēties mani?",
     "registerTitle": "Izveidot kontu",
     "registerSubtitle": "Reģistrējieties, lai sāktu darbu ar Domera",
+    "registerCompanyEmailHint": "Neobligāti: izmantojiet šo, ja uzņēmuma e-pasts atšķiras no jūsu pieslēgšanās e-pasta",
+    "registerLegalConsentPrefix": "Es piekrītu",
+    "registerLegalConsentAnd": "un",
+    "registerLegalConsentHint": "Lai pabeigtu reģistrāciju, apstipriniet piekrišanu privātuma politikai un lietošanas noteikumiem.",
+    "privacyPolicyTitle": "Privātuma politika",
+    "privacyPolicySubtitle": "Kā Domera apkopo, izmanto un aizsargā jūsu datus.",
+    "privacyPolicySectionDataTitle": "Kādus datus mēs apkopojam",
+    "privacyPolicySectionDataBody": "Domera glabā konta reģistrācijas informāciju, kontaktinformāciju, uzņēmuma informāciju un servisa datus, kas nepieciešami platformas darbībai.",
+    "privacyPolicySectionUsageTitle": "Kā dati tiek izmantoti",
+    "privacyPolicySectionUsageBody": "Dati tiek izmantoti autentifikācijai, piekļuves pārvaldībai, nekustamā īpašuma procesu nodrošināšanai, paziņojumiem, dokumentiem un servisa uzlabošanai.",
+    "privacyPolicySectionRightsTitle": "Jūsu tiesības",
+    "privacyPolicySectionRightsBody": "Jūs varat pieprasīt savu personas datu atjaunošanu, labošanu vai dzēšanu saskaņā ar piemērojamiem normatīvajiem aktiem un platformas noteikumiem.",
+    "termsOfUseTitle": "Lietošanas noteikumi",
+    "termsOfUseSubtitle": "Galvenie noteikumi Domera platformas lietošanai.",
+    "termsOfUseSectionAccessTitle": "Piekļuve servisam",
+    "termsOfUseSectionAccessBody": "Lietotājam ir jāsniedz patiesa informācija un jānodrošina sava konta un pieslēgšanās datu drošība.",
+    "termsOfUseSectionResponsibilitiesTitle": "Lietotāja atbildība",
+    "termsOfUseSectionResponsibilitiesBody": "Lietotājs ir atbildīgs par ievadīto datu pareizību, savu darbību tiesiskumu un platformas izmantošanu tikai paredzētajiem darba mērķiem.",
+    "termsOfUseSectionRestrictionsTitle": "Ierobežojumi",
+    "termsOfUseSectionRestrictionsBody": "Ir aizliegts apdraudēt platformas drošību, traucēt servisa darbību, izmantot citu personu datus bez atļaujas vai pārkāpt piemērojamos normatīvos aktus.",
+    "registerVerificationTitle": "Apstipriniet savu e-pastu",
+    "registerVerificationSubtitle": "Ievadiet 6 ciparu kodu, ko nosūtījām, lai pabeigtu konta izveidi",
+    "registerVerificationSentTo": "Apstiprinājuma kods tika nosūtīts uz {email}",
+    "registerVerificationCodeLabel": "Apstiprinājuma kods",
+    "registerVerificationCodeHint": "Ievadiet 6 ciparu kodu no e-pasta",
+    "registerVerificationSubmit": "Apstiprināt un izveidot kontu",
+    "registerVerificationSubmitting": "Apstiprina...",
+    "registerVerificationResend": "Nosūtīt kodu vēlreiz",
+    "registerVerificationResent": "Jauns apstiprinājuma kods ir nosūtīts.",
+    "registerVerificationMissing": "Saglabātā reģistrācija netika atrasta. Lūdzu, atgriezieties reģistrācijas formā un mēģiniet vēlreiz.",
+    "registerVerificationInvalidCode": "Ievadiet 6 ciparu apstiprinājuma kodu.",
+    "registerVerificationUnexpected": "Apstiprinājumu neizdevās pabeigt. Lūdzu, pieprasiet jaunu kodu.",
     "accountTypeManager": "Pārvaldības uzņēmums",
     "accountTypeManagerDesc": "Pārvaldiet ēkas, dzīvokļus un norēķinus vienā vietā",
-    "accountTypeResident": "Iedzīvotājs",
-    "accountTypeResidentDesc": "Sekojiet saviem rēķiniem un uzturiet saziņu ar pārvaldnieku",
-    "accountTypeLandlord": "Iznomātājs",
-    "accountTypeLandlordDesc": "Pārraugiet savus dzīvokļus, īrniekus un īpašumu aktivitātes",
+    "accountTypeResident": "Iedzīvotājs / īrnieks",
+    "accountTypeResidentDesc": "Sekojiet saviem rēķiniem, iesniedziet skaitītāju rādījumus un uzturiet saziņu ar pārvaldnieku",
+    "accountTypeLandlord": "Dzīvokļa īpašnieks",
+    "accountTypeLandlordDesc": "Pārvaldiet savus dzīvokļus un piešķiriet piekļuvi īrniekiem",
     "forgotTitle": "Atjaunot paroli",
     "forgotSubtitle": "Ievadiet savu e-pastu un mēs nosūtīsim atiestatīšanas saiti",
     "checkEmail": "Pārbaudiet savu e-pastu",

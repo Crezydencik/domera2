@@ -1,18 +1,16 @@
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  accountTypeToDashboardRole,
-  establishUserSession,
-  saveUserProfile,
-  signUpWithEmailPassword,
+  requestRegistrationCode,
 } from "@/shared/lib/auth-client";
 import { apiFetch } from "@/shared/lib/domera-api";
+import { savePendingRegistration } from "@/shared/lib/pending-registration";
 import { getPasswordChecks, getPasswordStrength, isStrongPassword } from "@/shared/lib/password-validation";
 import { ROUTES } from "@/shared/lib/routes";
 
@@ -55,6 +53,7 @@ const ACCOUNT_TYPE_META: Record<
 interface FormData {
   accountType: AccountType | null;
   companyName: string;
+  companyEmail: string;
   registrationNumber: string;
   firstName: string;
   lastName: string;
@@ -69,6 +68,7 @@ type FormErrors = Partial<Record<keyof FormData | "general", string>>;
 const EMPTY_FORM: FormData = {
   accountType: null,
   companyName: "",
+  companyEmail: "",
   registrationNumber: "",
   firstName: "",
   lastName: "",
@@ -106,9 +106,14 @@ function ConfirmRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 export default function RegisterPage() {
   const t = useTranslations("auth");
   const s = useTranslations("system");
+  const locale = useLocale();
   const router = useRouter();
 
   const [step, setStep] = useState(0);
@@ -116,6 +121,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
   const [availableAccountTypes, setAvailableAccountTypes] = useState<AccountType[]>(DEFAULT_ACCOUNT_TYPES);
+  const [hasAcceptedLegal, setHasAcceptedLegal] = useState(false);
 
   const checks = getPasswordChecks(form.password);
   const strength = getPasswordStrength(form.password);
@@ -170,6 +176,7 @@ export default function RegisterPage() {
     }
     if (currentKey === "companyInfo") {
       if (!form.companyName.trim()) next.companyName = "Required";
+      if (form.companyEmail.trim() && !isValidEmail(form.companyEmail)) next.companyEmail = "Invalid email";
       if (!form.registrationNumber.trim()) next.registrationNumber = "Required";
     }
     if (currentKey === "personalInfo") {
@@ -187,6 +194,10 @@ export default function RegisterPage() {
 
   function handleNext() {
     if (!validate()) return;
+    const nextStep = step + 1;
+    if (stepKeys[nextStep] === "confirmation") {
+      setHasAcceptedLegal(false);
+    }
     setStep((n) => n + 1);
   }
 
@@ -197,42 +208,29 @@ export default function RegisterPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!hasAcceptedLegal) return;
     setLoading(true);
     setErrors({});
 
     try {
       const selectedAccountType = form.accountType ?? "Resident";
-      const result = await signUpWithEmailPassword(form.email, form.password, selectedAccountType);
+      const normalizedEmail = form.email.trim().toLowerCase();
 
-      await establishUserSession({
-        idToken: result.idToken,
-        userId: result.userId,
-        email: result.email,
+      await requestRegistrationCode(normalizedEmail, locale);
+      savePendingRegistration({
+        email: normalizedEmail,
+        password: form.password,
         accountType: selectedAccountType,
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        phone: form.phone.trim(),
+        companyName: form.companyName.trim(),
+        companyEmail: form.companyEmail.trim().toLowerCase(),
+        registrationNumber: form.registrationNumber.trim(),
+        acceptedPrivacyPolicy: true,
+        acceptedTerms: true,
       });
-
-      await saveUserProfile(result.userId, {
-          email: result.email,
-          firstName: form.firstName.trim(),
-          lastName: form.lastName.trim(),
-          fullName: `${form.firstName} ${form.lastName}`.trim(),
-          phone: form.phone.trim(),
-          role: selectedAccountType,
-          accountType: selectedAccountType,
-          companyName: form.companyName.trim() || undefined,
-          registrationNumber: form.registrationNumber.trim() || undefined,
-          companyId: selectedAccountType === "ManagementCompany" ? result.userId : undefined,
-        });
-
-      const session = await establishUserSession({
-        idToken: result.idToken,
-        userId: result.userId,
-        email: result.email,
-        accountType: selectedAccountType,
-      });
-
-      router.push(`${ROUTES.dashboard}?role=${accountTypeToDashboardRole(session.accountType)}`);
-      router.refresh();
+      router.push(`${ROUTES.registerVerify}?email=${encodeURIComponent(normalizedEmail)}`);
     } catch (error) {
       setErrors({ general: error instanceof Error ? error.message : s("dbError") });
     } finally {
@@ -308,6 +306,16 @@ export default function RegisterPage() {
               onChange={(e) => update("companyName", e.target.value)}
               error={errors.companyName}
               autoFocus
+            />
+            <Input
+              label={s("form.companyEmail")}
+              type="email"
+              placeholder={s("placeholder.companyEmail")}
+              value={form.companyEmail}
+              onChange={(e) => update("companyEmail", e.target.value)}
+              error={errors.companyEmail}
+              hint={t("registerCompanyEmailHint")}
+              autoComplete="email"
             />
             <Input
               label={s("form.registrationNumber")}
@@ -424,19 +432,46 @@ export default function RegisterPage() {
 
         {/* ── STEP: Confirmation ── */}
         {currentKey === "confirmation" && (
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-            <div className="divide-y divide-slate-100">
-              <ConfirmRow label={s("form.firstName")} value={form.firstName} />
-              <ConfirmRow label={s("form.lastName")} value={form.lastName} />
-              <ConfirmRow label={s("form.email")} value={form.email} />
-              {form.phone && <ConfirmRow label={s("form.phone")} value={form.phone} />}
-              {form.accountType === "ManagementCompany" && (
-                <>
-                  <ConfirmRow label={s("form.companyName")} value={form.companyName} />
-                  <ConfirmRow label={s("form.registrationNumber")} value={form.registrationNumber} />
-                </>
-              )}
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+              <div className="divide-y divide-slate-100">
+                <ConfirmRow label={s("form.firstName")} value={form.firstName} />
+                <ConfirmRow label={s("form.lastName")} value={form.lastName} />
+                <ConfirmRow label={s("form.email")} value={form.email} />
+                {form.phone && <ConfirmRow label={s("form.phone")} value={form.phone} />}
+                {form.accountType === "ManagementCompany" && (
+                  <>
+                    <ConfirmRow label={s("form.companyName")} value={form.companyName} />
+                    <ConfirmRow label={s("form.companyEmail")} value={form.companyEmail} />
+                    <ConfirmRow label={s("form.registrationNumber")} value={form.registrationNumber} />
+                  </>
+                )}
+              </div>
             </div>
+
+            <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={hasAcceptedLegal}
+                onChange={(event) => setHasAcceptedLegal(event.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>
+                {t("registerLegalConsentPrefix")}{" "}
+                <Link href={ROUTES.privacyPolicy} target="_blank" className="font-medium text-blue-600 hover:underline">
+                  {t("privacyPolicyTitle")}
+                </Link>{" "}
+                {t("registerLegalConsentAnd")}{" "}
+                <Link href={ROUTES.termsOfUse} target="_blank" className="font-medium text-blue-600 hover:underline">
+                  {t("termsOfUseTitle")}
+                </Link>
+                .
+              </span>
+            </label>
+
+            {!hasAcceptedLegal && (
+              <p className="text-xs text-slate-500">{t("registerLegalConsentHint")}</p>
+            )}
           </div>
         )}
 
@@ -461,7 +496,7 @@ export default function RegisterPage() {
               type="submit"
               variant="primary"
               className="flex-1 sm:flex-none sm:min-w-35"
-              disabled={loading}
+              disabled={loading || !hasAcceptedLegal}
             >
               {loading ? s("button.registering") : s("button.register")}
             </Button>

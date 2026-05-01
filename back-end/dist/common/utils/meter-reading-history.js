@@ -33,8 +33,16 @@ const buildMeterHistorySnapshot = (history) => {
         const dateB = toDateValue(b.submittedAt)?.getTime() ?? 0;
         return dateA - dateB;
     });
+    const monthlyMap = new Map();
+    for (const item of sorted) {
+        const year = toNumberOrNull(item.year) ?? 0;
+        const month = toNumberOrNull(item.month) ?? 0;
+        const key = `${year}-${month}`;
+        monthlyMap.set(key, item);
+    }
+    const uniqueByMonth = Array.from(monthlyMap.values());
     let prevCurrentValue = null;
-    const normalized = sorted.map((item) => {
+    const normalized = uniqueByMonth.map((item) => {
         const currentValue = toNumberOrNull(item.currentValue);
         const previousValue = prevCurrentValue;
         const consumption = previousValue != null && currentValue != null
