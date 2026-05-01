@@ -42,7 +42,7 @@ interface ApartmentMeterData {
 }
 
 export default function ManagementCompanyPage() {
-  const t = useTranslations("meterReadings");
+  const t = useTranslations("meterread");
   const notify = useNotifications();
   const [apartments, setApartments] = useState<ApartmentMeterData[]>([]); 
   const [loading, setLoading] = useState(true);
@@ -130,9 +130,9 @@ export default function ManagementCompanyPage() {
   );
 
   const STATUS_CFG: Record<"submitted" | "pending" | "overdue", { dot: string; text: string; bg: string; border: string; label: string }> = {
-    submitted: { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200", label: "Submitted" },
-    pending: { dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50", border: "border-amber-200", label: "Pending" },
-    overdue: { dot: "bg-rose-500", text: "text-rose-700", bg: "bg-rose-50", border: "border-rose-200", label: "Overdue" },
+    submitted: { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200", label: t("statusSubmitted") },
+    pending: { dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50", border: "border-amber-200", label: t("statusPending") },
+    overdue: { dot: "bg-rose-500", text: "text-rose-700", bg: "bg-rose-50", border: "border-rose-200", label: t("statusOverdue") },
   };
 
   // View meters modal
@@ -216,11 +216,11 @@ export default function ManagementCompanyPage() {
             : a,
         ),
       );
-      notify.success("Данные счётчиков сохранены");
+      notify.success(t("notifyMetersSaved"));
       setViewOpen(false);
     } catch (e) {
       console.error(e);
-      notify.error("Не удалось сохранить");
+      notify.error(t("notifySaveError"));
     } finally {
       setViewSaving(false);
     }
@@ -230,7 +230,7 @@ export default function ManagementCompanyPage() {
 
   const deleteMonthReadings = async (apartmentId: string, monthKey: string, readingIds: string[]) => {
     if (!apartmentId || readingIds.length === 0) return;
-    if (!window.confirm(`Удалить все показания за ${monthKey}?`)) return;
+    if (!window.confirm(t("confirmDeleteMonth", { monthKey }))) return;
     const tag = `${apartmentId}:${monthKey}`;
     try {
       setDeletingMonthKey(tag);
@@ -254,10 +254,10 @@ export default function ManagementCompanyPage() {
           };
         }),
       );
-      notify.success(`Удалены показания за ${monthKey}`);
+      notify.success(t("notifyDeletedReadings", { monthKey }));
     } catch (e) {
       console.error(e);
-      notify.error("Не удалось удалить");
+      notify.error(t("notifyDeleteError"));
     } finally {
       setDeletingMonthKey(null);
     }
@@ -267,10 +267,10 @@ export default function ManagementCompanyPage() {
     try {
       setSendingTestReminder(true);
       await apiFetch("/meter-readings/test-reminder", { method: "POST" });
-      notify.success("Тестовое письмо отправлено на вашу почту");
+      notify.success(t("notifyTestEmailSent"));
     } catch (e) {
       console.error(e);
-      notify.error("Не удалось отправить письмо");
+      notify.error(t("notifyEmailError"));
     } finally {
       setSendingTestReminder(false);
     }
@@ -319,10 +319,10 @@ export default function ManagementCompanyPage() {
           violations.push(`${label}: ${currentValue} < ${previousValue}`);
         }
       };
-      checkBelowPrevious(coldMeter, submitCold, "Холодная вода");
-      checkBelowPrevious(hotMeter, submitHot, "Горячая вода");
+      checkBelowPrevious(coldMeter, submitCold, t("coldWater"));
+      checkBelowPrevious(hotMeter, submitHot, t("hotWater"));
       if (violations.length > 0) {
-        notify.error(`Показание не может быть меньше предыдущего. ${violations.join("; ")}`);
+        notify.error(t("notifyBelowPrevious", { violations: violations.join("; ") }));
         return;
       }
       let count = 0;
@@ -336,7 +336,7 @@ export default function ManagementCompanyPage() {
         count += 1;
       }
       if (count === 0) {
-        notify.info("Введите хотя бы одно показание");
+        notify.info(t("notifyEnterAtLeastOne"));
         return;
       }
       // Локальное обновление без перезагрузки
@@ -391,11 +391,11 @@ export default function ManagementCompanyPage() {
           };
         }),
       );
-      notify.success("Показания отправлены");
+      notify.success(t("notifyReadingsSent"));
       setSubmitOpen(false);
     } catch (e) {
       console.error(e);
-      notify.error("Не удалось отправить показания");
+      notify.error(t("notifySendError"));
     } finally {
       setSubmitting(false);
     }
@@ -616,10 +616,10 @@ export default function ManagementCompanyPage() {
       });
       setPeriodValue(value);
       setPeriodOpen(false);
-      notify.success("Период сдачи сохранён");
+      notify.success(t("notifyPeriodSaved"));
     } catch (e) {
       console.error("Failed to save submission period", e);
-      notify.error("Не удалось сохранить период");
+      notify.error(t("notifyPeriodSaveError"));
     } finally {
       setPeriodSaving(false);
     }
@@ -655,7 +655,7 @@ export default function ManagementCompanyPage() {
   };
   const periodButtonLabel = currentPeriod
     ? `${formatShort(currentPeriod.startDate)} — ${formatShort(currentPeriod.endDate)}`
-    : "Период";
+    : t("period");
 
   const deletePeriod = async () => {
     setPeriodDeleting(true);
@@ -667,17 +667,17 @@ export default function ManagementCompanyPage() {
       });
       setPeriodValue(null);
       setPeriodOpen(false);
-      notify.success("Период сдачи удалён");
+      notify.success(t("notifyPeriodDeleted"));
     } catch (e) {
       console.error("Failed to delete submission period", e);
-      notify.error("Не удалось удалить период");
+      notify.error(t("notifyPeriodDeleteError"));
     } finally {
       setPeriodDeleting(false);
     }
   };
 
   const filterFields: FilterField[] = [
-    { name: "search", type: "search", placeholder: "Search apartment" },
+    { name: "search", type: "search", placeholder: t("searchPlaceholder") },
     {
       name: "building",
       type: "select",
@@ -688,10 +688,10 @@ export default function ManagementCompanyPage() {
       name: "status",
       type: "select",
       options: [
-        { value: "all", label: "All statuses" },
-        { value: "submitted", label: "Submitted" },
-        { value: "pending", label: "Pending" },
-        { value: "verified", label: "Verified" },
+        { value: "all", label: t("statusAll") },
+        { value: "submitted", label: t("statusSubmitted") },
+        { value: "pending", label: t("statusPending") },
+        { value: "verified", label: t("statusVerified") },
       ],
     },
   ];
@@ -732,7 +732,7 @@ export default function ManagementCompanyPage() {
       <Modal
         open={periodOpen}
         onClose={() => setPeriodOpen(false)}
-        title="Период сдачи показаний"
+        title={t("periodModalTitle")}
         size="lg"
       >
         <SubmissionPeriodCard
@@ -750,12 +750,12 @@ export default function ManagementCompanyPage() {
       <Modal
         open={submitOpen}
         onClose={() => setSubmitOpen(false)}
-        title="Сдать показание за квартиру"
+        title={t("submitModalTitle")}
         size="md"
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="primary" onClick={() => setSubmitOpen(false)}>
-              Закрыть
+              {t("close")}
             </Button>
             <Button
               variant="primary"
@@ -763,7 +763,7 @@ export default function ManagementCompanyPage() {
               disabled={submitting}
               className="bg-emerald-600 hover:bg-emerald-700"
             >
-              {submitting ? "Отправка…" : "Отправить показания"}
+              {submitting ? t("sending") : t("send")}
             </Button>
           </div>
         }
@@ -771,13 +771,13 @@ export default function ManagementCompanyPage() {
         {submitApt && (
           <div className="space-y-5">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Выбрать квартиру:</label>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">{t("selectApartmentLabel")}</label>
               <div className="flex h-11 w-full items-center rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm text-slate-800">
                 {submitApt.apartment}
               </div>
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Месяц, за который подаются показания:</label>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">{t("monthLabel")}</label>
               <input
                 type="month"
                 value={submitMonth}
@@ -798,27 +798,27 @@ export default function ManagementCompanyPage() {
                   {cold && (
                     <MeterReadingInput
                       variant="cold"
-                      label="Холодная вода"
+                      label={t("coldWater")}
                       serialNumber={cold.serialNumber}
                       previousValue={cold.latestReading?.currentValue ?? cold.latestReading?.previousValue ?? "—"}
                       previousPeriod={previousPeriodLabel}
                       currentPeriod={currentPeriodLabel}
                       value={submitCold}
                       onChange={setSubmitCold}
-                      labels={{ previous: "Предыдущее показание", current: "Текущее показание", serialPrefix: "№" }}
+                      labels={{ previous: t("previousReading"), current: t("currentReading"), serialPrefix: t("serialPrefix") }}
                     />
                   )}
                   {hot && (
                     <MeterReadingInput
                       variant="hot"
-                      label="Горячая вода"
+                      label={t("hotWater")}
                       serialNumber={hot.serialNumber}
                       previousValue={hot.latestReading?.currentValue ?? hot.latestReading?.previousValue ?? "—"}
                       previousPeriod={previousPeriodLabel}
                       currentPeriod={currentPeriodLabel}
                       value={submitHot}
                       onChange={setSubmitHot}
-                      labels={{ previous: "Предыдущее показание", current: "Текущее показание", serialPrefix: "№" }}
+                      labels={{ previous: t("previousReading"), current: t("currentReading"), serialPrefix: t("serialPrefix") }}
                     />
                   )}
                 </div>
@@ -831,7 +831,7 @@ export default function ManagementCompanyPage() {
       <Modal
         open={viewOpen}
         onClose={() => setViewOpen(false)}
-        title="Данные счётчиков"
+        title={t("viewModalTitle")}
         size="md"
         footer={
           <div className="flex justify-end gap-2">
@@ -840,21 +840,21 @@ export default function ManagementCompanyPage() {
               onClick={() => setViewOpen(false)}
               className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
             >
-              Отмена
+              {t("cancel")}
             </button>
             <Button variant="primary" onClick={saveViewDates} disabled={viewSaving}>
-              {viewSaving ? "Сохранение…" : "Сохранить"}
+              {viewSaving ? t("saving") : t("save")}
             </Button>
           </div>
         }
       >
         {viewApt && (
           <div className="space-y-4">
-            <p className="-mt-1 text-xs text-slate-400">Нажмите Esc для закрытия{viewLoading ? " · загрузка…" : ""}</p>
+            <p className="-mt-1 text-xs text-slate-400">{t("pressEscToClose")}{viewLoading ? ` · ${t("loadingShort")}` : ""}</p>
             {viewApt.meters.map((m) => {
               const isHot = m.meterKey === "hotmeterwater" || m.meterType.toLowerCase().includes("hot");
               const dot = isHot ? "bg-rose-500" : "bg-blue-500";
-              const label = isHot ? "Горячая вода (ГВС)" : "Холодная вода (ХВС)";
+              const label = isHot ? t("hotWaterFull") : t("coldWaterFull");
               const slot: "cold" | "hot" = isHot ? "hot" : "cold";
               const key = m.meterKey ?? m.serialNumber ?? m.meterType;
               return (
@@ -864,17 +864,17 @@ export default function ManagementCompanyPage() {
                     <span className="text-sm font-medium text-slate-800">{label}</span>
                   </div>
                   <div className="mb-3">
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Номер счётчика</label>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">{t("meterNumber")}</label>
                     <input
                       type="text"
                       value={viewSerials[slot]}
                       onChange={(e) => setViewSerials((prev) => ({ ...prev, [slot]: e.target.value }))}
-                      placeholder="Номер счётчика"
+                      placeholder={t("meterNumber")}
                       className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Дата проверки</label>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">{t("checkDate")}</label>
                     <input
                       type="date"
                       value={viewDates[slot]}
@@ -893,7 +893,7 @@ export default function ManagementCompanyPage() {
       <Modal
         open={selectAptOpen}
         onClose={() => setSelectAptOpen(false)}
-        title="Выберите квартиру"
+        title={t("selectAptModalTitle")}
         size="md"
       >
         <div className="space-y-4">
@@ -910,7 +910,7 @@ export default function ManagementCompanyPage() {
             defaultValue=""
             className="w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-transparent"
           >
-            <option value="">-- Выберите квартиру --</option>
+            <option value="">{t("selectApartmentPlaceholder")}</option>
             {filteredApartments.map((apt) => (
               <option key={apt.apartmentId} value={apt.apartmentId}>
                 {apt.apartment}
@@ -921,7 +921,7 @@ export default function ManagementCompanyPage() {
       </Modal>
 
       <SectionCard 
-        title={buildingLabels.get(effectiveBuilding) || "Выберите дом"}
+        title={buildingLabels.get(effectiveBuilding) || t("selectBuilding")}
         titleMeta={
           effectiveBuilding && (
             <div className="flex items-center gap-2">
@@ -929,10 +929,10 @@ export default function ManagementCompanyPage() {
                 {filteredApartments.length > 0 ? (
                   <>
                     <span className="text-slate-900">{filteredApartments.length}</span>
-                    {" кв"}
+                    {` ${t("apts")}`}
                   </>
                 ) : (
-                  "нет данных"
+                  t("noData")
                 )}
               </div>
             </div>
@@ -950,7 +950,7 @@ export default function ManagementCompanyPage() {
                 onClick={() => setPeriodOpen(true)}
                 disabled={!effectiveBuilding}
                 className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                title={periodValue?.monthly ? "Период сдачи (ежемесячно)" : "Период сдачи показаний"}
+                title={periodValue?.monthly ? t("periodMonthly") : t("periodModalTitle")}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -971,11 +971,11 @@ export default function ManagementCompanyPage() {
                 className="inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1"
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                Submit
+                {t("submit")}
               </button>
               <button className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-1 focus:ring-slate-400">
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                Export
+                {t("export")}
               </button>
               <button
                 type="button"
@@ -985,13 +985,14 @@ export default function ManagementCompanyPage() {
                 className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-slate-400"
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                {sendingTestReminder ? "Sending..." : "Test Email"}
+                {sendingTestReminder ? t("sendingTestEmail") : t("testEmail")}
               </button>
             </>
           }
           footer={
             <>
-              <span className="font-semibold text-slate-700">{filteredApartments.length}</span> apartment{filteredApartments.length === 1 ? "" : "s"}
+              <span className="font-semibold text-slate-700">{filteredApartments.length}</span>{" "}
+              {filteredApartments.length === 1 ? t("readingsCount", { count: 1 }) : t("readingsCountPlural", { count: filteredApartments.length })}
             </>
           }
         />
@@ -1001,18 +1002,18 @@ export default function ManagementCompanyPage() {
           <div className="rounded-md border border-slate-200 bg-white p-10 text-center">
             <div className="inline-flex items-center gap-3 text-sm text-slate-600">
               <div className="animate-spin h-4 w-4 border-2 border-slate-400 border-r-transparent rounded-full"></div>
-              Loading meter readings…
+              {t("loadingReadings")}
             </div>
           </div>
         ) : error ? (
           <div className="rounded-md border border-red-200 bg-red-50 p-6">
-            <div className="mb-2 text-sm font-semibold text-red-800">Error loading data</div>
+            <div className="mb-2 text-sm font-semibold text-red-800">{t("errorTitle")}</div>
             <div className="mb-4 text-sm text-red-700">{error}</div>
             <button
               onClick={() => window.location.reload()}
               className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
             >
-              Retry
+              {t("retry")}
             </button>
           </div>
         ) : filteredApartments.length > 0 ? (
@@ -1073,15 +1074,15 @@ export default function ManagementCompanyPage() {
                           </div>
                           <div className="mt-2 grid grid-cols-3 items-end gap-1 text-sm tabular-nums">
                             <div>
-                              <div className="text-[10px] uppercase tracking-wide text-slate-400">{prevLabel || "Prev"}</div>
+                              <div className="text-[10px] uppercase tracking-wide text-slate-400">{prevLabel || t("prevShort")}</div>
                               <div className="text-slate-500">{meter.latestReading?.previousValue ?? "—"}</div>
                             </div>
                             <div>
-                              <div className="text-[10px] uppercase tracking-wide text-slate-400">{currLabel || "Curr"}</div>
+                              <div className="text-[10px] uppercase tracking-wide text-slate-400">{currLabel || t("currShort")}</div>
                               <div className="font-semibold text-slate-900">{meter.latestReading?.currentValue ?? "—"}</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-[10px] uppercase tracking-wide text-slate-400">Use</div>
+                              <div className="text-[10px] uppercase tracking-wide text-slate-400">{t("useShort")}</div>
                               <div className={`font-semibold ${consumptionColor}`}>+{meter.latestReading?.consumption ?? "—"} m³</div>
                             </div>
                           </div>
@@ -1092,18 +1093,18 @@ export default function ManagementCompanyPage() {
                     <div className="flex gap-2 pt-1">
                       <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                        View
+                        {t("view")}
                       </button>
                       <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                        Edit
+                        {t("edit")}
                       </button>
                     </div>
                   </div>
 
                   {isExpanded && (
                     <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-3">
-                      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">History</h4>
+                      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">{t("history")}</h4>
                       <div className="space-y-2">
                         {(() => {
                           const byMonth = new Map<string, Array<{ meter: MeterInfo; r: MeterReadingRecord }>>();
@@ -1127,7 +1128,7 @@ export default function ManagementCompanyPage() {
                                 >
                                   <div className="flex items-center gap-2 min-w-0">
                                     <span className="font-mono text-xs font-semibold text-slate-700 tabular-nums">{year}-{month}</span>
-                                    <span className="text-[11px] text-slate-400">{items.length} reading{items.length === 1 ? "" : "s"}</span>
+                                    <span className="text-[11px] text-slate-400">{items.length === 1 ? t("readingsCount", { count: 1 }) : t("readingsCountPlural", { count: items.length })}</span>
                                   </div>
                                   <svg className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isMonthExpanded ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                                 </button>
@@ -1171,11 +1172,11 @@ export default function ManagementCompanyPage() {
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
                   <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 w-10"></th>
-                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">Apartment</th>
-                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">Meter</th>
-                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">Reading</th>
-                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">Status</th>
-                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">Actions</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("colApartment")}</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("colMeter")}</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("colReading")}</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("colStatus")}</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("colActions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -1187,7 +1188,7 @@ export default function ManagementCompanyPage() {
                       {/* Main Row */}
                       <tr className="border-t border-slate-100 hover:bg-slate-50/60 cursor-pointer transition-colors" onClick={() => toggleExpanded(apt.id)}>
                         <td className="px-3 py-3 text-center align-top">
-                          <button className="text-slate-400 hover:text-slate-700 transition-transform inline-flex" aria-label={isExpanded ? "Collapse" : "Expand"}>
+                          <button className="text-slate-400 hover:text-slate-700 transition-transform inline-flex" aria-label={isExpanded ? t("history") : t("colApartment")}>
                             <svg className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                           </button>
                         </td>
@@ -1281,7 +1282,7 @@ export default function ManagementCompanyPage() {
                         <tr className="bg-slate-50/60">
                           <td colSpan={9} className="p-0">
                             <div className="px-4 py-4">
-                              <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-3">Reading history</h4>
+                              <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-3">{t("readingHistory")}</h4>
                               <div className="space-y-2">
                                 {(() => {
                                   // Группируем все показания по месяцам (YYYY-MM)
@@ -1308,7 +1309,7 @@ export default function ManagementCompanyPage() {
                                   
                                   return sortedMonths.map(monthKey => {
                                     const [year, month] = monthKey.split('-');
-                                    const monthLabel = `${year}. gads ${month}`;
+                                    const monthLabel = `${year}-${month}`;
                                     const isMonthExpanded = expandedApartments.has(`month-${monthKey}`);
                                     const monthReadings = readingsByMonth.get(monthKey) || [];
                                     
@@ -1326,7 +1327,7 @@ export default function ManagementCompanyPage() {
                                               <span className="text-xs text-slate-500">{monthLabel}</span>
                                             </div>
                                             <div className="flex items-center gap-3">
-                                              <span className="text-[11px] uppercase tracking-wide text-slate-400">{monthReadings.length} reading{monthReadings.length === 1 ? "" : "s"}</span>
+                                              <span className="text-[11px] uppercase tracking-wide text-slate-400">{monthReadings.length === 1 ? t("readingsCount", { count: 1 }) : t("readingsCountPlural", { count: monthReadings.length })}</span>
                                               <svg className={`h-4 w-4 text-slate-400 transition-transform ${isMonthExpanded ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                                             </div>
                                           </button>
@@ -1342,7 +1343,7 @@ export default function ManagementCompanyPage() {
                                             }}
                                             disabled={deletingMonthKey === `${apt.apartmentId}:${monthKey}`}
                                             className="mr-3 inline-flex h-7 w-7 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-500 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                            title={`Удалить все показания за ${monthKey}`}
+                                            title={t("deleteReadingsTitle", { monthKey })}
                                           >
                                             <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                               <path d="M3 6h18" />
@@ -1359,12 +1360,12 @@ export default function ManagementCompanyPage() {
                                             <table className="w-full text-sm">
                                               <thead className="border-b border-slate-200">
                                                 <tr className="text-slate-600 text-xs font-semibold uppercase">
-                                                  <th className="text-left py-2 px-2">Meter</th>
-                                                  <th className="text-left py-2 px-2">Date</th>
-                                                  <th className="text-right py-2 px-2">Previous</th>
-                                                  <th className="text-right py-2 px-2">Current</th>
-                                                  <th className="text-right py-2 px-2">Consumption</th>
-                                                  <th className="text-center py-2 px-2">Status</th>
+                                                  <th className="text-left py-2 px-2">{t("colMeter")}</th>
+                                                  <th className="text-left py-2 px-2">{t("colDate")}</th>
+                                                  <th className="text-right py-2 px-2">{t("colPrevious")}</th>
+                                                  <th className="text-right py-2 px-2">{t("colCurrent")}</th>
+                                                  <th className="text-right py-2 px-2">{t("colConsumption")}</th>
+                                                  <th className="text-center py-2 px-2">{t("colStatus")}</th>
                                                 </tr>
                                               </thead>
                                               <tbody className="divide-y divide-slate-100">
@@ -1392,10 +1393,10 @@ export default function ManagementCompanyPage() {
                                                       <td className="py-2.5 px-2 text-center">
                                                         {(() => {
                                                           const cfg = item.reading.status === "verified"
-                                                            ? { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200", label: "Verified" }
+                                                            ? { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200", label: t("statusVerified") }
                                                             : item.reading.status === "pending"
-                                                            ? { dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50", border: "border-amber-200", label: "Pending" }
-                                                            : { dot: "bg-slate-500", text: "text-slate-700", bg: "bg-slate-50", border: "border-slate-200", label: "Submitted" };
+                                                            ? { dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50", border: "border-amber-200", label: t("statusPending") }
+                                                            : { dot: "bg-slate-500", text: "text-slate-700", bg: "bg-slate-50", border: "border-slate-200", label: t("statusSubmitted") };
                                                           return (
                                                             <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium ${cfg.bg} ${cfg.border} ${cfg.text}`}>
                                                               <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
@@ -1430,7 +1431,7 @@ export default function ManagementCompanyPage() {
           </>
         ) : (
           <div className="rounded-md border border-dashed border-slate-300 bg-white py-12 text-center text-sm text-slate-500">
-            No meter readings available
+            {t("noReadings")}
           </div>
         )}
       </SectionCard>
