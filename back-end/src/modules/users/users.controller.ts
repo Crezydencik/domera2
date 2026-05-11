@@ -21,6 +21,12 @@ import { UsersService } from './users.service';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @Get('me')
+  @ApiOperation({ summary: 'Get current authenticated user profile' })
+  me(@Req() request: Request, @CurrentUser() user: RequestUser) {
+    return this.usersService.me(request, user);
+  }
+
   @Get(':userId')
   @ApiOperation({ summary: 'Get user by id' })
   @ApiParam({ name: 'userId', required: true, type: String })

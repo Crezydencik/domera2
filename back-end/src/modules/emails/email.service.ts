@@ -93,7 +93,8 @@ export class EmailService {
     const template = templates.ownerInvitationTemplates[language]({
       companyName: dto.companyName,
       invitationLink: dto.invitationLink,
-      senderName: dto.senderName,
+      buildingName: dto.buildingName,
+      apartmentNumber: dto.apartmentNumber,
     });
 
     return this.send({

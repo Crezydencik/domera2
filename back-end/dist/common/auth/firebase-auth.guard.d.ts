@@ -6,3 +6,6 @@ export declare class FirebaseAuthGuard implements CanActivate {
     canActivate(context: ExecutionContext): Promise<boolean>;
     private extractToken;
 }
+export declare class OptionalFirebaseAuthGuard extends FirebaseAuthGuard {
+    canActivate(context: ExecutionContext): Promise<boolean>;
+}

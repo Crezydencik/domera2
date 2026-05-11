@@ -47,6 +47,12 @@ export declare class InvitationsController {
             id: string;
             email: string;
             apartmentId: string | null;
+            inviteType: string;
+            role: string;
+            accountType: string;
+            apartmentLabel: string;
+            buildingLabel: string;
+            managerLabel: string;
             status: string;
             expiresAt: string | null;
         };

@@ -101,6 +101,7 @@ export class AuthController {
     if (error instanceof HttpException) throw error;
 
     const message = error instanceof Error ? error.message : 'Unexpected auth error';
+    console.error('Auth service error:', error);
     const statusCode = (error as { statusCode?: number } | undefined)?.statusCode;
     const retryAfter = (error as { retryAfter?: number } | undefined)?.retryAfter;
 

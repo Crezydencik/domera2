@@ -27,6 +27,8 @@ export interface ManagementActionApartment {
   floor: string;
   status: string;
   residentId?: string;
+  isOccupied?: boolean;
+  isVacant?: boolean;
 }
 
 type InvitationRecord = {
@@ -56,7 +58,6 @@ type ImportFieldKey =
   | "coldWaterMeter"
   | "hotWaterReadings"
   | "coldWaterReadings";
-type ImportFormat = (typeof IMPORT_FORMATS)[number];
 
 const IMPORT_FIELD_KEYS: ImportFieldKey[] = [
   "cadastralNumber",
@@ -78,12 +79,7 @@ const IMPORT_FIELD_KEYS: ImportFieldKey[] = [
 ];
 
 const IMPORT_FORMATS = ["excel", "json", "xml"] as const;
-
-const IMPORT_ACCEPT_BY_FORMAT: Record<ImportFormat, string> = {
-  excel: ".xlsx,.xls,.csv",
-  json: ".json",
-  xml: ".xml",
-};
+const IMPORT_ACCEPT = ".xlsx,.xls,.csv,.json,.xml";
 
 function normalizePrimitive(value: unknown): string | number | boolean | null {
   if (value == null) return null;
@@ -262,7 +258,6 @@ export function ApartmentsManagementActionsMenu({
   const [invitesOpen, setInvitesOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importBuildingId, setImportBuildingId] = useState<string>(selectedBuildingId?.trim() ?? "");
-  const [importFormat, setImportFormat] = useState<ImportFormat>("excel");
   const [exportOpen, setExportOpen] = useState(false);
   const [loadingImport, setLoadingImport] = useState(false);
   const [loadingCreate, setLoadingCreate] = useState(false);
@@ -300,9 +295,7 @@ export function ApartmentsManagementActionsMenu({
     [buildings, effectiveImportBuildingId],
   );
   const importBuildingLabel = importBuilding?.label;
-  const importAccept = IMPORT_ACCEPT_BY_FORMAT[importFormat];
-  const isStructuredImportFormat = importFormat === "json" || importFormat === "xml";
-  const importExample = String(t.raw(`dialogs.import.examples.${importFormat}`));
+  const importExample = "";
   const buildingReadingConfig = effectiveBuilding?.readingConfig;
 
   useEffect(() => {
@@ -343,9 +336,14 @@ export function ApartmentsManagementActionsMenu({
 
   function openImportModal() {
     setImportBuildingId(selectedBuildingId?.trim() ?? "");
-    setImportFormat("excel");
     setImportOpen(true);
     setOpen(false);
+  }
+
+  function handleImportDrop(event: React.DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    if (loadingImport || !effectiveImportBuildingId) return;
+    void handleImportFile(event.dataTransfer.files?.[0]);
   }
 
   function openCreateApartmentModal() {
@@ -515,7 +513,7 @@ export function ApartmentsManagementActionsMenu({
       return;
     }
 
-    const deletable = apartments.filter((apartment) => !apartment.residentId);
+    const deletable = apartments.filter((apartment) => apartment.isVacant ?? !apartment.isOccupied);
     if (deletable.length === 0) {
       notifications.info(t("feedback.noVacantApartmentsToDelete"));
       setDeleteOpen(false);
@@ -578,8 +576,9 @@ export function ApartmentsManagementActionsMenu({
         <input
           ref={fileInputRef}
           type="file"
-          accept={importAccept}
+          accept={IMPORT_ACCEPT}
           className="hidden"
+          id="apartment-import-file"
           onChange={(event) => void handleImportFile(event.target.files?.[0])}
         />
 
@@ -685,7 +684,7 @@ export function ApartmentsManagementActionsMenu({
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{t("dialogs.import.summaryFormatLabel")}</p>
-              <p className="mt-2 font-medium text-slate-900">{t(`dialogs.import.formats.${importFormat}.label`)}</p>
+              <p className="mt-2 font-medium text-slate-900">{t("dialogs.import.autoFormatValue")}</p>
             </div>
           </div>
 
@@ -722,42 +721,63 @@ export function ApartmentsManagementActionsMenu({
           </div> 
 
           <div className="space-y-3">
-            <label htmlFor="import-format" className="text-sm font-semibold text-slate-900">
-              {t("dialogs.import.formatLabel")}
-            </label>
-            <select
-              id="import-format"
-              value={importFormat}
-              onChange={(event) => setImportFormat(event.target.value as ImportFormat)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-              disabled={loadingImport}
+            <label
+              htmlFor="apartment-import-file"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={handleImportDrop}
+              className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-5 py-8 text-center transition ${
+                effectiveImportBuildingId && !loadingImport
+                  ? "border-blue-200 bg-blue-50/60 text-blue-900 hover:border-blue-300 hover:bg-blue-50"
+                  : "border-slate-200 bg-slate-50 text-slate-400"
+              }`}
             >
+              <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-blue-600 shadow-sm">
+                <UploadIcon />
+              </span>
+              <span className="mt-4 text-sm font-semibold text-slate-900">{t("dialogs.import.uploadTitle")}</span>
+              <span className="mt-1 max-w-sm text-xs text-slate-500">{t("dialogs.import.uploadHint")}</span>
+              <span className="mt-3 inline-flex rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                {t("dialogs.import.allowedFiles", { formats: IMPORT_ACCEPT.replaceAll(",", ", ") })}
+              </span>
+            </label>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">{t("dialogs.import.structureLabel")}</p>
+              <p className="mt-1 text-xs text-slate-500">{t("dialogs.import.structureHint")}</p>
+            </div>
+
+            <div className="space-y-2">
               {IMPORT_FORMATS.map((format) => (
-                <option key={format} value={format}>
-                  {t(`dialogs.import.formats.${format}.label`)}
-                </option>
+                <details key={format} className="group rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" open={format === "excel"}>
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-medium text-slate-900">
+                    <span>{t(`dialogs.import.formats.${format}.label`)}</span>
+                    <span className="text-slate-400 transition group-open:rotate-180">⌄</span>
+                  </summary>
+                  <p className="mt-2 text-xs text-slate-500">{t(`dialogs.import.formats.${format}.description`)}</p>
+                  {format === "excel" ? (
+                    <div className="mt-3 space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("dialogs.import.fieldsLabel")}</p>
+                      <ul className="grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+                        {IMPORT_FIELD_KEYS.map((fieldKey) => (
+                          <li key={fieldKey}>
+                            <span className="font-medium text-slate-900">{t(`dialogs.import.fields.${fieldKey}.label`)}</span>
+                            <span className="text-slate-500"> - {t(`dialogs.import.fields.${fieldKey}.description`)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  <pre className="mt-3 overflow-x-auto rounded-2xl bg-slate-50 px-3 py-3 font-mono text-xs leading-6 text-slate-800 whitespace-pre-wrap">
+                    {String(t.raw(`dialogs.import.examples.${format}`))}
+                  </pre>
+                </details>
               ))}
-            </select>
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
-              <p className="font-medium text-slate-900">{t(`dialogs.import.formats.${importFormat}.label`)}</p>
-              <p className="mt-1 text-xs text-slate-500">{t(`dialogs.import.formats.${importFormat}.description`)}</p>
-              <p className="mt-3 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                {t("dialogs.import.allowedFiles", { formats: importAccept.replaceAll(",", ", ") })}
-              </p>
             </div>
           </div>
 
-          {isStructuredImportFormat ? (
-            <>
-              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                <p className="font-medium text-blue-950">{t("dialogs.import.structureLabel")}</p>
-                <p className="mt-1 text-xs text-blue-800">{t("dialogs.import.structureHint")}</p>
-                <pre className="mt-3 overflow-x-auto rounded-2xl bg-white/80 px-3 py-3 font-mono text-xs leading-6 text-blue-950 whitespace-pre-wrap">
-                  {importExample}
-                </pre>
-              </div>
-            </>
-          ) : (
+          {false ? (
             <>
               <div className="space-y-3">
                 <p className="text-sm font-semibold text-slate-900">{t("dialogs.import.fieldsLabel")}</p>
@@ -778,13 +798,10 @@ export function ApartmentsManagementActionsMenu({
                 </pre>
               </div>
             </>
-          )}
+          ) : null}
 
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="flex justify-end pt-2">
             <Button type="button" variant="secondary" size="sm" onClick={() => setImportOpen(false)} disabled={loadingImport}>{ui("cancel")}</Button>
-            <Button type="button" size="sm" onClick={() => fileInputRef.current?.click()} disabled={loadingImport || !effectiveImportBuildingId}>
-              {loadingImport ? t("items.importLoading") : t("dialogs.import.submit")}
-            </Button>
           </div>
         </div>
       </ModalShell>

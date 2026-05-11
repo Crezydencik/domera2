@@ -57,10 +57,12 @@ export class NotificationsService {
       .limit(100)
       .get();
 
-    const items = snap.docs.map<{ id: string } & Record<string, unknown>>((doc) => ({
-      id: doc.id,
-      ...(doc.data() as Record<string, unknown>),
-    }));
+    const items = snap.docs
+      .map<{ id: string } & Record<string, unknown>>((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Record<string, unknown>),
+      }))
+      .filter((item) => item.read !== true);
 
     return { items };
   }

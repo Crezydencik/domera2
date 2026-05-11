@@ -22,6 +22,9 @@ let UsersController = class UsersController {
     constructor(usersService) {
         this.usersService = usersService;
     }
+    me(request, user) {
+        return this.usersService.me(request, user);
+    }
     byId(request, user, userId) {
         return this.usersService.byId(request, user, userId);
     }
@@ -39,6 +42,15 @@ let UsersController = class UsersController {
     }
 };
 exports.UsersController = UsersController;
+__decorate([
+    (0, common_1.Get)('me'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get current authenticated user profile' }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "me", null);
 __decorate([
     (0, common_1.Get)(':userId'),
     (0, swagger_1.ApiOperation)({ summary: 'Get user by id' }),

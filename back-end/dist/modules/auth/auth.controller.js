@@ -77,6 +77,7 @@ let AuthController = class AuthController {
         if (error instanceof common_1.HttpException)
             throw error;
         const message = error instanceof Error ? error.message : 'Unexpected auth error';
+        console.error('Auth service error:', error);
         const statusCode = error?.statusCode;
         const retryAfter = error?.retryAfter;
         if (statusCode === 429) {

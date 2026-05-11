@@ -2,6 +2,11 @@ export declare class InvitationSummaryDto {
     id: string;
     email: string;
     apartmentId: string | null;
+    apartmentLabel?: string;
+    buildingLabel?: string;
+    managerLabel?: string;
+    inviteType?: string;
+    accountType?: string;
     status: string;
     expiresAt: string | null;
 }

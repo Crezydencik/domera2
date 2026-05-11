@@ -36,8 +36,12 @@ export class MeterReadingsService {
     const normalizedUserEmail = normalizeEmail(user.email ?? '');
     const ownerEmail = typeof apartment.ownerEmail === 'string' ? normalizeEmail(apartment.ownerEmail) : '';
 
-    const isOwner = Boolean(normalizedUserEmail && ownerEmail && normalizedUserEmail === ownerEmail);
-    const isClaimApartment = Boolean(user.apartmentId && user.apartmentId === apartmentId);
+    const isOwner = Boolean(
+      normalizedUserEmail &&
+      ownerEmail &&
+      normalizedUserEmail === ownerEmail &&
+      apartment.ownerActivated === true,
+    );
     const isPrimaryResident = typeof apartment.residentId === 'string' && apartment.residentId === user.uid;
     const isTenantWithSubmit =
       Array.isArray(apartment.tenants) &&
@@ -51,7 +55,7 @@ export class MeterReadingsService {
         return userId === user.uid && permissions.includes('submitMeter');
       });
 
-    return isOwner || isClaimApartment || isPrimaryResident || isTenantWithSubmit;
+    return isOwner || isPrimaryResident || isTenantWithSubmit;
   }
 
   private extractApartmentReadings(

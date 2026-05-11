@@ -5,12 +5,17 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { ActionButtonGroup } from "@/components/ui/action-button-group";
 import { Button } from "@/components/ui/button";
-import { deleteApartment, unassignApartmentResident, updateApartment } from "@/shared/api/apartments";
+import { deleteApartment, getApartmentStorageSummary, unassignApartmentResident, updateApartment } from "@/shared/api/apartments";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { ROUTES } from "@/shared/lib/routes";
 import { TenantAccessManager } from "./[apartmentId]/tenant-access-manager";
 
 type ApartmentRecord = Record<string, unknown>;
+type ApartmentStorageSummary = {
+  path: string | null;
+  fileCount: number;
+  hasUserFiles: boolean;
+};
 
 export interface ApartmentResidentOption {
   id: string;
@@ -19,6 +24,29 @@ export interface ApartmentResidentOption {
 
 function looksLikeOpaqueId(value: string) {
   return /^[A-Za-z0-9_-]{12,}$/.test(value.trim());
+}
+
+function toText(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function formatPossibleDate(date: unknown) {
+  if (!date) return "—";
+  if (date instanceof Date) return date.toISOString().slice(0, 10);
+  if (typeof date === "string" && date.trim()) {
+    const parsed = new Date(date);
+    return Number.isNaN(parsed.getTime()) ? date.trim() : parsed.toISOString().slice(0, 10);
+  }
+  if (date && typeof date === "object") {
+    const record = date as Record<string, unknown>;
+    const seconds = typeof record.seconds === "number"
+      ? record.seconds
+      : typeof record._seconds === "number"
+        ? record._seconds
+        : undefined;
+    if (seconds) return new Date(seconds * 1000).toISOString().slice(0, 10);
+  }
+  return "—";
 }
 
 interface ApartmentsManagementRowActionsProps {
@@ -99,8 +127,17 @@ export function ApartmentsManagementRowActions({
   const [accessTab, setAccessTab] = useState<'resident' | 'owner'>('resident');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedResidentId, setSelectedResidentId] = useState(currentResidentId ?? "");
+  const [storageSummary, setStorageSummary] = useState<ApartmentStorageSummary | null>(null);
+  const [isLoadingStorageSummary, setIsLoadingStorageSummary] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const ownerEmail = toText(apartmentRecord.ownerEmail, "—");
+  const ownerData = {
+    email: ownerEmail,
+    userId: toText(apartmentRecord.ownerId) || undefined,
+    activated: apartmentRecord.ownerActivated === true || apartmentRecord.ownerActivated === "true",
+    invitedAt: formatPossibleDate(apartmentRecord.ownerInvitedAt),
+  };
 
   const normalizedResidents = useMemo(() => {
     const map = new Map<string, ApartmentResidentOption>();
@@ -177,7 +214,19 @@ export function ApartmentsManagementRowActions({
     }
   }
 
-  const assignDisabled = !currentResidentId && normalizedResidents.length === 0;
+  async function openDeleteDialog() {
+    setDeleteOpen(true);
+    setStorageSummary(null);
+    setIsLoadingStorageSummary(true);
+
+    try {
+      setStorageSummary(await getApartmentStorageSummary(apartmentId));
+    } catch {
+      setStorageSummary(null);
+    } finally {
+      setIsLoadingStorageSummary(false);
+    }
+  }
 
   return (
     <>
@@ -196,8 +245,8 @@ export function ApartmentsManagementRowActions({
             label: t("management.actions.manageAccess"),
             icon: "user",
             tone: "warning",
-            disabled: assignDisabled || isAssigning || isDeleting,
-            onClick: () => { setAccessTab('resident'); setAccessManagementOpen(true); },
+            disabled: isAssigning || isDeleting,
+            onClick: () => { setAccessTab('owner'); setAccessManagementOpen(true); },
           },
           {
             key: `${apartmentId}-delete`,
@@ -205,7 +254,7 @@ export function ApartmentsManagementRowActions({
             icon: "delete",
             tone: "danger",
             disabled: isAssigning || isDeleting,
-            onClick: () => setDeleteOpen(true),
+            onClick: () => void openDeleteDialog(),
           },
         ]}
       />
@@ -282,6 +331,7 @@ export function ApartmentsManagementRowActions({
               apartmentId={apartmentId}
               apartmentLabel={apartmentLabel}
               compact={false}
+              ownerData={ownerData}
             />
           )}
         </div>
@@ -300,6 +350,21 @@ export function ApartmentsManagementRowActions({
             </div>
           ) : null}
 
+          {isLoadingStorageSummary ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Проверяем папку квартиры в Storage...
+            </div>
+          ) : storageSummary?.hasUserFiles ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              В папке квартиры есть файлы ({storageSummary.fileCount}). При удалении квартиры будет удалена вся папка
+              квартиры вместе с документами, счетами и показаниями.
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Папка квартиры в Storage также будет удалена.
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 pt-2">
             <Button type="button" variant="secondary" size="sm" onClick={() => setDeleteOpen(false)} disabled={isDeleting}>
               {ui("cancel")}
@@ -309,7 +374,7 @@ export function ApartmentsManagementRowActions({
               variant="danger"
               size="sm"
               onClick={() => void handleDeleteApartment()}
-              disabled={isDeleting || Boolean(currentResidentId)}
+              disabled={isDeleting || isLoadingStorageSummary || Boolean(currentResidentId)}
             >
               {isDeleting ? t("management.dialogs.deleteApartment.deleting") : ui("delete")}
             </Button>

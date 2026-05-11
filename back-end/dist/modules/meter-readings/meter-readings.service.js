@@ -36,8 +36,10 @@ let MeterReadingsService = class MeterReadingsService {
     hasApartmentAccess(user, apartmentId, apartment) {
         const normalizedUserEmail = (0, invitation_token_1.normalizeEmail)(user.email ?? '');
         const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
-        const isOwner = Boolean(normalizedUserEmail && ownerEmail && normalizedUserEmail === ownerEmail);
-        const isClaimApartment = Boolean(user.apartmentId && user.apartmentId === apartmentId);
+        const isOwner = Boolean(normalizedUserEmail &&
+            ownerEmail &&
+            normalizedUserEmail === ownerEmail &&
+            apartment.ownerActivated === true);
         const isPrimaryResident = typeof apartment.residentId === 'string' && apartment.residentId === user.uid;
         const isTenantWithSubmit = Array.isArray(apartment.tenants) &&
             apartment.tenants.some((tenant) => {
@@ -50,7 +52,7 @@ let MeterReadingsService = class MeterReadingsService {
                     : [];
                 return userId === user.uid && permissions.includes('submitMeter');
             });
-        return isOwner || isClaimApartment || isPrimaryResident || isTenantWithSubmit;
+        return isOwner || isPrimaryResident || isTenantWithSubmit;
     }
     extractApartmentReadings(apartmentId, apartment, buildingInfo) {
         const wr = (apartment.waterReadings ?? {});

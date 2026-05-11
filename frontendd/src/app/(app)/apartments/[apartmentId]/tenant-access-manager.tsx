@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { inviteApartmentTenant, removeApartmentTenant, updateApartmentOwner, resendOwnerInvitation } from "@/shared/api/apartments";
 import { useNotifications } from "@/shared/hooks/use-notifications";
-import { FiMoreVertical, FiTrash2 } from "react-icons/fi";
+import { FiEdit2, FiRefreshCw, FiTrash2 } from "react-icons/fi";
 
 type OwnerData = {
   email: string;
@@ -72,7 +72,6 @@ export function TenantAccessManager({ apartmentId, apartmentLabel, compact = fal
   const [toDate, setToDate] = useState("");
   const [perpetual, setPerpetual] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [ownerActionsOpen, setOwnerActionsOpen] = useState(false);
 
   // Owner form fields
   const [ownerFirstName, setOwnerFirstName] = useState("");
@@ -92,6 +91,13 @@ export function TenantAccessManager({ apartmentId, apartmentLabel, compact = fal
     activated: false,
     invitedAt: "—",
   });
+
+  const hasLocalOwner =
+    localOwner.email &&
+    localOwner.email !== "—" &&
+    !localOwner.email.includes("не указано") &&
+    !localOwner.email.includes("Не указано") &&
+    localOwner.email.includes("@");
 
   async function handleInvite(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -119,6 +125,10 @@ export function TenantAccessManager({ apartmentId, apartmentLabel, compact = fal
         activated: false,
         invitedAt: new Date().toISOString(),
       });
+      router.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("errors.inviteFailed");
+      notifications.error(message);
     } finally {
       setLoading(false);
     }
@@ -277,11 +287,7 @@ export function TenantAccessManager({ apartmentId, apartmentLabel, compact = fal
           </form>
 
           {/* Таблица владельца - показывать только если владелец существует */}
-          {localOwner.email && 
-           localOwner.email !== "—" && 
-           !localOwner.email.includes("не указано") && 
-           !localOwner.email.includes("Не указано") &&
-           localOwner.email.includes("@") && (
+          {hasLocalOwner && (
           <div>
             <div className="mb-2 font-semibold text-slate-700">Текущий владелец</div>
             <DataTable
@@ -294,78 +300,72 @@ export function TenantAccessManager({ apartmentId, apartmentLabel, compact = fal
                 formatPossibleDate(localOwner.invitedAt),
                 isOwnerDeleted 
                   ? <span className="text-slate-400">—</span>
-                  : <div className="relative" key="owner-actions">
+                  : <div className="flex items-center gap-2" key="owner-actions">
                       <button
-                        title="Действия"
-                        className="text-amber-500 hover:text-amber-700 p-2 relative"
+                        title={t("actions.resend")}
+                        aria-label={t("actions.resend")}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-blue-100 text-blue-600 hover:bg-blue-50"
                         type="button"
-                        onClick={() => setOwnerActionsOpen(!ownerActionsOpen)}
+                        onClick={() => {
+                          setAlert({
+                            type: 'resend',
+                            title: t("alerts.resendConfirmTitle"),
+                            message: t("alerts.resendConfirm"),
+                            variant: 'info',
+                            onConfirm: async () => {
+                              try {
+                                await resendOwnerInvitation(apartmentId, localOwner.email);
+                                notifications.success(t("alerts.resendSuccess"));
+                              } catch {
+                                notifications.error(t("alerts.resendError"));
+                              }
+                            }
+                          });
+                        }}
                       >
-                        <FiMoreVertical size={20} />
+                        <FiRefreshCw size={16} />
                       </button>
-                      {ownerActionsOpen && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-50">
-                          <button
-                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 border-b border-slate-100"
-                            type="button"
-                            onClick={() => {
-                              setOwnerActionsOpen(false);
-                              setAlert({
-                                type: 'resend',
-                                title: t("alerts.resendConfirmTitle"),
-                                message: t("alerts.resendConfirm"),
-                                variant: 'info',
-                                onConfirm: async () => {
-                                  try {
-                                    await resendOwnerInvitation(apartmentId, localOwner.email);
-                                    notifications.success(t("alerts.resendSuccess"));
-                                  } catch {
-                                    notifications.error(t("alerts.resendError"));
-                                  }
-                                }
-                              });
-                            }}
-                          >
-                            {t("actions.resend")}
-                          </button>
-                          <button
-                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 border-b border-slate-100"
-                            type="button"
-                            onClick={() => {
-                              setOwnerActionsOpen(false);
-                              openEditOwnerModal();
-                            }}
-                          >
-                            {t("actions.edit")}
-                          </button>
-                          <button
-                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                            type="button"
-                            onClick={() => {
-                              setOwnerActionsOpen(false);
-                              setAlert({
-                                type: 'delete',
-                                title: t("alerts.deleteConfirmTitle"),
-                                message: t("alerts.deleteConfirm"),
-                                variant: 'warning',
-                                onConfirm: async () => {
-                                  try {
-                                    const ownerIdToDelete = localOwner.userId || localOwner.email;
-                                    await removeApartmentTenant(apartmentId, ownerIdToDelete);
-                                    setIsOwnerDeleted(true);
-                                    notifications.success(t("alerts.deleteSuccess"));
-                                    router.refresh();
-                                  } catch {
-                                    notifications.error(t("alerts.deleteError"));
-                                  }
-                                }
-                              });
-                            }}
-                          >
-                            {t("actions.delete")}
-                          </button>
-                        </div>
-                      )}
+                      <button
+                        title={t("actions.edit")}
+                        aria-label={t("actions.edit")}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+                        type="button"
+                        onClick={openEditOwnerModal}
+                      >
+                        <FiEdit2 size={16} />
+                      </button>
+                      <button
+                        title={t("actions.delete")}
+                        aria-label={t("actions.delete")}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-100 text-red-600 hover:bg-red-50"
+                        type="button"
+                        onClick={() => {
+                          setAlert({
+                            type: 'delete',
+                            title: t("alerts.ownerDeleteConfirmTitle"),
+                            message: t("alerts.ownerDeleteConfirm"),
+                            variant: 'warning',
+                            onConfirm: async () => {
+                              try {
+                                const ownerIdToDelete = localOwner.userId || localOwner.email;
+                                await removeApartmentTenant(apartmentId, ownerIdToDelete);
+                                setLocalOwner({
+                                  email: "",
+                                  activated: false,
+                                  invitedAt: "",
+                                });
+                                setIsOwnerDeleted(false);
+                                notifications.success(t("alerts.ownerDeleteSuccess"));
+                              router.refresh();
+                            } catch {
+                                notifications.error(t("alerts.ownerDeleteError"));
+                              }
+                            }
+                          });
+                        }}
+                      >
+                        <FiTrash2 size={16} />
+                      </button>
                     </div>
               ] ]}
             />

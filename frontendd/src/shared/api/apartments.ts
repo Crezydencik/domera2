@@ -61,6 +61,12 @@ export function deleteApartment(apartmentId: string) {
   });
 }
 
+export function getApartmentStorageSummary(apartmentId: string) {
+  return apiFetch<{ path: string | null; fileCount: number; hasUserFiles: boolean }>(
+    `/apartments/${encodeURIComponent(apartmentId)}/storage-summary`,
+  );
+}
+
 export function inviteApartmentTenant(
   apartmentId: string,
   email: string,

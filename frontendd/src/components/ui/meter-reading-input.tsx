@@ -8,7 +8,7 @@ export interface MeterReadingInputProps {
   variant: MeterVariant;
   /** Label like "Холодная вода" / "Горячая вода" */
   label: string;
-  /** Serial number shown after "Nr." */
+  /** Serial number shown after "№" */
   serialNumber?: string;
   /** Previous reading value (numeric, can be float) */
   previousValue?: number | string | null;
@@ -24,6 +24,7 @@ export interface MeterReadingInputProps {
   /** Number of decimal digit boxes (default 3) */
   decDigits?: number;
   disabled?: boolean;
+  size?: "large" | "compact";
   /** Localized labels */
   labels?: {
     previous?: string;
@@ -32,16 +33,16 @@ export interface MeterReadingInputProps {
   };
 }
 
-const VARIANT_STYLES: Record<MeterVariant, { bar: string; box: string; cell: string }> = {
+const VARIANT_STYLES: Record<MeterVariant, { bar: string; cell: string; separator: string }> = {
   cold: {
     bar: "bg-blue-500",
-    box: "border-blue-200",
-    cell: "bg-blue-50 border-blue-400 focus:border-blue-500 focus:ring-blue-300/50",
+    cell: "border-blue-400 bg-blue-50 text-slate-950 focus:border-blue-500 focus:ring-blue-300/50",
+    separator: "text-blue-300",
   },
   hot: {
     bar: "bg-rose-500",
-    box: "border-rose-200",
-    cell: "bg-rose-50 border-rose-400 focus:border-rose-500 focus:ring-rose-300/50",
+    cell: "border-rose-400 bg-rose-50 text-slate-950 focus:border-rose-500 focus:ring-rose-300/50",
+    separator: "text-rose-300",
   },
 };
 
@@ -97,13 +98,14 @@ export function MeterReadingInput({
   intDigits = 5,
   decDigits = 3,
   disabled,
+  size = "large",
   labels,
 }: MeterReadingInputProps) {
   const styles = VARIANT_STYLES[variant];
   const L = {
     previous: labels?.previous ?? "Предыдущее показание",
     current: labels?.current ?? "Текущее показание",
-    serialPrefix: labels?.serialPrefix ?? "Nr.",
+    serialPrefix: labels?.serialPrefix ?? "№",
   };
 
   const cellRefs = React.useRef<Array<HTMLInputElement | null>>([]);
@@ -190,33 +192,40 @@ export function MeterReadingInput({
 
   const previousFormatted =
     previousValue === null || previousValue === undefined || previousValue === ""
-      ? "________"
+      ? "—"
       : String(previousValue);
+  const isCompact = size === "compact";
 
   const cellClass =
-    `text-center font-bold text-slate-800 outline-none transition border rounded focus:ring-2 ` +
+    `shrink-0 rounded-[6px] border text-center font-bold tabular-nums outline-none transition focus:ring-2 ` +
     `${styles.cell} ` +
-    `w-[clamp(1.8rem,5vw,2.5rem)] h-[clamp(2.2rem,7vw,2.8rem)] min-w-[1.5rem] min-h-[2rem] text-base sm:text-lg ` +
+    (isCompact
+      ? `h-8 w-8 text-sm sm:h-9 sm:w-9 sm:text-base `
+      : `h-[clamp(3.5rem,9vw,5.25rem)] w-[clamp(3.1rem,8vw,4.625rem)] text-2xl sm:text-3xl `) +
     `disabled:cursor-not-allowed disabled:opacity-60`;
 
   return (
-    <div className="flex w-full flex-col items-start gap-1">
-      <div className="text-[13px] sm:text-[14px] text-slate-700 font-normal">
+    <div className={isCompact ? "flex w-full min-w-0 flex-col items-start gap-1" : "flex w-full min-w-0 flex-col items-start gap-2"}>
+      <div className={isCompact ? "text-sm font-normal leading-snug text-slate-800" : "text-[22px] font-normal leading-tight text-slate-800 sm:text-[28px]"}>
         {L.previous}
         {previousPeriod ? <span className="text-slate-400"> &gt; {previousPeriod}</span> : null}
-        : <span className="font-bold text-slate-900">{previousFormatted}</span>
+        : <span className="font-bold text-slate-950"> {previousFormatted}</span>
       </div>
-      <div className="text-[13px] sm:text-[14px] text-slate-700 font-normal">
+      <div className={isCompact ? "text-sm font-normal leading-snug text-slate-800" : "text-[22px] font-normal leading-tight text-slate-800 sm:text-[28px]"}>
         {L.current}
         {currentPeriod ? <span className="text-slate-400"> &gt; {currentPeriod}</span> : null}
       </div>
 
       <div
-        className="mt-2 flex w-full items-center gap-1 rounded-lg bg-white px-1 py-1 shadow-sm overflow-x-auto"
-        style={{ WebkitOverflowScrolling: "touch", boxShadow: "0 1px 4px #0001" }}
+        className={
+          isCompact
+            ? "mt-1.5 flex max-w-full items-center overflow-x-auto rounded-md bg-transparent py-0.5"
+            : "mt-5 flex w-full min-w-0 items-center overflow-x-auto rounded-2xl bg-white px-2 py-2 shadow-[0_2px_14px_rgba(15,23,42,0.08)]"
+        }
+        style={{ WebkitOverflowScrolling: "touch" }}
       >
-        <div className={`mr-2 h-6 w-1 rounded ${styles.bar}`} aria-hidden />
-        <div className="flex w-full flex-nowrap items-center gap-0.5">
+        <div className={`${isCompact ? "mr-2 h-6 w-1" : "mx-1 mr-5 h-11 w-1.5"} shrink-0 rounded-full ${styles.bar}`} aria-hidden />
+        <div className="flex min-w-max flex-nowrap items-center gap-1">
           {ints.map((digit, i) => (
             <input
               key={`int-${i}`}
@@ -235,7 +244,7 @@ export function MeterReadingInput({
               aria-label={`integer digit ${i + 1}`}
             />
           ))}
-          <span className="mx-1 align-middle text-base sm:text-lg font-bold text-slate-400">,</span>
+          <span className={`${isCompact ? "mx-1 text-lg" : "mx-3 text-3xl sm:text-4xl"} shrink-0 font-bold leading-none ${styles.separator}`}>,</span>
           {decs.map((digit, i) => (
             <input
               key={`dec-${i}`}
@@ -258,11 +267,11 @@ export function MeterReadingInput({
       </div>
 
       {(label || serialNumber) && (
-        <div className="mt-1 ml-1 text-[13px] sm:text-[14px] text-slate-700 font-normal">
+        <div className={isCompact ? "ml-1 mt-1.5 text-sm font-normal leading-snug text-slate-800" : "ml-2 mt-4 text-[22px] font-normal leading-tight text-slate-800 sm:text-[28px]"}>
           {label}
           {serialNumber ? (
             <>
-              : {L.serialPrefix} <span className="font-bold text-slate-900">{serialNumber}</span>
+              : {L.serialPrefix} <span className="font-bold text-slate-950">{serialNumber}</span>
             </>
           ) : null}
         </div>

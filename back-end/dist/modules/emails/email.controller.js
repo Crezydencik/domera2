@@ -15,6 +15,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const firebase_auth_guard_1 = require("../../common/auth/firebase-auth.guard");
+const roles_decorator_1 = require("../../common/auth/roles.decorator");
+const roles_guard_1 = require("../../common/auth/roles.guard");
 const email_service_1 = require("./email.service");
 const send_email_dto_1 = require("./dto/send-email.dto");
 let EmailController = class EmailController {
@@ -129,6 +132,8 @@ __decorate([
 ], EmailController.prototype, "sendNotification", null);
 exports.EmailController = EmailController = __decorate([
     (0, swagger_1.ApiTags)('emails'),
-    (0, common_1.Controller)('api/emails'),
+    (0, common_1.Controller)('emails'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)('ManagementCompany', 'Accountant'),
     __metadata("design:paramtypes", [email_service_1.EmailService])
 ], EmailController);

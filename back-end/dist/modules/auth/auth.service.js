@@ -354,10 +354,46 @@ let AuthService = class AuthService {
             updatedAt: new Date(),
         }).filter(([, value]) => value !== undefined && value !== ''));
         await ref.set(nextData, { merge: true });
+        await this.ensureCompanyStorageFolders(ref, input.uid);
         return nextData;
     }
+    getCompanyStorageFolders(companyId) {
+        const base = `companies/${companyId}`;
+        return [
+            base,
+            `${base}/buildings`,
+            `${base}/documents`,
+            `${base}/invoices`,
+        ];
+    }
+    async ensureCompanyStorageFolders(ref, companyId) {
+        try {
+            await this.firebaseAdminService.createStorageFolders(this.getCompanyStorageFolders(companyId));
+            await ref.set({
+                storageFoldersStatus: 'ready',
+                storageFoldersError: firestore_1.FieldValue.delete(),
+                storageFoldersUpdatedAt: new Date(),
+            }, { merge: true });
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error('Failed to create management company storage folders:', message);
+            await ref.set({
+                storageFoldersStatus: 'pending',
+                storageFoldersError: message,
+                storageFoldersUpdatedAt: new Date(),
+            }, { merge: true });
+        }
+    }
     async createSessionCookie(input) {
-        const decoded = await this.firebaseAdminService.auth.verifyIdToken(input.idToken, true);
+        let decoded;
+        try {
+            decoded = await this.firebaseAdminService.auth.verifyIdToken(input.idToken, true);
+        }
+        catch (error) {
+            console.error('Failed to verify Firebase ID token during session creation:', error);
+            throw this.createServiceError('Failed to verify Firebase session token. Check that FIREBASE_WEB_API_KEY and Firebase Admin project belong to the same Firebase project.', 500);
+        }
         if (input.userId && input.userId !== decoded.uid) {
             throw new Error('userId does not match token subject');
         }
@@ -387,9 +423,16 @@ let AuthService = class AuthService {
         }
         const ttlMinutes = Number(this.configService.get('FIREBASE_SESSION_TTL_MINUTES') ?? '30');
         const ttlMs = Math.min(Math.max(ttlMinutes, 5), 24 * 60) * 60 * 1000;
-        const sessionCookie = await this.firebaseAdminService.auth.createSessionCookie(input.idToken, {
-            expiresIn: ttlMs,
-        });
+        let sessionCookie;
+        try {
+            sessionCookie = await this.firebaseAdminService.auth.createSessionCookie(input.idToken, {
+                expiresIn: ttlMs,
+            });
+        }
+        catch (error) {
+            console.error('Failed to create Firebase session cookie:', error);
+            throw this.createServiceError('Failed to create Firebase session cookie. Check Firebase Admin credentials and project configuration.', 500);
+        }
         return {
             cookie: sessionCookie,
             maxAgeSeconds: Math.floor(ttlMs / 1000),
@@ -524,10 +567,16 @@ let AuthService = class AuthService {
             password: input.password,
             returnSecureToken: true,
         });
-        await this.ensureUserProfileDocument({
+        const profile = await this.ensureUserProfileDocument({
             uid: authResult.localId,
             email: authResult.email ?? email,
         });
+        if ((0, role_constants_1.resolveAccountType)({ role: profile.role, accountType: profile.accountType }) === 'ManagementCompany') {
+            await this.ensureManagementCompanyDocument({
+                uid: authResult.localId,
+                email: authResult.email ?? email,
+            });
+        }
         const session = await this.createSessionCookie({
             idToken: authResult.idToken,
             userId: authResult.localId,

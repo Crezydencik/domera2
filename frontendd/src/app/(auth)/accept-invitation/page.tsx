@@ -7,6 +7,7 @@ import { Suspense, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  type PublicAccountType,
   accountTypeToDashboardRole,
   establishUserSession,
   saveUserProfile,
@@ -24,6 +25,7 @@ interface InvitationInfo {
   managerName: string;
   apartmentId?: string;
   token: string;
+  accountType: PublicAccountType;
   existingAccountDetected?: boolean;
 }
 
@@ -53,7 +55,15 @@ function AcceptInvitationContent() {
     }
 
     apiFetch<{
-      invitation?: { id?: string; email?: string; apartmentId?: string | null };
+      invitation?: {
+        id?: string;
+        email?: string;
+        apartmentId?: string | null;
+        accountType?: string;
+        apartmentLabel?: string;
+        buildingLabel?: string;
+        managerLabel?: string;
+      };
       existingAccountDetected?: boolean;
     }>(`/invitations/resolve?token=${encodeURIComponent(token)}`)
       .then((data) => {
@@ -66,11 +76,12 @@ function AcceptInvitationContent() {
         setInfo({
           id: invitation.id,
           email: invitation.email,
-          apartment: invitation.apartmentId ?? "Assigned apartment",
-          building: "Domera building",
-          managerName: "Domera Manager",
+          apartment: invitation.apartmentLabel || invitation.apartmentId || "Assigned apartment",
+          building: invitation.buildingLabel || "Domera building",
+          managerName: invitation.managerLabel || "Domera Manager",
           apartmentId: invitation.apartmentId ?? undefined,
           token,
+          accountType: invitation.accountType === "Landlord" ? "Landlord" : "Resident",
           existingAccountDetected: data.existingAccountDetected,
         });
       })
@@ -109,7 +120,7 @@ function AcceptInvitationContent() {
         idToken: result.idToken,
         userId: result.userId,
         email: result.email,
-        accountType: "Resident",
+        accountType: info.accountType,
       });
 
       await saveUserProfile(result.userId, {
@@ -117,13 +128,13 @@ function AcceptInvitationContent() {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         fullName: `${firstName} ${lastName}`.trim(),
-        role: "Resident",
-        accountType: "Resident",
+        role: info.accountType,
+        accountType: info.accountType,
         apartmentId: info.apartmentId,
       });
 
       setAccepted(true);
-      router.push(`${ROUTES.dashboard}?role=${accountTypeToDashboardRole("Resident")}`);
+      router.push(`${ROUTES.dashboard}?role=${accountTypeToDashboardRole(info.accountType)}`);
       router.refresh();
     } catch (error) {
       setErrors({ general: error instanceof Error ? error.message : s("dbError") });

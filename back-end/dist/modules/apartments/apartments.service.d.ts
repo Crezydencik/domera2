@@ -23,6 +23,12 @@ export declare class ApartmentsService {
     private readonly emailService;
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService);
     private enforceRateLimit;
+    private firstString;
+    private getBuildingStorageFolders;
+    private getApartmentStorageFolders;
+    private getApartmentStorageFolderPath;
+    private resolveApartmentStorageContext;
+    private markStorageFolders;
     private assertAuthenticated;
     private isStaff;
     private getAccessibleApartmentIds;
@@ -30,6 +36,16 @@ export declare class ApartmentsService {
     private normalizeHeader;
     private normalizeApartmentNumber;
     private normalizeReadingConfigOverride;
+    private buildReadableCode;
+    private buildRandomDigits;
+    private resolveFrontendUrl;
+    private buildInvitationLink;
+    private buildInvitationActionHref;
+    private resolveApartmentCompanyId;
+    private createApartmentInvitation;
+    private resolveOwnerInvitationContext;
+    private createOwnerInvitationNotification;
+    private buildApartmentNumberCode;
     private generateApartmentReadableId;
     private getCellStringByHeader;
     private parseReadingPeriod;
@@ -87,6 +103,15 @@ export declare class ApartmentsService {
     }>;
     update(request: Request, user: RequestUser, apartmentId: string, payload: Record<string, unknown>): Promise<{
         success: boolean;
+    }>;
+    storageSummary(request: Request, user: RequestUser, apartmentId: string): Promise<{
+        path: string;
+        fileCount: number;
+        hasUserFiles: boolean;
+    } | {
+        path: null;
+        fileCount: number;
+        hasUserFiles: boolean;
     }>;
     remove(request: Request, user: RequestUser, apartmentId: string): Promise<{
         success: boolean;

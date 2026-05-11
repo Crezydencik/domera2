@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
+import Link from "next/link";
 // import { useAuthSession } from "@/shared/hooks/use-auth";
 import { SectionCard } from "@/components/section-card";
 import { FilterBar, useFilters, type FilterField } from "@/components/ui/filter-bar";
@@ -10,6 +11,7 @@ import { SubmissionPeriodCard, type SubmissionPeriodValue } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/client";
 import { useNotifications } from "@/shared/hooks/use-notifications";
+import { ROUTES } from "@/shared/lib/routes";
 import MeterReadingInput from "../../../../components/ui/meter-reading-input";
 
 interface MeterReadingRecord {
@@ -41,10 +43,63 @@ interface ApartmentMeterData {
   meters: MeterInfo[];
 }
 
+interface ManagedBuildingOption {
+  id: string;
+  label: string;
+  apartmentCount: number;
+}
+
+function readingMonthKey(reading: MeterReadingRecord | null | undefined) {
+  if (!reading) return "";
+
+  if (reading.month && reading.year) {
+    return `${reading.year}-${String(reading.month).padStart(2, "0")}`;
+  }
+
+  const raw = reading.submittedAt;
+  if (!raw || raw === "—" || raw === "вЂ”") return "";
+
+  const isoMatch = /^(\d{4})-(\d{2})/.exec(raw);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}`;
+
+  const localMatch = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(raw);
+  if (localMatch) return `${localMatch[3]}-${localMatch[2]}`;
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function readingMonthLabel(reading: MeterReadingRecord | null | undefined) {
+  const key = readingMonthKey(reading);
+  if (!key) return undefined;
+
+  const [year, month] = key.split("-");
+  return `${month}.${year}`;
+}
+
+function previousReadingForMonth(meter: MeterInfo | undefined, period: string) {
+  if (!meter) return null;
+
+  return [...meter.readings]
+    .filter((reading) => {
+      const key = readingMonthKey(reading);
+      return key && key < period;
+    })
+    .sort((a, b) => readingMonthKey(b).localeCompare(readingMonthKey(a)))[0] ?? null;
+}
+
+function previousReadingValue(reading: MeterReadingRecord | null | undefined) {
+  if (!reading) return "—";
+  return reading.currentValue || reading.previousValue || "—";
+}
+
 export default function ManagementCompanyPage() {
   const t = useTranslations("meterread");
   const notify = useNotifications();
   const [apartments, setApartments] = useState<ApartmentMeterData[]>([]); 
+  const [managedBuildings, setManagedBuildings] = useState<ManagedBuildingOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { values: filterValues, setValue: setFilterValue } = useFilters({
@@ -294,7 +349,8 @@ export default function ManagementCompanyPage() {
     const hotMeter = submitApt.meters.find((m) => m.meterKey === "hotmeterwater" || m.meterType.toLowerCase().includes("hot"));
     const buildBody = (meter: MeterInfo, currentValueStr: string) => {
       const currentValue = Number(currentValueStr.replace(",", "."));
-      const previousValue = Number(meter.latestReading?.currentValue ?? meter.latestReading?.previousValue ?? 0);
+      const previousReading = previousReadingForMonth(meter, submitMonth);
+      const previousValue = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
       return {
         apartmentId: submitApt.apartmentId,
         meterId: meter.meterId ?? meter.serialNumber ?? "",
@@ -314,7 +370,8 @@ export default function ManagementCompanyPage() {
       const checkBelowPrevious = (meter: MeterInfo | undefined, raw: string, label: string) => {
         if (!meter || !raw) return;
         const currentValue = Number(raw.replace(",", "."));
-        const previousValue = Number(meter.latestReading?.currentValue ?? meter.latestReading?.previousValue ?? 0);
+        const previousReading = previousReadingForMonth(meter, submitMonth);
+        const previousValue = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
         if (Number.isFinite(currentValue) && Number.isFinite(previousValue) && currentValue < previousValue) {
           violations.push(`${label}: ${currentValue} < ${previousValue}`);
         }
@@ -354,7 +411,8 @@ export default function ManagementCompanyPage() {
             meters: a.meters.map((m) => {
               if (coldMeter && submitCold && (m.meterKey === "coldmeterwater" || m.meterId === coldMeter.meterId)) {
                 const currentVal = Number(submitCold.replace(",", "."));
-                const prevVal = Number(m.latestReading?.currentValue ?? 0);
+                const previousReading = previousReadingForMonth(m, submitMonth);
+                const prevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
                 return {
                   ...m,
                   latestReading: {
@@ -371,7 +429,8 @@ export default function ManagementCompanyPage() {
               }
               if (hotMeter && submitHot && (m.meterKey === "hotmeterwater" || m.meterId === hotMeter.meterId)) {
                 const currentVal = Number(submitHot.replace(",", "."));
-                const prevVal = Number(m.latestReading?.currentValue ?? 0);
+                const previousReading = previousReadingForMonth(m, submitMonth);
+                const prevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
                 return {
                   ...m,
                   latestReading: {
@@ -442,15 +501,33 @@ export default function ManagementCompanyPage() {
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const url = `/meter-readings?companyId=${encodeURIComponent(String(companyId))}`;
-        const rawResponse = await apiFetch(url, { signal: controller.signal });
+        const [rawResponse, buildingsResponse] = await Promise.all([
+          apiFetch(`/meter-readings?companyId=${encodeURIComponent(String(companyId))}`, { signal: controller.signal }),
+          apiFetch(`/buildings?companyId=${encodeURIComponent(String(companyId))}`, { signal: controller.signal }).catch(() => null),
+        ]);
         clearTimeout(timeoutId);
         const response = rawResponse as unknown;
         const items = Array.isArray(response)
           ? (response as unknown[])
           : ((response as { items?: unknown[] })?.items ?? []);
+        const buildingItems = Array.isArray((buildingsResponse as { items?: unknown[] } | null)?.items)
+          ? ((buildingsResponse as { items?: unknown[] }).items ?? [])
+          : [];
         
         if (isMounted) {
+          setManagedBuildings(
+            buildingItems
+              .map((item) => {
+                const building = item as Record<string, unknown>;
+                const id = String(building.id || building.buildingId || "");
+                const label = String(building.address || building.street || building.location || building.name || building.title || id);
+                const apartmentCount = Number(building.apartmentsCount ?? building.apartments ?? 0);
+                return id ? { id, label, apartmentCount: Number.isFinite(apartmentCount) ? apartmentCount : 0 } : null;
+              })
+              .filter((item): item is ManagedBuildingOption => Boolean(item))
+              .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" })),
+          );
+
           if (items.length > 0) {
             // Группируем показания по квартирам
             const apartmentMap = new Map<string, ApartmentMeterData>();
@@ -567,8 +644,15 @@ export default function ManagementCompanyPage() {
     };
   }, []);
 
-  const buildings = [...new Set(apartments.map((r) => r.building))].sort();
+  const buildings = managedBuildings.length > 0
+    ? managedBuildings.map((building) => building.id)
+    : [...new Set(apartments.map((r) => r.building))].sort();
   const buildingLabels = new Map<string, string>();
+  const buildingApartmentCounts = new Map<string, number>();
+  managedBuildings.forEach((building) => {
+    buildingLabels.set(building.id, building.label);
+    buildingApartmentCounts.set(building.id, building.apartmentCount);
+  });
   apartments.forEach((a) => {
     if (!buildingLabels.has(a.building)) buildingLabels.set(a.building, a.buildingLabel || a.building);
   });
@@ -576,6 +660,8 @@ export default function ManagementCompanyPage() {
     selectedBuilding && buildings.includes(selectedBuilding)
       ? selectedBuilding
       : (buildings[0] ?? "");
+  const selectedBuildingApartmentCount = buildingApartmentCounts.get(effectiveBuilding);
+  const selectedBuildingHasNoApartments = selectedBuildingApartmentCount === 0;
 
   React.useEffect(() => {
     if (selectedBuilding !== effectiveBuilding) {
@@ -681,7 +767,7 @@ export default function ManagementCompanyPage() {
     {
       name: "building",
       type: "select",
-      visible: buildings.length > 1,
+      visible: false,
       options: buildings.map((b) => ({ value: b, label: buildingLabels.get(b) || b })),
     },
     {
@@ -769,7 +855,8 @@ export default function ManagementCompanyPage() {
         }
       >
         {submitApt && (
-          <div className="space-y-5">
+          <div className="space-y-4">
+            <div className="space-y-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">{t("selectApartmentLabel")}</label>
               <div className="flex h-11 w-full items-center rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm text-slate-800">
@@ -785,41 +872,48 @@ export default function ManagementCompanyPage() {
                 className="h-11 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
               />
             </div>
+            </div>
 
             {(() => {
               const cold = submitApt.meters.find((m) => m.meterKey === "coldmeterwater" || m.meterType.toLowerCase().includes("cold"));
               const hot = submitApt.meters.find((m) => m.meterKey === "hotmeterwater" || m.meterType.toLowerCase().includes("hot"));
               const [yearStr, monthStr] = submitMonth.split("-");
               const currentPeriodLabel = `${monthStr}.${yearStr}`;
-              const prevD = new Date(Number(yearStr), Number(monthStr) - 2, 1);
-              const previousPeriodLabel = `${String(prevD.getMonth() + 1).padStart(2, "0")}.${prevD.getFullYear()}`;
+              const coldPreviousReading = previousReadingForMonth(cold, submitMonth);
+              const hotPreviousReading = previousReadingForMonth(hot, submitMonth);
               return (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   {cold && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                     <MeterReadingInput
                       variant="cold"
                       label={t("coldWater")}
                       serialNumber={cold.serialNumber}
-                      previousValue={cold.latestReading?.currentValue ?? cold.latestReading?.previousValue ?? "—"}
-                      previousPeriod={previousPeriodLabel}
+                      previousValue={previousReadingValue(coldPreviousReading)}
+                      previousPeriod={readingMonthLabel(coldPreviousReading)}
                       currentPeriod={currentPeriodLabel}
                       value={submitCold}
                       onChange={setSubmitCold}
+                      size="compact"
                       labels={{ previous: t("previousReading"), current: t("currentReading"), serialPrefix: t("serialPrefix") }}
                     />
+                    </div>
                   )}
                   {hot && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                     <MeterReadingInput
                       variant="hot"
                       label={t("hotWater")}
                       serialNumber={hot.serialNumber}
-                      previousValue={hot.latestReading?.currentValue ?? hot.latestReading?.previousValue ?? "—"}
-                      previousPeriod={previousPeriodLabel}
+                      previousValue={previousReadingValue(hotPreviousReading)}
+                      previousPeriod={readingMonthLabel(hotPreviousReading)}
                       currentPeriod={currentPeriodLabel}
                       value={submitHot}
                       onChange={setSubmitHot}
+                      size="compact"
                       labels={{ previous: t("previousReading"), current: t("currentReading"), serialPrefix: t("serialPrefix") }}
                     />
+                    </div>
                   )}
                 </div>
               );
@@ -920,82 +1014,108 @@ export default function ManagementCompanyPage() {
         </div>
       </Modal>
 
-      <SectionCard 
-        title={buildingLabels.get(effectiveBuilding) || t("selectBuilding")}
-        titleMeta={
-          effectiveBuilding && (
-            <div className="flex items-center gap-2">
-              <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+      <SectionCard> 
+        {buildings.length > 0 && (
+          <div className="mb-5 max-w-md">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t("selectBuilding")}
+            </label>
+            <select
+              value={effectiveBuilding}
+              onChange={(event) => setFilterValue("building", event.target.value)}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+            >
+              {buildings.map((building) => (
+                <option key={building} value={building}>
+                  {buildingLabels.get(building) || building}
+                </option>
+              ))}
+            </select>
+            {!selectedBuildingHasNoApartments && (
+              <p className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-500">
                 {filteredApartments.length > 0 ? (
-                  <>
-                    <span className="text-slate-900">{filteredApartments.length}</span>
-                    {` ${t("apts")}`}
-                  </>
-                ) : (
-                  t("noData")
-                )}
-              </div>
+                <>
+                  <span className="text-slate-900">{filteredApartments.length}</span>
+                  {` ${t("apts")}`}
+                </>
+              ) : (
+                t("noData")
+              )}
+              </p>
+            )}
+          </div>
+        )}
+        {selectedBuildingHasNoApartments ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center">
+            <p className="text-base font-semibold text-slate-800">{t("apartmentsNotAdded")}</p>
+            <div className="mt-4">
+              <Link
+                href={ROUTES.apartments}
+                className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                {t("apartmentsButton")}
+              </Link>
             </div>
-          )
-        }
-      > 
-        <FilterBar
-          fields={filterFields}
-          values={{ ...filterValues, building: effectiveBuilding }}
-          onChange={setFilterValue}
-          actions={
-            <>
-              <button
-                type="button"
-                onClick={() => setPeriodOpen(true)}
-                disabled={!effectiveBuilding}
-                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                title={periodValue?.monthly ? t("periodMonthly") : t("periodModalTitle")}
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" />
-                  <path d="M16 2v4M8 2v4M3 10h18" />
-                </svg>
-                {periodButtonLabel}
-                {periodValue?.monthly && (
-                  <svg className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="ежемесячно">
-                    <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
-                    <path d="M21 3v5h-5" />
+          </div>
+        ) : (
+          <FilterBar
+            fields={filterFields}
+            values={{ ...filterValues, building: effectiveBuilding }}
+            onChange={setFilterValue}
+            actions={
+              <>
+                <button
+                  type="button"
+                  onClick={() => setPeriodOpen(true)}
+                  disabled={!effectiveBuilding}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  title={periodValue?.monthly ? t("periodMonthly") : t("periodModalTitle")}
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                    <path d="M16 2v4M8 2v4M3 10h18" />
                   </svg>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectAptOpen(true)}
-                disabled={filteredApartments.length === 0}
-                className="inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                {t("submit")}
-              </button>
-              <button className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-1 focus:ring-slate-400">
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                {t("export")}
-              </button>
-              <button
-                type="button"
-                onClick={sendTestReminder}
-                disabled={sendingTestReminder}
-                title="Send test meter reading reminder email"
-                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-slate-400"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                {sendingTestReminder ? t("sendingTestEmail") : t("testEmail")}
-              </button>
-            </>
-          }
-          footer={
-            <>
-              <span className="font-semibold text-slate-700">{filteredApartments.length}</span>{" "}
-              {filteredApartments.length === 1 ? t("readingsCount", { count: 1 }) : t("readingsCountPlural", { count: filteredApartments.length })}
-            </>
-          }
-        />
+                  {periodButtonLabel}
+                  {periodValue?.monthly && (
+                    <svg className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="ежемесячно">
+                      <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
+                      <path d="M21 3v5h-5" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectAptOpen(true)}
+                  disabled={filteredApartments.length === 0}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                  {t("submit")}
+                </button>
+                <button className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                  {t("export")}
+                </button>
+                <button
+                  type="button"
+                  onClick={sendTestReminder}
+                  disabled={sendingTestReminder}
+                  title="Send test meter reading reminder email"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                  {sendingTestReminder ? t("sendingTestEmail") : t("testEmail")}
+                </button>
+              </>
+            }
+            footer={
+              <>
+                <span className="font-semibold text-slate-700">{filteredApartments.length}</span>{" "}
+                {filteredApartments.length === 1 ? t("readingsCount", { count: 1 }) : t("readingsCountPlural", { count: filteredApartments.length })}
+              </>
+            }
+          />
+        )}
 
         {/* Table */}
         {loading ? (
@@ -1016,7 +1136,7 @@ export default function ManagementCompanyPage() {
               {t("retry")}
             </button>
           </div>
-        ) : filteredApartments.length > 0 ? (
+        ) : selectedBuildingHasNoApartments ? null : filteredApartments.length > 0 ? (
           <>
           {/* Mobile cards */}
           <div className="space-y-2 md:hidden">

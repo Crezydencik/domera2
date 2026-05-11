@@ -54,7 +54,7 @@ export function readBrowserAuthSession(): BrowserAuthSession {
   const userId = cookies.userId?.trim();
 
   return {
-    isAuthenticated: Boolean(sessionToken && userId),
+    isAuthenticated: Boolean(sessionToken),
     userId: userId || undefined,
     email: cookies.userEmail?.trim() || undefined,
     accountType: cookies.domera_accountType?.trim() || cookies.domera_role?.trim() || undefined,

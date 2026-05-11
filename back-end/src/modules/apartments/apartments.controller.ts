@@ -100,6 +100,17 @@ export class ApartmentsController {
     return this.apartmentsService.update(request, user, apartmentId, body);
   }
 
+  @Get(':apartmentId/storage-summary')
+  @ApiOperation({ summary: 'Get apartment storage summary before deletion' })
+  @ApiParam({ name: 'apartmentId', required: true, type: String })
+  storageSummary(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('apartmentId') apartmentId: string,
+  ) {
+    return this.apartmentsService.storageSummary(request, user, apartmentId);
+  }
+
   @Patch(':apartmentId/owner')
   @ApiOperation({ summary: 'Update apartment owner' })
   @ApiParam({ name: 'apartmentId', required: true, type: String })

@@ -63,8 +63,15 @@ export class InvoicesService {
         this.firebaseAdminService.firestore.collection('apartments').where('ownerEmail', '==', normalizedEmail).get(),
       ]);
 
-      for (const doc of [...residentSnap.docs, ...ownerSnap.docs]) {
+      for (const doc of residentSnap.docs) {
         apartmentIds.add(doc.id);
+      }
+
+      for (const doc of ownerSnap.docs) {
+        const apartment = doc.data() as Record<string, unknown>;
+        if (apartment.ownerActivated === true) {
+          apartmentIds.add(doc.id);
+        }
       }
     }
 
@@ -83,7 +90,34 @@ export class InvoicesService {
       }
     }
 
-    return Array.from(apartmentIds);
+    const candidateIds = Array.from(apartmentIds);
+    if (candidateIds.length === 0) return [];
+
+    const refs = candidateIds.map((id) => this.firebaseAdminService.firestore.collection('apartments').doc(id));
+    const snaps = await this.firebaseAdminService.firestore.getAll(...refs);
+    const normalizedUserEmail = normalizeEmail(user.email ?? '');
+
+    return snaps
+      .filter((snap) => snap.exists)
+      .filter((snap) => {
+        const apartment = snap.data() as Record<string, unknown>;
+        const residentId = typeof apartment.residentId === 'string' ? apartment.residentId : '';
+        const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
+        const ownerEmail = typeof apartment.ownerEmail === 'string' ? normalizeEmail(apartment.ownerEmail) : '';
+        const isResident = residentId === user.uid;
+        const isOwner =
+          apartment.ownerActivated === true &&
+          ((ownerId && ownerId === user.uid) || Boolean(normalizedUserEmail && ownerEmail === normalizedUserEmail));
+        const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+        const isTenant = tenants.some((tenant) => {
+          if (!tenant || typeof tenant !== 'object') return false;
+          return typeof (tenant as Record<string, unknown>).userId === 'string'
+            && (tenant as Record<string, unknown>).userId === user.uid;
+        });
+
+        return isResident || isOwner || isTenant;
+      })
+      .map((snap) => snap.id);
   }
 
   async create(request: Request, user: RequestUser, payload: Record<string, unknown>) {

@@ -5,14 +5,13 @@ import { isAllowedPath, isAuthRoute, isProtectedPath, resolveDashboardRole, role
 export default function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get("__session")?.value?.trim();
-  const userId = request.cookies.get("userId")?.value?.trim();
   const cookieRole = request.cookies.get("domera_accountType")?.value ?? request.cookies.get("domera_role")?.value;
   const resolvedRole = resolveDashboardRole(cookieRole ?? request.nextUrl.searchParams.get("role"));
   const requestHeaders = new Headers(request.headers);
 
   requestHeaders.set("x-domera-role", resolvedRole);
 
-  if (isProtectedPath(pathname) && (!sessionCookie || !userId)) {
+  if (isProtectedPath(pathname) && !sessionCookie) {
     const loginUrl = new URL(ROUTES.login, request.url);
     const nextPath = `${pathname}${request.nextUrl.search}`;
 
@@ -23,7 +22,7 @@ export default function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (isAuthRoute(pathname) && sessionCookie && userId) {
+  if (isAuthRoute(pathname) && sessionCookie) {
     const dashboardUrl = new URL(ROUTES.dashboard, request.url);
     return NextResponse.redirect(dashboardUrl);
   }
@@ -39,7 +38,7 @@ export default function proxy(request: NextRequest) {
     },
   });
 
-  if (sessionCookie && userId) {
+  if (sessionCookie) {
     const cookieValue = roleCookieValues[resolvedRole];
     const cookieOptions = {
       path: "/",

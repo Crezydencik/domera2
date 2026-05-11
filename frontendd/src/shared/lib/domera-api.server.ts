@@ -14,9 +14,18 @@ import type {
 import { DashboardRole, normalizeDashboardRole } from "../role-ui";
 import { ROUTES } from "./routes";
 
+function resolveServerApiBaseUrl() {
+  const configured = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (configured?.startsWith("http://") || configured?.startsWith("https://")) {
+    return configured;
+  }
+
+  return "http://127.0.0.1:4000/api";
+}
+
 const appConfig = {
   name: "Domera",
-  apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/api",
+  apiBaseUrl: resolveServerApiBaseUrl(),
   demoCompanyId: process.env.NEXT_PUBLIC_DEMO_COMPANY_ID ?? "demo-company",
   demoApartmentId: process.env.NEXT_PUBLIC_DEMO_APARTMENT_ID ?? "demo-apartment",
 };
@@ -28,6 +37,7 @@ type ResidentHomeResponse = { apartments?: UnknownRecord[]; buildings?: UnknownR
 export interface RoleDataBundle {
   role: DashboardRole;
   userId?: string;
+  profile?: UnknownRecord;
   companyId?: string;
   apartmentId?: string;
   buildings: Building[];
@@ -180,6 +190,8 @@ function toResident(
   return {
     id: residentId,
     fullName: resolvePersonName(item, residentId),
+    email: typeof item.email === "string" && item.email.trim() ? item.email.trim() : undefined,
+    phone: typeof item.phone === "string" && item.phone.trim() ? item.phone.trim() : undefined,
     apartment: firstString(item.apartment, item.apartmentNumber, item.apartmentId, context?.apartment),
     building: firstString(item.building, item.buildingName, item.companyId, context?.building),
     role: firstString(item.role, item.accountType, context?.role, "Resident"),
@@ -246,6 +258,8 @@ function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] 
           apartment.residentEmail,
           apartment.residentId,
         ),
+        email: typeof apartment.residentEmail === "string" && apartment.residentEmail.trim() ? apartment.residentEmail.trim() : undefined,
+        phone: typeof apartment.residentPhone === "string" && apartment.residentPhone.trim() ? apartment.residentPhone.trim() : undefined,
         apartment: apartmentLabel,
         building: buildingLabel,
         role: "Resident",
@@ -257,6 +271,8 @@ function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] 
       output.push({
         id: apartment.ownerEmail,
         fullName: firstString(joinNameParts(apartment.ownerFirstName, apartment.ownerLastName), apartment.owner, apartment.ownerEmail),
+        email: apartment.ownerEmail,
+        phone: typeof apartment.ownerPhone === "string" && apartment.ownerPhone.trim() ? apartment.ownerPhone.trim() : undefined,
         apartment: apartmentLabel,
         building: buildingLabel,
         role: "Landlord",
@@ -276,6 +292,8 @@ function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] 
             tenantRecord.name,
             tenantRecord.email,
           ),
+          email: typeof tenantRecord.email === "string" && tenantRecord.email.trim() ? tenantRecord.email.trim() : undefined,
+          phone: typeof tenantRecord.phone === "string" && tenantRecord.phone.trim() ? tenantRecord.phone.trim() : undefined,
           apartment: apartmentLabel,
           building: buildingLabel,
           role: "Resident",
@@ -291,16 +309,23 @@ function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const store = await cookies();
   const cookieHeader = buildCookieHeader(store);
+  const url = `${appConfig.apiBaseUrl}${path}`;
 
-  const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(cookieHeader ? { Cookie: cookieHeader } : {}),
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new DomeraApiError(`Fetch failed for ${path} (${url}): ${message}`, 500);
+  }
 
   if (!response.ok) {
     throw new DomeraApiError(`Request failed for ${path}`, response.status);
@@ -322,12 +347,15 @@ async function getAuthenticatedContext(roleHint?: string) {
   const sessionCookie = store.get("__session")?.value?.trim();
   const userId = store.get("userId")?.value?.trim();
 
-  if (!sessionCookie || !userId) {
+  if (!sessionCookie) {
     redirect(ROUTES.login);
   }
 
   try {
-    const profile = await apiFetch<UnknownRecord>(`/users/${encodeURIComponent(userId)}`);
+    const profile = await apiFetch<UnknownRecord>(
+      userId ? `/users/${encodeURIComponent(userId)}` : "/users/me",
+    );
+    const resolvedUserId = firstString(profile?.uid, profile?.id, userId);
     const role = normalizeDashboardRole(
       firstString(
         profile?.accountType,
@@ -339,10 +367,10 @@ async function getAuthenticatedContext(roleHint?: string) {
     );
 
     return {
-      userId,
+      userId: resolvedUserId,
       profile,
       role,
-      companyId: firstString(profile?.companyId, store.get("domera_companyId")?.value, userId),
+      companyId: firstString(profile?.companyId, store.get("domera_companyId")?.value, resolvedUserId),
       apartmentId: firstString(profile?.apartmentId, store.get("domera_apartmentId")?.value),
     };
   } catch (error) {
@@ -350,12 +378,30 @@ async function getAuthenticatedContext(roleHint?: string) {
       redirect(ROUTES.login);
     }
 
+    if (error instanceof DomeraApiError && error.status === 500 && error.message.startsWith("Fetch failed")) {
+      const role = normalizeDashboardRole(
+        firstString(
+          store.get("domera_accountType")?.value,
+          store.get("domera_role")?.value,
+          roleHint,
+        ),
+      );
+
+      return {
+        userId: firstString(userId),
+        profile: {},
+        role,
+        companyId: firstString(store.get("domera_companyId")?.value, userId),
+        apartmentId: firstString(store.get("domera_apartmentId")?.value),
+      };
+    }
+
     throw error;
   }
 }
 
 export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBundle> {
-  const { userId, role, companyId, apartmentId } = await getAuthenticatedContext(roleHint);
+  const { userId, profile, role, companyId, apartmentId } = await getAuthenticatedContext(roleHint);
 
   if (role === "managementCompany") {
     const [buildingsResponse, apartmentsResponse, residentsResponse, invoicesResponse, meterReadingsResponse, notificationsResponse, newsResponse] =
@@ -430,6 +476,7 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
     return {
       role,
       userId,
+      profile,
       companyId,
       apartmentId,
       buildings: liveBuildings,
@@ -482,6 +529,7 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
   return {
     role,
     userId,
+    profile,
     companyId,
     apartmentId,
     buildings: liveBuildings,

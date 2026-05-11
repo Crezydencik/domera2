@@ -40,6 +40,9 @@ let ApartmentsController = class ApartmentsController {
     update(request, user, apartmentId, body) {
         return this.apartmentsService.update(request, user, apartmentId, body);
     }
+    storageSummary(request, user, apartmentId) {
+        return this.apartmentsService.storageSummary(request, user, apartmentId);
+    }
     updateOwner(request, user, apartmentId, body) {
         if (!body?.email)
             throw new common_1.BadRequestException('email is required');
@@ -144,6 +147,17 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, String, Object]),
     __metadata("design:returntype", void 0)
 ], ApartmentsController.prototype, "update", null);
+__decorate([
+    (0, common_1.Get)(':apartmentId/storage-summary'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get apartment storage summary before deletion' }),
+    (0, swagger_1.ApiParam)({ name: 'apartmentId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('apartmentId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:returntype", void 0)
+], ApartmentsController.prototype, "storageSummary", null);
 __decorate([
     (0, common_1.Patch)(':apartmentId/owner'),
     (0, swagger_1.ApiOperation)({ summary: 'Update apartment owner' }),

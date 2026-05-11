@@ -38,6 +38,15 @@ export declare class ApartmentsController {
     update(request: Request, user: RequestUser, apartmentId: string, body: Record<string, unknown>): Promise<{
         success: boolean;
     }>;
+    storageSummary(request: Request, user: RequestUser, apartmentId: string): Promise<{
+        path: string;
+        fileCount: number;
+        hasUserFiles: boolean;
+    } | {
+        path: null;
+        fileCount: number;
+        hasUserFiles: boolean;
+    }>;
     updateOwner(request: Request, user: RequestUser, apartmentId: string, body: {
         email?: string;
         firstName?: string;

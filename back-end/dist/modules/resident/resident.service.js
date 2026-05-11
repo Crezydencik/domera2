@@ -84,9 +84,12 @@ let ResidentService = class ResidentService {
         }
         if (ownerApartmentsSnap) {
             for (const doc of ownerApartmentsSnap.docs) {
+                const apartment = doc.data();
+                if (apartment.ownerActivated !== true)
+                    continue;
                 mergedApartments.set(doc.id, {
                     id: doc.id,
-                    ...doc.data(),
+                    ...apartment,
                 });
             }
         }
@@ -107,7 +110,21 @@ let ResidentService = class ResidentService {
                 });
             }
         }
-        const apartments = Array.from(mergedApartments.values());
+        const hasConfirmedAccess = (apartment) => {
+            const isPrimaryResident = this.toOptionalString(apartment.residentId) === user.uid;
+            const ownerId = this.toOptionalString(apartment.ownerId);
+            const ownerEmail = (0, invitation_token_1.normalizeEmail)(this.toOptionalString(apartment.ownerEmail) ?? '');
+            const isActivatedOwner = apartment.ownerActivated === true &&
+                ((ownerId && ownerId === user.uid) || Boolean(normalizedEmail && ownerEmail === normalizedEmail));
+            const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+            const isTenant = tenants.some((tenant) => {
+                if (!tenant || typeof tenant !== 'object')
+                    return false;
+                return this.toOptionalString(tenant.userId) === user.uid;
+            });
+            return isPrimaryResident || isActivatedOwner || isTenant;
+        };
+        const apartments = Array.from(mergedApartments.values()).filter(hasConfirmedAccess);
         const buildingIds = Array.from(new Set(apartments
             .map((apartment) => this.toOptionalString(apartment.buildingId))
             .filter((value) => Boolean(value))));

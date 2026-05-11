@@ -2,13 +2,19 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { LogoutButton } from "@/components/logout-button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { apiFetch } from "@/shared/api/client";
+import { establishUserSession, accountTypeToDashboardRole } from "@/shared/lib/auth-client";
+import { useAuthSession } from "@/shared/hooks/use-auth";
 import { useAppNotifications } from "@/shared/hooks/use-app-notifications";
+import { useNotifications as useToastNotifications } from "@/shared/hooks/use-notifications";
 import { ROUTES } from "@/shared/lib/routes";
 import { type DashboardRole, normalizeDashboardRole } from "@/shared/role-ui";
+import type { NotificationItem } from "@/shared/lib/data";
 
 interface RoleAwareSidebarProps {
   brand: string;
@@ -65,13 +71,18 @@ function readCookie(name: string): string {
 
 export function RoleAwareSidebar({ brand, title, description, defaultRole, children }: RoleAwareSidebarProps) {
   const t = useTranslations("appShell.header");
+  const router = useRouter();
   const rawPathname = usePathname();
   const pathname = rawPathname ?? ROUTES.dashboard;
   const role = normalizeDashboardRole(defaultRole);
   const navItems = navByRole[role];
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [acceptingNotificationId, setAcceptingNotificationId] = useState<string | null>(null);
   const notifications = useAppNotifications({ previewLimit: 5 });
+  const confirm = useConfirm();
+  const toast = useToastNotifications();
+  const session = useAuthSession();
 
   const userEmail = useMemo(() => readCookie("userEmail") || "user@domera.lv", []);
   const roleLabel = t(`roles.${role}`);
@@ -102,6 +113,92 @@ export function RoleAwareSidebar({ brand, title, description, defaultRole, child
     }
 
     return pathname.startsWith(href);
+  }
+
+  function getInvitationToken(actionHref?: string) {
+    if (!actionHref) return "";
+
+    try {
+      const url = new URL(actionHref, window.location.origin);
+      return url.searchParams.get("token") ?? "";
+    } catch {
+      return "";
+    }
+  }
+
+  function getNotificationDisplay(item: NotificationItem) {
+    if (item.type !== "owner-invitation") {
+      return {
+        title: item.title,
+        description: item.description,
+        channel: item.channel,
+        actionLabel: item.actionLabel,
+      };
+    }
+
+    return {
+      title: t("notifications.ownerInvitationTitle"),
+      description: t("notifications.ownerInvitationDescription", {
+        apartment: item.apartmentNumber || "—",
+        building: item.buildingName || "—",
+      }),
+      channel: t("notifications.invitationChannel"),
+      actionLabel: t("notifications.acceptInvitation"),
+    };
+  }
+
+  async function handleNotificationAction(item: NotificationItem) {
+    const token = getInvitationToken(item.actionHref);
+
+    if (!token) {
+      if (item.actionHref) router.push(item.actionHref);
+      notifications.close();
+      return;
+    }
+
+    const accepted = await confirm({
+      title: t("notifications.acceptInvitationConfirmTitle"),
+      message: t("notifications.acceptInvitationConfirmMessage"),
+      confirmLabel: t("notifications.acceptInvitationConfirm"),
+      cancelLabel: t("notifications.acceptInvitationCancel"),
+      variant: "primary",
+    });
+
+    if (!accepted) return;
+
+    setAcceptingNotificationId(item.id);
+    try {
+      await apiFetch("/invitations/accept", {
+        method: "POST",
+        body: JSON.stringify({
+          token,
+          gdprConsent: true,
+        }),
+      });
+
+      await apiFetch(`/notifications/${encodeURIComponent(item.id)}/read`, {
+        method: "PATCH",
+      }).catch(() => null);
+      notifications.dismiss(item.id);
+
+      if (session.userId && session.email) {
+        await establishUserSession({
+          idToken: "",
+          userId: session.userId,
+          email: session.email,
+          accountType: "Landlord",
+        }).catch(() => null);
+      }
+
+      toast.success(t("notifications.acceptInvitationSuccess"));
+      notifications.close();
+      router.push(`${ROUTES.dashboard}?role=${accountTypeToDashboardRole("Landlord")}`);
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось принять приглашение");
+    } finally {
+      setAcceptingNotificationId(null);
+    }
   }
 
   return (
@@ -226,47 +323,60 @@ export function RoleAwareSidebar({ brand, title, description, defaultRole, child
                   </button>
 
                   {notifications.isOpen && (
-                    <div className="absolute right-0 z-20 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-slate-900">{t("notifications.title")}</p>
-                        <button
-                          type="button"
-                          onClick={() => void notifications.refresh()}
-                          className="text-xs font-medium text-slate-400 transition hover:text-slate-900"
-                        >
-                          {t("notifications.refresh")}
-                        </button>
+                    <div className="absolute right-0 z-20 mt-2 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/15">
+                      <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-blue-50/70 px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-950">{t("notifications.title")}</p>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {notifications.count > 0 ? `${notifications.count}` : t("notifications.empty")}
+                            </p>
+                          </div>
+                          {notifications.count > 0 ? (
+                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-blue-600 px-2 text-xs font-bold text-white">
+                              {notifications.count}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
 
-                      {notifications.isLoading ? (
-                        <div className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-500">{t("notifications.loading")}</div>
-                      ) : notifications.error ? (
-                        <div className="rounded-lg bg-red-50 px-3 py-3 text-sm text-red-600">{notifications.error}</div>
-                      ) : notifications.hasItems ? (
-                        <div className="space-y-2">
-                          {notifications.previewItems.map((item) => (
-                            <div key={item.id} className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                      <div className="p-3">
+                        {notifications.isLoading ? (
+                          <div className="rounded-xl bg-slate-50 px-3 py-4 text-sm text-slate-500">{t("notifications.loading")}</div>
+                        ) : notifications.error ? (
+                          <div className="rounded-xl bg-red-50 px-3 py-4 text-sm text-red-600">{notifications.error}</div>
+                        ) : notifications.hasItems ? (
+                          <div className="space-y-2">
+                          {notifications.previewItems.map((item) => {
+                            const display = getNotificationDisplay(item);
+
+                            return (
+                            <div key={item.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 text-sm text-slate-700 shadow-sm">
                               <div className="flex items-start justify-between gap-3">
-                                <p className="font-medium text-slate-900">{item.title}</p>
-                                <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                                  {item.channel}
+                                <p className="font-semibold leading-snug text-slate-950">{display.title}</p>
+                                <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+                                  {display.channel}
                                 </span>
                               </div>
-                              <p className="mt-1 text-xs leading-5 text-slate-500">{item.description}</p>
+                              <p className="mt-1 text-xs leading-5 text-slate-500">{display.description}</p>
+                              {item.actionHref && display.actionLabel ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleNotificationAction(item)}
+                                  disabled={acceptingNotificationId === item.id}
+                                  className="mt-3 inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-xs font-bold text-white shadow-sm shadow-blue-600/20 transition hover:bg-blue-700"
+                                >
+                                  {acceptingNotificationId === item.id ? t("notifications.acceptingInvitation") : display.actionLabel}
+                                </button>
+                              ) : null}
                             </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-500">{t("notifications.empty")}</div>
-                      )}
-
-                      <Link
-                        href={ROUTES.notifications}
-                        onClick={() => notifications.close()}
-                        className="mt-3 inline-flex w-full items-center justify-center rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                      >
-                        {t("notifications.viewAll")}
-                      </Link>
+                            );
+                          })}
+                          </div>
+                        ) : (
+                          <div className="rounded-xl bg-slate-50 px-3 py-4 text-sm text-slate-500">{t("notifications.empty")}</div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

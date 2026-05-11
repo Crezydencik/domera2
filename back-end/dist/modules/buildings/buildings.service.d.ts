@@ -21,6 +21,9 @@ export declare class BuildingsService {
     private getBuildingOccupancyStats;
     private applyOccupancyStats;
     private getCompanySummary;
+    private getCompanyStorageFolders;
+    private getBuildingStorageFolders;
+    private markStorageFolders;
     private normalizeBuildingPayload;
     getCreationAccess(request: Request, user: RequestUser, companyId: string): Promise<{
         allowed: boolean;

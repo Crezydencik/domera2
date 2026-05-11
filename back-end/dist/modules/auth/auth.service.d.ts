@@ -35,6 +35,8 @@ export declare class AuthService {
     private callIdentityToolkit;
     private ensureUserProfileDocument;
     private ensureManagementCompanyDocument;
+    private getCompanyStorageFolders;
+    private ensureCompanyStorageFolders;
     createSessionCookie(input: SetSessionDto): Promise<{
         cookie: string;
         maxAgeSeconds: number;

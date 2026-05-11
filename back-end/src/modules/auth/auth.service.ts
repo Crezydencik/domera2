@@ -463,7 +463,47 @@ export class AuthService {
     );
 
     await ref.set(nextData, { merge: true });
+    await this.ensureCompanyStorageFolders(ref, input.uid);
     return nextData as Record<string, unknown>;
+  }
+
+  private getCompanyStorageFolders(companyId: string): string[] {
+    const base = `companies/${companyId}`;
+
+    return [
+      base,
+      `${base}/buildings`,
+      `${base}/documents`,
+      `${base}/invoices`,
+    ];
+  }
+
+  private async ensureCompanyStorageFolders(
+    ref: FirebaseFirestore.DocumentReference,
+    companyId: string,
+  ): Promise<void> {
+    try {
+      await this.firebaseAdminService.createStorageFolders(this.getCompanyStorageFolders(companyId));
+      await ref.set(
+        {
+          storageFoldersStatus: 'ready',
+          storageFoldersError: FieldValue.delete(),
+          storageFoldersUpdatedAt: new Date(),
+        },
+        { merge: true },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Failed to create management company storage folders:', message);
+      await ref.set(
+        {
+          storageFoldersStatus: 'pending',
+          storageFoldersError: message,
+          storageFoldersUpdatedAt: new Date(),
+        },
+        { merge: true },
+      );
+    }
   }
 
   async createSessionCookie(input: SetSessionDto): Promise<{
@@ -474,7 +514,16 @@ export class AuthService {
     companyId?: string;
     apartmentId?: string;
   }> {
-    const decoded = await this.firebaseAdminService.auth.verifyIdToken(input.idToken, true);
+    let decoded: Awaited<ReturnType<typeof this.firebaseAdminService.auth.verifyIdToken>>;
+    try {
+      decoded = await this.firebaseAdminService.auth.verifyIdToken(input.idToken, true);
+    } catch (error) {
+      console.error('Failed to verify Firebase ID token during session creation:', error);
+      throw this.createServiceError(
+        'Failed to verify Firebase session token. Check that FIREBASE_WEB_API_KEY and Firebase Admin project belong to the same Firebase project.',
+        500,
+      );
+    }
 
     if (input.userId && input.userId !== decoded.uid) {
       throw new Error('userId does not match token subject');
@@ -509,9 +558,18 @@ export class AuthService {
 
     const ttlMinutes = Number(this.configService.get<string>('FIREBASE_SESSION_TTL_MINUTES') ?? '30');
     const ttlMs = Math.min(Math.max(ttlMinutes, 5), 24 * 60) * 60 * 1000;
-    const sessionCookie = await this.firebaseAdminService.auth.createSessionCookie(input.idToken, {
-      expiresIn: ttlMs,
-    });
+    let sessionCookie: string;
+    try {
+      sessionCookie = await this.firebaseAdminService.auth.createSessionCookie(input.idToken, {
+        expiresIn: ttlMs,
+      });
+    } catch (error) {
+      console.error('Failed to create Firebase session cookie:', error);
+      throw this.createServiceError(
+        'Failed to create Firebase session cookie. Check Firebase Admin credentials and project configuration.',
+        500,
+      );
+    }
 
     return {
       cookie: sessionCookie,
@@ -689,10 +747,17 @@ export class AuthService {
       returnSecureToken: true,
     });
 
-    await this.ensureUserProfileDocument({
+    const profile = await this.ensureUserProfileDocument({
       uid: authResult.localId,
       email: authResult.email ?? email,
     });
+
+    if (resolveAccountType({ role: profile.role, accountType: profile.accountType }) === 'ManagementCompany') {
+      await this.ensureManagementCompanyDocument({
+        uid: authResult.localId,
+        email: authResult.email ?? email,
+      });
+    }
 
     const session = await this.createSessionCookie({
       idToken: authResult.idToken,

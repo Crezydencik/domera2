@@ -34,6 +34,74 @@ let ApartmentsService = class ApartmentsService {
             throw new common_1.BadRequestException('Too many requests');
         }
     }
+    firstString(...values) {
+        for (const value of values) {
+            if (typeof value === 'string' && value.trim()) {
+                return value.trim();
+            }
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                return String(value);
+            }
+        }
+        return '';
+    }
+    getBuildingStorageFolders(companyId, buildingId) {
+        const base = `companies/${companyId}/buildings/${buildingId}`;
+        return [
+            base,
+            `${base}/apartments`,
+            `${base}/invoices`,
+            `${base}/documents`,
+            `${base}/photos`,
+        ];
+    }
+    getApartmentStorageFolders(companyId, buildingId, apartmentId) {
+        const base = `companies/${companyId}/buildings/${buildingId}/apartments/${apartmentId}`;
+        return [
+            base,
+            `${base}/invoices`,
+            `${base}/documents`,
+            `${base}/meter-readings`,
+        ];
+    }
+    getApartmentStorageFolderPath(companyId, buildingId, apartmentId) {
+        return `companies/${companyId}/buildings/${buildingId}/apartments/${apartmentId}`;
+    }
+    resolveApartmentStorageContext(apartmentId, data) {
+        const buildingId = typeof data.buildingId === 'string' ? data.buildingId.trim() : '';
+        const companyId = typeof data.companyId === 'string' && data.companyId.trim()
+            ? data.companyId.trim()
+            : Array.isArray(data.companyIds)
+                ? data.companyIds.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim() ?? ''
+                : '';
+        if (!companyId || !buildingId) {
+            return null;
+        }
+        return {
+            companyId,
+            buildingId,
+            path: this.getApartmentStorageFolderPath(companyId, buildingId, typeof data.readableId === 'string' && data.readableId.trim() ? data.readableId.trim() : apartmentId),
+        };
+    }
+    async markStorageFolders(ref, folderPaths, entityLabel) {
+        try {
+            await this.firebaseAdminService.createStorageFolders(folderPaths);
+            await ref.set({
+                storageFoldersStatus: 'ready',
+                storageFoldersError: firestore_1.FieldValue.delete(),
+                storageFoldersUpdatedAt: new Date(),
+            }, { merge: true });
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error(`Failed to create ${entityLabel} storage folders:`, message);
+            await ref.set({
+                storageFoldersStatus: 'pending',
+                storageFoldersError: message,
+                storageFoldersUpdatedAt: new Date(),
+            }, { merge: true });
+        }
+    }
     assertAuthenticated(user) {
         if (!user?.uid || !user.role) {
             throw new common_1.UnauthorizedException('Authentication required');
@@ -64,8 +132,14 @@ let ApartmentsService = class ApartmentsService {
                 this.firebaseAdminService.firestore.collection('apartments').where('residentId', '==', user.uid).get(),
                 this.firebaseAdminService.firestore.collection('apartments').where('ownerEmail', '==', normalizedEmail).get(),
             ]);
-            for (const doc of [...residentSnap.docs, ...ownerSnap.docs]) {
+            for (const doc of residentSnap.docs) {
                 apartmentIds.add(doc.id);
+            }
+            for (const doc of ownerSnap.docs) {
+                const apartment = doc.data();
+                if (apartment.ownerActivated === true) {
+                    apartmentIds.add(doc.id);
+                }
             }
         }
         const tenantSnap = await this.firebaseAdminService.firestore.collection('apartments').get();
@@ -82,7 +156,32 @@ let ApartmentsService = class ApartmentsService {
                 apartmentIds.add(doc.id);
             }
         }
-        return Array.from(apartmentIds);
+        const candidateIds = Array.from(apartmentIds);
+        if (candidateIds.length === 0)
+            return [];
+        const refs = candidateIds.map((id) => this.firebaseAdminService.firestore.collection('apartments').doc(id));
+        const snaps = await this.firebaseAdminService.firestore.getAll(...refs);
+        const normalizedUserEmail = (0, invitation_token_1.normalizeEmail)(user.email ?? '');
+        return snaps
+            .filter((snap) => snap.exists)
+            .filter((snap) => {
+            const apartment = snap.data();
+            const residentId = typeof apartment.residentId === 'string' ? apartment.residentId : '';
+            const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
+            const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
+            const isResident = residentId === user.uid;
+            const isOwner = apartment.ownerActivated === true &&
+                ((ownerId && ownerId === user.uid) || Boolean(normalizedUserEmail && ownerEmail === normalizedUserEmail));
+            const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+            const isTenant = tenants.some((tenant) => {
+                if (!tenant || typeof tenant !== 'object')
+                    return false;
+                return typeof tenant.userId === 'string'
+                    && tenant.userId === user.uid;
+            });
+            return isResident || isOwner || isTenant;
+        })
+            .map((snap) => snap.id);
     }
     canManageTenants(user, apartmentId, apartment) {
         if (this.isStaff(user)) {
@@ -97,7 +196,7 @@ let ApartmentsService = class ApartmentsService {
         }
         const normalizedUserEmail = (0, invitation_token_1.normalizeEmail)(user.email ?? '');
         const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
-        return Boolean(normalizedUserEmail && ownerEmail && normalizedUserEmail === ownerEmail);
+        return Boolean(normalizedUserEmail && ownerEmail && normalizedUserEmail === ownerEmail && apartment.ownerActivated === true);
     }
     normalizeHeader(value) {
         return value
@@ -125,16 +224,150 @@ let ApartmentsService = class ApartmentsService {
             coldWaterMeters: useBuildingDefaults ? 0 : coldWaterMeters,
         };
     }
-    generateApartmentReadableId(apartmentNumber, companyId) {
-        const companyCode = companyId
-            ? companyId.substring(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, 'X')
-            : 'UNK';
-        let aptNum = 'APT';
-        if (apartmentNumber) {
-            const normalized = String(apartmentNumber).toUpperCase().replace(/[^A-Z0-9]/g, '');
-            aptNum = normalized.substring(0, 3) || 'APT';
+    buildReadableCode(value, length, fallback) {
+        const normalized = String(value ?? '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, ' ')
+            .trim();
+        const words = normalized.split(/\s+/).filter(Boolean);
+        const initials = words.map((word) => word[0]).join('');
+        const merged = words.join('');
+        const base = `${initials}${merged}`.replace(/[^A-Z0-9]/g, '') || fallback;
+        return base.slice(0, length).padEnd(length, 'X');
+    }
+    buildRandomDigits(length) {
+        const digits = (0, node_crypto_1.randomUUID)().replace(/\D/g, '').padEnd(length, '0');
+        return digits.slice(0, length);
+    }
+    resolveFrontendUrl(request) {
+        const origin = typeof request?.headers.origin === 'string' ? request.headers.origin : '';
+        if (origin) {
+            return origin.replace(/\/+$/, '');
         }
-        return `APT${companyCode}${aptNum}`;
+        const referer = typeof request?.headers.referer === 'string' ? request.headers.referer : '';
+        if (referer) {
+            try {
+                const url = new URL(referer);
+                return url.origin.replace(/\/+$/, '');
+            }
+            catch {
+            }
+        }
+        return (process.env.FRONTEND_URL || 'https://domera.app').replace(/\/+$/, '');
+    }
+    buildInvitationLink(rawToken, request) {
+        const frontendUrl = this.resolveFrontendUrl(request);
+        return `${frontendUrl}/accept-invitation?token=${encodeURIComponent(rawToken)}`;
+    }
+    buildInvitationActionHref(invitationLink) {
+        try {
+            const url = new URL(invitationLink);
+            return `${url.pathname}${url.search}`;
+        }
+        catch {
+            return invitationLink;
+        }
+    }
+    resolveApartmentCompanyId(apartment) {
+        if (typeof apartment.companyId === 'string' && apartment.companyId.trim()) {
+            return apartment.companyId.trim();
+        }
+        if (Array.isArray(apartment.companyIds)) {
+            return apartment.companyIds.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim() ?? '';
+        }
+        return '';
+    }
+    async createApartmentInvitation(params) {
+        const rawToken = (0, node_crypto_1.randomBytes)(32).toString('hex');
+        const tokenHash = await (0, invitation_token_1.hashInvitationToken)(rawToken);
+        const invitationRef = this.firebaseAdminService.firestore.collection('invitations').doc();
+        const companyId = this.resolveApartmentCompanyId(params.apartment);
+        await invitationRef.set({
+            apartmentId: params.apartmentId,
+            ...(companyId ? { companyId } : {}),
+            email: params.email,
+            status: 'pending',
+            tokenHash,
+            inviteType: params.inviteType,
+            role: params.role,
+            accountType: params.accountType,
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            invitedByUid: params.user.uid,
+        });
+        return {
+            invitationId: invitationRef.id,
+            invitationLink: this.buildInvitationLink(rawToken, params.request),
+        };
+    }
+    async resolveOwnerInvitationContext(apartment) {
+        const buildingId = this.firstString(apartment.buildingId);
+        let building = {};
+        if (buildingId) {
+            const buildingSnap = await this.firebaseAdminService.firestore.collection('buildings').doc(buildingId).get();
+            building = buildingSnap.exists ? buildingSnap.data() : {};
+        }
+        return {
+            companyName: this.firstString(apartment.managementCompanyName, apartment.companyName, building.managedBy?.companyName, building.managedBy?.name, 'Property Management'),
+            buildingName: this.firstString(apartment.buildingAddress, building.address, building.street, building.location, apartment.buildingName, apartment.building, building.name, building.title),
+            apartmentNumber: this.firstString(apartment.number, apartment.apartmentNumber, apartment.label, apartment.name),
+        };
+    }
+    async createOwnerInvitationNotification(params) {
+        if (!params.ownerId)
+            return;
+        try {
+            const ref = this.firebaseAdminService.firestore.collection('notifications').doc();
+            await ref.set({
+                userId: params.ownerId,
+                type: 'owner-invitation',
+                channel: 'Invitation',
+                title: 'Приглашение владельца',
+                description: `Вас пригласили управлять квартирой ${params.apartmentNumber || ''}${params.buildingName ? ` (${params.buildingName})` : ''}.`,
+                actionHref: this.buildInvitationActionHref(params.invitationLink),
+                actionLabel: 'Принять приглашение',
+                apartmentNumber: params.apartmentNumber || null,
+                buildingName: params.buildingName || null,
+                companyName: params.companyName || null,
+                read: false,
+                createdAt: new Date(),
+            });
+        }
+        catch (error) {
+            console.error('Failed to create owner invitation notification:', error);
+        }
+    }
+    buildApartmentNumberCode(apartmentNumber) {
+        const normalized = String(apartmentNumber ?? '')
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, '')
+            .trim();
+        return normalized || 'APT';
+    }
+    async generateApartmentReadableId(companyId, buildingId, apartmentNumber) {
+        const db = this.firebaseAdminService.firestore;
+        const [companySnap, buildingSnap] = await Promise.all([
+            db.collection('companies').doc(companyId).get(),
+            db.collection('buildings').doc(buildingId).get(),
+        ]);
+        const company = companySnap.exists ? companySnap.data() : {};
+        const building = buildingSnap.exists ? buildingSnap.data() : {};
+        const companyCode = this.buildReadableCode(company.companyName ?? company.name ?? companyId, 3, 'COM');
+        const buildingCode = this.buildReadableCode(building.name ?? building.title ?? building.address ?? buildingId, 4, 'HOME');
+        const apartmentCode = this.buildApartmentNumberCode(apartmentNumber);
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+            const readableId = `${companyCode}-${this.buildRandomDigits(4)}-${apartmentCode}-${buildingCode}-${this.buildRandomDigits(3)}`;
+            const [existingDoc, existingReadableId] = await Promise.all([
+                db.collection('apartments').doc(readableId).get(),
+                db.collection('apartments').where('readableId', '==', readableId).limit(1).get(),
+            ]);
+            if (!existingDoc.exists && existingReadableId.empty) {
+                return readableId;
+            }
+        }
+        throw new common_1.BadRequestException('Failed to generate a unique apartment readable ID');
     }
     getCellStringByHeader(row, headerCandidates) {
         for (const header of headerCandidates) {
@@ -589,6 +822,7 @@ let ApartmentsService = class ApartmentsService {
             .map((n) => this.normalizeApartmentNumber(n)));
         const importedApartmentNumbers = new Set();
         const importedApartmentIds = [];
+        const importedApartmentStorageFolders = [];
         const results = {
             imported: 0,
             errors: [],
@@ -659,11 +893,12 @@ let ApartmentsService = class ApartmentsService {
                 const coldWaterMeterNumber = row['Aukstais NR'] !== undefined && row['Aukstais NR'] !== null
                     ? String(row['Aukstais NR']).trim()
                     : '';
+                const readableId = await this.generateApartmentReadableId(companyId, buildingId, apartmentNumber);
                 const apartmentData = {
                     buildingId,
                     number: apartmentNumber,
                     companyIds: [companyId],
-                    readableId: this.generateApartmentReadableId(apartmentNumber, companyId),
+                    readableId,
                     createdAt: new Date(),
                     updatedAt: new Date(),
                 };
@@ -693,7 +928,7 @@ let ApartmentsService = class ApartmentsService {
                             apartmentData.declaredResidents = parseInt(String(row[field]), 10);
                     }
                 });
-                const apartmentRef = db.collection('apartments').doc();
+                const apartmentRef = db.collection('apartments').doc(readableId);
                 const waterReadings = {};
                 const hotWaterCheckDueDate = this.findDueDateFromRow(row, 'hot');
                 const coldWaterCheckDueDate = this.findDueDateFromRow(row, 'cold');
@@ -756,6 +991,7 @@ let ApartmentsService = class ApartmentsService {
                 batch.set(apartmentRef, { ...apartmentData, waterReadings });
                 importedApartmentNumbers.add(normalizedApartmentNumber);
                 importedApartmentIds.push(apartmentRef.id);
+                importedApartmentStorageFolders.push({ id: apartmentRef.id, readableId });
                 existingApartmentNumbers.add(normalizedApartmentNumber);
                 results.imported += 1;
                 results.createdApartments.push(`${apartmentNumber} (${apartmentData.address || 'N/A'}) - Собственник: ${apartmentData.owner || 'N/A'}`);
@@ -768,6 +1004,10 @@ let ApartmentsService = class ApartmentsService {
         if (importedApartmentIds.length > 0) {
             await batch.commit();
             await db.collection('buildings').doc(buildingId).set({ apartmentIds: firestore_1.FieldValue.arrayUnion(...importedApartmentIds) }, { merge: true });
+            await Promise.all(importedApartmentStorageFolders.map((apartment) => this.markStorageFolders(db.collection('apartments').doc(apartment.id), [
+                ...this.getBuildingStorageFolders(companyId, buildingId),
+                ...this.getApartmentStorageFolders(companyId, buildingId, apartment.readableId),
+            ], 'imported apartment')));
         }
         void this.auditLogService.write({
             request,
@@ -894,9 +1134,9 @@ let ApartmentsService = class ApartmentsService {
         if (!duplicate.empty) {
             throw new common_1.BadRequestException('Квартира с таким номером уже существует в этом доме');
         }
-        const ref = db.collection('apartments').doc();
         const readingConfigOverride = this.normalizeReadingConfigOverride(payload);
-        const readableId = this.generateApartmentReadableId(number, companyId);
+        const readableId = await this.generateApartmentReadableId(companyId, buildingId, number);
+        const ref = db.collection('apartments').doc(readableId);
         const data = {
             ...payload,
             number,
@@ -908,6 +1148,10 @@ let ApartmentsService = class ApartmentsService {
             updatedAt: new Date(),
         };
         await ref.set(data);
+        await this.markStorageFolders(ref, [
+            ...this.getBuildingStorageFolders(companyId, buildingId),
+            ...this.getApartmentStorageFolders(companyId, buildingId, readableId),
+        ], 'apartment');
         await db.collection('buildings').doc(buildingId).set({ apartmentIds: firestore_1.FieldValue.arrayUnion(ref.id) }, { merge: true });
         return { id: ref.id, ...data };
     }
@@ -931,16 +1175,52 @@ let ApartmentsService = class ApartmentsService {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         const readingConfigOverride = this.normalizeReadingConfigOverride(payload);
-        const updatedNumber = typeof payload.number === 'string' ? payload.number : (typeof current.number === 'string' ? current.number : undefined);
         const updatedCompanyId = typeof payload.companyId === 'string' ? payload.companyId : companyId;
-        const readableId = this.generateApartmentReadableId(updatedNumber, updatedCompanyId);
+        const updatedBuildingId = typeof payload.buildingId === 'string'
+            ? payload.buildingId
+            : (typeof current.buildingId === 'string' ? current.buildingId : undefined);
+        const updatedNumber = typeof payload.number === 'string'
+            ? payload.number
+            : (typeof current.number === 'string' ? current.number : undefined);
+        const shouldRegenerateReadableId = Boolean((payload.companyId && updatedCompanyId !== companyId) ||
+            (payload.buildingId && updatedBuildingId !== current.buildingId) ||
+            (payload.number && updatedNumber !== current.number));
+        const readableId = shouldRegenerateReadableId && updatedCompanyId && updatedBuildingId && updatedNumber
+            ? await this.generateApartmentReadableId(updatedCompanyId, updatedBuildingId, updatedNumber)
+            : current.readableId;
         await ref.set({
             ...payload,
-            readableId,
+            ...(typeof readableId === 'string' && readableId.trim() ? { readableId } : {}),
             ...(readingConfigOverride ? { readingConfigOverride } : {}),
             updatedAt: new Date(),
         }, { merge: true });
         return { success: true };
+    }
+    async storageSummary(request, user, apartmentId) {
+        if (!user?.uid || !user.role)
+            throw new common_1.UnauthorizedException('Authentication required');
+        if (!['ManagementCompany', 'Accountant'].includes(user.role)) {
+            throw new common_1.ForbiddenException('Insufficient permissions');
+        }
+        if (!apartmentId?.trim())
+            throw new common_1.BadRequestException('apartmentId is required');
+        await this.enforceRateLimit(request, 'apartments:storage-summary', `${user.uid}:${apartmentId}`, 60);
+        const snap = await this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId).get();
+        if (!snap.exists)
+            throw new common_1.NotFoundException('Apartment not found');
+        const data = snap.data();
+        const companyIds = Array.isArray(data.companyIds)
+            ? data.companyIds.filter((value) => typeof value === 'string')
+            : [];
+        const companyId = typeof data.companyId === 'string' ? data.companyId : undefined;
+        if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
+        const context = this.resolveApartmentStorageContext(apartmentId, data);
+        if (!context) {
+            return { path: null, fileCount: 0, hasUserFiles: false };
+        }
+        return this.firebaseAdminService.getStorageFolderSummary(context.path);
     }
     async remove(request, user, apartmentId) {
         if (!user?.uid || !user.role)
@@ -960,6 +1240,10 @@ let ApartmentsService = class ApartmentsService {
         if (data.residentId) {
             throw new common_1.BadRequestException('Нельзя удалить квартиру: сначала отвяжите жильца');
         }
+        const context = this.resolveApartmentStorageContext(apartmentId, data);
+        if (context) {
+            await this.firebaseAdminService.deleteStorageFolder(context.path);
+        }
         const buildingId = typeof data.buildingId === 'string' ? data.buildingId : undefined;
         await ref.delete();
         if (buildingId) {
@@ -973,11 +1257,51 @@ let ApartmentsService = class ApartmentsService {
         if (!apartmentId?.trim())
             throw new common_1.BadRequestException('apartmentId is required');
         await this.enforceRateLimit(request, 'apartments:unassign-resident', `${user.uid}:${apartmentId}`, 20);
-        await this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId).set({
+        const db = this.firebaseAdminService.firestore;
+        const apartmentRef = db.collection('apartments').doc(apartmentId);
+        const apartmentSnap = await apartmentRef.get();
+        if (!apartmentSnap.exists)
+            throw new common_1.NotFoundException('Apartment not found');
+        const apartment = apartmentSnap.data();
+        const userIdsToDetach = new Set();
+        const addUserId = (value) => {
+            if (typeof value === 'string' && value.trim()) {
+                userIdsToDetach.add(value.trim());
+            }
+        };
+        addUserId(apartment.residentId);
+        addUserId(apartment.ownerId);
+        if (Array.isArray(apartment.tenants)) {
+            for (const tenant of apartment.tenants) {
+                if (tenant && typeof tenant === 'object') {
+                    addUserId(tenant.userId);
+                }
+            }
+        }
+        await apartmentRef.set({
             residentId: null,
+            residentEmail: null,
+            residentName: null,
+            residentFirstName: null,
+            residentLastName: null,
+            ownerEmail: null,
+            ownerId: null,
+            owner: null,
+            ownerFirstName: null,
+            ownerLastName: null,
+            ownerContractNumber: null,
+            ownerInvitedAt: null,
+            ownerAcceptedAt: null,
+            ownerInvitationId: null,
+            ownerActivated: null,
             tenants: [],
             updatedAt: new Date(),
         }, { merge: true });
+        await Promise.all(Array.from(userIdsToDetach).map((targetUserId) => db.collection('users').doc(targetUserId).set({
+            apartmentIds: firestore_1.FieldValue.arrayRemove(apartmentId),
+            apartmentId: null,
+            updatedAt: new Date().toISOString(),
+        }, { merge: true })));
         return { success: true };
     }
     async updateOwner(request, user, apartmentId, ownerEmail, ownerData) {
@@ -1001,48 +1325,66 @@ let ApartmentsService = class ApartmentsService {
         const lastName = typeof ownerData?.lastName === 'string' ? ownerData.lastName.trim() : '';
         const contractNumber = typeof ownerData?.contractNumber === 'string' ? ownerData.contractNumber.trim() : '';
         const fullName = [firstName, lastName].filter(Boolean).join(' ') || email;
-        let ownerId = '';
+        let ownerId;
         try {
             const existing = await this.firebaseAdminService.auth.getUserByEmail(email);
             ownerId = existing.uid;
         }
         catch {
-            const created = await this.firebaseAdminService.auth.createUser({
-                email,
-                password: Math.random().toString(36).slice(-12),
-            });
-            ownerId = created.uid;
-            await db.collection('users').doc(ownerId).set({
-                uid: ownerId,
-                email,
-                role: 'Landlord',
-                accountType: 'Landlord',
-                companyId: typeof apartment.companyId === 'string' ? apartment.companyId : undefined,
-                createdAt: new Date().toISOString(),
-            }, { merge: true });
+            ownerId = undefined;
         }
+        const previousOwnerId = typeof apartment.ownerId === 'string' ? apartment.ownerId.trim() : '';
+        const { invitationLink, invitationId } = await this.createApartmentInvitation({
+            apartmentId,
+            apartment,
+            email,
+            user,
+            request,
+            inviteType: 'owner',
+            role: 'Landlord',
+            accountType: 'Landlord',
+        });
         await apartmentRef.set({
             ownerEmail: email,
-            ownerId: ownerId,
+            ownerId: ownerId ?? null,
             owner: fullName,
-            ownerFirstName: firstName || undefined,
-            ownerLastName: lastName || undefined,
-            ownerContractNumber: contractNumber || undefined,
+            ownerFirstName: firstName || null,
+            ownerLastName: lastName || null,
+            ownerContractNumber: contractNumber || null,
             ownerInvitedAt: new Date(),
+            ownerInvitationId: invitationId,
+            ownerActivated: false,
             updatedAt: new Date(),
         }, { merge: true });
         try {
-            const companyName = typeof apartment.managementCompanyName === 'string'
-                ? apartment.managementCompanyName
-                : typeof apartment.companyName === 'string'
-                    ? apartment.companyName
-                    : 'Property Management';
-            const senderName = typeof user.email === 'string' ? user.email : 'Manager';
+            const profileUpdates = [];
+            if (previousOwnerId && previousOwnerId !== ownerId) {
+                profileUpdates.push(db.collection('users').doc(previousOwnerId).set({
+                    apartmentIds: firestore_1.FieldValue.arrayRemove(apartmentId),
+                    apartmentId: null,
+                    updatedAt: new Date().toISOString(),
+                }, { merge: true }));
+            }
+            await Promise.all(profileUpdates);
+        }
+        catch (error) {
+            console.error('Failed to sync owner apartment profile:', error);
+        }
+        const ownerInvitationContext = await this.resolveOwnerInvitationContext(apartment);
+        await this.createOwnerInvitationNotification({
+            ownerId,
+            invitationLink,
+            companyName: ownerInvitationContext.companyName,
+            buildingName: ownerInvitationContext.buildingName,
+            apartmentNumber: ownerInvitationContext.apartmentNumber,
+        });
+        try {
             await this.emailService.sendOwnerInvitation({
                 to: email,
-                companyName,
-                invitationLink: `${process.env.FRONTEND_URL || 'https://domera.app'}/login`,
-                senderName,
+                companyName: ownerInvitationContext.companyName,
+                buildingName: ownerInvitationContext.buildingName,
+                apartmentNumber: ownerInvitationContext.apartmentNumber,
+                invitationLink,
                 language: 'lv',
             });
         }
@@ -1195,7 +1537,9 @@ let ApartmentsService = class ApartmentsService {
             updateData.residentId = null;
         }
         const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : undefined;
-        if (ownerId && ownerId === userId) {
+        const ownerEmail = typeof apartment.ownerEmail === 'string' ? apartment.ownerEmail.trim().toLowerCase() : undefined;
+        const normalizedRemovedUser = userId.trim().toLowerCase();
+        if ((ownerId && ownerId === userId) || (ownerEmail && ownerEmail === normalizedRemovedUser)) {
             updateData.ownerEmail = null;
             updateData.ownerId = null;
             updateData.owner = null;
@@ -1203,9 +1547,23 @@ let ApartmentsService = class ApartmentsService {
             updateData.ownerLastName = null;
             updateData.ownerContractNumber = null;
             updateData.ownerInvitedAt = null;
+            updateData.ownerAcceptedAt = null;
+            updateData.ownerInvitationId = null;
             updateData.ownerActivated = null;
         }
         await apartmentRef.set(updateData, { merge: true });
+        const userIdsToDetach = new Set();
+        if (typeof userId === 'string' && userId.trim() && !userId.includes('@')) {
+            userIdsToDetach.add(userId.trim());
+        }
+        if (ownerId && ((ownerId === userId) || (ownerEmail && ownerEmail === normalizedRemovedUser))) {
+            userIdsToDetach.add(ownerId);
+        }
+        await Promise.all(Array.from(userIdsToDetach).map((targetUserId) => db.collection('users').doc(targetUserId).set({
+            apartmentIds: firestore_1.FieldValue.arrayRemove(apartmentId),
+            apartmentId: null,
+            updatedAt: new Date().toISOString(),
+        }, { merge: true })));
         return { success: true };
     }
     async resendOwnerInvitation(request, user, apartmentId, ownerEmail) {
@@ -1227,18 +1585,39 @@ let ApartmentsService = class ApartmentsService {
         if (currentOwnerEmail !== ownerEmail.toLowerCase()) {
             throw new common_1.NotFoundException('Owner not found in this apartment');
         }
+        const { invitationLink, invitationId } = await this.createApartmentInvitation({
+            apartmentId,
+            apartment,
+            email: ownerEmail.toLowerCase(),
+            user,
+            request,
+            inviteType: 'owner',
+            role: 'Landlord',
+            accountType: 'Landlord',
+        });
+        let ownerId;
         try {
-            const companyName = typeof apartment.managementCompanyName === 'string'
-                ? apartment.managementCompanyName
-                : typeof apartment.companyName === 'string'
-                    ? apartment.companyName
-                    : 'Property Management';
-            const senderName = typeof user.email === 'string' ? user.email : 'Manager';
+            const existing = await this.firebaseAdminService.auth.getUserByEmail(ownerEmail.toLowerCase());
+            ownerId = existing.uid;
+        }
+        catch {
+            ownerId = undefined;
+        }
+        const ownerInvitationContext = await this.resolveOwnerInvitationContext(apartment);
+        await this.createOwnerInvitationNotification({
+            ownerId,
+            invitationLink,
+            companyName: ownerInvitationContext.companyName,
+            buildingName: ownerInvitationContext.buildingName,
+            apartmentNumber: ownerInvitationContext.apartmentNumber,
+        });
+        try {
             await this.emailService.sendOwnerInvitation({
                 to: ownerEmail,
-                companyName,
-                invitationLink: `${process.env.FRONTEND_URL || 'https://domera.app'}/login`,
-                senderName,
+                companyName: ownerInvitationContext.companyName,
+                buildingName: ownerInvitationContext.buildingName,
+                apartmentNumber: ownerInvitationContext.apartmentNumber,
+                invitationLink,
                 language: 'lv',
             });
         }
@@ -1247,6 +1626,7 @@ let ApartmentsService = class ApartmentsService {
         }
         await apartmentRef.set({
             ownerInvitedAt: new Date(),
+            ownerInvitationId: invitationId,
             updatedAt: new Date(),
         }, { merge: true });
         this.auditLogService.write({
@@ -1368,13 +1748,17 @@ let ApartmentsService = class ApartmentsService {
         for (const doc of snapshot.docs) {
             const apartment = doc.data();
             if (!apartment.readableId) {
-                const number = typeof apartment.number === 'string' ? apartment.number : '';
                 const companyId = typeof apartment.companyId === 'string'
                     ? apartment.companyId
                     : (Array.isArray(apartment.companyIds) && apartment.companyIds.length > 0
-                        ? apartment.companyIds[0]
+                        ? apartment.companyIds.find((value) => typeof value === 'string' && value.trim().length > 0) ?? ''
                         : '');
-                const readableId = this.generateApartmentReadableId(number, companyId);
+                const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : '';
+                if (!buildingId) {
+                    continue;
+                }
+                const number = typeof apartment.number === 'string' ? apartment.number : doc.id;
+                const readableId = await this.generateApartmentReadableId(companyId, buildingId, number);
                 batch.set(doc.ref, { readableId, updatedAt: new Date() }, { merge: true });
                 updated++;
             }

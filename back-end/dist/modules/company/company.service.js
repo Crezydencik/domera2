@@ -117,6 +117,34 @@ let CompanyService = class CompanyService {
             accountType: firestore_1.FieldValue.delete(),
         }).filter(([, value]) => value !== undefined && value !== ''));
     }
+    getCompanyStorageFolders(companyId) {
+        const base = `companies/${companyId}`;
+        return [
+            base,
+            `${base}/buildings`,
+            `${base}/documents`,
+            `${base}/invoices`,
+        ];
+    }
+    async markStorageFolders(ref, folderPaths) {
+        try {
+            await this.firebaseAdminService.createStorageFolders(folderPaths);
+            await ref.set({
+                storageFoldersStatus: 'ready',
+                storageFoldersError: firestore_1.FieldValue.delete(),
+                storageFoldersUpdatedAt: new Date(),
+            }, { merge: true });
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error('Failed to create company storage folders:', message);
+            await ref.set({
+                storageFoldersStatus: 'pending',
+                storageFoldersError: message,
+                storageFoldersUpdatedAt: new Date(),
+            }, { merge: true });
+        }
+    }
     async create(request, user, payload) {
         this.assertAuthenticated(user);
         const companyName = typeof payload.companyName === 'string'
@@ -143,6 +171,7 @@ let CompanyService = class CompanyService {
         };
         const ref = this.firebaseAdminService.firestore.collection('companies').doc(userId);
         await ref.set(data);
+        await this.markStorageFolders(ref, this.getCompanyStorageFolders(ref.id));
         return { id: ref.id, ...data };
     }
     async byId(request, user, companyId) {

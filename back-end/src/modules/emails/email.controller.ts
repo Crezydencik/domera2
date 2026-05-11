@@ -1,5 +1,8 @@
-import { Controller, Post, Body, HttpCode } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
+import { Roles } from '../../common/auth/roles.decorator';
+import { RolesGuard } from '../../common/auth/roles.guard';
 import { EmailService } from './email.service';
 import {
   SendRegistrationCodeEmailDto,
@@ -13,7 +16,9 @@ import {
 } from './dto/send-email.dto';
 
 @ApiTags('emails')
-@Controller('api/emails')
+@Controller('emails')
+@UseGuards(FirebaseAuthGuard, RolesGuard)
+@Roles('ManagementCompany', 'Accountant')
 export class EmailController {
   constructor(private readonly emailService: EmailService) {}
 

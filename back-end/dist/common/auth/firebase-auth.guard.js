@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FirebaseAuthGuard = void 0;
+exports.OptionalFirebaseAuthGuard = exports.FirebaseAuthGuard = void 0;
 const common_1 = require("@nestjs/common");
 const cookie_1 = require("cookie");
 const firebase_admin_service_1 = require("../infrastructure/firebase/firebase-admin.service");
@@ -93,3 +93,20 @@ exports.FirebaseAuthGuard = FirebaseAuthGuard = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService])
 ], FirebaseAuthGuard);
+let OptionalFirebaseAuthGuard = class OptionalFirebaseAuthGuard extends FirebaseAuthGuard {
+    async canActivate(context) {
+        try {
+            return await super.canActivate(context);
+        }
+        catch (error) {
+            if (error instanceof common_1.UnauthorizedException) {
+                return true;
+            }
+            throw error;
+        }
+    }
+};
+exports.OptionalFirebaseAuthGuard = OptionalFirebaseAuthGuard;
+exports.OptionalFirebaseAuthGuard = OptionalFirebaseAuthGuard = __decorate([
+    (0, common_1.Injectable)()
+], OptionalFirebaseAuthGuard);

@@ -47,6 +47,62 @@ let InvitationsService = class InvitationsService {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
     }
+    firstString(...values) {
+        for (const value of values) {
+            if (typeof value === 'string' && value.trim()) {
+                return value.trim();
+            }
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                return String(value);
+            }
+        }
+        return '';
+    }
+    resolveFrontendUrl(request) {
+        const origin = typeof request.headers.origin === 'string' ? request.headers.origin : '';
+        if (origin) {
+            return origin.replace(/\/+$/, '');
+        }
+        const referer = typeof request.headers.referer === 'string' ? request.headers.referer : '';
+        if (referer) {
+            try {
+                return new URL(referer).origin.replace(/\/+$/, '');
+            }
+            catch {
+            }
+        }
+        return (process.env.FRONTEND_URL || 'https://domera.app').replace(/\/+$/, '');
+    }
+    async resolveInvitationDisplay(invitation) {
+        const db = this.firebaseAdminService.firestore;
+        const apartmentId = typeof invitation.apartmentId === 'string' ? invitation.apartmentId : '';
+        const fallbackCompanyId = typeof invitation.companyId === 'string' ? invitation.companyId : '';
+        if (!apartmentId) {
+            return {
+                apartmentLabel: '',
+                buildingLabel: '',
+                managerLabel: '',
+            };
+        }
+        const apartmentSnap = await db.collection('apartments').doc(apartmentId).get();
+        const apartment = apartmentSnap.exists ? apartmentSnap.data() : {};
+        const buildingId = this.firstString(apartment.buildingId, invitation.buildingId);
+        const companyId = this.firstString(apartment.companyId, Array.isArray(apartment.companyIds) ? apartment.companyIds[0] : undefined, fallbackCompanyId);
+        const [buildingSnap, companySnap] = await Promise.all([
+            buildingId ? db.collection('buildings').doc(buildingId).get() : Promise.resolve(null),
+            companyId ? db.collection('companies').doc(companyId).get() : Promise.resolve(null),
+        ]);
+        const building = buildingSnap?.exists ? buildingSnap.data() : {};
+        const company = companySnap?.exists ? companySnap.data() : {};
+        const managedBy = typeof building.managedBy === 'object' && building.managedBy
+            ? building.managedBy
+            : {};
+        return {
+            apartmentLabel: this.firstString(apartment.number, apartment.apartmentNumber, apartment.label, apartment.name, apartment.address, apartmentId),
+            buildingLabel: this.firstString(apartment.buildingName, apartment.building, building.name, building.title, building.address, buildingId),
+            managerLabel: this.firstString(apartment.managementCompanyName, apartment.companyName, managedBy.companyName, managedBy.name, company.companyName, company.name, companyId),
+        };
+    }
     async send(request, user, payload) {
         this.assertHouseholdOrStaff(user);
         const apartmentId = typeof payload.apartmentId === 'string' ? payload.apartmentId.trim() : '';
@@ -72,7 +128,7 @@ let InvitationsService = class InvitationsService {
         const rawToken = (0, node_crypto_1.randomBytes)(32).toString('hex');
         const tokenHash = await (0, invitation_token_1.hashInvitationToken)(rawToken);
         const invitationRef = db.collection('invitations').doc();
-        const invitationLink = `${request.protocol}://${request.get('host')}/accept-invitation?token=${encodeURIComponent(rawToken)}`;
+        const invitationLink = `${this.resolveFrontendUrl(request)}/accept-invitation?token=${encodeURIComponent(rawToken)}`;
         await invitationRef.set({
             apartmentId,
             companyId,
@@ -144,6 +200,7 @@ let InvitationsService = class InvitationsService {
                 existingAccountDetected = false;
             }
         }
+        const display = await this.resolveInvitationDisplay(invitation);
         void this.auditLogService.write({
             request,
             action: 'invitation.resolve',
@@ -158,6 +215,12 @@ let InvitationsService = class InvitationsService {
                 id: doc.id,
                 email,
                 apartmentId: typeof invitation.apartmentId === 'string' ? invitation.apartmentId : null,
+                inviteType: typeof invitation.inviteType === 'string' ? invitation.inviteType : 'resident',
+                role: typeof invitation.role === 'string' ? invitation.role : 'Resident',
+                accountType: typeof invitation.accountType === 'string' ? invitation.accountType : 'Resident',
+                apartmentLabel: display.apartmentLabel,
+                buildingLabel: display.buildingLabel,
+                managerLabel: display.managerLabel,
                 status,
                 expiresAt: expiresAt ? expiresAt.toISOString() : null,
             },
@@ -194,6 +257,9 @@ let InvitationsService = class InvitationsService {
         }
         const invitationEmail = typeof invitation?.email === 'string' ? (0, invitation_token_1.normalizeEmail)(invitation.email) : '';
         const apartmentId = typeof invitation?.apartmentId === 'string' ? invitation.apartmentId : '';
+        const invitationRole = invitation?.role === 'Landlord' ? 'Landlord' : 'Resident';
+        const invitationAccountType = invitation?.accountType === 'Landlord' ? 'Landlord' : 'Resident';
+        const invitationType = typeof invitation?.inviteType === 'string' ? invitation.inviteType : 'resident';
         if (!invitation || !docId || !invitationEmail || !apartmentId) {
             throw new common_1.NotFoundException('Invalid invitation');
         }
@@ -209,12 +275,23 @@ let InvitationsService = class InvitationsService {
                 uid,
                 ...(email ? { email } : {}),
                 ...(typeof invitation.companyId === 'string' && invitation.companyId ? { companyId: invitation.companyId } : {}),
-                role: 'Resident',
+                role: invitationRole,
+                accountType: invitationAccountType,
                 apartmentId,
                 apartmentIds: [apartmentId],
                 updatedAt: new Date().toISOString(),
             }, { merge: true });
-            await db.collection('apartments').doc(apartmentId).set({ residentId: uid }, { merge: true });
+            if (invitationRole === 'Landlord' || invitationType === 'owner') {
+                await db.collection('apartments').doc(apartmentId).set({
+                    ownerId: uid,
+                    ownerEmail: email ?? invitationEmail,
+                    ownerActivated: true,
+                    ownerAcceptedAt: new Date(),
+                }, { merge: true });
+            }
+            else {
+                await db.collection('apartments').doc(apartmentId).set({ residentId: uid }, { merge: true });
+            }
             await db.collection('invitations').doc(docId).set({
                 status: 'accepted',
                 acceptedAt: new Date(),

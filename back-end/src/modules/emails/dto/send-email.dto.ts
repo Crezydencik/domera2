@@ -48,7 +48,11 @@ export class SendOwnerInvitationEmailDto {
 
   @IsOptional()
   @IsString()
-  senderName?: string;
+  buildingName?: string;
+
+  @IsOptional()
+  @IsString()
+  apartmentNumber?: string;
 
   @IsOptional()
   @IsEnum(['en', 'ru', 'lv'])

@@ -188,6 +188,44 @@ let BuildingsService = class BuildingsService {
             companyPhone: this.firstString(data.companyPhone, data.contactPhone, data.phone) || undefined,
         };
     }
+    getCompanyStorageFolders(companyId) {
+        const base = `companies/${companyId}`;
+        return [
+            base,
+            `${base}/buildings`,
+            `${base}/documents`,
+            `${base}/invoices`,
+        ];
+    }
+    getBuildingStorageFolders(companyId, buildingId) {
+        const base = `companies/${companyId}/buildings/${buildingId}`;
+        return [
+            base,
+            `${base}/apartments`,
+            `${base}/invoices`,
+            `${base}/documents`,
+            `${base}/photos`,
+        ];
+    }
+    async markStorageFolders(ref, folderPaths, entityLabel) {
+        try {
+            await this.firebaseAdminService.createStorageFolders(folderPaths);
+            await ref.set({
+                storageFoldersStatus: 'ready',
+                storageFoldersError: null,
+                storageFoldersUpdatedAt: new Date(),
+            }, { merge: true });
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error(`Failed to create ${entityLabel} storage folders:`, message);
+            await ref.set({
+                storageFoldersStatus: 'pending',
+                storageFoldersError: message,
+                storageFoldersUpdatedAt: new Date(),
+            }, { merge: true });
+        }
+    }
     normalizeBuildingPayload(payload, companyId, companySummary, existing) {
         const name = this.firstString(payload.name, payload.title, existing?.name, existing?.title);
         const address = this.firstString(payload.address, payload.street, payload.location, existing?.address, existing?.street, existing?.location);
@@ -292,6 +330,10 @@ let BuildingsService = class BuildingsService {
         };
         const ref = db.collection('buildings').doc(await this.generateBuildingId(data.name));
         await ref.set(data);
+        await this.markStorageFolders(ref, [
+            ...this.getCompanyStorageFolders(companyId),
+            ...this.getBuildingStorageFolders(companyId, ref.id),
+        ], 'building');
         return { id: ref.id, ...data };
     }
     async update(request, user, buildingId, payload) {

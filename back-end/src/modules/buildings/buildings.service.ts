@@ -244,6 +244,58 @@ export class BuildingsService {
     };
   }
 
+  private getCompanyStorageFolders(companyId: string): string[] {
+    const base = `companies/${companyId}`;
+
+    return [
+      base,
+      `${base}/buildings`,
+      `${base}/documents`,
+      `${base}/invoices`,
+    ];
+  }
+
+  private getBuildingStorageFolders(companyId: string, buildingId: string): string[] {
+    const base = `companies/${companyId}/buildings/${buildingId}`;
+
+    return [
+      base,
+      `${base}/apartments`,
+      `${base}/invoices`,
+      `${base}/documents`,
+      `${base}/photos`,
+    ];
+  }
+
+  private async markStorageFolders(
+    ref: FirebaseFirestore.DocumentReference,
+    folderPaths: string[],
+    entityLabel: string,
+  ): Promise<void> {
+    try {
+      await this.firebaseAdminService.createStorageFolders(folderPaths);
+      await ref.set(
+        {
+          storageFoldersStatus: 'ready',
+          storageFoldersError: null,
+          storageFoldersUpdatedAt: new Date(),
+        },
+        { merge: true },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to create ${entityLabel} storage folders:`, message);
+      await ref.set(
+        {
+          storageFoldersStatus: 'pending',
+          storageFoldersError: message,
+          storageFoldersUpdatedAt: new Date(),
+        },
+        { merge: true },
+      );
+    }
+  }
+
   private normalizeBuildingPayload(
     payload: Record<string, unknown>,
     companyId: string,
@@ -382,6 +434,11 @@ export class BuildingsService {
 
     const ref = db.collection('buildings').doc(await this.generateBuildingId(data.name));
     await ref.set(data);
+
+    await this.markStorageFolders(ref, [
+      ...this.getCompanyStorageFolders(companyId),
+      ...this.getBuildingStorageFolders(companyId, ref.id),
+    ], 'building');
 
     return { id: ref.id, ...data };
   }

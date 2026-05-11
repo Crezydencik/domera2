@@ -8,16 +8,36 @@ const baseStyles = {
     button: 'display:inline-block;padding:12px 24px;background:#4f46e5;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;',
     footer: 'margin:20px 0 0;padding:16px 0;border-top:1px solid #e2e8f0;color:#64748b;font-size:13px;line-height:1.5;',
 };
+function locationLine(params, language) {
+    const building = params.buildingName?.trim();
+    const apartment = params.apartmentNumber?.trim();
+    if (language === 'ru') {
+        return [
+            'Вас приглашают присоединиться к Domera',
+            building ? `к дому по адресу ${building}` : 'к дому',
+            apartment ? `к квартире ${apartment}` : '',
+        ].filter(Boolean).join(' ') + '.';
+    }
+    if (language === 'lv') {
+        return [
+            'Jūs esat aicināts pievienoties Domera',
+            building ? `ēkai pēc adreses ${building}` : 'ēkai',
+            apartment ? `dzīvoklim ${apartment}` : '',
+        ].filter(Boolean).join(' ') + '.';
+    }
+    return [
+        'You are invited to join Domera',
+        building ? `for the building at ${building}` : 'for the building',
+        apartment ? `and apartment ${apartment}` : '',
+    ].filter(Boolean).join(' ') + '.';
+}
 exports.ownerInvitationTemplates = {
     en: (params) => ({
         subject: `Join ${params.companyName} on Domera`,
         html: `
       <div style="${baseStyles.container}">
         <h2 style="${baseStyles.heading}">You're invited to Domera</h2>
-        <p style="${baseStyles.paragraph}">
-          ${params.senderName ? `${params.senderName} from` : ''} ${params.companyName} has invited you to join Domera,
-          a modern property management platform.
-        </p>
+        <p style="${baseStyles.paragraph}">${locationLine(params, 'en')}</p>
         <p style="${baseStyles.paragraph}">
           As a property owner, you can:
         </p>
@@ -37,14 +57,11 @@ exports.ownerInvitationTemplates = {
     `,
     }),
     ru: (params) => ({
-        subject: `Присоединитесь к ${params.companyName} в Domera`,
+        subject: `Присоединитесь к Domera`,
         html: `
       <div style="${baseStyles.container}">
         <h2 style="${baseStyles.heading}">Вы приглашены в Domera</h2>
-        <p style="${baseStyles.paragraph}">
-          ${params.senderName ? `${params.senderName} из` : ''} ${params.companyName} приглашает вас присоединиться к Domera,
-          современной платформе управления недвижимостью.
-        </p>
+        <p style="${baseStyles.paragraph}">${locationLine(params, 'ru')}</p>
         <p style="${baseStyles.paragraph}">
           Как собственник недвижимости, вы можете:
         </p>
@@ -64,20 +81,17 @@ exports.ownerInvitationTemplates = {
     `,
     }),
     lv: (params) => ({
-        subject: `Pievienojieties ${params.companyName} pakalpojumam Domera`,
+        subject: `Pievienojieties Domera`,
         html: `
       <div style="${baseStyles.container}">
         <h2 style="${baseStyles.heading}">Jūs esat aicināts uz Domera</h2>
-        <p style="${baseStyles.paragraph}">
-          ${params.senderName ? `${params.senderName} no` : ''} ${params.companyName} Jūs aicina pievienoties Domera,
-          modernai nekustamā īpašuma pārvaldības platformai.
-        </p>
+        <p style="${baseStyles.paragraph}">${locationLine(params, 'lv')}</p>
         <p style="${baseStyles.paragraph}">
           Kā nekustamā īpašuma īpašnieks, jūs varat:
         </p>
         <ul style="margin:0 0 12px;padding-left:24px;">
           <li>Uzraudzīt savu īpašumu un dzīvokļus</li>
-          <li>Izsekot skaitītāja rādījumiem un komunāļiem</li>
+          <li>Izsekot skaitītāja rādījumiem un komunālajiem pakalpojumiem</li>
           <li>Pārvaldīt rēķinus un maksājumus</li>
           <li>Sazināties ar īrniekiem un pārvaldi</li>
         </ul>

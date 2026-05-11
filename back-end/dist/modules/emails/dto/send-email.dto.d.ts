@@ -18,7 +18,8 @@ export declare class SendOwnerInvitationEmailDto {
     to: string;
     companyName: string;
     invitationLink: string;
-    senderName?: string;
+    buildingName?: string;
+    apartmentNumber?: string;
     language?: EmailLanguage;
 }
 export declare class SendTenantInvitationEmailDto {

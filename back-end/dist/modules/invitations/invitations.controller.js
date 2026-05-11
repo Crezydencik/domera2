@@ -113,6 +113,7 @@ __decorate([
 ], InvitationsController.prototype, "resolve", null);
 __decorate([
     (0, common_1.Post)('accept'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.OptionalFirebaseAuthGuard),
     (0, swagger_1.ApiOperation)({ summary: 'Accept invitation as existing user or during registration' }),
     (0, swagger_1.ApiBody)({ type: accept_invitation_dto_1.AcceptInvitationDto }),
     (0, swagger_1.ApiOkResponse)({

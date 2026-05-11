@@ -10,6 +10,21 @@ export class InvitationSummaryDto {
   @ApiProperty({ nullable: true })
   apartmentId!: string | null;
 
+  @ApiProperty({ required: false })
+  apartmentLabel?: string;
+
+  @ApiProperty({ required: false })
+  buildingLabel?: string;
+
+  @ApiProperty({ required: false })
+  managerLabel?: string;
+
+  @ApiProperty({ required: false, example: 'resident' })
+  inviteType?: string;
+
+  @ApiProperty({ required: false, example: 'Resident' })
+  accountType?: string;
+
   @ApiProperty({ example: 'pending' })
   status!: string;
 

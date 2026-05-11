@@ -15,6 +15,23 @@ export declare class UsersService {
     byId(request: Request, user: RequestUser, userId: string): Promise<{
         id: string;
     } | null>;
+    me(request: Request, user: RequestUser): Promise<{
+        id: string;
+        uid: string;
+        email: string | undefined;
+        role: "ManagementCompany" | "Accountant" | "Resident" | "Landlord" | undefined;
+        accountType: "ManagementCompany" | "Resident" | "Landlord" | undefined;
+        companyId: string | undefined;
+        apartmentId: string | undefined;
+    } | {
+        id: string;
+        uid?: undefined;
+        email?: undefined;
+        role?: undefined;
+        accountType?: undefined;
+        companyId?: undefined;
+        apartmentId?: undefined;
+    }>;
     byEmail(request: Request, user: RequestUser, email: string): Promise<{
         id: string;
     } | null>;

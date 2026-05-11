@@ -27,6 +27,26 @@ __decorate([
     __metadata("design:type", Object)
 ], InvitationSummaryDto.prototype, "apartmentId", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ required: false }),
+    __metadata("design:type", String)
+], InvitationSummaryDto.prototype, "apartmentLabel", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ required: false }),
+    __metadata("design:type", String)
+], InvitationSummaryDto.prototype, "buildingLabel", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ required: false }),
+    __metadata("design:type", String)
+], InvitationSummaryDto.prototype, "managerLabel", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ required: false, example: 'resident' }),
+    __metadata("design:type", String)
+], InvitationSummaryDto.prototype, "inviteType", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ required: false, example: 'Resident' }),
+    __metadata("design:type", String)
+], InvitationSummaryDto.prototype, "accountType", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ example: 'pending' }),
     __metadata("design:type", String)
 ], InvitationSummaryDto.prototype, "status", void 0);

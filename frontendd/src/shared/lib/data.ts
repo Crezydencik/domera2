@@ -24,6 +24,8 @@ export interface Building {
 export interface Resident {
   id: string;
   fullName: string;
+  email?: string;
+  phone?: string;
   apartment: string;
   building: string;
   role: string;
@@ -60,6 +62,11 @@ export interface NotificationItem {
   title: string;
   description: string;
   channel: string;
+  actionHref?: string;
+  actionLabel?: string;
+  type?: string;
+  apartmentNumber?: string;
+  buildingName?: string;
 }
 
 export interface DashboardStat {

@@ -46,6 +46,35 @@ function compareApartmentOrder(a: Record<string, unknown>, b: Record<string, unk
   return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
 }
 
+type ApartmentOccupancyStatus = "occupied" | "pending" | "vacant";
+
+function getApartmentOccupancyStatus(apartment: Record<string, unknown>): ApartmentOccupancyStatus {
+  const tenants = Array.isArray(apartment.tenants) ? apartment.tenants.length : 0;
+  const ownerActivated = apartment.ownerActivated === true || apartment.ownerActivated === "true";
+  const ownerPending = !ownerActivated && hasReadableText(apartment.ownerEmail) && (
+    hasReadableText(apartment.ownerInvitationId) ||
+    Boolean(apartment.ownerInvitedAt)
+  );
+
+  if (apartment.residentId || tenants > 0 || ownerActivated) {
+    return "occupied";
+  }
+
+  return ownerPending ? "pending" : "vacant";
+}
+
+function getStatusTranslationKey(status: ApartmentOccupancyStatus) {
+  if (status === "occupied") return "management.occupied";
+  if (status === "pending") return "management.pending";
+  return "management.vacant";
+}
+
+function getStatusClassName(status: ApartmentOccupancyStatus) {
+  if (status === "occupied") return "bg-emerald-100 text-emerald-700";
+  if (status === "pending") return "bg-amber-100 text-amber-700";
+  return "bg-slate-100 text-slate-600";
+}
+
 export function ApartmentsManagementView({
   data,
 }: {
@@ -117,6 +146,7 @@ export function ApartmentsManagementView({
     const residentIdValue = item.residentId;
     const residentId = hasReadableText(residentIdValue) ? residentIdValue.trim() : undefined;
     const resolvedOwnerFromResident = residentId ? residentById.get(residentId) : undefined;
+    const occupancyStatus = getApartmentOccupancyStatus(item);
     const rawOwner = hasReadableText(item.owner)
       ? String(item.owner)
       : hasReadableText(item.ownerEmail)
@@ -131,16 +161,17 @@ export function ApartmentsManagementView({
       area: String(item.area ?? item.squareMeters ?? item.heatingArea ?? item.managementArea ?? "—"),
       declaredResidents: String(item.declaredResidents ?? item.declaredCount ?? item.registeredResidents ?? item.registeredCount ?? "—"),
       floor: String(item.floor ?? item.level ?? "—"),
-      status: residentId || (Array.isArray(item.tenants) && item.tenants.length > 0) ? t("management.occupied") : t("management.vacant"),
+      status: t(getStatusTranslationKey(occupancyStatus)),
       residentId,
+      isOccupied: occupancyStatus === "occupied",
+      isVacant: occupancyStatus === "vacant",
     };
   }), [filteredApartments, residentById, t]);
 
   const rows = useMemo(() => [...filteredApartments].sort((a, b) => compareApartmentOrder(a, b)).map((item) => {
     const id = String(item.id ?? item.apartmentId ?? item.number ?? "—");
-    const tenants = Array.isArray(item.tenants) ? item.tenants.length : 0;
-    const isOccupied = Boolean(item.residentId || tenants > 0);
-    const status = isOccupied ? t("management.occupied") : t("management.vacant");
+    const occupancyStatus = getApartmentOccupancyStatus(item);
+    const status = t(getStatusTranslationKey(occupancyStatus));
     const area = String(item.area ?? item.squareMeters ?? item.heatingArea ?? item.managementArea ?? "—");
     const declaredResidents = String(
       item.declaredResidents ?? item.declaredCount ?? item.registeredResidents ?? item.registeredCount ?? "—",
@@ -177,11 +208,7 @@ export function ApartmentsManagementView({
       floor,
       <span
         key={`${id}-status`}
-        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-          isOccupied
-            ? "bg-emerald-100 text-emerald-700"
-            : "bg-slate-100 text-slate-600"
-        }`}
+        className={`rounded-full px-2.5 py-1 text-xs font-medium ${getStatusClassName(occupancyStatus)}`}
       >
         {status}
       </span>,

@@ -11,6 +11,9 @@ export declare class InvitationsService {
     private enforceRateLimit;
     private assertStaff;
     private assertHouseholdOrStaff;
+    private firstString;
+    private resolveFrontendUrl;
+    private resolveInvitationDisplay;
     send(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{
         success: boolean;
         invitationId: string;
@@ -21,6 +24,12 @@ export declare class InvitationsService {
             id: string;
             email: string;
             apartmentId: string | null;
+            inviteType: string;
+            role: string;
+            accountType: string;
+            apartmentLabel: string;
+            buildingLabel: string;
+            managerLabel: string;
             status: string;
             expiresAt: string | null;
         };

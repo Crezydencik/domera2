@@ -53,8 +53,14 @@ let InvoicesService = class InvoicesService {
                 this.firebaseAdminService.firestore.collection('apartments').where('residentId', '==', user.uid).get(),
                 this.firebaseAdminService.firestore.collection('apartments').where('ownerEmail', '==', normalizedEmail).get(),
             ]);
-            for (const doc of [...residentSnap.docs, ...ownerSnap.docs]) {
+            for (const doc of residentSnap.docs) {
                 apartmentIds.add(doc.id);
+            }
+            for (const doc of ownerSnap.docs) {
+                const apartment = doc.data();
+                if (apartment.ownerActivated === true) {
+                    apartmentIds.add(doc.id);
+                }
             }
         }
         const tenantSnap = await this.firebaseAdminService.firestore.collection('apartments').get();
@@ -71,7 +77,32 @@ let InvoicesService = class InvoicesService {
                 apartmentIds.add(doc.id);
             }
         }
-        return Array.from(apartmentIds);
+        const candidateIds = Array.from(apartmentIds);
+        if (candidateIds.length === 0)
+            return [];
+        const refs = candidateIds.map((id) => this.firebaseAdminService.firestore.collection('apartments').doc(id));
+        const snaps = await this.firebaseAdminService.firestore.getAll(...refs);
+        const normalizedUserEmail = (0, invitation_token_1.normalizeEmail)(user.email ?? '');
+        return snaps
+            .filter((snap) => snap.exists)
+            .filter((snap) => {
+            const apartment = snap.data();
+            const residentId = typeof apartment.residentId === 'string' ? apartment.residentId : '';
+            const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
+            const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
+            const isResident = residentId === user.uid;
+            const isOwner = apartment.ownerActivated === true &&
+                ((ownerId && ownerId === user.uid) || Boolean(normalizedUserEmail && ownerEmail === normalizedUserEmail));
+            const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+            const isTenant = tenants.some((tenant) => {
+                if (!tenant || typeof tenant !== 'object')
+                    return false;
+                return typeof tenant.userId === 'string'
+                    && tenant.userId === user.uid;
+            });
+            return isResident || isOwner || isTenant;
+        })
+            .map((snap) => snap.id);
     }
     async create(request, user, payload) {
         this.assertAuthenticated(user);

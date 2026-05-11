@@ -118,6 +118,23 @@ let UsersService = class UsersService {
             return null;
         return { id: snap.id, ...snap.data() };
     }
+    async me(request, user) {
+        this.assertAuth(user);
+        await this.enforceRateLimit(request, 'users:me', user.uid, 80);
+        const snap = await this.firebaseAdminService.firestore.collection('users').doc(user.uid).get();
+        if (!snap.exists) {
+            return {
+                id: user.uid,
+                uid: user.uid,
+                email: user.email,
+                role: user.role,
+                accountType: user.accountType,
+                companyId: user.companyId,
+                apartmentId: user.apartmentId,
+            };
+        }
+        return { id: snap.id, ...snap.data() };
+    }
     async byEmail(request, user, email) {
         this.assertAuth(user);
         const normalizedEmail = email?.trim().toLowerCase();

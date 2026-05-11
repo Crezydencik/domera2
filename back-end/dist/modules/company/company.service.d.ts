@@ -9,6 +9,8 @@ export declare class CompanyService {
     private assertAuthenticated;
     private enforceRateLimit;
     private normalizeCompanyPayload;
+    private getCompanyStorageFolders;
+    private markStorageFolders;
     create(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{
         companyName: string;
         manager: any[];

@@ -47,10 +47,12 @@ let NotificationsService = class NotificationsService {
             .orderBy('createdAt', 'desc')
             .limit(100)
             .get();
-        const items = snap.docs.map((doc) => ({
+        const items = snap.docs
+            .map((doc) => ({
             id: doc.id,
             ...doc.data(),
-        }));
+        }))
+            .filter((item) => item.read !== true);
         return { items };
     }
     async create(request, user, payload) {

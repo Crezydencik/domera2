@@ -4,6 +4,23 @@ import { UsersService } from './users.service';
 export declare class UsersController {
     private readonly usersService;
     constructor(usersService: UsersService);
+    me(request: Request, user: RequestUser): Promise<{
+        id: string;
+        uid: string;
+        email: string | undefined;
+        role: "ManagementCompany" | "Accountant" | "Resident" | "Landlord" | undefined;
+        accountType: "ManagementCompany" | "Resident" | "Landlord" | undefined;
+        companyId: string | undefined;
+        apartmentId: string | undefined;
+    } | {
+        id: string;
+        uid?: undefined;
+        email?: undefined;
+        role?: undefined;
+        accountType?: undefined;
+        companyId?: undefined;
+        apartmentId?: undefined;
+    }>;
     byId(request: Request, user: RequestUser, userId: string): Promise<{
         id: string;
     } | null>;

@@ -11,7 +11,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
-import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
+import { FirebaseAuthGuard, OptionalFirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { PROPERTY_MEMBER_ROLES, STAFF_ROLES } from '../../common/auth/role.constants';
 import { Roles } from '../../common/auth/roles.decorator';
@@ -92,6 +92,7 @@ export class InvitationsController {
   }
 
   @Post('accept')
+  @UseGuards(OptionalFirebaseAuthGuard)
   @ApiOperation({ summary: 'Accept invitation as existing user or during registration' })
   @ApiBody({ type: AcceptInvitationDto })
   @ApiOkResponse({
