@@ -9,7 +9,10 @@ import { RegisterEmailCodeVerifyDto } from './dto/register-email-code-verify.dto
 import { SendPasswordResetDto } from './dto/send-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ChangeEmailDto } from './dto/change-email.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
+import { RequestUser } from '../../common/auth/request-user.type';
 export declare class AuthService {
     private readonly firebaseAdminService;
     private readonly configService;
@@ -31,6 +34,9 @@ export declare class AuthService {
     private buildCustomResetLink;
     private inferAccountTypeFromEmail;
     private createServiceError;
+    private getCurrentAuthEmail;
+    private buildEmailChangeLink;
+    private getEmailChangeTemplate;
     private getFirebaseWebApiKey;
     private callIdentityToolkit;
     private ensureUserProfileDocument;
@@ -67,6 +73,37 @@ export declare class AuthService {
         };
     }>;
     registerWithEmailPassword(request: Request, input: RegisterDto): Promise<{
+        userId: string;
+        email: string;
+        session: {
+            cookie: string;
+            maxAgeSeconds: number;
+            role?: string;
+            accountType?: string;
+            companyId?: string;
+            apartmentId?: string;
+        };
+    }>;
+    changeEmail(request: Request, user: RequestUser, input: ChangeEmailDto): Promise<{
+        success: boolean;
+        userId: string;
+        email: string;
+        verificationRequired: boolean;
+        pendingEmail?: undefined;
+    } | {
+        success: boolean;
+        userId: string;
+        email: string;
+        pendingEmail: string;
+        verificationRequired: boolean;
+    }>;
+    confirmEmailChange(request: Request, token: string): Promise<{
+        success: boolean;
+        userId: string;
+        email: string;
+    }>;
+    changePassword(request: Request, user: RequestUser, input: ChangePasswordDto): Promise<{
+        success: boolean;
         userId: string;
         email: string;
         session: {

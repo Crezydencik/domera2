@@ -13,13 +13,18 @@ import { RegisterEmailCodeVerifyDto } from './dto/register-email-code-verify.dto
 import { SendPasswordResetDto } from './dto/send-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ChangeEmailDto } from './dto/change-email.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { normalizeUserRole, resolveAccountType, resolveUserRole } from '../../common/auth/role.constants';
+import { RequestUser } from '../../common/auth/request-user.type';
 
 const CODE_TTL_MS = 60 * 60 * 1000;
 const TOKEN_TTL_MS = 60 * 60 * 1000;
+const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
 const MAX_ATTEMPTS = 6;
 const COLLECTION = 'registration_email_codes';
+const EMAIL_CHANGE_COLLECTION = 'email_change_requests';
 
 type LocalizedLocale = 'en' | 'ru' | 'lv';
 
@@ -232,6 +237,44 @@ export class AuthService {
     const error = new Error(message) as Error & { statusCode?: number };
     error.statusCode = statusCode;
     return error;
+  }
+
+  private async getCurrentAuthEmail(user: RequestUser): Promise<string> {
+    const authUser = await this.firebaseAdminService.auth.getUser(user.uid);
+    const authEmail = typeof authUser.email === 'string' ? this.normalizeEmail(authUser.email) : '';
+    if (!authEmail) {
+      const tokenEmail = typeof user.email === 'string' ? this.normalizeEmail(user.email) : '';
+      if (tokenEmail) return tokenEmail;
+
+      throw this.createServiceError('Authenticated user email was not found', 400);
+    }
+
+    return authEmail;
+  }
+
+  private buildEmailChangeLink(request: Request, token: string): string {
+    const configuredAppUrl = this.configService.get<string>('APP_URL')?.trim();
+    const host = request.get('host') ?? 'localhost:3000';
+    const forwardedProto = request.get('x-forwarded-proto');
+    const protocol = forwardedProto ?? request.protocol ?? 'http';
+    const origin = configuredAppUrl || `${protocol}://${host}`;
+    const url = new URL('/confirm-email', origin);
+    url.searchParams.set('token', token);
+    return url.toString();
+  }
+
+  private getEmailChangeTemplate(link: string): { subject: string; html: string } {
+    return {
+      subject: 'Domera e-pasta maiņas apstiprināšana',
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a;">
+          <h2 style="margin:0 0 12px;">Apstipriniet e-pasta maiņu</h2>
+          <p style="margin:0 0 12px;">Lai mainītu savu Domera konta e-pastu, nospiediet pogu zemāk:</p>
+          <a href="${link}" style="display:inline-block;padding:12px 18px;background:#111827;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:700;">Apstiprināt e-pastu</a>
+          <p style="margin:14px 0 0;color:#64748b;font-size:13px;">Saite ir derīga 1 stundu. Ja neesat pieprasījis e-pasta maiņu, ignorējiet šo ziņojumu.</p>
+        </div>
+      `,
+    };
   }
 
   private getFirebaseWebApiKey(): string {
@@ -870,6 +913,203 @@ export class AuthService {
       email,
       session,
     };
+  }
+
+  async changeEmail(request: Request, user: RequestUser, input: ChangeEmailDto) {
+    if (!user?.uid) {
+      throw this.createServiceError('Authentication required', 401);
+    }
+
+    const currentEmail = await this.getCurrentAuthEmail(user);
+    const nextEmail = this.normalizeEmail(input.email ?? '');
+
+    if (!nextEmail) {
+      throw this.createServiceError('Email is required', 400);
+    }
+
+    if (nextEmail === currentEmail) {
+      return { success: true, userId: user.uid, email: currentEmail, verificationRequired: false };
+    }
+
+    try {
+      const existing = await this.firebaseAdminService.auth.getUserByEmail(nextEmail);
+      if (existing.uid !== user.uid) {
+        throw this.createServiceError('This email is already registered', 409);
+      }
+    } catch (error) {
+      if ((error as { statusCode?: number } | undefined)?.statusCode === 409) {
+        throw error;
+      }
+
+      const code = (error as { code?: string } | undefined)?.code;
+      if (code && code !== 'auth/user-not-found') {
+        throw error;
+      }
+    }
+
+    const token = randomUUID();
+    const tokenHash = this.hashToken(token);
+    const now = Date.now();
+
+    await this.firebaseAdminService.firestore.collection(EMAIL_CHANGE_COLLECTION).doc(tokenHash).set({
+      uid: user.uid,
+      currentEmail,
+      nextEmail,
+      tokenHash,
+      createdAt: new Date(now),
+      expiresAt: new Date(now + EMAIL_CHANGE_TTL_MS),
+      status: 'pending',
+    });
+
+    const link = this.buildEmailChangeLink(request, token);
+    const resendConfig = this.getResendConfig();
+    const resend = new Resend(resendConfig.apiKey);
+    const template = this.getEmailChangeTemplate(link);
+    const { error: resendError } = await resend.emails.send({
+      from: resendConfig.from,
+      to: nextEmail,
+      subject: template.subject,
+      html: template.html,
+    });
+
+    if (resendError) {
+      throw this.createServiceError(`Failed to send verification email: ${resendError.message}`, 500);
+    }
+
+    void this.auditLogService.write({
+      request,
+      action: 'auth.email_change_request',
+      status: 'success',
+      targetEmail: nextEmail,
+      metadata: { previousEmail: currentEmail, targetUserId: user.uid },
+    });
+
+    return {
+      success: true,
+      userId: user.uid,
+      email: currentEmail,
+      pendingEmail: nextEmail,
+      verificationRequired: true,
+    };
+  }
+
+  async confirmEmailChange(request: Request, token: string) {
+    const rawToken = String(token ?? '').trim();
+    if (!rawToken) {
+      throw this.createServiceError('Verification token is required', 400);
+    }
+
+    const tokenHash = this.hashToken(rawToken);
+    const ref = this.firebaseAdminService.firestore.collection(EMAIL_CHANGE_COLLECTION).doc(tokenHash);
+    const snap = await ref.get();
+
+    if (!snap.exists) {
+      throw this.createServiceError('Verification link is invalid or expired', 404);
+    }
+
+    const data = snap.data() as {
+      uid?: string;
+      currentEmail?: string;
+      nextEmail?: string;
+      expiresAt?: FirebaseFirestore.Timestamp;
+      status?: string;
+    };
+
+    const uid = typeof data.uid === 'string' ? data.uid : '';
+    const nextEmail = typeof data.nextEmail === 'string' ? this.normalizeEmail(data.nextEmail) : '';
+    const currentEmail = typeof data.currentEmail === 'string' ? this.normalizeEmail(data.currentEmail) : '';
+    const expiresAtMs = data.expiresAt?.toMillis?.() ?? 0;
+
+    if (!uid || !nextEmail || data.status !== 'pending' || !expiresAtMs || Date.now() > expiresAtMs) {
+      await ref.set({ status: 'expired', updatedAt: new Date() }, { merge: true }).catch(() => undefined);
+      throw this.createServiceError('Verification link is invalid or expired', 410);
+    }
+
+    try {
+      const existing = await this.firebaseAdminService.auth.getUserByEmail(nextEmail);
+      if (existing.uid !== uid) {
+        throw this.createServiceError('This email is already registered', 409);
+      }
+    } catch (error) {
+      if ((error as { statusCode?: number } | undefined)?.statusCode === 409) {
+        throw error;
+      }
+
+      const code = (error as { code?: string } | undefined)?.code;
+      if (code && code !== 'auth/user-not-found') {
+        throw error;
+      }
+    }
+
+    await this.firebaseAdminService.auth.updateUser(uid, { email: nextEmail });
+    await this.firebaseAdminService.firestore.collection('users').doc(uid).set(
+      {
+        uid,
+        email: nextEmail,
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
+    await ref.set({ status: 'confirmed', confirmedAt: new Date(), updatedAt: new Date() }, { merge: true });
+
+    void this.auditLogService.write({
+      request,
+      action: 'auth.email_change_confirm',
+      status: 'success',
+      targetEmail: nextEmail,
+      metadata: { previousEmail: currentEmail, targetUserId: uid },
+    });
+
+    return { success: true, userId: uid, email: nextEmail };
+  }
+
+  async changePassword(request: Request, user: RequestUser, input: ChangePasswordDto) {
+    if (!user?.uid) {
+      throw this.createServiceError('Authentication required', 401);
+    }
+
+    const email = await this.getCurrentAuthEmail(user);
+
+    await this.callIdentityToolkit('signInWithPassword', {
+      email,
+      password: input.currentPassword,
+      returnSecureToken: true,
+    });
+
+    await this.firebaseAdminService.auth.updateUser(user.uid, { password: input.newPassword });
+
+    await this.firebaseAdminService.firestore.collection('users').doc(user.uid).set(
+      {
+        uid: user.uid,
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
+
+    const authResult = await this.callIdentityToolkit<{ idToken: string; localId: string; email?: string }>(
+      'signInWithPassword',
+      {
+        email,
+        password: input.newPassword,
+        returnSecureToken: true,
+      },
+    );
+
+    const session = await this.createSessionCookie({
+      idToken: authResult.idToken,
+      userId: user.uid,
+      email,
+    });
+
+    void this.auditLogService.write({
+      request,
+      action: 'auth.password_change',
+      status: 'success',
+      targetEmail: email,
+      metadata: { targetUserId: user.uid },
+    });
+
+    return { success: true, userId: user.uid, email, session };
   }
 
   async previewPasswordReset(request: Request, oobCode: string) {

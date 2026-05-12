@@ -7,7 +7,11 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { PreviewPasswordResetDto } from './dto/preview-password-reset.dto';
+import { ChangeEmailDto } from './dto/change-email.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ConfirmEmailChangeDto } from './dto/confirm-email-change.dto';
 import { AuthService } from './auth.service';
+import { RequestUser } from '../../common/auth/request-user.type';
 export declare class AuthController {
     private readonly authService;
     constructor(authService: AuthService);
@@ -52,6 +56,27 @@ export declare class AuthController {
         apartmentId: string | undefined;
     }>;
     register(request: Request, dto: RegisterDto, response: Response): Promise<{
+        success: boolean;
+        userId: string;
+        email: string;
+        role: string | undefined;
+        accountType: string | undefined;
+        companyId: string | undefined;
+        apartmentId: string | undefined;
+    }>;
+    changeEmail(request: Request, user: RequestUser, dto: ChangeEmailDto, response: Response): Promise<{
+        success: boolean;
+        userId: string;
+        email: string;
+        pendingEmail: string | undefined;
+        verificationRequired: boolean;
+    }>;
+    confirmEmailChange(request: Request, dto: ConfirmEmailChangeDto): Promise<{
+        success: boolean;
+        userId: string;
+        email: string;
+    }>;
+    changePassword(request: Request, user: RequestUser, dto: ChangePasswordDto, response: Response): Promise<{
         success: boolean;
         userId: string;
         email: string;

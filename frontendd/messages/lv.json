@@ -940,5 +940,75 @@
     "notifyPeriodDeleteError": "Neizdevās dzēst periodu",
     "confirmDeleteMonth": "Dzēst visus rādījumus par {monthKey}?",
     "deleteReadingsTitle": "Dzēst visus rādījumus par {monthKey}"
+  },
+  "settings": {
+    "tabs": {
+      "user": "Lietotājs",
+      "notifications": "Paziņojumi",
+      "contacts": "Kontakti",
+      "billing": "Norēķinu konti",
+      "additionalUsers": "Papildu lietotāji",
+      "dataManagement": "Datu pārvaldība"
+    },
+    "sectionsAria": "Iestatījumu sadaļas",
+    "clientNumber": "Klienta numurs",
+    "personalData": "Personas dati",
+    "emptyValue": "Nav norādīts",
+    "emailHint": "Lūdzu, ievadi savu e-pastu",
+    "fields": {
+      "email": "E-pasts",
+      "username": "Vārds un uzvārds",
+      "phone": "Tālruņa numurs",
+      "password": "Parole",
+      "firstName": "Vārds",
+      "lastName": "Uzvārds",
+      "currentPasswordRequired": "Esošā parole*",
+      "newPasswordRequired": "Jaunā parole *",
+      "repeatPasswordRequired": "Jaunā parole atkārtoti*"
+    },
+    "placeholders": {
+      "phone": "Ievadiet tālruņa numuru",
+      "currentPassword": "Ievadīt paroli",
+      "newPassword": "Ievadīt jauno paroli",
+      "repeatPassword": "Atkārtot jauno paroli"
+    },
+    "actions": {
+      "edit": "Labot",
+      "save": "Saglabāt",
+      "cancel": "Atcelt",
+      "showPassword": "Rādīt paroli",
+      "hidePassword": "Slēpt paroli"
+    },
+    "notifications": {
+      "title": "Paziņojumu iestatījumi",
+      "general": "Vispārīgie paziņojumi",
+      "meterReminder": "Atgādinājums par rādījumu iesniegšanu",
+      "paymentReminder": "Maksājuma atgādinājums",
+      "language": "Paziņojumu valoda"
+    },
+    "languages": {
+      "ru": "Krievu",
+      "lv": "Latviešu",
+      "en": "Angļu"
+    },
+    "toast": {
+      "emailVerificationSent": "Apstiprināšanas saite nosūtīta uz {email}.",
+      "emailSaved": "E-pasts saglabāts.",
+      "nameSaved": "Vārds un uzvārds saglabāti.",
+      "phoneSaved": "Tālruņa numurs saglabāts.",
+      "passwordSaved": "Parole saglabāta."
+    },
+    "errors": {
+      "emailRequired": "Ievadiet e-pastu.",
+      "emailSaveFailed": "Neizdevās saglabāt e-pastu.",
+      "nameRequired": "Ievadiet vārdu un uzvārdu.",
+      "nameSaveFailed": "Neizdevās saglabāt lietotājvārdu.",
+      "phoneRequired": "Ievadiet tālruņa numuru.",
+      "phoneSaveFailed": "Neizdevās saglabāt tālruņa numuru.",
+      "passwordFieldsRequired": "Aizpildiet visus paroles laukus.",
+      "passwordsDoNotMatch": "Jaunās paroles nesakrīt.",
+      "passwordWeak": "Parolei jābūt vismaz 8 rakstzīmēm ar lielo un mazo burtu, ciparu un simbolu.",
+      "passwordSaveFailed": "Neizdevās saglabāt paroli."
+    }
   }
 }

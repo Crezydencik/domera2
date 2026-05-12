@@ -947,5 +947,75 @@
     "notifyPeriodDeleteError": "Failed to delete period",
     "confirmDeleteMonth": "Delete all readings for {monthKey}?",
     "deleteReadingsTitle": "Delete all readings for {monthKey}"
+  },
+  "settings": {
+    "tabs": {
+      "user": "User",
+      "notifications": "Notifications",
+      "contacts": "Contacts",
+      "billing": "Billing accounts",
+      "additionalUsers": "Additional users",
+      "dataManagement": "Data management"
+    },
+    "sectionsAria": "Settings sections",
+    "clientNumber": "Client number",
+    "personalData": "Personal data",
+    "emptyValue": "Not specified",
+    "emailHint": "Please enter your email",
+    "fields": {
+      "email": "Email",
+      "username": "Name and surname",
+      "phone": "Phone number",
+      "password": "Password",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "currentPasswordRequired": "Current password*",
+      "newPasswordRequired": "New password *",
+      "repeatPasswordRequired": "Repeat new password*"
+    },
+    "placeholders": {
+      "phone": "Enter phone number",
+      "currentPassword": "Enter password",
+      "newPassword": "Enter new password",
+      "repeatPassword": "Repeat new password"
+    },
+    "actions": {
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password"
+    },
+    "notifications": {
+      "title": "Notification settings",
+      "general": "General notifications",
+      "meterReminder": "Meter reading reminder",
+      "paymentReminder": "Payment reminder",
+      "language": "Notification language"
+    },
+    "languages": {
+      "ru": "Russian",
+      "lv": "Latvian",
+      "en": "English"
+    },
+    "toast": {
+      "emailVerificationSent": "Verification link sent to {email}.",
+      "emailSaved": "Email saved.",
+      "nameSaved": "Name and surname saved.",
+      "phoneSaved": "Phone number saved.",
+      "passwordSaved": "Password saved."
+    },
+    "errors": {
+      "emailRequired": "Enter email.",
+      "emailSaveFailed": "Failed to save email.",
+      "nameRequired": "Enter first name and last name.",
+      "nameSaveFailed": "Failed to save name.",
+      "phoneRequired": "Enter phone number.",
+      "phoneSaveFailed": "Failed to save phone number.",
+      "passwordFieldsRequired": "Fill in all password fields.",
+      "passwordsDoNotMatch": "New passwords do not match.",
+      "passwordWeak": "Password must be at least 8 characters and include uppercase, lowercase, number and symbol.",
+      "passwordSaveFailed": "Failed to save password."
+    }
   }
 }

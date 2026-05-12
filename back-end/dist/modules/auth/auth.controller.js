@@ -25,8 +25,13 @@ const login_dto_1 = require("./dto/login.dto");
 const register_dto_1 = require("./dto/register.dto");
 const confirm_password_reset_dto_1 = require("./dto/confirm-password-reset.dto");
 const preview_password_reset_dto_1 = require("./dto/preview-password-reset.dto");
+const change_email_dto_1 = require("./dto/change-email.dto");
+const change_password_dto_1 = require("./dto/change-password.dto");
+const confirm_email_change_dto_1 = require("./dto/confirm-email-change.dto");
 const auth_service_1 = require("./auth.service");
 const role_constants_1 = require("../../common/auth/role.constants");
+const current_user_decorator_1 = require("../../common/auth/current-user.decorator");
+const firebase_auth_guard_1 = require("../../common/auth/firebase-auth.guard");
 const SESSION_COOKIE_NAME = '__session';
 const ROLE_COOKIE_NAME = 'domera_role';
 const ACCOUNT_TYPE_COOKIE_NAME = 'domera_accountType';
@@ -159,6 +164,47 @@ let AuthController = class AuthController {
     async register(request, dto, response) {
         try {
             const result = await this.authService.registerWithEmailPassword(request, dto);
+            this.applySessionCookies(response, result.session);
+            return {
+                success: true,
+                userId: result.userId,
+                email: result.email,
+                role: result.session.role,
+                accountType: result.session.accountType,
+                companyId: result.session.companyId,
+                apartmentId: result.session.apartmentId,
+            };
+        }
+        catch (error) {
+            this.mapServiceError(error);
+        }
+    }
+    async changeEmail(request, user, dto, response) {
+        try {
+            const result = await this.authService.changeEmail(request, user, dto);
+            return {
+                success: true,
+                userId: result.userId,
+                email: result.email,
+                pendingEmail: result.pendingEmail,
+                verificationRequired: result.verificationRequired,
+            };
+        }
+        catch (error) {
+            this.mapServiceError(error);
+        }
+    }
+    async confirmEmailChange(request, dto) {
+        try {
+            return await this.authService.confirmEmailChange(request, dto.token);
+        }
+        catch (error) {
+            this.mapServiceError(error);
+        }
+    }
+    async changePassword(request, user, dto, response) {
+        try {
+            const result = await this.authService.changePassword(request, user, dto);
             this.applySessionCookies(response, result.session);
             return {
                 success: true,
@@ -317,6 +363,47 @@ __decorate([
     __metadata("design:paramtypes", [Object, register_dto_1.RegisterDto, Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "register", null);
+__decorate([
+    (0, common_1.Patch)('me/email'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Change the authenticated user email' }),
+    (0, swagger_1.ApiBody)({ type: change_email_dto_1.ChangeEmailDto }),
+    (0, swagger_1.ApiCookieAuth)('__session'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Body)()),
+    __param(3, (0, common_1.Res)({ passthrough: true })),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, change_email_dto_1.ChangeEmailDto, Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "changeEmail", null);
+__decorate([
+    (0, common_1.Post)('me/email/confirm'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Confirm an email change using the verification link token' }),
+    (0, swagger_1.ApiBody)({ type: confirm_email_change_dto_1.ConfirmEmailChangeDto }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, confirm_email_change_dto_1.ConfirmEmailChangeDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "confirmEmailChange", null);
+__decorate([
+    (0, common_1.Patch)('me/password'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Change the authenticated user password' }),
+    (0, swagger_1.ApiBody)({ type: change_password_dto_1.ChangePasswordDto }),
+    (0, swagger_1.ApiCookieAuth)('__session'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Body)()),
+    __param(3, (0, common_1.Res)({ passthrough: true })),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, change_password_dto_1.ChangePasswordDto, Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "changePassword", null);
 __decorate([
     (0, common_1.Post)('register-email-code/request'),
     (0, swagger_1.ApiOperation)({ summary: 'Send registration email verification code' }),

@@ -7,9 +7,11 @@ import {
   HttpException,
   HttpCode,
   HttpStatus,
+  Patch,
   Post,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import {
@@ -33,8 +35,14 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { PreviewPasswordResetDto } from './dto/preview-password-reset.dto';
+import { ChangeEmailDto } from './dto/change-email.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ConfirmEmailChangeDto } from './dto/confirm-email-change.dto';
 import { AuthService } from './auth.service';
 import { ACCOUNT_TYPES, ROLE_CATALOG } from '../../common/auth/role.constants';
+import { CurrentUser } from '../../common/auth/current-user.decorator';
+import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
+import { RequestUser } from '../../common/auth/request-user.type';
 
 const SESSION_COOKIE_NAME = '__session';
 const ROLE_COOKIE_NAME = 'domera_role';
@@ -249,6 +257,76 @@ export class AuthController {
   ) {
     try {
       const result = await this.authService.registerWithEmailPassword(request, dto);
+      this.applySessionCookies(response, result.session);
+      return {
+        success: true,
+        userId: result.userId,
+        email: result.email,
+        role: result.session.role,
+        accountType: result.session.accountType,
+        companyId: result.session.companyId,
+        apartmentId: result.session.apartmentId,
+      };
+    } catch (error) {
+      this.mapServiceError(error);
+    }
+  }
+
+  @Patch('me/email')
+  @UseGuards(FirebaseAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Change the authenticated user email' })
+  @ApiBody({ type: ChangeEmailDto })
+  @ApiCookieAuth('__session')
+  async changeEmail(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Body() dto: ChangeEmailDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    try {
+      const result = await this.authService.changeEmail(request, user, dto);
+      return {
+        success: true,
+        userId: result.userId,
+        email: result.email,
+        pendingEmail: result.pendingEmail,
+        verificationRequired: result.verificationRequired,
+      };
+    } catch (error) {
+      this.mapServiceError(error);
+    }
+  }
+
+  @Post('me/email/confirm')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirm an email change using the verification link token' })
+  @ApiBody({ type: ConfirmEmailChangeDto })
+  async confirmEmailChange(
+    @Req() request: Request,
+    @Body() dto: ConfirmEmailChangeDto,
+  ) {
+    try {
+      return await this.authService.confirmEmailChange(request, dto.token);
+    } catch (error) {
+      this.mapServiceError(error);
+    }
+  }
+
+  @Patch('me/password')
+  @UseGuards(FirebaseAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Change the authenticated user password' })
+  @ApiBody({ type: ChangePasswordDto })
+  @ApiCookieAuth('__session')
+  async changePassword(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Body() dto: ChangePasswordDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    try {
+      const result = await this.authService.changePassword(request, user, dto);
       this.applySessionCookies(response, result.session);
       return {
         success: true,

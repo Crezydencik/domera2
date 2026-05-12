@@ -145,6 +145,13 @@ function persistSessionHints(params: {
   notifyAuthSessionChanged();
 }
 
+function persistBrowserEmail(email: string) {
+  if (typeof document === "undefined") return;
+
+  document.cookie = `userEmail=${encodeURIComponent(email)}; max-age=${60 * 60 * 24 * 30}; path=/; SameSite=Lax`;
+  notifyAuthSessionChanged();
+}
+
 function mapAuthResponse(data: BackendAuthResponse, fallbackEmail: string, fallbackAccountType: PublicAccountType): FirebaseAuthResult {
   if (!data.userId) {
     throw new Error("Authentication response is incomplete.");
@@ -274,6 +281,44 @@ export async function saveUserProfile(userId: string, payload: Record<string, un
   return apiFetch<{ success: boolean }>(`/users/${encodeURIComponent(userId)}/upsert`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function changeAccountEmail(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  return apiFetch<{ success: boolean; email?: string; pendingEmail?: string; verificationRequired?: boolean }>(
+    "/auth/me/email",
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        email: normalizedEmail,
+      }),
+    },
+  );
+}
+
+export async function confirmAccountEmailChange(token: string) {
+  const result = await apiFetch<{ success: boolean; email?: string }>("/auth/me/email/confirm", {
+    method: "POST",
+    body: JSON.stringify({
+      token,
+    }),
+  });
+
+  if (result.email) {
+    persistBrowserEmail(result.email);
+  }
+
+  return result;
+}
+
+export async function changeAccountPassword(currentPassword: string, newPassword: string) {
+  return apiFetch<{ success: boolean }>("/auth/me/password", {
+    method: "PATCH",
+    body: JSON.stringify({
+      currentPassword,
+      newPassword,
+    }),
   });
 }
 

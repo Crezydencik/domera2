@@ -947,5 +947,75 @@
     "notifyPeriodDeleteError": "Не удалось удалить период",
     "confirmDeleteMonth": "Удалить все показания за {monthKey}?",
     "deleteReadingsTitle": "Удалить все показания за {monthKey}"
+  },
+  "settings": {
+    "tabs": {
+      "user": "Пользователь",
+      "notifications": "Уведомления",
+      "contacts": "Контакты",
+      "billing": "Расчетные счета",
+      "additionalUsers": "Дополнительные пользователи",
+      "dataManagement": "Управление данными"
+    },
+    "sectionsAria": "Разделы настроек",
+    "clientNumber": "Номер клиента",
+    "personalData": "Личные данные",
+    "emptyValue": "Не указано",
+    "emailHint": "Пожалуйста, введите свой e-mail",
+    "fields": {
+      "email": "E-mail",
+      "username": "Имя и фамилия",
+      "phone": "Номер телефона",
+      "password": "Пароль",
+      "firstName": "Имя",
+      "lastName": "Фамилия",
+      "currentPasswordRequired": "Текущий пароль*",
+      "newPasswordRequired": "Новый пароль *",
+      "repeatPasswordRequired": "Повторите новый пароль*"
+    },
+    "placeholders": {
+      "phone": "Введите номер телефона",
+      "currentPassword": "Введите пароль",
+      "newPassword": "Введите новый пароль",
+      "repeatPassword": "Повторите новый пароль"
+    },
+    "actions": {
+      "edit": "Изменить",
+      "save": "Сохранить",
+      "cancel": "Отмена",
+      "showPassword": "Показать пароль",
+      "hidePassword": "Скрыть пароль"
+    },
+    "notifications": {
+      "title": "Настройки уведомлений",
+      "general": "Общие уведомления",
+      "meterReminder": "Напоминание о показаниях",
+      "paymentReminder": "Напоминание об оплате",
+      "language": "Язык уведомлений"
+    },
+    "languages": {
+      "ru": "Русский",
+      "lv": "Латышский",
+      "en": "Английский"
+    },
+    "toast": {
+      "emailVerificationSent": "Ссылка подтверждения отправлена на {email}.",
+      "emailSaved": "E-mail сохранён.",
+      "nameSaved": "Имя и фамилия сохранены.",
+      "phoneSaved": "Номер телефона сохранён.",
+      "passwordSaved": "Пароль сохранён."
+    },
+    "errors": {
+      "emailRequired": "Введите e-mail.",
+      "emailSaveFailed": "Не удалось сохранить e-mail.",
+      "nameRequired": "Введите имя и фамилию.",
+      "nameSaveFailed": "Не удалось сохранить имя.",
+      "phoneRequired": "Введите номер телефона.",
+      "phoneSaveFailed": "Не удалось сохранить номер телефона.",
+      "passwordFieldsRequired": "Заполните все поля пароля.",
+      "passwordsDoNotMatch": "Новые пароли не совпадают.",
+      "passwordWeak": "Пароль должен быть не менее 8 символов и содержать заглавную и строчную буквы, цифру и символ.",
+      "passwordSaveFailed": "Не удалось сохранить пароль."
+    }
   }
 }
