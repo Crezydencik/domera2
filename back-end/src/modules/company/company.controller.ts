@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { ApiBearerAuth, ApiCookieAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
@@ -45,5 +45,30 @@ export class CompanyController {
     @Body() body: Record<string, unknown>,
   ) {
     return this.companyService.update(request, user, companyId, body);
+  }
+
+  @Post(':companyId/members')
+  @ApiOperation({ summary: 'Add a management company member by email' })
+  @ApiParam({ name: 'companyId', required: true, type: String })
+  addMember(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('companyId') companyId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.companyService.addMember(request, user, companyId, body);
+  }
+
+  @Delete(':companyId/members/:memberId')
+  @ApiOperation({ summary: 'Remove a management company member' })
+  @ApiParam({ name: 'companyId', required: true, type: String })
+  @ApiParam({ name: 'memberId', required: true, type: String })
+  removeMember(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('companyId') companyId: string,
+    @Param('memberId') memberId: string,
+  ) {
+    return this.companyService.removeMember(request, user, companyId, memberId);
   }
 }

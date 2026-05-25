@@ -13,6 +13,12 @@ exports.NotificationsService = void 0;
 const common_1 = require("@nestjs/common");
 const firebase_admin_service_1 = require("../../common/infrastructure/firebase/firebase-admin.service");
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
+const defaultNotificationSettings = {
+    general: true,
+    meterReminder: true,
+    paymentReminder: true,
+    language: 'ru',
+};
 let NotificationsService = class NotificationsService {
     constructor(firebaseAdminService, rateLimitService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -34,6 +40,48 @@ let NotificationsService = class NotificationsService {
         if (!rl.allowed)
             throw new common_1.BadRequestException('Too many requests');
     }
+    normalizeSettings(value) {
+        const settings = value && typeof value === 'object' ? value : {};
+        const language = settings.language === 'lv' || settings.language === 'en' || settings.language === 'ru'
+            ? settings.language
+            : defaultNotificationSettings.language;
+        return {
+            general: typeof settings.general === 'boolean' ? settings.general : defaultNotificationSettings.general,
+            meterReminder: typeof settings.meterReminder === 'boolean' ? settings.meterReminder : defaultNotificationSettings.meterReminder,
+            paymentReminder: typeof settings.paymentReminder === 'boolean' ? settings.paymentReminder : defaultNotificationSettings.paymentReminder,
+            language,
+        };
+    }
+    async getUserNotificationSettings(userId) {
+        const snap = await this.firebaseAdminService.firestore.collection('users').doc(userId).get();
+        if (!snap.exists)
+            return defaultNotificationSettings;
+        const data = snap.data();
+        return this.normalizeSettings(data.notificate ?? data.notificationSettings);
+    }
+    async getSettings(request, user) {
+        this.assertAuth(user);
+        await this.enforceRateLimit(request, 'notifications:settings:get', user.uid, 80);
+        const settings = await this.getUserNotificationSettings(user.uid);
+        return { settings };
+    }
+    async updateSettings(request, user, payload) {
+        this.assertAuth(user);
+        await this.enforceRateLimit(request, 'notifications:settings:update', user.uid, 40);
+        const current = await this.getUserNotificationSettings(user.uid);
+        const next = this.normalizeSettings({
+            ...current,
+            ...payload,
+        });
+        await this.firebaseAdminService.firestore.collection('users').doc(user.uid).set({
+            uid: user.uid,
+            email: user.email,
+            notificate: next,
+            notificationSettings: next,
+            updatedAt: new Date(),
+        }, { merge: true });
+        return { success: true, settings: next };
+    }
     async list(request, user, userId) {
         this.assertAuth(user);
         const normalizedUserId = userId?.trim();
@@ -41,6 +89,10 @@ let NotificationsService = class NotificationsService {
             throw new common_1.BadRequestException('userId is required');
         this.ensureUserAccess(user, normalizedUserId);
         await this.enforceRateLimit(request, 'notifications:list', `${user.uid}:${normalizedUserId}`, 60);
+        const settings = await this.getUserNotificationSettings(normalizedUserId);
+        if (!settings.general) {
+            return { items: [] };
+        }
         const snap = await this.firebaseAdminService.firestore
             .collection('notifications')
             .where('userId', '==', normalizedUserId)
@@ -53,7 +105,17 @@ let NotificationsService = class NotificationsService {
             ...doc.data(),
         }))
             .filter((item) => item.read !== true);
-        return { items };
+        const filteredItems = items.filter((item) => {
+            const type = typeof item.type === 'string' ? item.type : '';
+            const channel = typeof item.channel === 'string' ? item.channel : '';
+            const scope = `${type} ${channel}`.toLowerCase();
+            if (!settings.meterReminder && scope.includes('reading'))
+                return false;
+            if (!settings.paymentReminder && (scope.includes('payment') || scope.includes('invoice') || scope.includes('billing')))
+                return false;
+            return true;
+        });
+        return { items: filteredItems };
     }
     async create(request, user, payload) {
         this.assertAuth(user);

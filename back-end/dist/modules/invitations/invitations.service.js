@@ -78,10 +78,14 @@ let InvitationsService = class InvitationsService {
         const apartmentId = typeof invitation.apartmentId === 'string' ? invitation.apartmentId : '';
         const fallbackCompanyId = typeof invitation.companyId === 'string' ? invitation.companyId : '';
         if (!apartmentId) {
+            const companySnap = fallbackCompanyId
+                ? await db.collection('companies').doc(fallbackCompanyId).get()
+                : null;
+            const company = companySnap?.exists ? companySnap.data() : {};
             return {
                 apartmentLabel: '',
                 buildingLabel: '',
-                managerLabel: '',
+                managerLabel: this.firstString(company.companyName, company.name, fallbackCompanyId),
             };
         }
         const apartmentSnap = await db.collection('apartments').doc(apartmentId).get();
@@ -256,11 +260,16 @@ let InvitationsService = class InvitationsService {
             }
         }
         const invitationEmail = typeof invitation?.email === 'string' ? (0, invitation_token_1.normalizeEmail)(invitation.email) : '';
-        const apartmentId = typeof invitation?.apartmentId === 'string' ? invitation.apartmentId : '';
-        const invitationRole = invitation?.role === 'Landlord' ? 'Landlord' : 'Resident';
-        const invitationAccountType = invitation?.accountType === 'Landlord' ? 'Landlord' : 'Resident';
         const invitationType = typeof invitation?.inviteType === 'string' ? invitation.inviteType : 'resident';
-        if (!invitation || !docId || !invitationEmail || !apartmentId) {
+        const isCompanyMemberInvitation = invitationType === 'company-member';
+        const apartmentId = typeof invitation?.apartmentId === 'string' ? invitation.apartmentId : '';
+        const invitationRole = isCompanyMemberInvitation
+            ? invitation?.role === 'Accountant' ? 'Accountant' : 'ManagementCompany'
+            : invitation?.role === 'Landlord' ? 'Landlord' : 'Resident';
+        const invitationAccountType = isCompanyMemberInvitation
+            ? 'ManagementCompany'
+            : invitation?.accountType === 'Landlord' ? 'Landlord' : 'Resident';
+        if (!invitation || !docId || !invitationEmail || (!isCompanyMemberInvitation && !apartmentId)) {
             throw new common_1.NotFoundException('Invalid invitation');
         }
         const status = typeof invitation.status === 'string' ? invitation.status : 'pending';
@@ -271,17 +280,43 @@ let InvitationsService = class InvitationsService {
         if (status !== 'pending')
             throw new common_1.ForbiddenException('Invitation is not pending');
         const markAccepted = async (uid, email) => {
+            const companyId = typeof invitation.companyId === 'string' ? invitation.companyId : '';
+            const firstName = typeof invitation.firstName === 'string' ? invitation.firstName : undefined;
+            const lastName = typeof invitation.lastName === 'string' ? invitation.lastName : undefined;
+            const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || undefined;
             await db.collection('users').doc(uid).set({
                 uid,
                 ...(email ? { email } : {}),
-                ...(typeof invitation.companyId === 'string' && invitation.companyId ? { companyId: invitation.companyId } : {}),
+                ...(companyId ? { companyId } : {}),
+                ...(firstName ? { firstName } : {}),
+                ...(lastName ? { lastName } : {}),
+                ...(fullName ? { fullName, name: fullName, displayName: fullName } : {}),
                 role: invitationRole,
                 accountType: invitationAccountType,
-                apartmentId,
-                apartmentIds: [apartmentId],
+                ...(apartmentId ? { apartmentId, apartmentIds: [apartmentId] } : {}),
                 updatedAt: new Date().toISOString(),
             }, { merge: true });
-            if (invitationRole === 'Landlord' || invitationType === 'owner') {
+            if (isCompanyMemberInvitation) {
+                const companyRef = db.collection('companies').doc(companyId);
+                const companySnap = await companyRef.get();
+                if (!companySnap.exists)
+                    throw new common_1.NotFoundException('Company not found');
+                const company = companySnap.data();
+                const userIds = Array.isArray(company.userIds)
+                    ? company.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+                    : [];
+                const manager = Array.isArray(company.manager)
+                    ? company.manager.filter((value) => typeof value === 'string' && value.trim().length > 0)
+                    : [];
+                await companyRef.set({
+                    userIds: userIds.includes(uid) ? userIds : [...userIds, uid],
+                    manager: invitationRole === 'ManagementCompany' && !manager.includes(uid)
+                        ? [...manager, uid]
+                        : manager,
+                    updatedAt: new Date(),
+                }, { merge: true });
+            }
+            else if (invitationRole === 'Landlord' || invitationType === 'owner') {
                 await db.collection('apartments').doc(apartmentId).set({
                     ownerId: uid,
                     ownerEmail: email ?? invitationEmail,
@@ -306,7 +341,8 @@ let InvitationsService = class InvitationsService {
             if (!userEmail || userEmail !== invitationEmail) {
                 throw new common_1.ForbiddenException('Invitation belongs to a different email');
             }
-            if ((0, role_constants_1.resolveAccountType)({ role: user.role, accountType: user.accountType }) === 'ManagementCompany') {
+            if (!isCompanyMemberInvitation &&
+                (0, role_constants_1.resolveAccountType)({ role: user.role, accountType: user.accountType }) === 'ManagementCompany') {
                 throw new common_1.ForbiddenException('Management company account cannot accept resident invitation');
             }
             await markAccepted(user.uid, user.email);

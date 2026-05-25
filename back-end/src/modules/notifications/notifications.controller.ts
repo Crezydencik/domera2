@@ -21,6 +21,25 @@ import { NotificationsService } from './notifications.service';
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
+  @Get('settings')
+  @ApiOperation({ summary: 'Get current user notification settings' })
+  getSettings(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.notificationsService.getSettings(request, user);
+  }
+
+  @Patch('settings')
+  @ApiOperation({ summary: 'Update current user notification settings' })
+  updateSettings(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.notificationsService.updateSettings(request, user, body);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Get notifications by user' })
   @ApiQuery({ name: 'userId', required: true, type: String })

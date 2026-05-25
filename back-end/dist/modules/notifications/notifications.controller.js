@@ -22,6 +22,12 @@ let NotificationsController = class NotificationsController {
     constructor(notificationsService) {
         this.notificationsService = notificationsService;
     }
+    getSettings(request, user) {
+        return this.notificationsService.getSettings(request, user);
+    }
+    updateSettings(request, user, body) {
+        return this.notificationsService.updateSettings(request, user, body);
+    }
     list(request, user, userId) {
         return this.notificationsService.list(request, user, userId);
     }
@@ -39,6 +45,25 @@ let NotificationsController = class NotificationsController {
     }
 };
 exports.NotificationsController = NotificationsController;
+__decorate([
+    (0, common_1.Get)('settings'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get current user notification settings' }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], NotificationsController.prototype, "getSettings", null);
+__decorate([
+    (0, common_1.Patch)('settings'),
+    (0, swagger_1.ApiOperation)({ summary: 'Update current user notification settings' }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, Object]),
+    __metadata("design:returntype", void 0)
+], NotificationsController.prototype, "updateSettings", null);
 __decorate([
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: 'Get notifications by user' }),

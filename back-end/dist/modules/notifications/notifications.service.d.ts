@@ -2,6 +2,12 @@ import { Request } from 'express';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
+type NotificationSettings = {
+    general: boolean;
+    meterReminder: boolean;
+    paymentReminder: boolean;
+    language: 'ru' | 'lv' | 'en';
+};
 export declare class NotificationsService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
@@ -9,6 +15,15 @@ export declare class NotificationsService {
     private assertAuth;
     private ensureUserAccess;
     private enforceRateLimit;
+    private normalizeSettings;
+    private getUserNotificationSettings;
+    getSettings(request: Request, user: RequestUser): Promise<{
+        settings: NotificationSettings;
+    }>;
+    updateSettings(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{
+        success: boolean;
+        settings: NotificationSettings;
+    }>;
     list(request: Request, user: RequestUser, userId: string): Promise<{
         items: ({
             id: string;
@@ -31,3 +46,4 @@ export declare class NotificationsService {
         success: boolean;
     }>;
 }
+export {};

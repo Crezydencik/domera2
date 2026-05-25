@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
+import { FaBuilding } from "react-icons/fa";
 import { DataTable } from "@/components/data-table";
 import { SectionCard } from "@/components/section-card";
 import { ApartmentsManagementActionsMenu, type ManagementActionApartment, type ManagementActionBuildingOption } from "./_management-actions-menu";
@@ -82,6 +83,7 @@ export function ApartmentsManagementView({
 }) {
   const t = useTranslations("apartments");
   const [selectedBuildingId, setSelectedBuildingId] = useState<string | undefined>(undefined);
+  const hasBuildings = data.buildings.length > 0;
 
   const residentById = useMemo(
     () => new Map(data.residents.map((resident) => [resident.id, resident])),
@@ -271,8 +273,13 @@ export function ApartmentsManagementView({
             rows={rows}
           />
         ) : (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-            <p className="font-medium text-slate-700">{t("management.noApartments")}</p>
+          <div className="flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
+              <FaBuilding className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <p className="mt-4 font-medium text-slate-700">
+              {hasBuildings ? t("management.noApartments") : t("management.noBuildings")}
+            </p>
           </div>
         )}
       </SectionCard>

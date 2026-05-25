@@ -317,6 +317,7 @@
       "registryTitle": "Реестр квартир",
       "registryDescription": "Полный список квартир с обзором заселённости и собственников.",
       "noApartments": "Квартир пока нет",
+      "noBuildings": "Сначала добавьте дом, чтобы создать квартиры.",
       "occupied": "Занято",
       "pending": "Ожидание",
       "vacant": "Свободно",
@@ -951,6 +952,7 @@
   "settings": {
     "tabs": {
       "user": "Пользователь",
+      "company": "Компания",
       "notifications": "Уведомления",
       "contacts": "Контакты",
       "billing": "Расчетные счета",
@@ -993,6 +995,34 @@
       "paymentReminder": "Напоминание об оплате",
       "language": "Язык уведомлений"
     },
+    "company": {
+      "title": "Данные компании",
+      "description": "Этот раздел доступен только главному аккаунту управляющей компании.",
+      "fields": {
+        "name": "Название компании",
+        "registrationNumber": "Регистрационный номер",
+        "email": "Email компании",
+        "phone": "Телефон компании"
+      },
+      "roles": {
+        "managementCompany": "Сотрудник УК",
+        "accountant": "Бухгалтер"
+      },
+      "members": {
+        "title": "Члены компании",
+        "description": "Добавляйте сотрудников и бухгалтеров, которым нужен доступ к этой управляющей компании.",
+        "firstNamePlaceholder": "Имя",
+        "lastNamePlaceholder": "Фамилия",
+        "emailPlaceholder": "sotrudnik@example.com",
+        "roleLabel": "Роль",
+        "add": "Добавить",
+        "adding": "Добавляем...",
+        "remove": "Удалить",
+        "removing": "Удаляем...",
+        "removeConfirm": "Удалить {name} из компании?",
+        "empty": "Участники пока не добавлены."
+      }
+    },
     "languages": {
       "ru": "Русский",
       "lv": "Латышский",
@@ -1003,7 +1033,12 @@
       "emailSaved": "E-mail сохранён.",
       "nameSaved": "Имя и фамилия сохранены.",
       "phoneSaved": "Номер телефона сохранён.",
-      "passwordSaved": "Пароль сохранён."
+      "passwordSaved": "Пароль сохранён.",
+      "companySaved": "Данные компании сохранены.",
+      "memberAdded": "Участник добавлен.",
+      "memberInvitationSent": "Приглашение на регистрацию отправлено.",
+      "memberRemoved": "Участник удалён.",
+      "notificationSettingsSaved": "Настройки уведомлений сохранены."
     },
     "errors": {
       "emailRequired": "Введите e-mail.",
@@ -1015,7 +1050,14 @@
       "passwordFieldsRequired": "Заполните все поля пароля.",
       "passwordsDoNotMatch": "Новые пароли не совпадают.",
       "passwordWeak": "Пароль должен быть не менее 8 символов и содержать заглавную и строчную буквы, цифру и символ.",
-      "passwordSaveFailed": "Не удалось сохранить пароль."
+      "passwordSaveFailed": "Не удалось сохранить пароль.",
+      "companyNameRequired": "Введите название компании.",
+      "companySaveFailed": "Не удалось сохранить данные компании.",
+      "memberEmailRequired": "Введите e-mail участника.",
+      "memberFieldsRequired": "Введите имя, фамилию и e-mail.",
+      "memberAddFailed": "Не удалось добавить участника.",
+      "memberRemoveFailed": "Не удалось удалить участника.",
+      "notificationSettingsSaveFailed": "Не удалось сохранить настройки уведомлений."
     }
   }
 }

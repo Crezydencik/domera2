@@ -317,6 +317,7 @@
       "registryTitle": "Apartment register",
       "registryDescription": "Full list of apartments with occupancy and owner overview.",
       "noApartments": "No apartments yet",
+      "noBuildings": "Add a building first to create apartments.",
       "occupied": "Occupied",
       "pending": "Pending",
       "vacant": "Vacant",
@@ -951,6 +952,7 @@
   "settings": {
     "tabs": {
       "user": "User",
+      "company": "Company",
       "notifications": "Notifications",
       "contacts": "Contacts",
       "billing": "Billing accounts",
@@ -993,6 +995,34 @@
       "paymentReminder": "Payment reminder",
       "language": "Notification language"
     },
+    "company": {
+      "title": "Company details",
+      "description": "This section is available only to the main management company account.",
+      "fields": {
+        "name": "Company name",
+        "registrationNumber": "Registration number",
+        "email": "Company email",
+        "phone": "Company phone"
+      },
+      "roles": {
+        "managementCompany": "Company staff",
+        "accountant": "Accountant"
+      },
+      "members": {
+        "title": "Company members",
+        "description": "Add staff and accountants who need access to this management company.",
+        "firstNamePlaceholder": "First name",
+        "lastNamePlaceholder": "Last name",
+        "emailPlaceholder": "staff@example.com",
+        "roleLabel": "Role",
+        "add": "Add",
+        "adding": "Adding...",
+        "remove": "Remove",
+        "removing": "Removing...",
+        "removeConfirm": "Remove {name} from the company?",
+        "empty": "No members have been added yet."
+      }
+    },
     "languages": {
       "ru": "Russian",
       "lv": "Latvian",
@@ -1003,7 +1033,12 @@
       "emailSaved": "Email saved.",
       "nameSaved": "Name and surname saved.",
       "phoneSaved": "Phone number saved.",
-      "passwordSaved": "Password saved."
+      "passwordSaved": "Password saved.",
+      "companySaved": "Company details saved.",
+      "memberAdded": "Member added.",
+      "memberInvitationSent": "Registration invitation sent.",
+      "memberRemoved": "Member removed.",
+      "notificationSettingsSaved": "Notification settings saved."
     },
     "errors": {
       "emailRequired": "Enter email.",
@@ -1015,7 +1050,14 @@
       "passwordFieldsRequired": "Fill in all password fields.",
       "passwordsDoNotMatch": "New passwords do not match.",
       "passwordWeak": "Password must be at least 8 characters and include uppercase, lowercase, number and symbol.",
-      "passwordSaveFailed": "Failed to save password."
+      "passwordSaveFailed": "Failed to save password.",
+      "companyNameRequired": "Enter company name.",
+      "companySaveFailed": "Failed to save company details.",
+      "memberEmailRequired": "Enter member email.",
+      "memberFieldsRequired": "Enter first name, last name and email.",
+      "memberAddFailed": "Failed to add member.",
+      "memberRemoveFailed": "Failed to remove member.",
+      "notificationSettingsSaveFailed": "Failed to save notification settings."
     }
   }
 }

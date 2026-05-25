@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -10,12 +11,16 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { RateLimitService } from '../../common/services/rate-limit.service';
+import { resolveAccountType } from '../../common/auth/role.constants';
+import { hashInvitationToken } from '../../common/utils/invitation-token';
+import { EmailService } from '../emails/email.service';
 
 @Injectable()
 export class CompanyService {
   constructor(
     private readonly firebaseAdminService: FirebaseAdminService,
     private readonly rateLimitService: RateLimitService,
+    private readonly emailService: EmailService,
   ) {}
 
   private assertAuthenticated(user: RequestUser | undefined): asserts user is RequestUser {
@@ -258,5 +263,277 @@ export class CompanyService {
     const normalizedPayload = this.normalizeCompanyPayload(payload, current);
     await ref.set({ ...normalizedPayload, updatedAt: new Date() }, { merge: true });
     return { success: true };
+  }
+
+  private resolveFrontendUrl(request: Request): string {
+    const origin = typeof request.headers.origin === 'string' ? request.headers.origin : '';
+    if (origin) return origin.replace(/\/+$/, '');
+
+    const referer = typeof request.headers.referer === 'string' ? request.headers.referer : '';
+    if (referer) {
+      try {
+        return new URL(referer).origin.replace(/\/+$/, '');
+      } catch {
+        // Fall through to configured URL.
+      }
+    }
+
+    return (process.env.FRONTEND_URL || 'https://domera.app').replace(/\/+$/, '');
+  }
+
+  private async attachMemberToCompany(params: {
+    companyId: string;
+    company: Record<string, unknown>;
+    targetUid: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    role: 'ManagementCompany' | 'Accountant';
+  }) {
+    const accountType = resolveAccountType({ role: params.role }) ?? 'ManagementCompany';
+    const fullName = [params.firstName, params.lastName].filter(Boolean).join(' ');
+    const userRef = this.firebaseAdminService.firestore.collection('users').doc(params.targetUid);
+    const userSnap = await userRef.get();
+    const currentUserData = userSnap.exists ? (userSnap.data() as Record<string, unknown>) : {};
+
+    const existingCompanyId = typeof currentUserData.companyId === 'string' ? currentUserData.companyId : '';
+    if (existingCompanyId && existingCompanyId !== params.companyId) {
+      throw new ForbiddenException('User already belongs to another company');
+    }
+
+    await userRef.set(
+      {
+        ...currentUserData,
+        uid: params.targetUid,
+        email: params.email,
+        firstName: params.firstName,
+        lastName: params.lastName,
+        fullName,
+        name: fullName,
+        displayName: fullName,
+        companyId: params.companyId,
+        role: params.role,
+        accountType,
+        createdAt: currentUserData.createdAt ?? new Date(),
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
+
+    const companyRef = this.firebaseAdminService.firestore.collection('companies').doc(params.companyId);
+    const userIds = Array.isArray(params.company.userIds)
+      ? params.company.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const manager = Array.isArray(params.company.manager)
+      ? params.company.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+
+    await companyRef.set(
+      {
+        userIds: userIds.includes(params.targetUid) ? userIds : [...userIds, params.targetUid],
+        manager:
+          params.role === 'ManagementCompany' && !manager.includes(params.targetUid)
+            ? [...manager, params.targetUid]
+            : manager,
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
+
+    return {
+      id: params.targetUid,
+      uid: params.targetUid,
+      email: params.email,
+      firstName: params.firstName,
+      lastName: params.lastName,
+      fullName,
+      role: params.role,
+      accountType,
+      companyId: params.companyId,
+    };
+  }
+
+  private async sendMemberRegistrationInvitation(params: {
+    request: Request;
+    companyId: string;
+    company: Record<string, unknown>;
+    inviterUid: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    role: 'ManagementCompany' | 'Accountant';
+  }) {
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = await hashInvitationToken(rawToken);
+    const invitationRef = this.firebaseAdminService.firestore.collection('invitations').doc();
+    const invitationLink = `${this.resolveFrontendUrl(params.request)}/accept-invitation?token=${encodeURIComponent(rawToken)}`;
+    const companyName =
+      (typeof params.company.companyName === 'string' && params.company.companyName.trim()) ||
+      (typeof params.company.name === 'string' && params.company.name.trim()) ||
+      'Domera';
+
+    await invitationRef.set({
+      companyId: params.companyId,
+      email: params.email,
+      firstName: params.firstName,
+      lastName: params.lastName,
+      role: params.role,
+      accountType: resolveAccountType({ role: params.role }) ?? 'ManagementCompany',
+      inviteType: 'company-member',
+      status: 'pending',
+      tokenHash,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      invitedByUid: params.inviterUid,
+    });
+
+    await this.emailService.sendNotification({
+      to: params.email,
+      language: 'lv',
+      title: 'Uzaicinājums pievienoties Domera',
+      message: `<p>Jūs esat uzaicināts pievienoties uzņēmumam <strong>${companyName}</strong>.</p><p>Lai izveidotu kontu un sāktu darbu, atveriet zemāk esošo saiti.</p>`,
+      actionLabel: 'Pabeigt reģistrāciju',
+      actionLink: invitationLink,
+      footer: 'Saite ir derīga 7 dienas.',
+    });
+
+    return {
+      invitationId: invitationRef.id,
+      invitationLink,
+    };
+  }
+
+  async addMember(request: Request, user: RequestUser, companyId: string, payload: Record<string, unknown>) {
+    this.assertAuthenticated(user);
+    if (!companyId?.trim()) throw new BadRequestException('companyId is required');
+    if (user.role !== 'ManagementCompany') {
+      throw new ForbiddenException('Only the main management company account can add members');
+    }
+    if (user.companyId && user.companyId !== companyId) {
+      throw new ForbiddenException('Access denied for company');
+    }
+
+    const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+    const role = payload.role === 'Accountant' || payload.role === 'ManagementCompany' ? payload.role : null;
+    const firstName = typeof payload.firstName === 'string' ? payload.firstName.trim() : '';
+    const lastName = typeof payload.lastName === 'string' ? payload.lastName.trim() : '';
+
+    if (!email || !role || !firstName || !lastName) {
+      throw new BadRequestException('email, firstName, lastName and role are required');
+    }
+
+    await this.enforceRateLimit(request, 'company:add-member', `${user.uid}:${companyId}`, 20);
+
+    const companyRef = this.firebaseAdminService.firestore.collection('companies').doc(companyId);
+    const companySnap = await companyRef.get();
+    if (!companySnap.exists) throw new NotFoundException('Company not found');
+
+    let targetUid = '';
+    try {
+      const authUser = await this.firebaseAdminService.auth.getUserByEmail(email);
+      targetUid = authUser.uid;
+    } catch {
+      const invitation = await this.sendMemberRegistrationInvitation({
+        request,
+        companyId,
+        company: companySnap.data() as Record<string, unknown>,
+        inviterUid: user.uid,
+        email,
+        firstName,
+        lastName,
+        role,
+      });
+
+      return {
+        success: true,
+        mode: 'invitation',
+        invitation,
+      };
+    }
+
+    const company = companySnap.data() as Record<string, unknown>;
+    const member = await this.attachMemberToCompany({
+      companyId,
+      company,
+      targetUid,
+      email,
+      firstName,
+      lastName,
+      role,
+    });
+
+    return {
+      success: true,
+      mode: 'attached',
+      member,
+    };
+  }
+
+  async removeMember(request: Request, user: RequestUser, companyId: string, memberId: string) {
+    this.assertAuthenticated(user);
+    const normalizedCompanyId = companyId?.trim();
+    const normalizedMemberId = memberId?.trim();
+    if (!normalizedCompanyId || !normalizedMemberId) {
+      throw new BadRequestException('companyId and memberId are required');
+    }
+    if (user.role !== 'ManagementCompany') {
+      throw new ForbiddenException('Only the main management company account can remove members');
+    }
+    if (user.companyId && user.companyId !== normalizedCompanyId) {
+      throw new ForbiddenException('Access denied for company');
+    }
+    if (normalizedMemberId === user.uid || normalizedMemberId === normalizedCompanyId) {
+      throw new ForbiddenException('The main company account cannot be removed here');
+    }
+
+    await this.enforceRateLimit(request, 'company:remove-member', `${user.uid}:${normalizedCompanyId}`, 20);
+
+    const db = this.firebaseAdminService.firestore;
+    const companyRef = db.collection('companies').doc(normalizedCompanyId);
+    const companySnap = await companyRef.get();
+    if (!companySnap.exists) throw new NotFoundException('Company not found');
+
+    const company = companySnap.data() as Record<string, unknown>;
+    const userIds = Array.isArray(company.userIds)
+      ? company.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const manager = Array.isArray(company.manager)
+      ? company.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+
+    if (!userIds.includes(normalizedMemberId) && !manager.includes(normalizedMemberId)) {
+      throw new NotFoundException('Company member not found');
+    }
+
+    const memberRef = db.collection('users').doc(normalizedMemberId);
+    const memberSnap = await memberRef.get();
+    if (memberSnap.exists) {
+      const member = memberSnap.data() as Record<string, unknown>;
+      const memberCompanyId = typeof member.companyId === 'string' ? member.companyId : '';
+      if (memberCompanyId && memberCompanyId !== normalizedCompanyId) {
+        throw new ForbiddenException('User belongs to another company');
+      }
+
+      await memberRef.set(
+        {
+          companyId: FieldValue.delete(),
+          role: FieldValue.delete(),
+          accountType: FieldValue.delete(),
+          updatedAt: new Date(),
+        },
+        { merge: true },
+      );
+    }
+
+    await companyRef.set(
+      {
+        userIds: userIds.filter((value) => value !== normalizedMemberId),
+        manager: manager.filter((value) => value !== normalizedMemberId),
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
+
+    return { success: true, memberId: normalizedMemberId };
   }
 }

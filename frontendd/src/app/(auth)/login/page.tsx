@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { accountTypeToDashboardRole, establishUserSession, signInWithEmailPassword } from "@/shared/lib/auth-client";
+import { establishUserSession, signInWithEmailPassword } from "@/shared/lib/auth-client";
 import { ROUTES } from "@/shared/lib/routes";
 
 export default function LoginPage() {
@@ -29,7 +29,7 @@ export default function LoginPage() {
     try {
       const result = await signInWithEmailPassword(email, password);
 
-      const session = await establishUserSession({
+      await establishUserSession({
         idToken: result.idToken,
         userId: result.userId,
         email: result.email,
@@ -38,9 +38,7 @@ export default function LoginPage() {
       });
 
       const nextPath = searchParams.get("next");
-      const fallbackPath = `${ROUTES.dashboard}?role=${accountTypeToDashboardRole(session.accountType)}`;
-
-      router.push(nextPath && nextPath.startsWith("/") ? nextPath : fallbackPath);
+      router.push(nextPath && nextPath.startsWith("/") ? nextPath : ROUTES.dashboard);
       router.refresh();
     } catch (error) {
       setError(error instanceof Error ? error.message : s("dbError"));

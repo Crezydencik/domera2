@@ -401,6 +401,7 @@
       "registryTitle": "Dzīvokļu reģistrs",
       "registryDescription": "Visu dzīvokļu saraksts ar aizņemtību un īpašnieku pārskatu.",
       "noApartments": "Dzīvokļu pagaidām nav",
+      "noBuildings": "Vispirms pievienojiet ēku, lai izveidotu dzīvokļus.",
       "occupied": "Aizņemts",
       "pending": "Gaida",
       "vacant": "Brīvs",
@@ -944,6 +945,7 @@
   "settings": {
     "tabs": {
       "user": "Lietotājs",
+      "company": "Uzņēmums",
       "notifications": "Paziņojumi",
       "contacts": "Kontakti",
       "billing": "Norēķinu konti",
@@ -986,6 +988,34 @@
       "paymentReminder": "Maksājuma atgādinājums",
       "language": "Paziņojumu valoda"
     },
+    "company": {
+      "title": "Uzņēmuma dati",
+      "description": "Šī sadaļa ir pieejama tikai galvenajam pārvaldības uzņēmuma kontam.",
+      "fields": {
+        "name": "Uzņēmuma nosaukums",
+        "registrationNumber": "Reģistrācijas numurs",
+        "email": "Uzņēmuma e-pasts",
+        "phone": "Uzņēmuma tālrunis"
+      },
+      "roles": {
+        "managementCompany": "UK darbinieks",
+        "accountant": "Grāmatvedis"
+      },
+      "members": {
+        "title": "Uzņēmuma dalībnieki",
+        "description": "Pievienojiet darbiniekus un grāmatvežus, kuriem jāstrādā ar šo pārvaldības uzņēmumu.",
+        "firstNamePlaceholder": "Vārds",
+        "lastNamePlaceholder": "Uzvārds",
+        "emailPlaceholder": "darbinieks@example.com",
+        "roleLabel": "Loma",
+        "add": "Pievienot",
+        "adding": "Pievieno...",
+        "remove": "Dzēst",
+        "removing": "Dzēš...",
+        "removeConfirm": "Dzēst {name} no uzņēmuma?",
+        "empty": "Dalībnieki vēl nav pievienoti."
+      }
+    },
     "languages": {
       "ru": "Krievu",
       "lv": "Latviešu",
@@ -996,7 +1026,12 @@
       "emailSaved": "E-pasts saglabāts.",
       "nameSaved": "Vārds un uzvārds saglabāti.",
       "phoneSaved": "Tālruņa numurs saglabāts.",
-      "passwordSaved": "Parole saglabāta."
+      "passwordSaved": "Parole saglabāta.",
+      "companySaved": "Uzņēmuma dati saglabāti.",
+      "memberAdded": "Dalībnieks pievienots.",
+      "memberInvitationSent": "Reģistrācijas uzaicinājums nosūtīts.",
+      "memberRemoved": "Dalībnieks dzēsts.",
+      "notificationSettingsSaved": "Paziņojumu iestatījumi saglabāti."
     },
     "errors": {
       "emailRequired": "Ievadiet e-pastu.",
@@ -1008,7 +1043,14 @@
       "passwordFieldsRequired": "Aizpildiet visus paroles laukus.",
       "passwordsDoNotMatch": "Jaunās paroles nesakrīt.",
       "passwordWeak": "Parolei jābūt vismaz 8 rakstzīmēm ar lielo un mazo burtu, ciparu un simbolu.",
-      "passwordSaveFailed": "Neizdevās saglabāt paroli."
+      "passwordSaveFailed": "Neizdevās saglabāt paroli.",
+      "companyNameRequired": "Ievadiet uzņēmuma nosaukumu.",
+      "companySaveFailed": "Neizdevās saglabāt uzņēmuma datus.",
+      "memberEmailRequired": "Ievadiet dalībnieka e-pastu.",
+      "memberFieldsRequired": "Ievadiet vārdu, uzvārdu un e-pastu.",
+      "memberAddFailed": "Neizdevās pievienot dalībnieku.",
+      "memberRemoveFailed": "Neizdevās dzēst dalībnieku.",
+      "notificationSettingsSaveFailed": "Neizdevās saglabāt paziņojumu iestatījumus."
     }
   }
 }

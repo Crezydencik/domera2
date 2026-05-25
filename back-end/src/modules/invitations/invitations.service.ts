@@ -95,10 +95,15 @@ export class InvitationsService {
     const fallbackCompanyId = typeof invitation.companyId === 'string' ? invitation.companyId : '';
 
     if (!apartmentId) {
+      const companySnap = fallbackCompanyId
+        ? await db.collection('companies').doc(fallbackCompanyId).get()
+        : null;
+      const company = companySnap?.exists ? (companySnap.data() as Record<string, unknown>) : {};
+
       return {
         apartmentLabel: '',
         buildingLabel: '',
-        managerLabel: '',
+        managerLabel: this.firstString(company.companyName, company.name, fallbackCompanyId),
       };
     }
 
@@ -324,11 +329,16 @@ export class InvitationsService {
     }
 
     const invitationEmail = typeof invitation?.email === 'string' ? normalizeEmail(invitation.email) : '';
-    const apartmentId = typeof invitation?.apartmentId === 'string' ? invitation.apartmentId : '';
-    const invitationRole = invitation?.role === 'Landlord' ? 'Landlord' : 'Resident';
-    const invitationAccountType = invitation?.accountType === 'Landlord' ? 'Landlord' : 'Resident';
     const invitationType = typeof invitation?.inviteType === 'string' ? invitation.inviteType : 'resident';
-    if (!invitation || !docId || !invitationEmail || !apartmentId) {
+    const isCompanyMemberInvitation = invitationType === 'company-member';
+    const apartmentId = typeof invitation?.apartmentId === 'string' ? invitation.apartmentId : '';
+    const invitationRole = isCompanyMemberInvitation
+      ? invitation?.role === 'Accountant' ? 'Accountant' : 'ManagementCompany'
+      : invitation?.role === 'Landlord' ? 'Landlord' : 'Resident';
+    const invitationAccountType = isCompanyMemberInvitation
+      ? 'ManagementCompany'
+      : invitation?.accountType === 'Landlord' ? 'Landlord' : 'Resident';
+    if (!invitation || !docId || !invitationEmail || (!isCompanyMemberInvitation && !apartmentId)) {
       throw new NotFoundException('Invalid invitation');
     }
 
@@ -338,21 +348,52 @@ export class InvitationsService {
     if (status !== 'pending') throw new ForbiddenException('Invitation is not pending');
 
     const markAccepted = async (uid: string, email?: string) => {
+      const companyId = typeof invitation.companyId === 'string' ? invitation.companyId : '';
+      const firstName = typeof invitation.firstName === 'string' ? invitation.firstName : undefined;
+      const lastName = typeof invitation.lastName === 'string' ? invitation.lastName : undefined;
+      const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || undefined;
+
       await db.collection('users').doc(uid).set(
         {
           uid,
           ...(email ? { email } : {}),
-          ...(typeof invitation.companyId === 'string' && invitation.companyId ? { companyId: invitation.companyId } : {}),
+          ...(companyId ? { companyId } : {}),
+          ...(firstName ? { firstName } : {}),
+          ...(lastName ? { lastName } : {}),
+          ...(fullName ? { fullName, name: fullName, displayName: fullName } : {}),
           role: invitationRole,
           accountType: invitationAccountType,
-          apartmentId,
-          apartmentIds: [apartmentId],
+          ...(apartmentId ? { apartmentId, apartmentIds: [apartmentId] } : {}),
           updatedAt: new Date().toISOString(),
         },
         { merge: true },
       );
 
-      if (invitationRole === 'Landlord' || invitationType === 'owner') {
+      if (isCompanyMemberInvitation) {
+        const companyRef = db.collection('companies').doc(companyId);
+        const companySnap = await companyRef.get();
+        if (!companySnap.exists) throw new NotFoundException('Company not found');
+
+        const company = companySnap.data() as Record<string, unknown>;
+        const userIds = Array.isArray(company.userIds)
+          ? company.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          : [];
+        const manager = Array.isArray(company.manager)
+          ? company.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          : [];
+
+        await companyRef.set(
+          {
+            userIds: userIds.includes(uid) ? userIds : [...userIds, uid],
+            manager:
+              invitationRole === 'ManagementCompany' && !manager.includes(uid)
+                ? [...manager, uid]
+                : manager,
+            updatedAt: new Date(),
+          },
+          { merge: true },
+        );
+      } else if (invitationRole === 'Landlord' || invitationType === 'owner') {
         await db.collection('apartments').doc(apartmentId).set(
           {
             ownerId: uid,
@@ -383,7 +424,10 @@ export class InvitationsService {
       if (!userEmail || userEmail !== invitationEmail) {
         throw new ForbiddenException('Invitation belongs to a different email');
       }
-      if (resolveAccountType({ role: user.role, accountType: user.accountType }) === 'ManagementCompany') {
+      if (
+        !isCompanyMemberInvitation &&
+        resolveAccountType({ role: user.role, accountType: user.accountType }) === 'ManagementCompany'
+      ) {
         throw new ForbiddenException('Management company account cannot accept resident invitation');
       }
 

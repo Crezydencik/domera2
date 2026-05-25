@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { apiFetch } from "@/shared/api/client";
-import { getNotifications } from "@/shared/api/notifications";
+import { getNotificationSettings, getNotifications, type NotificationSettings } from "@/shared/api/notifications";
 import { useAuthSession } from "@/shared/hooks/use-auth";
 import type { NotificationItem } from "@/shared/lib/data";
 import { ROUTES } from "@/shared/lib/routes";
@@ -12,6 +12,12 @@ type UnknownRecord = Record<string, unknown>;
 
 const METER_READINGS_CHANGED_EVENT = "domera:meter-readings-changed";
 const OWNER_METER_READING_STATUS_EVENT = "domera:owner-meter-reading-status";
+const defaultNotificationSettings: NotificationSettings = {
+  general: true,
+  meterReminder: true,
+  paymentReminder: true,
+  language: "ru",
+};
 
 function firstString(...values: unknown[]): string {
   for (const value of values) {
@@ -121,6 +127,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   const t = useTranslations("appShell.header.notifications");
   const { dashboardRole, userId } = useAuthSession();
   const [items, setItems] = useState<NotificationItem[]>([]);
+  const [settings, setSettings] = useState<NotificationSettings>(defaultNotificationSettings);
   const [ownerMissingReadings, setOwnerMissingReadings] = useState(0);
   const [ownerMissingApartmentLabels, setOwnerMissingApartmentLabels] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -139,9 +146,15 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
     setError(null);
 
     try {
+      const settingsResponse = await getNotificationSettings().catch(() => ({ settings: defaultNotificationSettings }));
+      const nextSettings = settingsResponse.settings;
+      setSettings(nextSettings);
+
       const [response, missingApartmentLabels] = await Promise.all([
         getNotifications(userId),
-        dashboardRole !== "managementCompany" ? loadOwnerMissingReadingStatus().catch(() => []) : Promise.resolve([]),
+        dashboardRole !== "managementCompany" && nextSettings.general && nextSettings.meterReminder
+          ? loadOwnerMissingReadingStatus().catch(() => [])
+          : Promise.resolve([]),
       ]);
       const nextItems = Array.isArray(response.items)
         ? response.items.map((item) => toNotificationItem(item as UnknownRecord))
@@ -185,7 +198,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   }, []);
 
   const computedOwnerNotification = useMemo<NotificationItem | null>(() => {
-    if (dashboardRole === "managementCompany" || ownerMissingReadings <= 0) return null;
+    if (!settings.general || !settings.meterReminder || dashboardRole === "managementCompany" || ownerMissingReadings <= 0) return null;
 
     const visibleLabels = ownerMissingApartmentLabels.slice(0, 3);
     const apartmentText = ownerMissingReadings === 1
@@ -204,7 +217,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
       actionHref: ROUTES.meterReadings,
       actionLabel: t("submitReadings"),
     };
-  }, [dashboardRole, ownerMissingApartmentLabels, ownerMissingReadings, t]);
+  }, [dashboardRole, ownerMissingApartmentLabels, ownerMissingReadings, settings.general, settings.meterReminder, t]);
 
   const allItems = useMemo(
     () => (computedOwnerNotification ? [computedOwnerNotification, ...items] : items),

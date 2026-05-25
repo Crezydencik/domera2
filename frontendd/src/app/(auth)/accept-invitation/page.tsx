@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   type PublicAccountType,
-  accountTypeToDashboardRole,
   establishUserSession,
   saveUserProfile,
   signInWithEmailPassword,
@@ -26,6 +25,7 @@ interface InvitationInfo {
   apartmentId?: string;
   token: string;
   accountType: PublicAccountType;
+  inviteType?: string;
   existingAccountDetected?: boolean;
 }
 
@@ -60,6 +60,7 @@ function AcceptInvitationContent() {
         email?: string;
         apartmentId?: string | null;
         accountType?: string;
+        inviteType?: string;
         apartmentLabel?: string;
         buildingLabel?: string;
         managerLabel?: string;
@@ -81,7 +82,13 @@ function AcceptInvitationContent() {
           managerName: invitation.managerLabel || "Domera Manager",
           apartmentId: invitation.apartmentId ?? undefined,
           token,
-          accountType: invitation.accountType === "Landlord" ? "Landlord" : "Resident",
+          accountType:
+            invitation.inviteType === "company-member"
+              ? "ManagementCompany"
+              : invitation.accountType === "Landlord"
+                ? "Landlord"
+                : "Resident",
+          inviteType: invitation.inviteType,
           existingAccountDetected: data.existingAccountDetected,
         });
       })
@@ -123,18 +130,20 @@ function AcceptInvitationContent() {
         accountType: info.accountType,
       });
 
-      await saveUserProfile(result.userId, {
-        email: result.email,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        fullName: `${firstName} ${lastName}`.trim(),
-        role: info.accountType,
-        accountType: info.accountType,
-        apartmentId: info.apartmentId,
-      });
+      if (info.inviteType !== "company-member") {
+        await saveUserProfile(result.userId, {
+          email: result.email,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          fullName: `${firstName} ${lastName}`.trim(),
+          role: info.accountType,
+          accountType: info.accountType,
+          apartmentId: info.apartmentId,
+        });
+      }
 
       setAccepted(true);
-      router.push(`${ROUTES.dashboard}?role=${accountTypeToDashboardRole(info.accountType)}`);
+      router.push(ROUTES.dashboard);
       router.refresh();
     } catch (error) {
       setErrors({ general: error instanceof Error ? error.message : s("dbError") });
@@ -194,14 +203,18 @@ function AcceptInvitationContent() {
       {/* Invitation card */}
       <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50 p-5">
         <div className="flex flex-col gap-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-slate-500">{t("invitationApartment")}</span>
-            <span className="font-semibold text-slate-800">{info.apartment}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">{t("invitationBuilding")}</span>
-            <span className="font-semibold text-slate-800">{info.building}</span>
-          </div>
+          {info.inviteType !== "company-member" && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-slate-500">{t("invitationApartment")}</span>
+                <span className="font-semibold text-slate-800">{info.apartment}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">{t("invitationBuilding")}</span>
+                <span className="font-semibold text-slate-800">{info.building}</span>
+              </div>
+            </>
+          )}
           <div className="flex justify-between">
             <span className="text-slate-500">{t("invitationFrom")}</span>
             <span className="font-semibold text-slate-800">{info.managerName}</span>

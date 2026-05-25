@@ -31,6 +31,12 @@ let CompanyController = class CompanyController {
     update(request, user, companyId, body) {
         return this.companyService.update(request, user, companyId, body);
     }
+    addMember(request, user, companyId, body) {
+        return this.companyService.addMember(request, user, companyId, body);
+    }
+    removeMember(request, user, companyId, memberId) {
+        return this.companyService.removeMember(request, user, companyId, memberId);
+    }
 };
 exports.CompanyController = CompanyController;
 __decorate([
@@ -66,6 +72,31 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, String, Object]),
     __metadata("design:returntype", void 0)
 ], CompanyController.prototype, "update", null);
+__decorate([
+    (0, common_1.Post)(':companyId/members'),
+    (0, swagger_1.ApiOperation)({ summary: 'Add a management company member by email' }),
+    (0, swagger_1.ApiParam)({ name: 'companyId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('companyId')),
+    __param(3, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, Object]),
+    __metadata("design:returntype", void 0)
+], CompanyController.prototype, "addMember", null);
+__decorate([
+    (0, common_1.Delete)(':companyId/members/:memberId'),
+    (0, swagger_1.ApiOperation)({ summary: 'Remove a management company member' }),
+    (0, swagger_1.ApiParam)({ name: 'companyId', required: true, type: String }),
+    (0, swagger_1.ApiParam)({ name: 'memberId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('companyId')),
+    __param(3, (0, common_1.Param)('memberId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, String]),
+    __metadata("design:returntype", void 0)
+], CompanyController.prototype, "removeMember", null);
 exports.CompanyController = CompanyController = __decorate([
     (0, swagger_1.ApiTags)('Company'),
     (0, common_1.Controller)('company'),

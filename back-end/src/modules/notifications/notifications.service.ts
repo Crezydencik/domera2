@@ -10,6 +10,20 @@ import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
 
+type NotificationSettings = {
+  general: boolean;
+  meterReminder: boolean;
+  paymentReminder: boolean;
+  language: 'ru' | 'lv' | 'en';
+};
+
+const defaultNotificationSettings: NotificationSettings = {
+  general: true,
+  meterReminder: true,
+  paymentReminder: true,
+  language: 'ru',
+};
+
 @Injectable()
 export class NotificationsService {
   constructor(
@@ -42,6 +56,60 @@ export class NotificationsService {
     if (!rl.allowed) throw new BadRequestException('Too many requests');
   }
 
+  private normalizeSettings(value: unknown): NotificationSettings {
+    const settings = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+    const language = settings.language === 'lv' || settings.language === 'en' || settings.language === 'ru'
+      ? settings.language
+      : defaultNotificationSettings.language;
+
+    return {
+      general: typeof settings.general === 'boolean' ? settings.general : defaultNotificationSettings.general,
+      meterReminder: typeof settings.meterReminder === 'boolean' ? settings.meterReminder : defaultNotificationSettings.meterReminder,
+      paymentReminder: typeof settings.paymentReminder === 'boolean' ? settings.paymentReminder : defaultNotificationSettings.paymentReminder,
+      language,
+    };
+  }
+
+  private async getUserNotificationSettings(userId: string): Promise<NotificationSettings> {
+    const snap = await this.firebaseAdminService.firestore.collection('users').doc(userId).get();
+    if (!snap.exists) return defaultNotificationSettings;
+
+    const data = snap.data() as Record<string, unknown>;
+    return this.normalizeSettings(data.notificate ?? data.notificationSettings);
+  }
+
+  async getSettings(request: Request, user: RequestUser) {
+    this.assertAuth(user);
+    await this.enforceRateLimit(request, 'notifications:settings:get', user.uid, 80);
+
+    const settings = await this.getUserNotificationSettings(user.uid);
+    return { settings };
+  }
+
+  async updateSettings(request: Request, user: RequestUser, payload: Record<string, unknown>) {
+    this.assertAuth(user);
+    await this.enforceRateLimit(request, 'notifications:settings:update', user.uid, 40);
+
+    const current = await this.getUserNotificationSettings(user.uid);
+    const next = this.normalizeSettings({
+      ...current,
+      ...payload,
+    });
+
+    await this.firebaseAdminService.firestore.collection('users').doc(user.uid).set(
+      {
+        uid: user.uid,
+        email: user.email,
+        notificate: next,
+        notificationSettings: next,
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
+
+    return { success: true, settings: next };
+  }
+
   async list(request: Request, user: RequestUser, userId: string) {
     this.assertAuth(user);
     const normalizedUserId = userId?.trim();
@@ -49,6 +117,11 @@ export class NotificationsService {
 
     this.ensureUserAccess(user, normalizedUserId);
     await this.enforceRateLimit(request, 'notifications:list', `${user.uid}:${normalizedUserId}`, 60);
+
+    const settings = await this.getUserNotificationSettings(normalizedUserId);
+    if (!settings.general) {
+      return { items: [] };
+    }
 
     const snap = await this.firebaseAdminService.firestore
       .collection('notifications')
@@ -64,7 +137,17 @@ export class NotificationsService {
       }))
       .filter((item) => item.read !== true);
 
-    return { items };
+    const filteredItems = items.filter((item) => {
+      const type = typeof item.type === 'string' ? item.type : '';
+      const channel = typeof item.channel === 'string' ? item.channel : '';
+      const scope = `${type} ${channel}`.toLowerCase();
+
+      if (!settings.meterReminder && scope.includes('reading')) return false;
+      if (!settings.paymentReminder && (scope.includes('payment') || scope.includes('invoice') || scope.includes('billing'))) return false;
+      return true;
+    });
+
+    return { items: filteredItems };
   }
 
   async create(request: Request, user: RequestUser, payload: Record<string, unknown>) {

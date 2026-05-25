@@ -378,24 +378,6 @@ async function getAuthenticatedContext(roleHint?: string) {
       redirect(ROUTES.login);
     }
 
-    if (error instanceof DomeraApiError && error.status === 500 && error.message.startsWith("Fetch failed")) {
-      const role = normalizeDashboardRole(
-        firstString(
-          store.get("domera_accountType")?.value,
-          store.get("domera_role")?.value,
-          roleHint,
-        ),
-      );
-
-      return {
-        userId: firstString(userId),
-        profile: {},
-        role,
-        companyId: firstString(store.get("domera_companyId")?.value, userId),
-        apartmentId: firstString(store.get("domera_apartmentId")?.value),
-      };
-    }
-
     throw error;
   }
 }

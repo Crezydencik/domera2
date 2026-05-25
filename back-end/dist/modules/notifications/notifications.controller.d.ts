@@ -4,6 +4,23 @@ import { NotificationsService } from './notifications.service';
 export declare class NotificationsController {
     private readonly notificationsService;
     constructor(notificationsService: NotificationsService);
+    getSettings(request: Request, user: RequestUser): Promise<{
+        settings: {
+            general: boolean;
+            meterReminder: boolean;
+            paymentReminder: boolean;
+            language: "ru" | "lv" | "en";
+        };
+    }>;
+    updateSettings(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<{
+        success: boolean;
+        settings: {
+            general: boolean;
+            meterReminder: boolean;
+            paymentReminder: boolean;
+            language: "ru" | "lv" | "en";
+        };
+    }>;
     list(request: Request, user: RequestUser, userId: string): Promise<{
         items: ({
             id: string;

@@ -8,7 +8,7 @@ import { LocaleSwitcher } from "@/components/locale-switcher";
 import { LogoutButton } from "@/components/logout-button";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { apiFetch } from "@/shared/api/client";
-import { establishUserSession, accountTypeToDashboardRole } from "@/shared/lib/auth-client";
+import { establishUserSession } from "@/shared/lib/auth-client";
 import { useAuthSession } from "@/shared/hooks/use-auth";
 import { useAppNotifications } from "@/shared/hooks/use-app-notifications";
 import { useNotifications as useToastNotifications } from "@/shared/hooks/use-notifications";
@@ -38,9 +38,9 @@ const navByRole: Record<DashboardRole, NavItem[]> = {
     { href: ROUTES.residents, label: "Residents", icon: "◌" },
     { href: ROUTES.meterReadings, label: "Meter Readings", icon: "◔" },
     { href: ROUTES.invoices, label: "Billing / Invoices", icon: "€" },
-    { href: ROUTES.debts, label: "Debts", icon: "!" },
-    { href: ROUTES.documents, label: "Documents", icon: "▤" },
-    { href: ROUTES.notifications, label: "Notifications", icon: "◉" },
+    // { href: ROUTES.debts, label: "Debts", icon: "!" },
+    // { href: ROUTES.documents, label: "Documents", icon: "▤" },
+    // { href: ROUTES.notifications, label: "Notifications", icon: "◉" },
     { href: ROUTES.settings, label: "Settings", icon: "⚙" },
   ],
   resident: [
@@ -48,8 +48,8 @@ const navByRole: Record<DashboardRole, NavItem[]> = {
     { href: ROUTES.apartments, label: "My Apartments", icon: "▥" },
     { href: ROUTES.meterReadings, label: "Meter Readings", icon: "◔" },
     { href: ROUTES.invoices, label: "My Invoices", icon: "€" },
-    { href: ROUTES.documents, label: "Documents", icon: "▤" },
-    { href: ROUTES.notifications, label: "Notifications", icon: "◉" },
+    // { href: ROUTES.documents, label: "Documents", icon: "▤" },
+    // { href: ROUTES.notifications, label: "Notifications", icon: "◉" },
     { href: ROUTES.settings, label: "Settings", icon: "⚙" },
   ],
   landlord: [
@@ -192,7 +192,7 @@ export function RoleAwareSidebar({ brand, title, description, defaultRole, child
 
       toast.success(t("notifications.acceptInvitationSuccess"));
       notifications.close();
-      router.push(`${ROUTES.dashboard}?role=${accountTypeToDashboardRole("Landlord")}`);
+      router.push(ROUTES.dashboard);
       router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Не удалось принять приглашение");
@@ -253,7 +253,7 @@ export function RoleAwareSidebar({ brand, title, description, defaultRole, child
                   onClick={() => setMobileMenuOpen(false)}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                     isActive(item.href)
-                      ? "bg-orange-500 text-white"
+                      ? "bg-sky-600 text-white"
                       : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   }`}
                 >
@@ -316,7 +316,7 @@ export function RoleAwareSidebar({ brand, title, description, defaultRole, child
                       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                     </svg>
                     {notifications.count > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-orange-500 px-1 text-[9px] font-bold text-white">
+                      <span className="absolute -right-1 -top-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-color-blue-600 px-1 text-[9px] font-bold text-white">
                         {notifications.count}
                       </span>
                     )}

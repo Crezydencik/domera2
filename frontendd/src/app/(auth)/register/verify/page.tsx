@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
-  accountTypeToDashboardRole,
   establishUserSession,
   requestRegistrationCode,
   signUpWithEmailPassword,
@@ -101,7 +100,7 @@ export default function RegisterVerifyPage() {
         registrationNumber: pending.registrationNumber,
       });
 
-      const session = await establishUserSession({
+      await establishUserSession({
         idToken: result.idToken,
         userId: result.userId,
         email: result.email,
@@ -111,7 +110,7 @@ export default function RegisterVerifyPage() {
 
       clearPendingRegistration();
       setDone(true);
-      router.push(`${ROUTES.dashboard}?role=${accountTypeToDashboardRole(session.accountType)}`);
+      router.push(ROUTES.dashboard);
       router.refresh();
     } catch (error) {
       setError(error instanceof Error ? error.message : s("dbError"));

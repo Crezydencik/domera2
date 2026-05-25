@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
-import { getRoleDataBundle } from "@/shared/lib/domera-api.server";
+import type { NotificationSettings } from "@/shared/api/notifications";
+import { apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
 import { SettingsTabs } from "./settings-tabs";
 
 type SettingsPageProps = {
@@ -7,6 +8,13 @@ type SettingsPageProps = {
 };
 
 type UnknownRecord = Record<string, unknown>;
+
+const defaultNotificationSettings: NotificationSettings = {
+  general: true,
+  meterReminder: true,
+  paymentReminder: true,
+  language: "ru",
+};
 
 function firstString(...values: unknown[]): string {
   for (const value of values) {
@@ -33,6 +41,27 @@ function maskPersonalCode(value: string): string {
   return `${normalized.slice(0, 6)}-*****`;
 }
 
+function normalizeAccessValue(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^a-z]/gi, "")
+    .toLowerCase();
+}
+
+function normalizeNotificationSettings(value: unknown): NotificationSettings {
+  const settings = value && typeof value === "object" ? value as UnknownRecord : {};
+  const language = settings.language === "lv" || settings.language === "en" || settings.language === "ru"
+    ? settings.language
+    : defaultNotificationSettings.language;
+
+  return {
+    general: typeof settings.general === "boolean" ? settings.general : defaultNotificationSettings.general,
+    meterReminder: typeof settings.meterReminder === "boolean" ? settings.meterReminder : defaultNotificationSettings.meterReminder,
+    paymentReminder: typeof settings.paymentReminder === "boolean" ? settings.paymentReminder : defaultNotificationSettings.paymentReminder,
+    language,
+  };
+}
+
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
   const params = (await searchParams) ?? {};
   const data = await getRoleDataBundle(params.role);
@@ -47,6 +76,13 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const username = fullName;
   const phone = firstString(profile?.phone, profile?.phoneNumber, profile?.mobile, profile?.telephone, "");
   const personalCode = maskPersonalCode(firstString(profile?.personalCode, profile?.identityCode));
+  const notificationSettings = normalizeNotificationSettings(profile?.notificate ?? profile?.notificationSettings);
+  const companyId = firstString(data.companyId, profile?.companyId, userId);
+  const accountType = firstString(profile?.accountType, profile?.role);
+  const canManageCompany = data.role === "managementCompany" && normalizeAccessValue(accountType) === "managementcompany";
+  const company = canManageCompany && companyId
+    ? await apiFetch<UnknownRecord>(`/company/${encodeURIComponent(companyId)}`).catch(() => null)
+    : null;
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -59,6 +95,23 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           username,
           phone,
           personalCode,
+        }}
+        notificationSettings={notificationSettings}
+        company={{
+          canManage: canManageCompany,
+          companyId,
+          name: firstString(company?.companyName, company?.name, profile?.companyName, fullName),
+          registrationNumber: firstString(company?.registrationNumber, profile?.registrationNumber),
+          email: firstString(company?.companyEmail, company?.email, company?.contactEmail, profile?.companyEmail, email),
+          phone: firstString(company?.companyPhone, company?.phone, company?.contactPhone, profile?.companyPhone),
+          members: data.residents
+            .filter((item) => item.role === "ManagementCompany" || item.role === "Accountant")
+            .map((item) => ({
+              id: item.id,
+              email: item.email ?? "",
+              name: item.fullName,
+              role: item.role,
+            })),
         }}
       />
     </div>
