@@ -130,14 +130,43 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   const [settings, setSettings] = useState<NotificationSettings>(defaultNotificationSettings);
   const [ownerMissingReadings, setOwnerMissingReadings] = useState(0);
   const [ownerMissingApartmentLabels, setOwnerMissingApartmentLabels] = useState<string[]>([]);
+  const [ownerStatusLoaded, setOwnerStatusLoaded] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+
+  const canLoadOwnerStatus = useCallback(
+    (nextSettings: NotificationSettings) =>
+      dashboardRole !== "managementCompany" && nextSettings.general && nextSettings.meterReminder,
+    [dashboardRole],
+  );
+
+  const loadOwnerStatus = useCallback(
+    async (nextSettings = settings) => {
+      if (!userId || !canLoadOwnerStatus(nextSettings)) {
+        setOwnerMissingReadings(0);
+        setOwnerMissingApartmentLabels([]);
+        setOwnerStatusLoaded(true);
+        return;
+      }
+
+      const missingApartmentLabels = await loadOwnerMissingReadingStatus().catch(() => []);
+      setOwnerMissingReadings(missingApartmentLabels.length);
+      setOwnerMissingApartmentLabels(missingApartmentLabels);
+      setOwnerStatusLoaded(true);
+    },
+    [canLoadOwnerStatus, settings, userId],
+  );
 
   const refresh = useCallback(async () => {
     if (!userId) {
       setItems([]);
       setError(null);
+      setOwnerMissingReadings(0);
+      setOwnerMissingApartmentLabels([]);
+      setOwnerStatusLoaded(true);
+      setHasLoaded(true);
       setIsLoading(false);
       return;
     }
@@ -146,39 +175,64 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
     setError(null);
 
     try {
-      const settingsResponse = await getNotificationSettings().catch(() => ({ settings: defaultNotificationSettings }));
+      const [settingsResponse, response] = await Promise.all([
+        getNotificationSettings().catch(() => ({ settings: defaultNotificationSettings })),
+        getNotifications(userId),
+      ]);
       const nextSettings = settingsResponse.settings;
       setSettings(nextSettings);
 
-      const [response, missingApartmentLabels] = await Promise.all([
-        getNotifications(userId),
-        dashboardRole !== "managementCompany" && nextSettings.general && nextSettings.meterReminder
-          ? loadOwnerMissingReadingStatus().catch(() => [])
-          : Promise.resolve([]),
-      ]);
       const nextItems = Array.isArray(response.items)
         ? response.items.map((item) => toNotificationItem(item as UnknownRecord))
         : [];
 
       setItems(nextItems);
-      setOwnerMissingReadings(missingApartmentLabels.length);
-      setOwnerMissingApartmentLabels(missingApartmentLabels);
+      if (canLoadOwnerStatus(nextSettings)) {
+        setOwnerStatusLoaded(false);
+      } else {
+        setOwnerMissingReadings(0);
+        setOwnerMissingApartmentLabels([]);
+        setOwnerStatusLoaded(true);
+      }
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : t("loadError");
       setError(message);
     } finally {
+      setHasLoaded(true);
       setIsLoading(false);
     }
-  }, [dashboardRole, t, userId]);
+  }, [canLoadOwnerStatus, t, userId]);
 
   useEffect(() => {
-    void refresh();
+    let cancelled = false;
+    const run = () => {
+      if (!cancelled) void refresh();
+    };
+
+    if (typeof window.requestIdleCallback === "function") {
+      const idleId = window.requestIdleCallback(run, { timeout: 1500 });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(idleId);
+      };
+    }
+
+    const timeoutId = window.setTimeout(run, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
   }, [refresh]);
 
   useEffect(() => {
-    window.addEventListener(METER_READINGS_CHANGED_EVENT, refresh);
-    return () => window.removeEventListener(METER_READINGS_CHANGED_EVENT, refresh);
-  }, [refresh]);
+    const handleChange = () => {
+      void refresh();
+      void loadOwnerStatus();
+    };
+
+    window.addEventListener(METER_READINGS_CHANGED_EVENT, handleChange);
+    return () => window.removeEventListener(METER_READINGS_CHANGED_EVENT, handleChange);
+  }, [loadOwnerStatus, refresh]);
 
   useEffect(() => {
     const handleOwnerStatus = (event: Event) => {
@@ -191,11 +245,22 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
           ? detail.apartmentLabels.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
           : [],
       );
+      setOwnerStatusLoaded(true);
     };
 
     window.addEventListener(OWNER_METER_READING_STATUS_EVENT, handleOwnerStatus);
     return () => window.removeEventListener(OWNER_METER_READING_STATUS_EVENT, handleOwnerStatus);
   }, []);
+
+  useEffect(() => {
+    if (isOpen && !hasLoaded) {
+      void refresh();
+    }
+
+    if (isOpen && !ownerStatusLoaded) {
+      void loadOwnerStatus();
+    }
+  }, [hasLoaded, isOpen, loadOwnerStatus, ownerStatusLoaded, refresh]);
 
   const computedOwnerNotification = useMemo<NotificationItem | null>(() => {
     if (!settings.general || !settings.meterReminder || dashboardRole === "managementCompany" || ownerMissingReadings <= 0) return null;

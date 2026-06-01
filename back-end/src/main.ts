@@ -22,7 +22,9 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerEnabled = process.env.SWAGGER_ENABLED !== 'false';
+  const swaggerEnabled =
+    process.env.SWAGGER_ENABLED === 'true' ||
+    (process.env.NODE_ENV !== 'production' && process.env.SWAGGER_ENABLED !== 'false');
   if (swaggerEnabled) {
     const config = new DocumentBuilder()
       .setTitle('Domera Backend API')

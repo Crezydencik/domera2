@@ -2,23 +2,33 @@ import { Request } from 'express';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { RateLimitService } from '../../common/services/rate-limit.service';
+import { AuditLogService } from '../../common/services/audit-log.service';
 import { EmailService } from '../emails/email.service';
 export declare class CompanyService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
+    private readonly auditLogService;
     private readonly emailService;
-    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, emailService: EmailService);
+    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService);
     private assertAuthenticated;
     private enforceRateLimit;
+    private assertCanManageApiKeys;
+    private hashApiKey;
+    private buildApiKey;
+    private firstString;
+    private getBuildingApiKeyCollection;
+    private firestoreDateToIso;
+    private mapApiKeyDocument;
+    private getCompanyBuildingContexts;
     private normalizeCompanyPayload;
     private getCompanyStorageFolders;
     private markStorageFolders;
     create(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{
         companyName: string;
-        manager: any[];
+        manager: string[];
         companyId: string;
         userIds: string[];
-        buildings: any[];
+        buildings: string[];
         createdAt: Date;
         updatedAt: Date;
         id: string;
@@ -28,6 +38,48 @@ export declare class CompanyService {
     }>;
     update(request: Request, user: RequestUser, companyId: string, payload: Record<string, unknown>): Promise<{
         success: boolean;
+    }>;
+    listApiKeys(request: Request, user: RequestUser, companyId: string): Promise<{
+        items: {
+            id: string;
+            label: string;
+            trackingId: string;
+            keyPrefix: string;
+            buildingId: string | null;
+            buildingName: string | null;
+            status: string;
+            scopes: string[];
+            permission: string;
+            ownerType: string;
+            createdAt: string | null;
+            revokedAt: string | null;
+            lastUsedAt: string | null;
+            createdByUid: string | null;
+        }[];
+    }>;
+    createApiKey(request: Request, user: RequestUser, companyId: string, payload: Record<string, unknown>): Promise<{
+        success: boolean;
+        apiKey: string;
+        item: {
+            id: string;
+            label: string;
+            trackingId: string;
+            keyPrefix: string;
+            buildingId: string | null;
+            buildingName: string | null;
+            status: string;
+            scopes: string[];
+            permission: string;
+            ownerType: string;
+            createdAt: string | null;
+            revokedAt: string | null;
+            lastUsedAt: string | null;
+            createdByUid: string | null;
+        };
+    }>;
+    revokeApiKey(request: Request, user: RequestUser, companyId: string, keyId: string): Promise<{
+        success: boolean;
+        keyId: string;
     }>;
     private resolveFrontendUrl;
     private attachMemberToCompany;

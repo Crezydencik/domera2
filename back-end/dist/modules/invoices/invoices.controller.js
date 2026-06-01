@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.InvoicesController = void 0;
 const common_1 = require("@nestjs/common");
+const platform_express_1 = require("@nestjs/platform-express");
 const swagger_1 = require("@nestjs/swagger");
 const current_user_decorator_1 = require("../../common/auth/current-user.decorator");
 const firebase_auth_guard_1 = require("../../common/auth/firebase-auth.guard");
@@ -26,6 +27,77 @@ const invoice_response_dto_1 = require("./dto/invoice-response.dto");
 const list_invoices_query_dto_1 = require("./dto/list-invoices.query.dto");
 const update_invoice_dto_1 = require("./dto/update-invoice.dto");
 const success_response_dto_1 = require("../../common/dto/success-response.dto");
+const upload_invoice_dto_1 = require("./dto/upload-invoice.dto");
+const invoice_upload_auth_guard_1 = require("./invoice-upload-auth.guard");
+const INVOICE_PDF_MAX_BYTES = 10 * 1024 * 1024;
+const INVOICE_ZIP_MAX_BYTES = 100 * 1024 * 1024;
+const INVOICE_BATCH_MAX_FILES = 50;
+function invoicePdfFileFilter(_request, file, callback) {
+    const name = file.originalname?.toLowerCase() ?? '';
+    const mimetype = file.mimetype?.toLowerCase() ?? '';
+    const looksLikePdf = name.endsWith('.pdf') || mimetype === 'application/pdf';
+    if (!looksLikePdf) {
+        callback(new common_1.BadRequestException('Only PDF files are allowed'), false);
+        return;
+    }
+    callback(null, true);
+}
+function invoiceBatchFileFilter(_request, file, callback) {
+    const name = file.originalname?.toLowerCase() ?? '';
+    const mimetype = file.mimetype?.toLowerCase() ?? '';
+    if (file.fieldname === 'items') {
+        const looksLikeJson = name.endsWith('.json') || mimetype === 'application/json' || mimetype === 'text/plain';
+        if (!looksLikeJson) {
+            callback(new common_1.BadRequestException('items must be a JSON file'), false);
+            return;
+        }
+        callback(null, true);
+        return;
+    }
+    const looksLikePdf = name.endsWith('.pdf') || mimetype === 'application/pdf';
+    const looksLikeZip = name.endsWith('.zip')
+        || mimetype === 'application/zip'
+        || mimetype === 'application/x-zip-compressed'
+        || mimetype === 'multipart/x-zip';
+    if (!looksLikePdf && !looksLikeZip) {
+        callback(new common_1.BadRequestException('Only PDF or ZIP files are allowed'), false);
+        return;
+    }
+    callback(null, true);
+}
+let InvoiceUploadExceptionFilter = class InvoiceUploadExceptionFilter {
+    catch(exception, host) {
+        const response = host.switchToHttp().getResponse();
+        const status = exception instanceof common_1.HttpException
+            ? exception.getStatus()
+            : common_1.HttpStatus.INTERNAL_SERVER_ERROR;
+        const payload = exception instanceof common_1.HttpException ? exception.getResponse() : null;
+        let error = 'Invoice upload failed';
+        if (typeof payload === 'string' && payload.trim()) {
+            error = payload;
+        }
+        else if (payload && typeof payload === 'object') {
+            const record = payload;
+            const message = record.message;
+            if (Array.isArray(message)) {
+                error = message.join(', ');
+            }
+            else if (typeof message === 'string' && message.trim()) {
+                error = message;
+            }
+            else if (typeof record.error === 'string' && record.error.trim()) {
+                error = record.error;
+            }
+        }
+        else if (exception instanceof Error && exception.message.trim()) {
+            error = exception.message;
+        }
+        response.status(status).json({ success: false, error });
+    }
+};
+InvoiceUploadExceptionFilter = __decorate([
+    (0, common_1.Catch)()
+], InvoiceUploadExceptionFilter);
 let InvoicesController = class InvoicesController {
     constructor(invoicesService) {
         this.invoicesService = invoicesService;
@@ -33,8 +105,66 @@ let InvoicesController = class InvoicesController {
     create(request, user, body) {
         return this.invoicesService.create(request, user, body);
     }
+    upload(request, user, file, body) {
+        if (!file) {
+            throw new common_1.BadRequestException('File is required');
+        }
+        return this.invoicesService.upload(request, user, file, body);
+    }
+    uploadBatch(request, user, uploadedFiles, body) {
+        const uploaded = uploadedFiles ?? [];
+        const itemsFile = uploaded.find((file) => file.fieldname === 'items');
+        const files = uploaded.filter((file) => file !== itemsFile);
+        if (files.length === 0) {
+            throw new common_1.BadRequestException('At least one PDF file is required');
+        }
+        return this.invoicesService.uploadBatch(request, user, files, {
+            ...body,
+            ...(itemsFile ? { items: itemsFile.buffer.toString('utf8') } : {}),
+        });
+    }
     list(user, query) {
         return this.invoicesService.list(user, query);
+    }
+    uploadHistory(user, query) {
+        return this.invoicesService.listUploadHistory(user, query);
+    }
+    pendingApprovals(user, query) {
+        return this.invoicesService.listPendingApprovals(user, query);
+    }
+    async pendingApprovalPdf(user, approvalId, response) {
+        const pdf = await this.invoicesService.pendingApprovalPdf(user, approvalId);
+        const fallbackFileName = pdf.fileName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '').trim() || 'invoice.pdf';
+        const encodedFileName = encodeURIComponent(pdf.fileName);
+        response.setHeader('Content-Type', pdf.contentType || 'application/pdf');
+        response.setHeader('Content-Length', String(pdf.buffer.length));
+        response.setHeader('Content-Disposition', `inline; filename="${fallbackFileName}"; filename*=UTF-8''${encodedFileName}`);
+        response.setHeader('Cache-Control', 'private, no-store');
+        response.setHeader('X-Content-Type-Options', 'nosniff');
+        response.end(pdf.buffer);
+    }
+    approvePendingApproval(request, user, approvalId) {
+        return this.invoicesService.approvePendingApproval(request, user, approvalId);
+    }
+    approvePendingApprovals(request, user, body) {
+        return this.invoicesService.approvePendingApprovals(request, user, body);
+    }
+    cancelPendingApprovals(request, user, body) {
+        return this.invoicesService.cancelPendingApprovals(request, user, body);
+    }
+    cancelPendingApproval(request, user, approvalId) {
+        return this.invoicesService.cancelPendingApproval(request, user, approvalId);
+    }
+    async pdf(user, invoiceId, response) {
+        const pdf = await this.invoicesService.pdf(user, invoiceId);
+        const fallbackFileName = pdf.fileName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '').trim() || 'invoice.pdf';
+        const encodedFileName = encodeURIComponent(pdf.fileName);
+        response.setHeader('Content-Type', pdf.contentType || 'application/pdf');
+        response.setHeader('Content-Length', String(pdf.buffer.length));
+        response.setHeader('Content-Disposition', `inline; filename="${fallbackFileName}"; filename*=UTF-8''${encodedFileName}`);
+        response.setHeader('Cache-Control', 'private, no-store');
+        response.setHeader('X-Content-Type-Options', 'nosniff');
+        response.end(pdf.buffer);
     }
     byId(user, invoiceId) {
         return this.invoicesService.byId(user, invoiceId);
@@ -49,6 +179,7 @@ let InvoicesController = class InvoicesController {
 exports.InvoicesController = InvoicesController;
 __decorate([
     (0, common_1.Post)(),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
     (0, swagger_1.ApiOperation)({ summary: 'Create an invoice' }),
     (0, swagger_1.ApiBody)({ type: create_invoice_dto_1.CreateInvoiceDto }),
@@ -64,7 +195,71 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "create", null);
 __decorate([
+    (0, common_1.Post)('upload'),
+    (0, common_1.UseGuards)(invoice_upload_auth_guard_1.InvoiceUploadAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, common_1.UseFilters)(InvoiceUploadExceptionFilter),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file', {
+        limits: { fileSize: INVOICE_PDF_MAX_BYTES },
+        fileFilter: invoicePdfFileFilter,
+    })),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({ summary: 'Upload an invoice PDF with billing metadata' }),
+    (0, swagger_1.ApiConsumes)('multipart/form-data'),
+    (0, swagger_1.ApiBody)({ type: upload_invoice_dto_1.UploadInvoiceDto }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Invoice uploaded successfully.',
+        type: invoice_response_dto_1.UploadInvoiceResponseDto,
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 400,
+        description: 'Invoice upload failed.',
+        type: invoice_response_dto_1.InvoiceUploadErrorResponseDto,
+    }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.UploadedFile)()),
+    __param(3, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, Object, Object]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "upload", null);
+__decorate([
+    (0, common_1.Post)('upload-batch'),
+    (0, common_1.UseGuards)(invoice_upload_auth_guard_1.InvoiceUploadAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, common_1.UseFilters)(InvoiceUploadExceptionFilter),
+    (0, common_1.UseInterceptors)((0, platform_express_1.AnyFilesInterceptor)({
+        limits: {
+            fileSize: INVOICE_ZIP_MAX_BYTES,
+            files: INVOICE_BATCH_MAX_FILES + 1,
+        },
+        fileFilter: invoiceBatchFileFilter,
+    })),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({ summary: 'Upload multiple invoice PDFs with billing metadata' }),
+    (0, swagger_1.ApiConsumes)('multipart/form-data'),
+    (0, swagger_1.ApiBody)({ type: upload_invoice_dto_1.UploadInvoicesBatchDto }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Invoice batch processed.',
+        type: invoice_response_dto_1.UploadInvoicesBatchResponseDto,
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 400,
+        description: 'Invoice batch upload failed.',
+        type: invoice_response_dto_1.InvoiceUploadErrorResponseDto,
+    }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.UploadedFiles)()),
+    __param(3, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, Object, Object]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "uploadBatch", null);
+__decorate([
     (0, common_1.Get)(),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(...role_constants_1.PROPERTY_MEMBER_ROLES, ...role_constants_1.STAFF_ROLES),
     (0, swagger_1.ApiOperation)({ summary: 'List invoices with optional filters' }),
     (0, swagger_1.ApiQuery)({ name: 'companyId', required: false, type: String }),
@@ -81,7 +276,143 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "list", null);
 __decorate([
+    (0, common_1.Get)('uploads'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, swagger_1.ApiOperation)({ summary: 'List invoice upload/import history' }),
+    (0, swagger_1.ApiQuery)({ name: 'companyId', required: false, type: String }),
+    (0, swagger_1.ApiQuery)({ name: 'buildingId', required: false, type: String }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Invoice upload history returned.',
+        type: invoice_response_dto_1.ListInvoiceUploadsResponseDto,
+    }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "uploadHistory", null);
+__decorate([
+    (0, common_1.Get)('pending-approvals'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, swagger_1.ApiOperation)({ summary: 'List API invoice uploads waiting for approval' }),
+    (0, swagger_1.ApiQuery)({ name: 'companyId', required: false, type: String }),
+    (0, swagger_1.ApiQuery)({ name: 'buildingId', required: false, type: String }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Pending invoice approvals returned.',
+    }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "pendingApprovals", null);
+__decorate([
+    (0, common_1.Get)('pending-approvals/:approvalId/pdf'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, swagger_1.ApiOperation)({ summary: 'Open pending invoice approval PDF' }),
+    (0, swagger_1.ApiParam)({ name: 'approvalId', type: String }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Pending invoice PDF returned successfully.',
+    }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('approvalId')),
+    __param(2, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", Promise)
+], InvoicesController.prototype, "pendingApprovalPdf", null);
+__decorate([
+    (0, common_1.Post)('pending-approvals/:approvalId/approve'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({ summary: 'Approve API invoice upload and attach it to the apartment' }),
+    (0, swagger_1.ApiParam)({ name: 'approvalId', type: String }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Pending invoice approved.',
+        type: success_response_dto_1.SuccessResponseDto,
+    }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('approvalId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "approvePendingApproval", null);
+__decorate([
+    (0, common_1.Post)('pending-approvals/approve-all'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({ summary: 'Approve multiple API invoice uploads' }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Pending invoices approved.',
+    }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, Object]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "approvePendingApprovals", null);
+__decorate([
+    (0, common_1.Post)('pending-approvals/cancel-all'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({ summary: 'Cancel multiple API invoice uploads waiting for approval' }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Pending invoice approvals cancelled.',
+    }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, Object]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "cancelPendingApprovals", null);
+__decorate([
+    (0, common_1.Delete)('pending-approvals/:approvalId'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({ summary: 'Cancel API invoice upload waiting for approval' }),
+    (0, swagger_1.ApiParam)({ name: 'approvalId', type: String }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Pending invoice approval cancelled.',
+        type: success_response_dto_1.SuccessResponseDto,
+    }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('approvalId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "cancelPendingApproval", null);
+__decorate([
+    (0, common_1.Get)(':invoiceId/pdf'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.PROPERTY_MEMBER_ROLES, ...role_constants_1.STAFF_ROLES),
+    (0, swagger_1.ApiOperation)({ summary: 'Open invoice PDF by id' }),
+    (0, swagger_1.ApiParam)({ name: 'invoiceId', type: String }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Invoice PDF returned successfully.',
+    }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('invoiceId')),
+    __param(2, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", Promise)
+], InvoicesController.prototype, "pdf", null);
+__decorate([
     (0, common_1.Get)(':invoiceId'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(...role_constants_1.PROPERTY_MEMBER_ROLES, ...role_constants_1.STAFF_ROLES),
     (0, swagger_1.ApiOperation)({ summary: 'Get invoice by id' }),
     (0, swagger_1.ApiParam)({ name: 'invoiceId', type: String }),
@@ -97,6 +428,7 @@ __decorate([
 ], InvoicesController.prototype, "byId", null);
 __decorate([
     (0, common_1.Patch)(':invoiceId'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
     (0, swagger_1.ApiOperation)({ summary: 'Update invoice fields' }),
     (0, swagger_1.ApiParam)({ name: 'invoiceId', type: String }),
@@ -115,6 +447,7 @@ __decorate([
 ], InvoicesController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)(':invoiceId'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
     (0, swagger_1.ApiOperation)({ summary: 'Delete invoice' }),
     (0, swagger_1.ApiParam)({ name: 'invoiceId', type: String }),
@@ -132,7 +465,6 @@ __decorate([
 exports.InvoicesController = InvoicesController = __decorate([
     (0, swagger_1.ApiTags)('Invoices'),
     (0, common_1.Controller)('invoices'),
-    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
     (0, swagger_1.ApiBearerAuth)(),
     (0, swagger_1.ApiCookieAuth)('__session'),
     __metadata("design:paramtypes", [invoices_service_1.InvoicesService])

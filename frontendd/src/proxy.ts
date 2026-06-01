@@ -13,15 +13,6 @@ const authCookieNames = [
   "userEmail",
 ] as const;
 
-function resolveServerApiBaseUrl() {
-  const configured = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
-  if (configured?.startsWith("http://") || configured?.startsWith("https://")) {
-    return configured;
-  }
-
-  return "http://127.0.0.1:4000/api";
-}
-
 function redirectToLogin(request: NextRequest, pathname: string) {
   const loginUrl = new URL(ROUTES.login, request.url);
   const nextPath = `${pathname}${request.nextUrl.search}`;
@@ -45,22 +36,7 @@ function clearAuthCookies(response: NextResponse) {
   }
 }
 
-async function hasValidSession(request: NextRequest) {
-  try {
-    const response = await fetch(`${resolveServerApiBaseUrl()}/users/me`, {
-      headers: {
-        Cookie: request.headers.get("cookie") ?? "",
-      },
-      cache: "no-store",
-    });
-
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-export default async function proxy(request: NextRequest) {
+export default function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get("__session")?.value?.trim();
   const cookieRole = request.cookies.get("domera_accountType")?.value ?? request.cookies.get("domera_role")?.value;
@@ -74,22 +50,8 @@ export default async function proxy(request: NextRequest) {
   }
 
   if (isAuthRoute(pathname) && sessionCookie) {
-    if (await hasValidSession(request)) {
-      const dashboardUrl = new URL(ROUTES.dashboard, request.url);
-      return NextResponse.redirect(dashboardUrl);
-    }
-
-    const response = NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
-    clearAuthCookies(response);
-    return response;
-  }
-
-  if (isProtectedPath(pathname) && sessionCookie && !(await hasValidSession(request))) {
-    return redirectToLogin(request, pathname);
+    const dashboardUrl = new URL(ROUTES.dashboard, request.url);
+    return NextResponse.redirect(dashboardUrl);
   }
 
   if (isProtectedPath(pathname) && !isAllowedPath(pathname, resolvedRole)) {

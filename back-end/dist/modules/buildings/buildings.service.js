@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.BuildingsService = void 0;
 const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
+const firestore_1 = require("firebase-admin/firestore");
 const firebase_admin_service_1 = require("../../common/infrastructure/firebase/firebase-admin.service");
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
 let BuildingsService = class BuildingsService {
@@ -226,6 +227,13 @@ let BuildingsService = class BuildingsService {
             }, { merge: true });
         }
     }
+    buildCompanyBuildingLinkPatch(buildingId, operation, updatedAt = new Date()) {
+        return {
+            buildings: operation === 'add' ? firestore_1.FieldValue.arrayUnion(buildingId) : firestore_1.FieldValue.arrayRemove(buildingId),
+            buildingIds: firestore_1.FieldValue.delete(),
+            updatedAt,
+        };
+    }
     normalizeBuildingPayload(payload, companyId, companySummary, existing) {
         const name = this.firstString(payload.name, payload.title, existing?.name, existing?.title);
         const address = this.firstString(payload.address, payload.street, payload.location, existing?.address, existing?.street, existing?.location);
@@ -329,7 +337,10 @@ let BuildingsService = class BuildingsService {
             updatedAt: new Date(),
         };
         const ref = db.collection('buildings').doc(await this.generateBuildingId(data.name));
-        await ref.set(data);
+        const batch = db.batch();
+        batch.set(ref, data);
+        batch.set(db.collection('companies').doc(companyId), this.buildCompanyBuildingLinkPatch(ref.id, 'add', data.updatedAt), { merge: true });
+        await batch.commit();
         await this.markStorageFolders(ref, [
             ...this.getCompanyStorageFolders(companyId),
             ...this.getBuildingStorageFolders(companyId, ref.id),
@@ -358,7 +369,11 @@ let BuildingsService = class BuildingsService {
         }
         const companySummary = await this.getCompanySummary(companyId);
         const normalizedPayload = this.normalizeBuildingPayload(payload, companyId, companySummary, current);
-        await ref.set({ ...normalizedPayload, updatedAt: new Date() }, { merge: true });
+        const updatedAt = new Date();
+        const batch = db.batch();
+        batch.set(ref, { ...normalizedPayload, updatedAt }, { merge: true });
+        batch.set(db.collection('companies').doc(companyId), this.buildCompanyBuildingLinkPatch(buildingId, 'add', updatedAt), { merge: true });
+        await batch.commit();
         return { success: true };
     }
     async remove(request, user, buildingId) {
@@ -378,7 +393,12 @@ let BuildingsService = class BuildingsService {
         if (user.companyId && companyId && user.companyId !== companyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
-        await ref.delete();
+        const batch = db.batch();
+        batch.delete(ref);
+        if (companyId) {
+            batch.set(db.collection('companies').doc(companyId), this.buildCompanyBuildingLinkPatch(buildingId, 'remove'), { merge: true });
+        }
+        await batch.commit();
         return { success: true };
     }
 };

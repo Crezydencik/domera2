@@ -6,16 +6,58 @@ export declare class CompanyController {
     constructor(companyService: CompanyService);
     create(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<{
         companyName: string;
-        manager: any[];
+        manager: string[];
         companyId: string;
         userIds: string[];
-        buildings: any[];
+        buildings: string[];
         createdAt: Date;
         updatedAt: Date;
         id: string;
     }>;
     byId(request: Request, user: RequestUser, companyId: string): Promise<{
         id: string;
+    }>;
+    listApiKeys(request: Request, user: RequestUser, companyId: string): Promise<{
+        items: {
+            id: string;
+            label: string;
+            trackingId: string;
+            keyPrefix: string;
+            buildingId: string | null;
+            buildingName: string | null;
+            status: string;
+            scopes: string[];
+            permission: string;
+            ownerType: string;
+            createdAt: string | null;
+            revokedAt: string | null;
+            lastUsedAt: string | null;
+            createdByUid: string | null;
+        }[];
+    }>;
+    createApiKey(request: Request, user: RequestUser, companyId: string, body: Record<string, unknown>): Promise<{
+        success: boolean;
+        apiKey: string;
+        item: {
+            id: string;
+            label: string;
+            trackingId: string;
+            keyPrefix: string;
+            buildingId: string | null;
+            buildingName: string | null;
+            status: string;
+            scopes: string[];
+            permission: string;
+            ownerType: string;
+            createdAt: string | null;
+            revokedAt: string | null;
+            lastUsedAt: string | null;
+            createdByUid: string | null;
+        };
+    }>;
+    revokeApiKey(request: Request, user: RequestUser, companyId: string, keyId: string): Promise<{
+        success: boolean;
+        keyId: string;
     }>;
     update(request: Request, user: RequestUser, companyId: string, body: Record<string, unknown>): Promise<{
         success: boolean;

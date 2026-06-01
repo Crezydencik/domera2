@@ -1,0 +1,220 @@
+{
+  "main": {
+    "id": "6e33ec5a565e5361",
+    "type": "split",
+    "children": [
+      {
+        "id": "743c4be0ce10865c",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "02ee3d123047a0e9",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "f36ca40eec8f21be",
+    "type": "split",
+    "children": [
+      {
+        "id": "8909a125f74ae4ca",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "8a8187d2a4830b63",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "01d8386a968c3cd1",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "eef9e6928b513699",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "right": {
+    "id": "e674491d4d78b71b",
+    "type": "split",
+    "children": [
+      {
+        "id": "b53762e56635024e",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "f8b9c2986ec607c3",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks"
+            }
+          },
+          {
+            "id": "8ffd2f83e9469ae1",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links"
+            }
+          },
+          {
+            "id": "e9980af84f3ac674",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "7e58c0e51d91eec0",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "a368865a16c6a818",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "02ee3d123047a0e9",
+  "lastOpenFiles": [
+    "back-end/dist/modules/resident/dto/resident-response.dto.js",
+    "back-end/dist/modules/resident/dto/resident-response.dto.d.ts",
+    "back-end/dist/modules/meter-readings/dto/update-meter-reading.dto.js",
+    "back-end/dist/modules/meter-readings/dto/update-meter-reading.dto.d.ts",
+    "back-end/dist/modules/meter-readings/dto/meter-reading-response.dto.js",
+    "back-end/dist/modules/meter-readings/dto/meter-reading-response.dto.d.ts",
+    "back-end/dist/modules/meter-readings/dto/create-meter-reading.dto.js",
+    "back-end/dist/modules/meter-readings/dto/create-meter-reading.dto.d.ts",
+    "back-end/dist/modules/invoices/dto/upload-invoice.dto.js",
+    "back-end/dist/modules/invoices/dto/upload-invoice.dto.d.ts",
+    "back-end/dist/modules/invoices/dto/update-invoice.dto.js",
+    "docs/obsidian/Дома и квартиры.md",
+    "docs/obsidian/00 Старт - карта проекта.md",
+    "docs/obsidian/Бек - что делает сервер.md",
+    "docs/obsidian/Бек - модули.md",
+    "docs/obsidian/Авторизация.md",
+    "docs/obsidian/Роли и доступ.md",
+    "docs/obsidian/Основные сценарии.md",
+    "docs/obsidian/Данные - простая схема.md",
+    "docs/obsidian/Приглашения.md",
+    "docs/obsidian/Показания и счета.md",
+    "docs/obsidian/Связь фронта и бека.md",
+    "docs/obsidian/Фронт - запросы к API.md",
+    "docs/obsidian/Фронт - страницы.md",
+    "Untitled.canvas",
+    "docs/obsidian/Бек - адреса API.md",
+    "docs/obsidian/Как смотреть граф.md",
+    "docs/obsidian/Firebase.md",
+    "docs/obsidian/Новости и документы.md",
+    "docs/obsidian/Уведомления.md",
+    "docs/obsidian/Фронт - что видит пользователь.md",
+    "back-end/node_modules/bl/LICENSE.md",
+    "frontendd/node_modules/next/dist/docs/02-pages/04-api-reference/04-config/01-next-config-js/images.md",
+    "back-end/README.md",
+    "docs/obsidian/Obsidian Usage.md",
+    "docs/obsidian/API Endpoints.md",
+    "docs/obsidian/Backend - Common Module.md"
+  ]
+}

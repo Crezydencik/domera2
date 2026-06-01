@@ -24,6 +24,7 @@ export declare class BuildingsService {
     private getCompanyStorageFolders;
     private getBuildingStorageFolders;
     private markStorageFolders;
+    private buildCompanyBuildingLinkPatch;
     private normalizeBuildingPayload;
     getCreationAccess(request: Request, user: RequestUser, companyId: string): Promise<{
         allowed: boolean;

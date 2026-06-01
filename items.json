@@ -1,0 +1,22 @@
+[
+  {
+    "fileName": "Artboard 1.pdf",
+    "apartmentNumber": "89",
+    "period": "2026-05",
+    "invoiceDate": "2026-05-28",
+    "amount": 125.50,
+    "currency": "EUR",
+    "externalId": "test-001",
+    "status": "issued"
+  },
+  {
+    "fileName": "Artboard.pdf",
+    "apartmentNumber": "8",
+    "period": "2026-05",
+    "invoiceDate": "2026-05-28",
+    "amount": 125.50,
+    "currency": "EUR",
+    "externalId": "test-002",
+    "status": "issued"
+  }
+]

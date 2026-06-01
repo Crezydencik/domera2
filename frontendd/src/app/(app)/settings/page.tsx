@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import type { CompanyApiKeyItem } from "@/shared/api/company";
 import type { NotificationSettings } from "@/shared/api/notifications";
 import { apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
 import { SettingsTabs } from "./settings-tabs";
@@ -62,6 +63,30 @@ function normalizeNotificationSettings(value: unknown): NotificationSettings {
   };
 }
 
+function normalizeApiKeyItems(value: unknown): CompanyApiKeyItem[] {
+  const items = Array.isArray(value) ? value : [];
+
+  return items
+    .filter((item): item is UnknownRecord => item !== null && typeof item === "object")
+    .map((item) => ({
+      id: firstString(item.id),
+      label: firstString(item.label, "Invoice upload API key"),
+      trackingId: firstString(item.trackingId, item.id ? `key_${String(item.id).slice(0, 16)}` : ""),
+      keyPrefix: firstString(item.keyPrefix),
+      buildingId: firstString(item.buildingId) || null,
+      buildingName: firstString(item.buildingName) || null,
+      status: firstString(item.status, "active"),
+      scopes: Array.isArray(item.scopes) ? item.scopes.filter((scope): scope is string => typeof scope === "string") : [],
+      permission: firstString(item.permission, "all"),
+      ownerType: firstString(item.ownerType, "user"),
+      createdAt: firstString(item.createdAt) || null,
+      revokedAt: firstString(item.revokedAt) || null,
+      lastUsedAt: firstString(item.lastUsedAt) || null,
+      createdByUid: firstString(item.createdByUid) || null,
+    }))
+    .filter((item) => item.id);
+}
+
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
   const params = (await searchParams) ?? {};
   const data = await getRoleDataBundle(params.role);
@@ -80,12 +105,21 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const companyId = firstString(data.companyId, profile?.companyId, userId);
   const accountType = firstString(profile?.accountType, profile?.role);
   const canManageCompany = data.role === "managementCompany" && normalizeAccessValue(accountType) === "managementcompany";
-  const company = canManageCompany && companyId
-    ? await apiFetch<UnknownRecord>(`/company/${encodeURIComponent(companyId)}`).catch(() => null)
-    : null;
+  let company: UnknownRecord | null = null;
+  let apiKeys: CompanyApiKeyItem[] = [];
+
+  if (canManageCompany && companyId) {
+    const [companyResult, apiKeysResult] = await Promise.all([
+      apiFetch<UnknownRecord>(`/company/${encodeURIComponent(companyId)}`).catch(() => null),
+      apiFetch<{ items?: unknown[] }>(`/company/${encodeURIComponent(companyId)}/api-keys`).catch(() => ({ items: [] })),
+    ]);
+
+    company = companyResult;
+    apiKeys = normalizeApiKeyItems(apiKeysResult.items);
+  }
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div className="w-full">
       <SettingsTabs
         user={{
           userName,
@@ -104,6 +138,12 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           registrationNumber: firstString(company?.registrationNumber, profile?.registrationNumber),
           email: firstString(company?.companyEmail, company?.email, company?.contactEmail, profile?.companyEmail, email),
           phone: firstString(company?.companyPhone, company?.phone, company?.contactPhone, profile?.companyPhone),
+          apiKeys,
+          buildings: data.buildings.map((building) => ({
+            id: building.id,
+            name: building.name,
+            address: building.address,
+          })),
           members: data.residents
             .filter((item) => item.role === "ManagementCompany" || item.role === "Accountant")
             .map((item) => ({

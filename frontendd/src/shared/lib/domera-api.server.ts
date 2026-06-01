@@ -86,6 +86,20 @@ function firstString(...values: unknown[]): string {
   return "—";
 }
 
+function firstDisplayString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+
+  return "";
+}
+
 function joinNameParts(...values: unknown[]): string | undefined {
   const parts = values
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
@@ -117,17 +131,46 @@ function firstNumber(...values: unknown[]): number {
   return 0;
 }
 
-const currencyFormatter = new Intl.NumberFormat("en-IE", {
-  style: "currency",
-  currency: "EUR",
-  minimumFractionDigits: 2,
-});
+function firstOptionalNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
 
-function formatCurrency(value: number): string {
-  return currencyFormatter.format(value);
+  return undefined;
+}
+
+function formatCurrency(value: number, currency = "EUR"): string {
+  try {
+    return new Intl.NumberFormat("en-IE", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return new Intl.NumberFormat("en-IE", {
+      style: "currency",
+      currency: "EUR",
+      minimumFractionDigits: 2,
+    }).format(value);
+  }
 }
 
 function formatDate(value: unknown): string {
+  if (value && typeof value === "object") {
+    const record = value as { toDate?: () => Date; seconds?: number; _seconds?: number };
+    if (typeof record.toDate === "function") {
+      return record.toDate().toISOString().slice(0, 10);
+    }
+
+    const seconds = typeof record.seconds === "number" ? record.seconds : record._seconds;
+    if (typeof seconds === "number") {
+      return new Date(seconds * 1000).toISOString().slice(0, 10);
+    }
+  }
+
   if (typeof value === "string" && value.trim()) {
     const date = new Date(value);
     if (!Number.isNaN(date.getTime())) {
@@ -199,20 +242,98 @@ function toResident(
   };
 }
 
+function isProxyableInvoicePdfUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === "firebasestorage.googleapis.com" || url.hostname === "storage.googleapis.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function buildInvoicePdfHref(id: string, item: UnknownRecord) {
+  const pdfUrl = typeof item.pdfUrl === "string" ? item.pdfUrl.trim() : "";
+  const hasStoragePath = typeof item.storagePath === "string" && item.storagePath.trim();
+  const canUseProxy = hasStoragePath || (pdfUrl && isProxyableInvoicePdfUrl(pdfUrl));
+
+  return canUseProxy && id !== "вЂ”" && id !== "—"
+    ? `/api/invoices/${encodeURIComponent(id)}/pdf`
+    : pdfUrl || undefined;
+}
+
 function toInvoice(item: UnknownRecord): Invoice {
+  const currency = firstString(item.currency, "EUR");
+  const id = firstString(item.id, item.invoiceId);
+  const accountNumber = firstDisplayString(
+    item.accountId,
+    item.personalAccountId,
+    item.billingAccountId,
+    item.clientNumber,
+    item.customerNumber,
+    item.clientId,
+    item.customerId,
+  );
+  const contractNumber = firstDisplayString(
+    item.contractNumber,
+    item.contractNo,
+    item.contractId,
+    item.agreementNumber,
+  );
+  const apartmentNumber = firstDisplayString(
+    item.apartmentNumber,
+    item.number,
+    item.apartmentNo,
+    item.flatNumber,
+    item.apartment,
+  );
+  const buildingNumber = firstDisplayString(
+    item.buildingNumber,
+    item.houseNumber,
+    item.buildingNo,
+    item.building,
+    item.buildingId,
+  );
+  const displayNumber = firstDisplayString(
+    accountNumber,
+    contractNumber,
+    apartmentNumber,
+    buildingNumber,
+    item.externalId,
+    id,
+  );
+
   return {
-    id: firstString(item.id, item.invoiceId),
+    id,
+    displayNumber,
     apartment: firstString(item.apartment, item.apartmentNumber, item.apartmentId),
     resident: firstString(item.resident, item.residentName, item.userId, item.email),
-    amount: formatCurrency(firstNumber(item.amount)),
-    dueDate: formatDate(item.dueDate ?? item.createdAt),
+    amount: formatCurrency(firstNumber(item.amount), currency),
+    dueDate: formatDate(item.dueDate ?? item.invoiceDate ?? item.createdAt),
     status: firstString(item.status, "Pending").replace(/^./, (value) => value.toUpperCase()),
+    apartmentId: typeof item.apartmentId === "string" ? item.apartmentId : undefined,
+    buildingId: typeof item.buildingId === "string" ? item.buildingId : undefined,
+    companyId: typeof item.companyId === "string" ? item.companyId : undefined,
+    accountNumber: accountNumber || undefined,
+    contractNumber: contractNumber || undefined,
+    apartmentNumber: apartmentNumber || undefined,
+    buildingNumber: buildingNumber || undefined,
+    externalId: typeof item.externalId === "string" ? item.externalId : undefined,
+    period: typeof item.period === "string" ? item.period : undefined,
+    invoiceDate: item.invoiceDate ? formatDate(item.invoiceDate) : undefined,
+    currency,
+    comment: typeof item.comment === "string" ? item.comment : undefined,
+    pdfUrl: buildInvoicePdfHref(id, item),
   };
 }
 
 function toMeterReading(item: UnknownRecord): MeterReading {
   const value = firstNumber(item.currentValue, item.value, item.consumption);
   const trend = firstNumber(item.consumption, item.currentValue);
+  const month = firstOptionalNumber(item.month);
+  const year = firstOptionalNumber(item.year);
 
   return {
     id: firstString(item.id, item.meterId),
@@ -220,6 +341,8 @@ function toMeterReading(item: UnknownRecord): MeterReading {
     value: `${value || 0} m³`,
     submittedAt: formatDate(item.submittedAt),
     trend: `${trend || 0}`,
+    month,
+    year,
   };
 }
 
@@ -310,13 +433,14 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const store = await cookies();
   const cookieHeader = buildCookieHeader(store);
   const url = `${appConfig.apiBaseUrl}${path}`;
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
 
   let response: Response;
   try {
     response = await fetch(url, {
       ...init,
       headers: {
-        "Content-Type": "application/json",
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
         ...(cookieHeader ? { Cookie: cookieHeader } : {}),
         ...(init?.headers ?? {}),
       },
@@ -400,49 +524,10 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
     const liveBuildings = Array.isArray(buildingsResponse?.items) ? buildingsResponse.items.map(toBuilding) : [];
     const liveApartments = Array.isArray(apartmentsResponse?.items) ? apartmentsResponse.items : [];
     const liveResidents = Array.isArray(residentsResponse?.items) ? residentsResponse.items.map((item) => toResident(item)) : [];
-    const residentApartmentContext = new Map<string, { apartment: string; building: string }>();
-
-    for (const apartment of liveApartments) {
-      const residentId = typeof apartment.residentId === "string" ? apartment.residentId.trim() : "";
-      if (!residentId) continue;
-
-      residentApartmentContext.set(residentId, {
-        apartment: firstString(apartment.number, apartment.apartmentNumber, apartment.id),
-        building: firstString(apartment.address, apartment.buildingName, apartment.buildingId),
-      });
-    }
-
-    const liveResidentIds = new Set(liveResidents.map((resident) => resident.id));
-    const missingResidentIds = [...residentApartmentContext.keys()].filter((residentId) => !liveResidentIds.has(residentId));
-    const missingResidentProfiles = await Promise.all(
-      missingResidentIds.map((residentId) => apiFetchSafe<UnknownRecord>(`/users/${encodeURIComponent(residentId)}`)),
-    );
-
-    const supplementalResidents = missingResidentIds.map((residentId, index) => {
-      const profile = missingResidentProfiles[index];
-      const context = residentApartmentContext.get(residentId);
-
-      if (profile) {
-        return toResident(profile, {
-          apartment: context?.apartment,
-          building: context?.building,
-          role: "Resident",
-          fallbackId: residentId,
-        });
-      }
-
-      return {
-        id: residentId,
-        fullName: residentId,
-        apartment: context?.apartment ?? "—",
-        building: context?.building ?? "—",
-        role: "Resident",
-        invitationStatus: "Active",
-      } satisfies Resident;
-    });
+    const supplementalResidents = deriveResidentsFromApartments(liveApartments);
 
     const mergedResidents = Array.from(
-      new Map([...liveResidents, ...supplementalResidents].map((resident) => [resident.id, resident])).values(),
+      new Map([...supplementalResidents, ...liveResidents].map((resident) => [resident.id, resident])).values(),
     );
     const liveInvoices = Array.isArray(invoicesResponse?.items) ? invoicesResponse.items.map(toInvoice) : [];
     const liveMeterReadings = Array.isArray(meterReadingsResponse?.items)

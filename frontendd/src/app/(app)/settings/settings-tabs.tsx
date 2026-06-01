@@ -3,14 +3,31 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { FaEye, FaInfoCircle, FaRegUser } from "react-icons/fa";
+import {
+  FiChevronDown,
+  FiCopy,
+  FiExternalLink,
+  FiLock,
+  FiPlus,
+  FiSearch,
+  FiTrash2,
+  FiX,
+} from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { changeAccountEmail, changeAccountPassword, saveUserProfile } from "@/shared/api/auth";
-import { addCompanyMember, removeCompanyMember, updateCompany } from "@/shared/api/company";
+import {
+  addCompanyMember,
+  createCompanyApiKey,
+  removeCompanyMember,
+  revokeCompanyApiKey,
+  type CompanyApiKeyItem,
+  updateCompany,
+} from "@/shared/api/company";
 import { type NotificationSettings, updateNotificationSettings } from "@/shared/api/notifications";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { isStrongPassword } from "@/shared/lib/password-validation";
 
-type SettingsTab = "user" | "company" | "notifications" | "contacts" | "billing" | "additionalUsers" | "dataManagement";
+type SettingsTab = "user" | "company" | "apiKey" | "notifications" | "contacts" | "billing" | "additionalUsers" | "dataManagement";
 
 type UserSettings = {
   userId: string;
@@ -29,7 +46,15 @@ type CompanySettings = {
   registrationNumber: string;
   email: string;
   phone: string;
+  apiKeys: CompanyApiKeyItem[];
+  buildings: CompanyAccessBuilding[];
   members: CompanyMember[];
+};
+
+type CompanyAccessBuilding = {
+  id: string;
+  name: string;
+  address: string;
 };
 
 type CompanyMember = {
@@ -679,6 +704,830 @@ function TextEditRow({
   );
 }
 
+type ApiKeyOwnerType = "user" | "service";
+type ApiKeyPermission = "all" | "restricted" | "read";
+type UsageSection = "connection" | "batch" | "fields" | "rules" | "example" | "responses";
+
+function formatApiKeyDate(value: string | null, emptyLabel: string) {
+  if (!value) return emptyLabel;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function normalizeApiKeyPermission(value: string): ApiKeyPermission {
+  if (value === "restricted" || value === "read") return value;
+  return "all";
+}
+
+function ApiKeyPanel({
+  companyId,
+  createdByName,
+  buildings,
+  initialKeys,
+}: {
+  companyId: string;
+  createdByName: string;
+  buildings: CompanyAccessBuilding[];
+  initialKeys: CompanyApiKeyItem[];
+}) {
+  const t = useTranslations("settings");
+  const notify = useNotifications();
+  const [keys, setKeys] = useState<CompanyApiKeyItem[]>(initialKeys);
+  const [search, setSearch] = useState("");
+  const [isUsageOpen, setIsUsageOpen] = useState(false);
+  const [openUsageSections, setOpenUsageSections] = useState<Record<UsageSection, boolean>>({
+    connection: true,
+    batch: false,
+    fields: false,
+    rules: false,
+    example: false,
+    responses: false,
+  });
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isSaveOpen, setIsSaveOpen] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [selectedBuildingId, setSelectedBuildingId] = useState(() => buildings[0]?.id ?? "");
+  const [ownerType, setOwnerType] = useState<ApiKeyOwnerType>("user");
+  const [permission, setPermission] = useState<ApiKeyPermission>("all");
+  const [generatedKey, setGeneratedKey] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [pendingDeleteKey, setPendingDeleteKey] = useState<CompanyApiKeyItem | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const statusLabel = (status: string) => {
+    if (["disabled", "inactive", "revoked"].includes(status.toLowerCase())) return t("apiKeys.statusRevoked");
+    return t("apiKeys.statusActive");
+  };
+
+  const permissionLabel = (value: string) => {
+    const normalized = normalizeApiKeyPermission(value);
+    if (normalized === "restricted") return t("apiKeys.restricted");
+    if (normalized === "read") return t("apiKeys.readOnly");
+    return t("apiKeys.all");
+  };
+  const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId) ?? buildings[0] ?? null;
+
+  const usageFields = [
+    { name: "file", description: t("apiKeys.usageFields.file") },
+    { name: "buildingId", description: t("apiKeys.usageFields.buildingId"), optional: true },
+    { name: "apartmentId", description: t("apiKeys.usageFields.apartmentId"), optional: true },
+    { name: "apartmentNumber", description: t("apiKeys.usageFields.apartmentNumber"), optional: true },
+    { name: "contractNumber", description: t("apiKeys.usageFields.contractNumber"), optional: true },
+    { name: "period", description: t("apiKeys.usageFields.period") },
+    { name: "invoiceDate", description: t("apiKeys.usageFields.invoiceDate") },
+    { name: "amount", description: t("apiKeys.usageFields.amount") },
+    { name: "currency", description: t("apiKeys.usageFields.currency") },
+    { name: "externalId", description: t("apiKeys.usageFields.externalId") },
+    { name: "status", description: t("apiKeys.usageFields.status") },
+    { name: "comment", description: t("apiKeys.usageFields.comment"), optional: true },
+  ];
+
+  const toggleUsageSection = (section: UsageSection) => {
+    setOpenUsageSections((current) => ({ ...current, [section]: !current[section] }));
+  };
+
+  const visibleKeys = keys.filter((item) => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return true;
+
+    return [item.label, item.trackingId, item.keyPrefix]
+      .some((value) => value.toLowerCase().includes(needle));
+  });
+
+  const generateKey = async () => {
+    const name = draftName.trim();
+    if (!name) {
+      notify.error(t("apiKeys.nameRequired"));
+      return;
+    }
+
+    if (!selectedBuildingId) {
+      notify.error(t("apiKeys.buildingRequired"));
+      return;
+    }
+
+    setIsGenerating(true);
+
+    try {
+      const result = await createCompanyApiKey(companyId, {
+        label: name,
+        buildingId: selectedBuildingId,
+        ownerType,
+        permission,
+      });
+      setGeneratedKey(result.apiKey);
+      setKeys((current) => [result.item, ...current.filter((item) => item.id !== result.item.id)]);
+      setDraftName("");
+      setSelectedBuildingId(buildings[0]?.id ?? "");
+      setOwnerType("user");
+      setPermission("all");
+      setIsCreateOpen(false);
+      setIsSaveOpen(true);
+      notify.success(t("apiKeys.toastCreated"));
+    } catch (error) {
+      notify.error(error instanceof Error ? error.message : t("apiKeys.createFailed"));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const copyGeneratedKey = async () => {
+    if (!generatedKey) return;
+
+    try {
+      await navigator.clipboard.writeText(generatedKey);
+      notify.success(t("apiKeys.copied"));
+    } catch {
+      notify.error(t("apiKeys.copyFailed"));
+    }
+  };
+
+  const deleteKey = async () => {
+    const item = pendingDeleteKey;
+    if (!item) return;
+
+    setDeletingId(item.id);
+
+    try {
+      await revokeCompanyApiKey(companyId, item.id);
+      setKeys((current) => current.filter((key) => key.id !== item.id));
+      setPendingDeleteKey(null);
+      notify.success(t("apiKeys.toastDeleted"));
+    } catch (error) {
+      notify.error(error instanceof Error ? error.message : t("apiKeys.deleteFailed"));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <div className="py-7">
+      <h2 className="text-2xl font-bold leading-8 text-black">{t("apiKeys.title")}</h2>
+
+      <div className="mt-5 flex flex-wrap items-center gap-5 border-b border-slate-200">
+        <button type="button" className="border-b border-black pb-3 text-sm font-bold text-black">
+          {t("apiKeys.projectTab")}
+        </button>
+        <button type="button" className="pb-3 text-sm font-semibold text-slate-500">
+          {t("apiKeys.userTab")}
+        </button>
+        <span className="mb-3 rounded bg-orange-100 px-2 py-1 text-xs font-bold text-orange-700">
+          {t("apiKeys.legacy")}
+        </span>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <FiLock className="h-5 w-5 text-slate-500" aria-hidden="true" />
+        <Button
+          type="button"
+          variant="outlineDark"
+          size="pill"
+          onClick={() => setIsUsageOpen(true)}
+          className="h-10 gap-2 rounded-lg px-4 text-sm font-bold"
+        >
+          {t("apiKeys.usage")}
+          <FiExternalLink className="h-4 w-4" aria-hidden="true" />
+        </Button>
+        <Button
+          type="button"
+          variant="dark"
+          size="pill"
+          onClick={() => setIsCreateOpen(true)}
+          className="h-10 gap-2 rounded-lg px-4 text-sm font-bold"
+        >
+          <FiPlus className="h-4 w-4" aria-hidden="true" />
+          {t("apiKeys.createSecret")}
+        </Button>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <label className="relative block w-full max-w-[310px]">
+          <FiSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("apiKeys.search")}
+            className="h-11 w-full rounded-full border border-slate-300 bg-white pl-11 pr-4 text-sm text-black outline-none transition placeholder:text-slate-500 focus:border-black focus:ring-2 focus:ring-black/10"
+          />
+        </label>
+        <span className="text-sm font-semibold text-slate-500">
+          {t("apiKeys.results", { count: visibleKeys.length })}
+        </span>
+      </div>
+
+      <div className="mt-5 overflow-x-auto">
+        <table className="min-w-[1180px] w-full border-collapse text-left text-sm">
+          <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
+            <tr>
+              <th className="px-4 py-3">{t("apiKeys.columns.name")}</th>
+              <th className="px-4 py-3">{t("apiKeys.columns.status")}</th>
+              <th className="px-4 py-3">{t("apiKeys.columns.trackingId")}</th>
+              <th className="px-4 py-3">{t("apiKeys.columns.secretKey")}</th>
+              <th className="px-4 py-3">{t("apiKeys.columns.created")}</th>
+              <th className="px-4 py-3">{t("apiKeys.columns.lastUsed")}</th>
+              <th className="px-4 py-3">{t("apiKeys.columns.createdBy")}</th>
+              <th className="px-4 py-3">{t("apiKeys.columns.permissions")}</th>
+              <th className="px-4 py-3 text-right">{t("apiKeys.columns.actions")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleKeys.length > 0 ? (
+              visibleKeys.map((item) => {
+                const isDeleting = deletingId === item.id;
+
+                return (
+                  <tr key={item.id} className="border-b border-slate-200 text-slate-700">
+                    <td className="max-w-[190px] px-4 py-4 font-medium text-slate-700">
+                      <span className="block truncate">{item.label}</span>
+                    </td>
+                    <td className="px-4 py-4">{statusLabel(item.status)}</td>
+                    <td className="px-4 py-4 font-mono text-xs">{item.trackingId || `key_${item.id.slice(0, 16)}`}</td>
+                    <td className="px-4 py-4 font-mono text-xs">{item.keyPrefix || "sk-..."}</td>
+                    <td className="px-4 py-4">{formatApiKeyDate(item.createdAt, "-")}</td>
+                    <td className="px-4 py-4">{formatApiKeyDate(item.lastUsedAt, t("apiKeys.never"))}</td>
+                    <td className="px-4 py-4">{createdByName}</td>
+                    <td className="px-4 py-4">
+                      <span className="block">{permissionLabel(item.permission)}</span>
+                      <span className="mt-1 block max-w-[180px] truncate text-xs text-slate-500">
+                        {item.buildingName || item.buildingId || t("apiKeys.noBuilding")}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          disabled={isDeleting}
+                          onClick={() => setPendingDeleteKey(item)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-500 transition hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-40"
+                          aria-label={t("apiKeys.delete")}
+                          title={t("apiKeys.delete")}
+                        >
+                          <FiTrash2 className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={9} className="px-4 py-8 text-center text-sm font-medium text-slate-500">
+                  {t("apiKeys.empty")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {isCreateOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-8"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsCreateOpen(false);
+          }}
+        >
+          <form
+            className="relative w-full max-w-[560px] rounded-2xl bg-white p-6 shadow-2xl"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void generateKey();
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setIsCreateOpen(false)}
+              className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-black"
+              aria-label={t("apiKeys.close")}
+            >
+              <FiX className="h-5 w-5" aria-hidden="true" />
+            </button>
+            <h3 className="text-2xl font-bold text-black">{t("apiKeys.createTitle")}</h3>
+
+            <div className="mt-4">
+              <p className="text-base font-bold text-black">{t("apiKeys.ownedBy")}</p>
+              <div className="mt-2 inline-flex rounded-lg bg-slate-100 p-1">
+                {(["user", "service"] satisfies ApiKeyOwnerType[]).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setOwnerType(value)}
+                    className={`h-10 rounded-md px-4 text-sm font-bold transition ${
+                      ownerType === value ? "bg-white text-black shadow-sm" : "text-slate-600"
+                    }`}
+                  >
+                    {value === "user" ? t("apiKeys.you") : t("apiKeys.serviceAccount")}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-4 max-w-[470px] text-sm leading-6 text-slate-600">{t("apiKeys.ownedByHint")}</p>
+            </div>
+
+            <label className="mt-5 block">
+              <span className="text-base font-bold text-black">
+                {t("apiKeys.name")} <span className="font-medium text-slate-500">{t("apiKeys.required")}</span>
+              </span>
+              <input
+                type="text"
+                value={draftName}
+                required
+                disabled={isGenerating}
+                onChange={(event) => setDraftName(event.target.value)}
+                placeholder={t("apiKeys.labelPlaceholder")}
+                className="mt-3 h-11 w-full rounded-lg border border-slate-400 bg-white px-3 text-base text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
+              />
+            </label>
+
+            <label className="mt-6 block">
+              <span className="text-base font-bold text-black">{t("apiKeys.buildingAccess")}</span>
+              <div className="relative mt-3">
+                <select
+                  value={selectedBuildingId}
+                  required
+                  disabled={isGenerating || buildings.length === 0}
+                  onChange={(event) => setSelectedBuildingId(event.target.value)}
+                  className="h-11 w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 pr-10 text-base text-black outline-none"
+                >
+                  {buildings.length > 0 ? (
+                    buildings.map((building) => (
+                      <option key={building.id} value={building.id}>
+                        {building.name || building.address || building.id}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">{t("apiKeys.noBuildingsAvailable")}</option>
+                  )}
+                </select>
+                <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-600" aria-hidden="true" />
+              </div>
+              {selectedBuilding?.address ? (
+                <p className="mt-2 text-sm leading-6 text-slate-500">{selectedBuilding.address}</p>
+              ) : null}
+            </label>
+
+            <div className="mt-6">
+              <p className="text-base font-bold text-black">{t("apiKeys.permissions")}</p>
+              <div className="mt-3 inline-flex rounded-lg bg-slate-100 p-1">
+                {(["all", "restricted", "read"] satisfies ApiKeyPermission[]).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setPermission(value)}
+                    className={`h-10 rounded-md px-4 text-sm font-bold transition ${
+                      permission === value ? "bg-white text-black shadow-sm" : "text-slate-600"
+                    }`}
+                  >
+                    {permissionLabel(value)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-10 flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="plain"
+                size="pill"
+                disabled={isGenerating}
+                onClick={() => setIsCreateOpen(false)}
+                className="h-10 rounded-lg bg-slate-100 px-4 text-base font-medium hover:bg-slate-200"
+              >
+                {t("apiKeys.cancel")}
+              </Button>
+              <Button
+                type="submit"
+                variant="dark"
+                size="pill"
+                disabled={isGenerating || buildings.length === 0}
+                className="h-10 rounded-lg px-4 text-base font-bold"
+              >
+                {isGenerating ? t("apiKeys.generating") : t("apiKeys.createSecretKey")}
+              </Button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {pendingDeleteKey ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-8"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deletingId) setPendingDeleteKey(null);
+          }}
+        >
+          <div className="relative w-full max-w-[560px] rounded-2xl bg-white p-6 shadow-2xl">
+            <button
+              type="button"
+              disabled={Boolean(deletingId)}
+              onClick={() => setPendingDeleteKey(null)}
+              className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-black disabled:pointer-events-none disabled:opacity-50"
+              aria-label={t("apiKeys.close")}
+            >
+              <FiX className="h-5 w-5" aria-hidden="true" />
+            </button>
+            <h3 className="text-2xl font-bold text-black">{t("apiKeys.revokeTitle")}</h3>
+            <p className="mt-5 max-w-[500px] text-base leading-7 text-slate-700">{t("apiKeys.revokeWarning")}</p>
+            <input
+              type="text"
+              readOnly
+              value={pendingDeleteKey.keyPrefix || pendingDeleteKey.trackingId || pendingDeleteKey.label}
+              className="mt-5 h-12 w-full rounded-lg border border-slate-300 bg-white px-4 font-mono text-base text-black outline-none"
+            />
+            <div className="mt-10 flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="plain"
+                size="pill"
+                disabled={Boolean(deletingId)}
+                onClick={() => setPendingDeleteKey(null)}
+                className="h-10 rounded-lg bg-slate-100 px-4 text-base font-medium hover:bg-slate-200"
+              >
+                {t("apiKeys.cancel")}
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                size="pill"
+                disabled={Boolean(deletingId)}
+                onClick={() => void deleteKey()}
+                className="h-10 rounded-lg px-4 text-base font-bold shadow-none"
+              >
+                {deletingId ? t("apiKeys.deleting") : t("apiKeys.revokeKey")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isUsageOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-8"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsUsageOpen(false);
+          }}
+        >
+          <div className="relative max-h-[86vh] w-full max-w-[760px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setIsUsageOpen(false)}
+              className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-black"
+              aria-label={t("apiKeys.close")}
+            >
+              <FiX className="h-5 w-5" aria-hidden="true" />
+            </button>
+            <h3 className="text-2xl font-bold text-black">{t("apiKeys.usage")}</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-600">{t("apiKeys.description")}</p>
+
+            <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
+              <div className="border-b border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => toggleUsageSection("connection")}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left"
+                  aria-expanded={openUsageSections.connection}
+                >
+                  <span className="text-base font-bold text-black">{t("apiKeys.connectionTitle")}</span>
+                  <FiChevronDown
+                    className={`h-5 w-5 shrink-0 text-slate-500 transition-transform ${openUsageSections.connection ? "rotate-180" : ""}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                {openUsageSections.connection ? (
+                  <div className="grid gap-4 px-4 pb-4 md:grid-cols-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-black">{t("apiKeys.endpointTitle")}</p>
+                      <code className="mt-2 block overflow-x-auto rounded-lg bg-slate-950 px-3 py-2 text-xs text-white">
+                        POST /api/invoices/upload
+                      </code>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-black">{t("apiKeys.authHeader")}</p>
+                      <code className="mt-2 block overflow-x-auto rounded-lg bg-slate-950 px-3 py-2 text-xs text-white">
+                        X-API-Key: &lt;api_key&gt;
+                      </code>
+                    </div>
+                    <div className="min-w-0 md:col-span-2">
+                      <p className="text-sm font-bold text-black">{t("apiKeys.contentTypeTitle")}</p>
+                      <code className="mt-2 block overflow-x-auto rounded-lg bg-slate-100 px-3 py-2 text-xs leading-6 text-slate-800">
+                        multipart/form-data
+                      </code>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="border-b border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => toggleUsageSection("batch")}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left"
+                  aria-expanded={openUsageSections.batch}
+                >
+                  <span className="text-base font-bold text-black">{t("apiKeys.batchTitle")}</span>
+                  <FiChevronDown
+                    className={`h-5 w-5 shrink-0 text-slate-500 transition-transform ${openUsageSections.batch ? "rotate-180" : ""}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                {openUsageSections.batch ? (
+                  <div className="grid gap-4 px-4 pb-4">
+                    <p className="text-sm leading-6 text-slate-600">{t("apiKeys.batchSummary")}</p>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-black">{t("apiKeys.batchEndpointTitle")}</p>
+                        <code className="mt-2 block overflow-x-auto rounded-lg bg-slate-950 px-3 py-2 text-xs text-white">
+                          POST /api/invoices/upload-batch
+                        </code>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-black">{t("apiKeys.batchItemsTitle")}</p>
+                        <code className="mt-2 block overflow-x-auto rounded-lg bg-slate-100 px-3 py-2 text-xs leading-6 text-slate-800">
+                          files PDF / archive.zip + items.json
+                        </code>
+                      </div>
+                    </div>
+                    <div className="overflow-hidden rounded-xl border border-slate-200">
+                      <div className="grid gap-2 border-b border-slate-200 px-4 py-3 md:grid-cols-[120px_120px_minmax(0,1fr)]">
+                        <code className="w-fit rounded bg-slate-100 px-2 py-1 text-xs font-bold text-slate-900">files</code>
+                        <span className="text-xs font-semibold leading-6 text-emerald-700">{t("apiKeys.fileTypeFile")}</span>
+                        <p className="text-sm leading-6 text-slate-600">{t("apiKeys.batchPdfFieldHint")}</p>
+                      </div>
+                      <div className="grid gap-2 px-4 py-3 md:grid-cols-[120px_120px_minmax(0,1fr)]">
+                        <code className="w-fit rounded bg-slate-100 px-2 py-1 text-xs font-bold text-slate-900">items</code>
+                        <span className="text-xs font-semibold leading-6 text-emerald-700">{t("apiKeys.fileTypeFile")}</span>
+                        <p className="text-sm leading-6 text-slate-600">{t("apiKeys.batchItemsFileHint")}</p>
+                      </div>
+                    </div>
+                    <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                      {t("apiKeys.contentTypeWarning")}
+                    </p>
+                    <pre className="overflow-x-auto rounded-lg bg-slate-950 px-3 py-3 text-xs leading-6 text-white">
+{`curl -X POST https://api.domera.app/api/invoices/upload-batch \\
+  -H "X-API-Key: <api_key>" \\
+  -F "files=@apt-12.pdf" \\
+  -F "files=@apt-15.pdf" \\
+  -F "items=@items.json;type=application/json"
+
+curl -X POST https://api.domera.app/api/invoices/upload-batch \\
+  -H "X-API-Key: <api_key>" \\
+  -F "files=@invoices.zip;type=application/zip"`}
+                    </pre>
+                    <p className="text-sm font-bold text-black">{t("apiKeys.itemsJsonTitle")}</p>
+                    <pre className="overflow-x-auto rounded-lg bg-slate-100 px-3 py-3 text-xs leading-6 text-slate-800">
+{`[
+  {
+    "fileName": "apt-12.pdf",
+    "apartmentNumber": "12",
+    "period": "2026-05",
+    "invoiceDate": "2026-05-27",
+    "amount": 125.50,
+    "currency": "EUR",
+    "externalId": "invoice-2026-05-apt-12",
+    "status": "issued"
+  },
+  {
+    "fileName": "apt-15.pdf",
+    "contractNumber": "CONTRACT-15",
+    "period": "2026-05",
+    "invoiceDate": "2026-05-27",
+    "amount": 98.20,
+    "currency": "EUR",
+    "externalId": "invoice-2026-05-apt-15",
+    "status": "issued"
+  }
+]`}
+                    </pre>
+                    <pre className="overflow-x-auto rounded-lg bg-slate-100 px-3 py-3 text-xs leading-6 text-slate-800">
+{`{
+  "success": true,
+  "batch_id": "batch_f2a54c8730b74e61",
+  "total": 2,
+  "processed": 2,
+  "failed": 0,
+  "results": [
+    {
+      "index": 0,
+      "fileName": "apt-12.pdf",
+      "success": true,
+      "approval_id": "approval_12345"
+    }
+  ]
+}`}
+                    </pre>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="border-b border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => toggleUsageSection("fields")}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left"
+                  aria-expanded={openUsageSections.fields}
+                >
+                  <span className="text-base font-bold text-black">{t("apiKeys.requiredFieldsTitle")}</span>
+                  <FiChevronDown
+                    className={`h-5 w-5 shrink-0 text-slate-500 transition-transform ${openUsageSections.fields ? "rotate-180" : ""}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                {openUsageSections.fields ? (
+                  <div className="px-4 pb-4">
+                    <div className="overflow-hidden rounded-xl border border-slate-200">
+                      {usageFields.map((field) => (
+                        <div
+                          key={field.name}
+                          className="grid gap-2 border-t border-slate-200 px-4 py-3 first:border-t-0 md:grid-cols-[170px_110px_minmax(0,1fr)] md:items-start"
+                        >
+                          <code className="w-fit rounded bg-slate-100 px-2 py-1 text-xs font-bold text-slate-900">{field.name}</code>
+                          <span className={`text-xs font-semibold leading-6 ${field.optional ? "text-slate-500" : "text-emerald-700"}`}>
+                            {field.optional ? t("apiKeys.optionalShort") : t("apiKeys.required")}
+                          </span>
+                          <p className="min-w-0 text-sm leading-6 text-slate-600">{field.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="border-b border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => toggleUsageSection("rules")}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left"
+                  aria-expanded={openUsageSections.rules}
+                >
+                  <span className="text-base font-bold text-black">{t("apiKeys.rulesTitle")}</span>
+                  <FiChevronDown
+                    className={`h-5 w-5 shrink-0 text-slate-500 transition-transform ${openUsageSections.rules ? "rotate-180" : ""}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                {openUsageSections.rules ? (
+                  <div className="px-4 pb-4">
+                    <ul className="space-y-2 rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                      <li>{t("apiKeys.rulePdf")}</li>
+                      <li>{t("apiKeys.ruleDuplicate")}</li>
+                      <li>{t("apiKeys.ruleCompany")}</li>
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="border-b border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => toggleUsageSection("example")}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left"
+                  aria-expanded={openUsageSections.example}
+                >
+                  <span className="text-base font-bold text-black">{t("apiKeys.exampleTitle")}</span>
+                  <FiChevronDown
+                    className={`h-5 w-5 shrink-0 text-slate-500 transition-transform ${openUsageSections.example ? "rotate-180" : ""}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                {openUsageSections.example ? (
+                  <div className="px-4 pb-4">
+                    <pre className="overflow-x-auto rounded-lg bg-slate-950 px-3 py-3 text-xs leading-6 text-white">
+{`curl -X POST https://api.domera.app/api/invoices/upload \\
+  -H "X-API-Key: <api_key>" \\
+  -F "file=@invoice.pdf" \\
+  -F "apartmentNumber=12" \\
+  -F "period=2026-05" \\
+  -F "invoiceDate=2026-05-27" \\
+  -F "amount=125.50" \\
+  -F "currency=EUR" \\
+  -F "externalId=invoice-2026-05-apt-12" \\
+  -F "status=issued" \\
+  -F "comment=optional"`}
+                    </pre>
+                  </div>
+                ) : null}
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => toggleUsageSection("responses")}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left"
+                  aria-expanded={openUsageSections.responses}
+                >
+                  <span className="text-base font-bold text-black">{t("apiKeys.responsesTitle")}</span>
+                  <FiChevronDown
+                    className={`h-5 w-5 shrink-0 text-slate-500 transition-transform ${openUsageSections.responses ? "rotate-180" : ""}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                {openUsageSections.responses ? (
+                  <div className="grid gap-4 px-4 pb-4 md:grid-cols-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-black">{t("apiKeys.successResponseTitle")}</p>
+                      <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-100 px-3 py-3 text-xs leading-6 text-slate-800">
+{`{
+  "success": true,
+  "approval_id": "approval_12345",
+  "message": "Invoice accepted for approval"
+}`}
+                      </pre>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-black">{t("apiKeys.errorResponseTitle")}</p>
+                      <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-100 px-3 py-3 text-xs leading-6 text-slate-800">
+{`{
+  "success": false,
+  "error": "Apartment not found"
+}`}
+                      </pre>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end">
+              <Button
+                type="button"
+                variant="plain"
+                size="pill"
+                onClick={() => setIsUsageOpen(false)}
+                className="h-10 rounded-lg bg-slate-100 px-4 text-base font-medium hover:bg-slate-200"
+              >
+                {t("apiKeys.done")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isSaveOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-8"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsSaveOpen(false);
+          }}
+        >
+          <div className="relative w-full max-w-[560px] rounded-2xl bg-white p-6 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setIsSaveOpen(false)}
+              className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-black"
+              aria-label={t("apiKeys.close")}
+            >
+              <FiX className="h-5 w-5" aria-hidden="true" />
+            </button>
+              <h3 className="text-2xl font-bold text-black">{t("apiKeys.saveTitle")}</h3>
+            <p className="mt-3 text-base leading-7 text-slate-800">
+              {t("apiKeys.saveIntroBefore")}{" "}
+              <strong>{t("apiKeys.saveIntroStrong")}</strong>{" "}
+              {t("apiKeys.saveIntroAfter")}
+            </p>
+            <p className="mt-5 inline-flex items-center gap-2 border-b border-slate-700 text-base text-slate-800">
+              {t("apiKeys.bestPractices")}
+              <FiExternalLink className="h-4 w-4" aria-hidden="true" />
+            </p>
+            <div className="mt-6 grid gap-2 rounded-xl border border-slate-400 p-2 sm:grid-cols-[1fr_auto]">
+              <input
+                type="text"
+                readOnly
+                value={generatedKey}
+                onFocus={(event) => event.currentTarget.select()}
+                className="h-10 min-w-0 rounded-lg bg-white px-2 font-mono text-sm text-black outline-none"
+              />
+              <Button type="button" variant="dark" size="pill" onClick={copyGeneratedKey} className="h-10 gap-2 rounded-lg px-4 text-sm font-bold">
+                <FiCopy className="h-4 w-4" aria-hidden="true" />
+                {t("apiKeys.copy")}
+              </Button>
+            </div>
+            <div className="mt-7">
+              <p className="text-base font-bold text-black">{t("apiKeys.permissions")}</p>
+              <p className="mt-3 text-base text-slate-700">{t("apiKeys.permissionsSummary")}</p>
+            </div>
+            <div className="mt-10 flex justify-end">
+              <Button
+                type="button"
+                variant="plain"
+                size="pill"
+                onClick={() => setIsSaveOpen(false)}
+                className="h-10 rounded-lg bg-slate-100 px-4 text-base font-medium hover:bg-slate-200"
+              >
+                {t("apiKeys.done")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 function CompanyPanel({ company, currentUserId }: { company: CompanySettings; currentUserId: string }) {
   const t = useTranslations("settings");
   const notify = useNotifications();
@@ -995,7 +1844,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
 export function SettingsTabs({ user, notificationSettings, company }: SettingsTabsProps) {
   const notify = useNotifications();
   const t = useTranslations("settings");
-  const tabs = company?.canManage ? (["user", "company", "notifications"] satisfies SettingsTab[]) : baseTabs;
+  const tabs = company?.canManage ? (["user", "company", "apiKey", "notifications"] satisfies SettingsTab[]) : baseTabs;
   const [activeTab, setActiveTab] = useState<SettingsTab>("user");
   const [editingField, setEditingField] = useState<EditableField>(null);
   const [displayName, setDisplayName] = useState(user.username);
@@ -1224,7 +2073,7 @@ export function SettingsTabs({ user, notificationSettings, company }: SettingsTa
   };
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 shadow-sm sm:px-8">
+    <section className="w-full bg-white px-6 py-6 sm:px-8 lg:px-10">
       <div className="overflow-x-auto border-b border-slate-300">
         <nav className="flex min-w-max gap-7" aria-label={t("sectionsAria")}>
           {tabs.map((tab) => {
@@ -1330,6 +2179,15 @@ export function SettingsTabs({ user, notificationSettings, company }: SettingsTa
       {activeTab === "notifications" ? <NotificationsPanel initialSettings={notificationSettings} /> : null}
 
       {activeTab === "company" && company?.canManage ? <CompanyPanel company={company} currentUserId={user.userId} /> : null}
+
+      {activeTab === "apiKey" && company?.canManage ? (
+        <ApiKeyPanel
+          companyId={company.companyId}
+          createdByName={displayName}
+          buildings={company.buildings}
+          initialKeys={company.apiKeys}
+        />
+      ) : null}
 
     </section>
   );

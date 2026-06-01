@@ -254,6 +254,7 @@ export class ApartmentsController {
   }
 
   @Get(':apartmentId/audit-logs')
+  @Roles('ManagementCompany')
   @ApiOperation({ summary: 'Get audit logs for apartment' })
   @ApiParam({ name: 'apartmentId', required: true, type: String })
   @ApiQuery({ name: 'limit', required: false, type: Number })

@@ -1,12 +1,17 @@
-"use client";
-import dynamic from "next/dynamic";
-import { useAuthSession } from "@/shared/hooks/use-auth";
+import { cookies, headers } from "next/headers";
+import ManagementCompanyPage from "./management-company/page";
+import OwnerLandlordPage from "./owner-landlord/page";
+import { normalizeDashboardRole } from "@/shared/role-ui";
 
-const ManagementCompanyPage = dynamic(() => import("./management-company/page"), { ssr: false });
-const OwnerLandlordPage = dynamic(() => import("./owner-landlord/page"), { ssr: false });
+export default async function MeterReadingsPage() {
+  const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
+  const role = normalizeDashboardRole(
+    headerStore.get("x-domera-role") ??
+      cookieStore.get("domera_accountType")?.value ??
+      cookieStore.get("domera_role")?.value,
+  );
 
-export default function MeterReadingsPage() {
-  const session = useAuthSession();
-  const isResident = session.dashboardRole === "resident" || session.dashboardRole === "landlord";
-  return isResident ? <OwnerLandlordPage /> : <ManagementCompanyPage />;
+  return role === "resident" || role === "landlord"
+    ? <OwnerLandlordPage />
+    : <ManagementCompanyPage />;
 }

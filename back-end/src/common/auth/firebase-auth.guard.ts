@@ -10,6 +10,7 @@ import { resolveAccountType, resolveUserRole } from './role.constants';
 import { RequestUser } from './request-user.type';
 
 const SESSION_COOKIE_NAME = '__session';
+const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED === 'true';
 
 const toOptionalString = (value: unknown): string | undefined => {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
@@ -34,8 +35,8 @@ export class FirebaseAuthGuard implements CanActivate {
 
     try {
       const decoded = token.source === 'session'
-        ? await this.firebaseAdminService.auth.verifySessionCookie(token.value, true)
-        : await this.firebaseAdminService.auth.verifyIdToken(token.value, true);
+        ? await this.firebaseAdminService.auth.verifySessionCookie(token.value, CHECK_REVOKED_TOKENS)
+        : await this.firebaseAdminService.auth.verifyIdToken(token.value, CHECK_REVOKED_TOKENS);
 
       let role = resolveUserRole({ role: decoded.role });
       let accountType = resolveAccountType({ role, accountType: decoded.accountType });

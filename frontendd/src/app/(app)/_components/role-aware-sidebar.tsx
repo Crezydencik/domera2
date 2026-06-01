@@ -69,7 +69,7 @@ function readCookie(name: string): string {
   return decodeURIComponent(document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))?.[1] ?? "");
 }
 
-export function RoleAwareSidebar({ brand, title, description, defaultRole, children }: RoleAwareSidebarProps) {
+export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAwareSidebarProps) {
   const t = useTranslations("appShell.header");
   const router = useRouter();
   const rawPathname = usePathname();
@@ -216,10 +216,10 @@ export function RoleAwareSidebar({ brand, title, description, defaultRole, child
         {/* Sidebar */}
         <aside
           className={`
-            fixed top-0 left-0 z-40 h-full w-72 bg-white border-r border-slate-200 flex flex-col
+            fixed top-0 left-0 z-40 h-dvh w-72 overflow-hidden bg-white border-r border-slate-200 flex flex-col
             transition-transform duration-300 ease-in-out
             ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
-            lg:static lg:translate-x-0 lg:min-h-screen lg:w-72
+            lg:translate-x-0
           `}
         >
           {/* Sidebar header */}
@@ -244,7 +244,7 @@ export function RoleAwareSidebar({ brand, title, description, defaultRole, child
           </div>
 
           {/* Nav */}
-          <div className="flex-1 overflow-y-auto px-3 py-4">
+          <div className="min-h-0 flex-1 overflow-hidden px-3 py-4">
             <nav className="space-y-0.5">
               {navItems.map((item) => (
                 <Link
@@ -271,7 +271,7 @@ export function RoleAwareSidebar({ brand, title, description, defaultRole, child
           </div>
         </aside>
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 lg:ml-72">
           <header className="sticky top-0 z-20 border-b border-slate-200 bg-white px-4 py-0 lg:px-6">
             {/* Single-row header */}
             <div className="flex h-14 items-center gap-3">

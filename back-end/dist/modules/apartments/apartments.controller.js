@@ -281,6 +281,7 @@ __decorate([
 ], ApartmentsController.prototype, "importApartments", null);
 __decorate([
     (0, common_1.Get)(':apartmentId/audit-logs'),
+    (0, roles_decorator_1.Roles)('ManagementCompany'),
     (0, swagger_1.ApiOperation)({ summary: 'Get audit logs for apartment' }),
     (0, swagger_1.ApiParam)({ name: 'apartmentId', required: true, type: String }),
     (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number }),

@@ -10,7 +10,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { Request } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import * as XLSX from 'xlsx';
-import { isPropertyMemberRole, isStaffRole } from '../../common/auth/role.constants';
+import { isPropertyMemberRole, isStaffRole, normalizeUserRole } from '../../common/auth/role.constants';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -2157,7 +2157,7 @@ export class ApartmentsService {
   async getAuditLogs(request: Request, user: RequestUser, apartmentId: string, limit: number = 50) {
     this.assertAuthenticated(user);
     if (!apartmentId?.trim()) throw new BadRequestException('apartmentId is required');
-    if (!this.isStaff(user)) {
+    if (normalizeUserRole(user.role) !== 'ManagementCompany') {
       throw new ForbiddenException('Audit logs are only available for management company');
     }
 

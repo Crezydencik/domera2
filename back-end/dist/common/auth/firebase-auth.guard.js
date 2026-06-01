@@ -15,6 +15,7 @@ const cookie_1 = require("cookie");
 const firebase_admin_service_1 = require("../infrastructure/firebase/firebase-admin.service");
 const role_constants_1 = require("./role.constants");
 const SESSION_COOKIE_NAME = '__session';
+const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED === 'true';
 const toOptionalString = (value) => {
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 };
@@ -32,8 +33,8 @@ let FirebaseAuthGuard = class FirebaseAuthGuard {
         }
         try {
             const decoded = token.source === 'session'
-                ? await this.firebaseAdminService.auth.verifySessionCookie(token.value, true)
-                : await this.firebaseAdminService.auth.verifyIdToken(token.value, true);
+                ? await this.firebaseAdminService.auth.verifySessionCookie(token.value, CHECK_REVOKED_TOKENS)
+                : await this.firebaseAdminService.auth.verifyIdToken(token.value, CHECK_REVOKED_TOKENS);
             let role = (0, role_constants_1.resolveUserRole)({ role: decoded.role });
             let accountType = (0, role_constants_1.resolveAccountType)({ role, accountType: decoded.accountType });
             let companyId = toOptionalString(decoded.companyId);

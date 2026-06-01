@@ -1,6 +1,9 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import Link from "next/link";
+import { FiChevronDown, FiExternalLink } from "react-icons/fi";
 import { DataTable } from "@/components/data-table";
+import { InvoiceDeleteButton } from "@/components/invoice-delete-button";
+import { InvoicePdfViewerButton } from "@/components/invoice-pdf-viewer-button";
 import { SectionCard } from "@/components/section-card";
 import { apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
 import { ROUTES } from "@/shared/lib/routes";
@@ -95,6 +98,47 @@ function formatDetailValue(value: unknown, fallback = "—"): string {
   return String(value);
 }
 
+function meterReadingMonthKey(reading: { submittedAt?: string; month?: number; year?: number }) {
+  const month = Number(reading.month);
+  const year = Number(reading.year);
+
+  if (Number.isFinite(month) && Number.isFinite(year) && month >= 1 && month <= 12) {
+    return `${year}-${String(month).padStart(2, "0")}`;
+  }
+
+  const submittedAt = typeof reading.submittedAt === "string" ? reading.submittedAt.trim() : "";
+  const isoMatch = /^(\d{4})-(\d{2})/.exec(submittedAt);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}`;
+  }
+
+  const localMatch = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(submittedAt);
+  if (localMatch) {
+    return `${localMatch[3]}-${localMatch[2]}`;
+  }
+
+  const date = new Date(submittedAt);
+  if (!Number.isNaN(date.getTime())) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  return "unknown";
+}
+
+function formatMeterReadingMonth(key: string, locale: string, fallback: string) {
+  if (key === "unknown") {
+    return fallback;
+  }
+
+  const [year, month] = key.split("-").map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return fallback;
+  }
+
+  const label = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(new Date(year, month - 1, 1));
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function splitName(value: string) {
   const parts = value.trim().split(/\s+/).filter(Boolean);
   return {
@@ -110,6 +154,7 @@ export default async function ApartmentDetailsPage({
 }) {
   const t = await getTranslations("apartments");
   const ui = await getTranslations("ui");
+  const locale = await getLocale();
   const { apartmentId } = await params;
   const data = await getRoleDataBundle();
   const normalizedId = decodeURIComponent(apartmentId);
@@ -373,35 +418,117 @@ export default async function ApartmentDetailsPage({
     : [["—", "—", "—", "—", "—", "—", <span key="empty-tenants">{t("details.noTenants")}</span>]];
 
   // Filter invoices and meter readings for this apartment
-  const apartmentInvoices = data.invoices.filter(
-    (inv) => inv.apartment === resolvedApartmentId || inv.apartment === apartmentLabel,
-  );
+  const apartmentInvoiceCandidates = new Set([
+    resolvedApartmentId,
+    normalizedId,
+    apartmentLabel,
+    toText(apartment.id, ""),
+    toText(apartment.apartmentId, ""),
+    toText(apartment.number, ""),
+  ].filter((value) => value && value !== "—"));
+  const apartmentInvoices = data.invoices.filter((inv) => (
+    apartmentInvoiceCandidates.has(inv.apartment) ||
+    (typeof inv.apartmentId === "string" && apartmentInvoiceCandidates.has(inv.apartmentId))
+  ));
+  const canDeleteInvoices = data.role === "managementCompany";
+  const invoiceColumns = [
+    t("details.invoiceColumns.id"),
+    t("details.invoiceColumns.amount"),
+    t("details.invoiceColumns.dueDate"),
+    t("details.invoiceColumns.status"),
+    t("details.invoiceColumns.file"),
+  ];
   const invoiceRows = apartmentInvoices.length
-    ? apartmentInvoices.map((inv) => [
-        inv.id,
-        inv.amount,
-        inv.dueDate,
-        <span
-          key={inv.id}
-          className={
-            inv.status.toLowerCase() === "paid"
-              ? "text-emerald-700"
-              : inv.status.toLowerCase() === "overdue"
-                ? "text-red-600"
-                : "text-amber-600"
-          }
-        >
-          {inv.status}
-        </span>,
-      ])
-    : [["—", "—", "—", <span key="no-inv">{t("details.noInvoices")}</span>]];
+    ? apartmentInvoices.map((inv) => {
+        const pdfUrl = inv.pdfUrl?.trim();
+        const invoiceLabel = inv.displayNumber || inv.externalId || inv.id;
+
+        return [
+          invoiceLabel,
+          inv.amount,
+          inv.dueDate,
+          <span
+            key={`${inv.id}-status`}
+            className={
+              inv.status.toLowerCase() === "paid"
+                ? "text-emerald-700"
+                : inv.status.toLowerCase() === "overdue"
+                  ? "text-red-600"
+                  : "text-amber-600"
+            }
+          >
+            {inv.status}
+          </span>,
+          <div key={`${inv.id}-actions`} className="flex items-center gap-2">
+            {pdfUrl ? (
+              <InvoicePdfViewerButton
+                href={pdfUrl}
+                label={t("details.viewInvoice")}
+                title={t("details.invoiceViewTitle", { invoice: invoiceLabel })}
+                closeLabel={ui("close")}
+                loadingLabel={t("details.invoiceLoading")}
+                errorLabel={t("details.invoiceLoadFailed")}
+              />
+            ) : (
+              <span className="text-xs text-slate-400">—</span>
+            )}
+            {canDeleteInvoices ? (
+              <InvoiceDeleteButton
+                invoiceId={inv.id}
+                label={t("details.deleteInvoice")}
+                title={t("details.deleteInvoiceTitle", { invoice: invoiceLabel })}
+                message={t("details.deleteInvoiceMessage")}
+                confirmLabel={ui("delete")}
+                cancelLabel={ui("cancel")}
+                deletingLabel={t("details.deletingInvoice")}
+                successLabel={t("details.deleteInvoiceSuccess")}
+                errorLabel={t("details.deleteInvoiceFailed")}
+              />
+            ) : null}
+          </div>,
+        ];
+      })
+    : [["—", "—", "—", "—", <span key="no-inv">{t("details.noInvoices")}</span>]];
 
   const apartmentReadings = data.meterReadings.filter(
     (r) => r.apartment === resolvedApartmentId || r.apartment === apartmentLabel,
   );
-  const readingRows = apartmentReadings.length
-    ? apartmentReadings.map((r) => [r.id, r.value, r.submittedAt, r.trend])
-    : [["—", "—", "—", "—"]];
+  const meterColumns = [
+    t("details.meterColumns.id"),
+    t("details.meterColumns.value"),
+    t("details.meterColumns.submitted"),
+    t("details.meterColumns.consumption"),
+  ];
+  const emptyMeterCell = t("common.notSpecified");
+  const readingGroupsMap = new Map<string, { key: string; label: string; rows: string[][]; count: number }>();
+
+  for (const reading of apartmentReadings) {
+    const key = meterReadingMonthKey(reading);
+    const group = readingGroupsMap.get(key) ?? {
+      key,
+      label: formatMeterReadingMonth(key, locale, emptyMeterCell),
+      rows: [],
+      count: 0,
+    };
+
+    group.rows.push([reading.id, reading.value, reading.submittedAt, reading.trend]);
+    group.count += 1;
+    readingGroupsMap.set(key, group);
+  }
+
+  const readingGroups = Array.from(readingGroupsMap.values()).sort((left, right) => {
+    if (left.key === "unknown") return 1;
+    if (right.key === "unknown") return -1;
+    return right.key.localeCompare(left.key);
+  });
+  const readingAccordionItems = readingGroups.length
+    ? readingGroups
+    : [{
+        key: "empty",
+        label: emptyMeterCell,
+        rows: [[emptyMeterCell, emptyMeterCell, emptyMeterCell, emptyMeterCell]],
+        count: 0,
+      }];
 
   // ── MANAGEMENT COMPANY view ──────────────────────────────────────────────
   if (data.role === "managementCompany") {
@@ -482,26 +609,46 @@ export default async function ApartmentDetailsPage({
         <div className="grid gap-5 xl:grid-cols-2">
           <SectionCard title={t("details.invoices")}>
             <DataTable
-              columns={[
-                t("details.invoiceColumns.id"),
-                t("details.invoiceColumns.amount"),
-                t("details.invoiceColumns.dueDate"),
-                t("details.invoiceColumns.status"),
-              ]}
+              columns={invoiceColumns}
               rows={invoiceRows}
             />
           </SectionCard>
 
-          <SectionCard title={t("details.meterReadings")}>
-            <DataTable
-              columns={[
-                t("details.meterColumns.id"),
-                t("details.meterColumns.value"),
-                t("details.meterColumns.submitted"),
-                t("details.meterColumns.consumption"),
-              ]}
-              rows={readingRows}
-            />
+          <SectionCard
+            title={t("details.meterReadings")}
+            titleMeta={
+              <Link
+                href={ROUTES.meterReadings}
+                aria-label={t("details.meterReadings")}
+                title={t("details.meterReadings")}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-blue-200 bg-white text-blue-600 transition hover:bg-blue-50"
+              >
+                <FiExternalLink className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            }
+          >
+            <div className="space-y-3">
+              {readingAccordionItems.map((group, index) => (
+                <details
+                  key={group.key}
+                  open={index === 0}
+                  className="group overflow-hidden rounded-2xl border border-slate-200 bg-white"
+                >
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
+                    <span className="min-w-0 truncate">{group.label}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-500 ring-1 ring-slate-200">
+                        {group.count}
+                      </span>
+                      <FiChevronDown className="h-4 w-4 text-slate-500 transition group-open:rotate-180" aria-hidden="true" />
+                    </span>
+                  </summary>
+                  <div className="border-t border-slate-200 p-3">
+                    <DataTable columns={meterColumns} rows={group.rows} />
+                  </div>
+                </details>
+              ))}
+            </div>
           </SectionCard>
         </div>
 
@@ -579,12 +726,7 @@ export default async function ApartmentDetailsPage({
 
         <SectionCard title={t("details.invoices")}>
           <DataTable
-            columns={[
-              t("details.invoiceColumns.id"),
-              t("details.invoiceColumns.amount"),
-              t("details.invoiceColumns.dueDate"),
-              t("details.invoiceColumns.status"),
-            ]}
+            columns={invoiceColumns}
             rows={invoiceRows}
           />
         </SectionCard>
@@ -630,6 +772,13 @@ export default async function ApartmentDetailsPage({
           </div>
         </SectionCard>
       </div>
+
+      <SectionCard title={t("details.invoices")}>
+        <DataTable
+          columns={invoiceColumns}
+          rows={invoiceRows}
+        />
+      </SectionCard>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Request } from 'express';
+import { FieldValue } from 'firebase-admin/firestore';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { RateLimitService } from '../../common/services/rate-limit.service';
@@ -296,6 +297,18 @@ export class BuildingsService {
     }
   }
 
+  private buildCompanyBuildingLinkPatch(
+    buildingId: string,
+    operation: 'add' | 'remove',
+    updatedAt = new Date(),
+  ) {
+    return {
+      buildings: operation === 'add' ? FieldValue.arrayUnion(buildingId) : FieldValue.arrayRemove(buildingId),
+      buildingIds: FieldValue.delete(),
+      updatedAt,
+    };
+  }
+
   private normalizeBuildingPayload(
     payload: Record<string, unknown>,
     companyId: string,
@@ -433,7 +446,14 @@ export class BuildingsService {
     };
 
     const ref = db.collection('buildings').doc(await this.generateBuildingId(data.name));
-    await ref.set(data);
+    const batch = db.batch();
+    batch.set(ref, data);
+    batch.set(
+      db.collection('companies').doc(companyId),
+      this.buildCompanyBuildingLinkPatch(ref.id, 'add', data.updatedAt),
+      { merge: true },
+    );
+    await batch.commit();
 
     await this.markStorageFolders(ref, [
       ...this.getCompanyStorageFolders(companyId),
@@ -470,7 +490,15 @@ export class BuildingsService {
     const companySummary = await this.getCompanySummary(companyId);
     const normalizedPayload = this.normalizeBuildingPayload(payload, companyId, companySummary, current);
 
-    await ref.set({ ...normalizedPayload, updatedAt: new Date() }, { merge: true });
+    const updatedAt = new Date();
+    const batch = db.batch();
+    batch.set(ref, { ...normalizedPayload, updatedAt }, { merge: true });
+    batch.set(
+      db.collection('companies').doc(companyId),
+      this.buildCompanyBuildingLinkPatch(buildingId, 'add', updatedAt),
+      { merge: true },
+    );
+    await batch.commit();
     return { success: true };
   }
 
@@ -494,7 +522,16 @@ export class BuildingsService {
       throw new ForbiddenException('Access denied for company');
     }
 
-    await ref.delete();
+    const batch = db.batch();
+    batch.delete(ref);
+    if (companyId) {
+      batch.set(
+        db.collection('companies').doc(companyId),
+        this.buildCompanyBuildingLinkPatch(buildingId, 'remove'),
+        { merge: true },
+      );
+    }
+    await batch.commit();
     return { success: true };
   }
 }

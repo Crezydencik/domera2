@@ -34,11 +34,25 @@ export interface Resident {
 
 export interface Invoice {
   id: string;
+  displayNumber: string;
   apartment: string;
   resident: string;
   amount: string;
   dueDate: string;
   status: string;
+  apartmentId?: string;
+  buildingId?: string;
+  companyId?: string;
+  accountNumber?: string;
+  contractNumber?: string;
+  apartmentNumber?: string;
+  buildingNumber?: string;
+  externalId?: string;
+  period?: string;
+  invoiceDate?: string;
+  currency?: string;
+  comment?: string;
+  pdfUrl?: string;
 }
 
 export interface MeterReading {
@@ -47,6 +61,8 @@ export interface MeterReading {
   value: string;
   submittedAt: string;
   trend: string;
+  month?: number;
+  year?: number;
 }
 
 export interface DocumentItem {
@@ -139,6 +155,7 @@ export const residents: Resident[] = [
 export const invoices: Invoice[] = [
   {
     id: "INV-2026-041",
+    displayNumber: "A-12",
     apartment: "A-12",
     resident: "Anna Petrova",
     amount: "€124.55",
@@ -147,6 +164,7 @@ export const invoices: Invoice[] = [
   },
   {
     id: "INV-2026-042",
+    displayNumber: "B-07",
     apartment: "B-07",
     resident: "Janis Ozols",
     amount: "€98.10",
@@ -155,6 +173,7 @@ export const invoices: Invoice[] = [
   },
   {
     id: "INV-2026-043",
+    displayNumber: "C-14",
     apartment: "C-14",
     resident: "Elina Berzina",
     amount: "€142.00",

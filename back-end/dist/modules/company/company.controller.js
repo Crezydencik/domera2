@@ -28,6 +28,15 @@ let CompanyController = class CompanyController {
     byId(request, user, companyId) {
         return this.companyService.byId(request, user, companyId);
     }
+    listApiKeys(request, user, companyId) {
+        return this.companyService.listApiKeys(request, user, companyId);
+    }
+    createApiKey(request, user, companyId, body) {
+        return this.companyService.createApiKey(request, user, companyId, body);
+    }
+    revokeApiKey(request, user, companyId, keyId) {
+        return this.companyService.revokeApiKey(request, user, companyId, keyId);
+    }
     update(request, user, companyId, body) {
         return this.companyService.update(request, user, companyId, body);
     }
@@ -60,6 +69,42 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, String]),
     __metadata("design:returntype", void 0)
 ], CompanyController.prototype, "byId", null);
+__decorate([
+    (0, common_1.Get)(':companyId/api-keys'),
+    (0, swagger_1.ApiOperation)({ summary: 'List company API keys' }),
+    (0, swagger_1.ApiParam)({ name: 'companyId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('companyId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:returntype", void 0)
+], CompanyController.prototype, "listApiKeys", null);
+__decorate([
+    (0, common_1.Post)(':companyId/api-keys'),
+    (0, swagger_1.ApiOperation)({ summary: 'Create an invoice upload API key' }),
+    (0, swagger_1.ApiParam)({ name: 'companyId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('companyId')),
+    __param(3, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, Object]),
+    __metadata("design:returntype", void 0)
+], CompanyController.prototype, "createApiKey", null);
+__decorate([
+    (0, common_1.Delete)(':companyId/api-keys/:keyId'),
+    (0, swagger_1.ApiOperation)({ summary: 'Revoke a company API key' }),
+    (0, swagger_1.ApiParam)({ name: 'companyId', required: true, type: String }),
+    (0, swagger_1.ApiParam)({ name: 'keyId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('companyId')),
+    __param(3, (0, common_1.Param)('keyId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, String]),
+    __metadata("design:returntype", void 0)
+], CompanyController.prototype, "revokeApiKey", null);
 __decorate([
     (0, common_1.Patch)(':companyId'),
     (0, swagger_1.ApiOperation)({ summary: 'Update company by id' }),

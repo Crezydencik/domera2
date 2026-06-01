@@ -1703,7 +1703,7 @@ let ApartmentsService = class ApartmentsService {
         this.assertAuthenticated(user);
         if (!apartmentId?.trim())
             throw new common_1.BadRequestException('apartmentId is required');
-        if (!this.isStaff(user)) {
+        if ((0, role_constants_1.normalizeUserRole)(user.role) !== 'ManagementCompany') {
             throw new common_1.ForbiddenException('Audit logs are only available for management company');
         }
         await this.enforceRateLimit(request, 'apartments:audit-logs', `${user.uid}:${apartmentId}`, 60);
