@@ -41,6 +41,18 @@ let MeterReadingsService = class MeterReadingsService {
             normalizedUserEmail === ownerEmail &&
             apartment.ownerActivated === true);
         const isPrimaryResident = typeof apartment.residentId === 'string' && apartment.residentId === user.uid;
+        const isTenantActive = (tenant) => {
+            const fromDate = typeof tenant.fromDate === 'string' ? new Date(tenant.fromDate) : null;
+            const until = typeof tenant.until === 'string' ? new Date(tenant.until) : null;
+            const now = new Date();
+            if (fromDate && now < fromDate) {
+                return false;
+            }
+            if (until && now > until) {
+                return false;
+            }
+            return true;
+        };
         const isTenantWithSubmit = Array.isArray(apartment.tenants) &&
             apartment.tenants.some((tenant) => {
                 if (!tenant || typeof tenant !== 'object')
@@ -50,11 +62,11 @@ let MeterReadingsService = class MeterReadingsService {
                 const permissions = Array.isArray(t.permissions)
                     ? t.permissions.filter((p) => typeof p === 'string')
                     : [];
-                return userId === user.uid && permissions.includes('submitMeter');
+                return userId === user.uid && permissions.includes('submitMeter') && isTenantActive(t);
             });
         return isOwner || isPrimaryResident || isTenantWithSubmit;
     }
-    extractApartmentReadings(apartmentId, apartment, buildingInfo) {
+    extractApartmentReadings(apartmentId, apartment, buildingInfo, user) {
         const wr = (apartment.waterReadings ?? {});
         const entries = [];
         const pickNumber = (...vals) => {
@@ -75,15 +87,36 @@ let MeterReadingsService = class MeterReadingsService {
             if (!group || !Array.isArray(group.history))
                 continue;
             const serialNumber = typeof group.serialNumber === 'string' ? group.serialNumber : '';
+            let tenantFromDate = null;
+            let tenantUntilDate = null;
+            if (user) {
+                const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+                const currentTenant = tenants.find((tenant) => {
+                    if (!tenant || typeof tenant !== 'object')
+                        return false;
+                    const t = tenant;
+                    return typeof t.userId === 'string' && t.userId === user.uid;
+                });
+                if (currentTenant) {
+                    const t = currentTenant;
+                    if (typeof t.fromDate === 'string')
+                        tenantFromDate = new Date(t.fromDate);
+                    if (typeof t.until === 'string')
+                        tenantUntilDate = new Date(t.until);
+                }
+            }
             for (const item of group.history) {
                 let submittedAt;
+                let submittedAtDate = null;
                 if (item.submittedAt) {
                     if (item.submittedAt instanceof Date) {
+                        submittedAtDate = item.submittedAt;
                         submittedAt = item.submittedAt.toISOString();
                     }
                     else if (typeof item.submittedAt === 'string') {
                         const parsed = new Date(item.submittedAt);
                         if (!Number.isNaN(parsed.getTime())) {
+                            submittedAtDate = parsed;
                             submittedAt = parsed.toISOString();
                         }
                         else {
@@ -94,12 +127,17 @@ let MeterReadingsService = class MeterReadingsService {
                         const ts = item.submittedAt;
                         if (typeof ts._seconds === 'number') {
                             const ms = ts._seconds * 1000 + ((typeof ts._nanoseconds === 'number' ? ts._nanoseconds : 0) / 1000000);
-                            submittedAt = new Date(ms).toISOString();
+                            submittedAtDate = new Date(ms);
+                            submittedAt = submittedAtDate.toISOString();
                         }
                     }
                 }
+                const historyVisible = !user || !submittedAtDate
+                    ? true
+                    : !((tenantFromDate && submittedAtDate < tenantFromDate) || (tenantUntilDate && submittedAtDate > tenantUntilDate));
                 entries.push({
                     ...item,
+                    historyVisible,
                     apartmentId: String(item.apartmentId ?? apartmentId),
                     apartmentNumber,
                     buildingId,
@@ -132,7 +170,7 @@ let MeterReadingsService = class MeterReadingsService {
             else if (user.companyId && !companyIds.includes(user.companyId)) {
                 throw new common_1.ForbiddenException('Access denied for company');
             }
-            return { items: this.extractApartmentReadings(apartmentId, apartment, await this.loadBuildingInfo(apartment)) };
+            return { items: this.extractApartmentReadings(apartmentId, apartment, await this.loadBuildingInfo(apartment), user) };
         }
         if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
             return { items: [] };
@@ -151,7 +189,7 @@ let MeterReadingsService = class MeterReadingsService {
         const items = snap.docs.flatMap((doc) => {
             const data = doc.data();
             const bId = typeof data.buildingId === 'string' ? data.buildingId : '';
-            return this.extractApartmentReadings(doc.id, data, buildingMap.get(bId));
+            return this.extractApartmentReadings(doc.id, data, buildingMap.get(bId), (0, role_constants_1.isPropertyMemberRole)(user.role) ? user : undefined);
         });
         return { items };
     }
@@ -218,14 +256,19 @@ let MeterReadingsService = class MeterReadingsService {
         const submittedAt = month !== now.getMonth() + 1 || year !== now.getFullYear()
             ? new Date(year, month, 0, 12, 0, 0)
             : now;
+        const previousValue = Number(payload.previousValue ?? 0);
+        const currentValue = Number(payload.currentValue ?? 0);
+        const consumption = Number.isFinite(currentValue) && Number.isFinite(previousValue)
+            ? Number(Math.max(0, currentValue - previousValue).toFixed(3))
+            : 0;
         const reading = {
             id: (0, node_crypto_1.randomUUID)(),
             apartmentId,
             meterId,
             submittedAt,
-            previousValue: Number(payload.previousValue ?? 0),
-            currentValue: Number(payload.currentValue ?? 0),
-            consumption: Number(payload.consumption ?? 0),
+            previousValue,
+            currentValue,
+            consumption,
             buildingId: typeof payload.buildingId === 'string' ? payload.buildingId : '',
             month,
             year,

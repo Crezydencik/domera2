@@ -25,6 +25,9 @@ let UsersController = class UsersController {
     me(request, user) {
         return this.usersService.me(request, user);
     }
+    setBuildingCreationAccess(request, user, userId, body) {
+        return this.usersService.setBuildingCreationAccess(request, user, userId, body);
+    }
     byId(request, user, userId) {
         return this.usersService.byId(request, user, userId);
     }
@@ -52,6 +55,18 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "me", null);
 __decorate([
+    (0, common_1.Patch)(':userId/building-creation-access'),
+    (0, swagger_1.ApiOperation)({ summary: 'Grant or revoke building creation access for a management company user' }),
+    (0, swagger_1.ApiParam)({ name: 'userId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('userId')),
+    __param(3, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, Object]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "setBuildingCreationAccess", null);
+__decorate([
     (0, common_1.Get)(':userId'),
     (0, swagger_1.ApiOperation)({ summary: 'Get user by id' }),
     (0, swagger_1.ApiParam)({ name: 'userId', required: true, type: String }),
@@ -75,8 +90,8 @@ __decorate([
 ], UsersController.prototype, "byEmail", null);
 __decorate([
     (0, common_1.Get)(),
-    (0, swagger_1.ApiOperation)({ summary: 'Get users by company' }),
-    (0, swagger_1.ApiQuery)({ name: 'companyId', required: true, type: String }),
+    (0, swagger_1.ApiOperation)({ summary: 'Get users by company, or all users for platform administrators' }),
+    (0, swagger_1.ApiQuery)({ name: 'companyId', required: false, type: String }),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __param(2, (0, common_1.Query)('companyId')),

@@ -40,7 +40,7 @@ export default function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get("__session")?.value?.trim();
   const cookieRole = request.cookies.get("domera_accountType")?.value ?? request.cookies.get("domera_role")?.value;
-  const resolvedRole = resolveDashboardRole(cookieRole ?? request.nextUrl.searchParams.get("role"));
+  const resolvedRole = resolveDashboardRole(cookieRole);
   const requestHeaders = new Headers(request.headers);
 
   requestHeaders.set("x-domera-role", resolvedRole);

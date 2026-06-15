@@ -24,6 +24,7 @@ export declare class ApartmentsController {
     create(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<{
         createdAt: Date;
         updatedAt: Date;
+        waterReadings?: Record<string, unknown> | undefined;
         readingConfigOverride?: {
             useBuildingDefaults: boolean;
             hotWaterMeters: number;
@@ -55,6 +56,9 @@ export declare class ApartmentsController {
     }): Promise<{
         success: boolean;
     }>;
+    removeOwner(request: Request, user: RequestUser, apartmentId: string): Promise<{
+        success: boolean;
+    }>;
     remove(request: Request, user: RequestUser, apartmentId: string): Promise<{
         success: boolean;
     }>;
@@ -64,10 +68,26 @@ export declare class ApartmentsController {
         lastName?: string;
         phone?: string;
         contractNumber?: string;
+        fromDate?: string;
+        until?: string;
+        canViewDocuments?: boolean;
     }): Promise<{
         success: boolean;
+        invitationLink: string;
+        invitationId: string;
     }>;
     removeTenant(request: Request, user: RequestUser, apartmentId: string, tenantUserId: string): Promise<{
+        success: boolean;
+    }>;
+    updateTenant(request: Request, user: RequestUser, apartmentId: string, tenantUserId: string, body: {
+        firstName?: string;
+        lastName?: string;
+        phone?: string;
+        fromDate?: string;
+        until?: string;
+        status?: string;
+        canViewDocuments?: boolean;
+    }): Promise<{
         success: boolean;
     }>;
     resendOwnerInvitation(request: Request, user: RequestUser, apartmentId: string, ownerEmail: string): Promise<{

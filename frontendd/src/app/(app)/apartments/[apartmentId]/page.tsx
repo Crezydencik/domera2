@@ -3,10 +3,13 @@ import Link from "next/link";
 import { FiChevronDown, FiExternalLink } from "react-icons/fi";
 import { DataTable } from "@/components/data-table";
 import { InvoiceDeleteButton } from "@/components/invoice-delete-button";
+import { InvoiceMobileRow } from "@/components/invoice-mobile-row";
 import { InvoicePdfViewerButton } from "@/components/invoice-pdf-viewer-button";
+import { InvoiceResendEmailButton } from "@/components/invoice-resend-email-button";
 import { SectionCard } from "@/components/section-card";
 import { apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
 import { ROUTES } from "@/shared/lib/routes";
+import { ApartmentDocumentsBlock } from "./apartment-documents-block";
 import { ApartmentFullInfoDialog } from "./apartment-full-info-dialog";
 import { ApartmentSelector } from "./apartment-selector";
 import { TenantAccessManager } from "./tenant-access-manager";
@@ -32,6 +35,20 @@ function firstText(...values: unknown[]) {
   }
 
   return "—";
+}
+
+function optionalText(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+
+    if (typeof value === "number") {
+      return String(value);
+    }
+  }
+
+  return "";
 }
 
 function toRecord(value: unknown): UnknownRecord | null {
@@ -139,6 +156,10 @@ function formatMeterReadingMonth(key: string, locale: string, fallback: string) 
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+function meterReadingMeterKey(reading: { meterKey?: string; serialNumber?: string; id?: string }) {
+  return optionalText(reading.meterKey, reading.serialNumber, reading.id);
+}
+
 function splitName(value: string) {
   const parts = value.trim().split(/\s+/).filter(Boolean);
   return {
@@ -147,12 +168,20 @@ function splitName(value: string) {
   };
 }
 
+function isTenantActive(record: UnknownRecord) {
+  if (record.activated === true || record.acceptedAt || record.activatedAt) return true;
+
+  const status = typeof record.status === "string" ? record.status.trim().toLowerCase() : "";
+  return status === "accepted";
+}
+
 export default async function ApartmentDetailsPage({
   params,
 }: {
   params: Promise<{ apartmentId: string }>;
 }) {
   const t = await getTranslations("apartments");
+  const documentsT = await getTranslations("documents");
   const ui = await getTranslations("ui");
   const locale = await getLocale();
   const { apartmentId } = await params;
@@ -294,6 +323,58 @@ export default async function ApartmentDetailsPage({
     relatedBuildingRecord?.phoneNumber,
     t("common.notSpecified"),
   );
+  const publicCompanyContacts = Array.isArray(company?.publicContacts)
+    ? company.publicContacts
+      .filter((item): item is UnknownRecord => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+      .map((item, index) => ({
+        id: optionalText(item.id, item.email, item.fullName) || `company-contact-${index}`,
+        fullName: optionalText(item.fullName, item.name, item.email),
+        email: optionalText(item.email),
+        phone: optionalText(item.phone),
+        position: optionalText(item.position, item.jobTitle, item.comment),
+        comment: "",
+      }))
+      .filter((item) => item.fullName || item.email || item.phone)
+    : [];
+  const companyContactRows = publicCompanyContacts.length > 0
+    ? publicCompanyContacts
+    : [{
+        id: "company-default-contact",
+        fullName: companyName,
+        email: companyEmail !== t("common.notSpecified") ? companyEmail : "",
+        phone: companyPhone !== t("common.notSpecified") ? companyPhone : "",
+        position: "",
+        comment: "",
+      }];
+  const renderCompanyContacts = (linkify = false, showQuestions = false) => (
+    <div className="space-y-3 text-sm text-slate-700">
+      {companyContactRows.map((contact, index) => (
+        <div key={contact.id} className={index > 0 ? "border-t border-slate-100 pt-3" : undefined}>
+          <p className="text-xl font-semibold text-slate-900">
+             <span className="font-semibold">{contact.fullName}</span>
+      {contact.position && (
+        <span className="font-normal text-slate-700">
+          {' - '}{contact.position}
+        </span>
+      )}      
+          </p>
+          {contact.email ? (
+            <p>
+              {t("common.email")}:{" "}
+              {linkify ? <a href={`mailto:${contact.email}`} className="text-blue-600 hover:underline">{contact.email}</a> : contact.email}
+            </p>
+          ) : null}
+          {contact.phone ? (
+            <p>
+              {t("common.phone")}:{" "}
+              {linkify ? <a href={`tel:${contact.phone}`} className="text-blue-600 hover:underline">{contact.phone}</a> : contact.phone}
+            </p>
+          ) : null}
+        </div>
+      ))}
+      {showQuestions ? <p className="pt-2 text-xs text-slate-400">{t("details.companyQuestions")}</p> : null}
+    </div>
+  );
   const generalInfoRows: [string, string][] = [
     [t("management.dialogs.apartmentInfo.fields.number"), apartmentLabel],
     [t("common.address"), address],
@@ -319,57 +400,6 @@ export default async function ApartmentDetailsPage({
     [t("common.phone"), companyPhone],
   ];
 
-  const waterReadings = toRecord(apartment.waterReadings ?? baseApartment.waterReadings);
-  const meterSections = [
-    {
-      title: t("management.dialogs.apartmentInfo.coldWaterTitle"),
-      value: waterReadings?.coldmeterwater,
-    },
-    {
-      title: t("management.dialogs.apartmentInfo.hotWaterTitle"),
-      value: waterReadings?.hotmeterwater,
-    },
-  ]
-    .map((group) => {
-      const record = toRecord(group.value);
-      if (!record) {
-        return null;
-      }
-
-      const history = Array.isArray(record.history) ? record.history : [];
-      return {
-        title: group.title,
-        summaryRows: [
-          [t("management.dialogs.apartmentInfo.fields.serialNumber"), formatDetailValue(record.serialNumber, t("common.notSpecified"))],
-          [t("management.dialogs.apartmentInfo.fields.checkDueDate"), formatDetailValue(record.checkDueDate, t("common.notSpecified"))],
-          [t("management.dialogs.apartmentInfo.fields.currentValue"), formatDetailValue(record.currentValue, t("common.notSpecified"))],
-          [t("management.dialogs.apartmentInfo.fields.previousValue"), formatDetailValue(record.previousValue, t("common.notSpecified"))],
-          [t("management.dialogs.apartmentInfo.fields.lastSubmitted"), formatDetailValue(record.submittedAt, t("common.notSpecified"))],
-        ] as [string, string][],
-        historyRows: history.length
-          ? history.map((item) => {
-              const entry = toRecord(item) ?? {};
-              return [
-                formatDetailValue(entry.month, t("common.notSpecified")),
-                formatDetailValue(entry.year, t("common.notSpecified")),
-                formatDetailValue(entry.currentValue ?? entry.value, t("common.notSpecified")),
-                formatDetailValue(entry.previousValue, t("common.notSpecified")),
-                formatDetailValue(entry.consumption, t("common.notSpecified")),
-                formatDetailValue(entry.submittedAt, t("common.notSpecified")),
-              ];
-            })
-          : [[
-              t("common.notSpecified"),
-              t("common.notSpecified"),
-              t("common.notSpecified"),
-              t("common.notSpecified"),
-              t("common.notSpecified"),
-              t("common.notSpecified"),
-            ]],
-      };
-    })
-    .filter((group): group is NonNullable<typeof group> => Boolean(group));
-
   const fullInfoDialog = (
     <ApartmentFullInfoDialog
       buttonLabel={t("details.more")}
@@ -378,44 +408,30 @@ export default async function ApartmentDetailsPage({
       closeLabel={ui("close")}
       generalTitle={t("management.dialogs.apartmentInfo.generalTableTitle")}
       companyTitle={t("common.managementCompany")}
-      metersTitle={t("management.dialogs.apartmentInfo.metersTitle")}
-      historyTitle={t("management.dialogs.apartmentInfo.historyTitle")}
       fieldColumnLabel={t("management.dialogs.apartmentInfo.tableColumns.field")}
       valueColumnLabel={t("management.dialogs.apartmentInfo.tableColumns.value")}
-      historyColumnLabels={[
-        t("management.dialogs.apartmentInfo.historyColumns.month"),
-        t("management.dialogs.apartmentInfo.historyColumns.year"),
-        t("management.dialogs.apartmentInfo.historyColumns.currentValue"),
-        t("management.dialogs.apartmentInfo.historyColumns.previousValue"),
-        t("management.dialogs.apartmentInfo.historyColumns.consumption"),
-        t("management.dialogs.apartmentInfo.historyColumns.submittedAt"),
-      ]}
       generalRows={generalInfoRows}
       companyRows={companyInfoRows}
-      meterSections={meterSections}
     />
   );
 
   const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
-  const tenantRows = tenants.length
-    ? tenants.map((tenant, index) => {
+  const tenantRows = tenants.map((tenant, index) => {
         const record = (tenant ?? {}) as UnknownRecord;
         const name = splitName(toText(record.name, toText(record.email, "—")));
         return [
           name.firstName,
           name.lastName,
           toText(record.email, "—"),
-          formatPossibleDate(record.invitedAt ?? record.createdAt),
-          toText(record.until, "—"),
-          Array.isArray(record.permissions) ? record.permissions.join(", ") : t("details.tenantTypeResident"),
-          record.userId ? (
+          formatPossibleDate(record.fromDate ?? record.invitedAt ?? record.createdAt),
+          formatPossibleDate(record.until),
+          isTenantActive(record) ? (
             <span key={`${toText(record.userId, String(index))}-status`} className="text-emerald-700">{t("details.active")}</span>
           ) : (
             <span key={`${toText(record.userId, String(index))}-status`} className="text-amber-600">{t("details.pending")}</span>
           ),
         ];
-      })
-    : [["—", "—", "—", "—", "—", "—", <span key="empty-tenants">{t("details.noTenants")}</span>]];
+      });
 
   // Filter invoices and meter readings for this apartment
   const apartmentInvoiceCandidates = new Set([
@@ -473,6 +489,15 @@ export default async function ApartmentDetailsPage({
               <span className="text-xs text-slate-400">—</span>
             )}
             {canDeleteInvoices ? (
+              <InvoiceResendEmailButton
+                invoiceId={inv.id}
+                label={t("details.resendInvoice")}
+                sendingLabel={t("details.resendingInvoice")}
+                successLabel={t("details.resendInvoiceSuccess")}
+                errorLabel={t("details.resendInvoiceFailed")}
+              />
+            ) : null}
+            {canDeleteInvoices ? (
               <InvoiceDeleteButton
                 invoiceId={inv.id}
                 label={t("details.deleteInvoice")}
@@ -489,17 +514,76 @@ export default async function ApartmentDetailsPage({
         ];
       })
     : [["—", "—", "—", "—", <span key="no-inv">{t("details.noInvoices")}</span>]];
+  const invoiceMobileRows = apartmentInvoices.length
+    ? apartmentInvoices.map((inv) => {
+        const pdfUrl = inv.pdfUrl?.trim();
+        const invoiceLabel = inv.displayNumber || inv.externalId || inv.id;
+
+        return (
+          <InvoiceMobileRow
+            key={inv.id}
+            id={inv.id}
+            period={inv.period}
+            fallbackDate={inv.dueDate}
+            amount={inv.amount}
+            pdfUrl={pdfUrl}
+            fileName={inv.fileName}
+            fallbackTitle={t("details.invoiceViewTitle", { invoice: invoiceLabel })}
+            locale={locale}
+            viewLabel={t("details.viewInvoice")}
+            closeLabel={ui("close")}
+            loadingLabel={t("details.invoiceLoading")}
+            errorLabel={t("details.invoiceLoadFailed")}
+          />
+        );
+      })
+    : [
+        <div key="no-invoices-mobile" className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
+          {t("details.noInvoices")}
+        </div>,
+      ];
+  const invoicesBlock = (
+    <>
+      <div className="grid gap-2 md:hidden">{invoiceMobileRows}</div>
+      <div className="hidden md:block">
+        <DataTable
+          columns={invoiceColumns}
+          rows={invoiceRows}
+        />
+      </div>
+    </>
+  );
 
   const apartmentReadings = data.meterReadings.filter(
     (r) => r.apartment === resolvedApartmentId || r.apartment === apartmentLabel,
   );
+  const emptyMeterCell = t("common.notSpecified");
+  const sortedApartmentReadings = [...apartmentReadings].sort((left, right) => {
+    const leftKey = meterReadingMonthKey(left);
+    const rightKey = meterReadingMonthKey(right);
+    if (leftKey !== rightKey) return leftKey.localeCompare(rightKey);
+    return meterReadingMeterKey(left).localeCompare(meterReadingMeterKey(right));
+  });
+  const previousByReadingId = new Map<string, string>();
+  const latestValueByMeter = new Map<string, string>();
+
+  for (const reading of sortedApartmentReadings) {
+    const meterKey = meterReadingMeterKey(reading);
+    if (meterKey && latestValueByMeter.has(meterKey)) {
+      previousByReadingId.set(reading.id, latestValueByMeter.get(meterKey)!);
+    }
+    if (meterKey) {
+      latestValueByMeter.set(meterKey, reading.value);
+    }
+  }
+
+  const hasPreviousMeterReadings = previousByReadingId.size > 0;
   const meterColumns = [
-    t("details.meterColumns.id"),
+    ...(hasPreviousMeterReadings ? [t("management.dialogs.apartmentInfo.fields.previousValue")] : []),
     t("details.meterColumns.value"),
     t("details.meterColumns.submitted"),
     t("details.meterColumns.consumption"),
   ];
-  const emptyMeterCell = t("common.notSpecified");
   const readingGroupsMap = new Map<string, { key: string; label: string; rows: string[][]; count: number }>();
 
   for (const reading of apartmentReadings) {
@@ -511,7 +595,12 @@ export default async function ApartmentDetailsPage({
       count: 0,
     };
 
-    group.rows.push([reading.id, reading.value, reading.submittedAt, reading.trend]);
+    group.rows.push([
+      ...(hasPreviousMeterReadings ? [previousByReadingId.get(reading.id) ?? ""] : []),
+      reading.value,
+      reading.submittedAt,
+      reading.trend,
+    ]);
     group.count += 1;
     readingGroupsMap.set(key, group);
   }
@@ -526,7 +615,7 @@ export default async function ApartmentDetailsPage({
     : [{
         key: "empty",
         label: emptyMeterCell,
-        rows: [[emptyMeterCell, emptyMeterCell, emptyMeterCell, emptyMeterCell]],
+        rows: [meterColumns.map(() => emptyMeterCell)],
         count: 0,
       }];
 
@@ -571,15 +660,11 @@ export default async function ApartmentDetailsPage({
           </SectionCard>
 
           <SectionCard title={t("common.managementCompany")}>
-            <div className="space-y-3 text-sm text-slate-700">
-              <p className="text-xl font-semibold text-slate-900">{companyName}</p>
-              <p>{t("common.email")}: {companyEmail}</p>
-              <p>{t("common.phone")}: {companyPhone}</p>
-            </div>
+            {renderCompanyContacts(false)}
           </SectionCard>
         </div>
 
-        <SectionCard title="УПРАВЛЕНИЕ ЖИЛЬЦАМИ"> 
+        <SectionCard title={t("details.tenantManagement")}> 
           <TenantAccessManager 
             apartmentId={resolvedApartmentId} 
             apartmentLabel={apartmentLabel}
@@ -599,19 +684,24 @@ export default async function ApartmentDetailsPage({
               t("details.columns.email"),
               t("details.columns.fromDate"),
               t("details.columns.toDate"),
-              t("details.columns.type"),
               t("details.columns.status"),
             ]}
             tenantsTitle={t("details.tenants")}
           />
         </SectionCard>
 
+        <SectionCard title={documentsT("apartmentBlock.sectionTitle")}>
+          <ApartmentDocumentsBlock
+            apartmentId={resolvedApartmentId}
+            apartmentLabel={apartmentLabel}
+            role={data.role}
+            userId={data.userId}
+          />
+        </SectionCard>
+
         <div className="grid gap-5 xl:grid-cols-2">
           <SectionCard title={t("details.invoices")}>
-            <DataTable
-              columns={invoiceColumns}
-              rows={invoiceRows}
-            />
+            {invoicesBlock}
           </SectionCard>
 
           <SectionCard
@@ -627,11 +717,11 @@ export default async function ApartmentDetailsPage({
               </Link>
             }
           >
-            <div className="space-y-3">
+            <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
               {readingAccordionItems.map((group, index) => (
                 <details
                   key={group.key}
-                  open={index === 0}
+                  name={`meter-readings-${resolvedApartmentId}`}
                   className="group overflow-hidden rounded-2xl border border-slate-200 bg-white"
                 >
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
@@ -694,19 +784,16 @@ export default async function ApartmentDetailsPage({
           </SectionCard>
 
           <SectionCard title={t("common.managementCompany")}>
-            <div className="space-y-3 text-sm text-slate-700">
-              <p className="text-xl font-semibold text-slate-900">{companyName}</p>
-              <p>{t("common.email")}: <a href={`mailto:${companyEmail}`} className="text-blue-600 hover:underline">{companyEmail}</a></p>
-              <p>{t("common.phone")}: <a href={`tel:${companyPhone}`} className="text-blue-600 hover:underline">{companyPhone}</a></p>
-            </div>
+            {renderCompanyContacts(true)}
           </SectionCard>
         </div>
 
-        <SectionCard title={t("details.tenants")}> 
+        <SectionCard> 
           <div className="space-y-4">
             <TenantAccessManager 
               apartmentId={resolvedApartmentId} 
               apartmentLabel={apartmentLabel}
+              canManageOwner={false}
               tenants={tenants}
               tenantRows={tenantRows}
               tenantColumns={[
@@ -715,7 +802,6 @@ export default async function ApartmentDetailsPage({
                 t("details.columns.email"),
                 t("details.columns.fromDate"),
                 t("details.columns.toDate"),
-                t("details.columns.type"),
                 t("details.columns.status"),
               ]}
               tenantsTitle={t("details.tenants")}
@@ -724,11 +810,17 @@ export default async function ApartmentDetailsPage({
           </div>
         </SectionCard>
 
-        <SectionCard title={t("details.invoices")}>
-          <DataTable
-            columns={invoiceColumns}
-            rows={invoiceRows}
+        <SectionCard title={documentsT("apartmentBlock.sectionTitle")}>
+          <ApartmentDocumentsBlock
+            apartmentId={resolvedApartmentId}
+            apartmentLabel={apartmentLabel}
+            role={data.role}
+            userId={data.userId}
           />
+        </SectionCard>
+
+        <SectionCard title={t("details.invoices")}>
+          {invoicesBlock}
         </SectionCard>
       </div>
     );
@@ -759,24 +851,24 @@ export default async function ApartmentDetailsPage({
                 <p className="text-lg font-medium text-slate-900">{area}</p>
               </div>
             </div>
-            {fullInfoDialog}
           </div>
         </SectionCard>
 
         <SectionCard title={t("common.managementCompany")}>
-          <div className="space-y-3 text-sm text-slate-700">
-            <p className="text-xl font-semibold text-slate-900">{companyName}</p>
-            <p>{t("common.email")}: <a href={`mailto:${companyEmail}`} className="text-blue-600 hover:underline">{companyEmail}</a></p>
-            <p>{t("common.phone")}: <a href={`tel:${companyPhone}`} className="text-blue-600 hover:underline">{companyPhone}</a></p>
-            <p className="pt-2 text-xs text-slate-400">{t("details.companyQuestions")}</p>
-          </div>
+          {renderCompanyContacts(true, true)}
         </SectionCard>
       </div>
 
       <SectionCard title={t("details.invoices")}>
-        <DataTable
-          columns={invoiceColumns}
-          rows={invoiceRows}
+        {invoicesBlock}
+      </SectionCard>
+
+      <SectionCard title={documentsT("apartmentBlock.sectionTitle")}>
+        <ApartmentDocumentsBlock
+          apartmentId={resolvedApartmentId}
+          apartmentLabel={apartmentLabel}
+          role={data.role}
+          userId={data.userId}
         />
       </SectionCard>
     </div>

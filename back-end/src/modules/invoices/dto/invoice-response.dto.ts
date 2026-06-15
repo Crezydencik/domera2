@@ -38,6 +38,9 @@ export class InvoiceItemDto {
   invoiceDate?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
+  fileName?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
   currency?: string | null;
 
   @ApiPropertyOptional({ nullable: true })

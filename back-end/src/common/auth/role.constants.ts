@@ -1,7 +1,7 @@
-export const USER_ROLES = ['ManagementCompany', 'Accountant', 'Resident', 'Landlord'] as const;
+export const USER_ROLES = ['PlatformAdmin', 'ManagementCompany', 'Accountant', 'Resident', 'Landlord'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
-export const ACCOUNT_TYPES = ['ManagementCompany', 'Resident', 'Landlord'] as const;
+export const ACCOUNT_TYPES = ['PlatformAdmin', 'ManagementCompany', 'Resident', 'Landlord'] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
 export const STAFF_ROLES = ['ManagementCompany', 'Accountant'] as const satisfies readonly UserRole[];
@@ -14,6 +14,12 @@ export const ROLE_CATALOG: Array<{
   label: string;
   isAssignableOnRegistration: boolean;
 }> = [
+  {
+    role: 'PlatformAdmin',
+    accountType: 'PlatformAdmin',
+    label: 'Platform administrator',
+    isAssignableOnRegistration: false,
+  },
   {
     role: 'ManagementCompany',
     accountType: 'ManagementCompany',
@@ -41,6 +47,12 @@ export const ROLE_CATALOG: Array<{
 ];
 
 const ROLE_ALIASES: Record<string, UserRole> = {
+  platformadmin: 'PlatformAdmin',
+  'platform-admin': 'PlatformAdmin',
+  platform_admin: 'PlatformAdmin',
+  superadmin: 'PlatformAdmin',
+  'super-admin': 'PlatformAdmin',
+  admin: 'PlatformAdmin',
   managementcompany: 'ManagementCompany',
   'management-company': 'ManagementCompany',
   management_company: 'ManagementCompany',
@@ -55,6 +67,12 @@ const ROLE_ALIASES: Record<string, UserRole> = {
 };
 
 const ACCOUNT_TYPE_ALIASES: Record<string, AccountType> = {
+  platformadmin: 'PlatformAdmin',
+  'platform-admin': 'PlatformAdmin',
+  platform_admin: 'PlatformAdmin',
+  superadmin: 'PlatformAdmin',
+  'super-admin': 'PlatformAdmin',
+  admin: 'PlatformAdmin',
   managementcompany: 'ManagementCompany',
   'management-company': 'ManagementCompany',
   management_company: 'ManagementCompany',
@@ -113,6 +131,10 @@ export function resolveAccountType(input: {
   if (!normalizedRole) return undefined;
   if (normalizedRole === 'Accountant') return 'ManagementCompany';
   return normalizedRole;
+}
+
+export function isPlatformAdminRole(role: unknown): boolean {
+  return normalizeUserRole(role) === 'PlatformAdmin';
 }
 
 export function isStaffRole(role: unknown): boolean {

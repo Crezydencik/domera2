@@ -8,7 +8,7 @@ export declare class BuildingsController {
         allowed: boolean;
         requiresSubscription: boolean;
         requiresCode: boolean;
-        message: null;
+        message: string | null;
     }>;
     list(request: Request, user: RequestUser, companyId: string): Promise<{
         items: {

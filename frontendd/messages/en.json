@@ -51,6 +51,7 @@
       "currentWorkspace": "Current workspace: {role}",
       "pageTitles": {
         "dashboard": "Dashboard",
+        "platformUsers": "Platform users",
         "buildings": "Buildings",
         "apartments": "Apartments",
         "residents": "Residents",
@@ -62,6 +63,7 @@
         "settings": "Settings"
       },
       "roles": {
+        "platformAdmin": "Platform administrator",
         "managementCompany": "Management company",
         "resident": "Resident",
         "landlord": "Landlord"
@@ -69,6 +71,7 @@
       "notifications": {
         "title": "Notifications",
         "openAria": "Open notifications",
+        "dismissAria": "Dismiss notification",
         "refresh": "Refresh",
         "loading": "Loading notifications...",
         "empty": "No notifications yet.",
@@ -94,7 +97,15 @@
       "profile": {
         "openAria": "Open profile menu",
         "title": "Profile",
-        "settings": "Settings"
+        "settings": "Settings",
+        "propertyRoles": {
+          "owner": "Owner",
+          "tenant": "Tenant"
+        },
+        "viewProfile": "View profile",
+        "accountSettings": "Account Settings",
+        "signOut": "Log out",
+        "signingOut": "Logging out..."
       }
     },
     "brand": "Domera",
@@ -107,6 +118,141 @@
     "admin": "Admin",
     "management": "Management",
     "resident": "Resident"
+  },
+  "documents": {
+    "tabs": {
+      "all": "All documents",
+      "apartments": "Apartments",
+      "shared": "Shared access",
+      "internalArchive": "Company archive",
+      "management": "From company",
+      "openAccess": "Open access",
+      "personal": "Archive"
+    },
+    "scopes": {
+      "buildingResidents": {
+        "label": "Shared with company",
+        "description": "Visible to residents of the selected building and the management company."
+      },
+      "apartmentResidents": {
+        "label": "Specific apartment",
+        "description": "Visible to residents of the selected apartment and the management company."
+      },
+      "apartmentPrivate": {
+        "label": "Owner and tenant",
+        "description": "Only for the owner and tenant."
+      },
+      "privateApartment": {
+        "label": "Private apartment document",
+        "description": "Visible only to the record owner. The management company will not see this file."
+      },
+      "managementArchive": {
+        "label": "Management company archive",
+        "shareLabel": "Share with company",
+        "description": "Visible to management company staff, without publishing to residents.",
+        "ownerShareDescription": "Visible to the management company and the document owner."
+      }
+    },
+    "alert":{
+        "loadError":"Failed to load apartment documents.",
+        "uploadSucces":" file attached to the apartment."
+      },
+    "apartmentBlock": {
+      "sectionTitle": "Apartment documents",
+      "blockTitle": "Documents for this apartment",
+      "attachTitle": "Attach to apartment",
+      "apartmentResidentsScope": "Residents of this apartment and management company",
+      "privateScope": "Only me, hidden from management company",
+      "selectFile": "Choose file",
+      "attachDocument": "Attach document",
+      "attaching": "Attaching...",
+      "loading": "Loading apartment documents...",
+      "privateDocument": "Private document",
+      "apartmentDocument": "Apartment document",
+      "emptyTitle": "No documents attached to this apartment",
+      "emptyDescription": "Add a file and it will appear in this apartment.",
+      "deleteTitle": "Delete document?",
+      "deleteDescription": "Document \"{title}\" will be deleted.",
+      "uploadSuccess": "Document attached to the apartment.",
+      "uploadFailed": "Could not attach the document to the apartment.",
+      "deleteSuccess": "Document deleted.",
+      "deleteFailed": "Could not delete the document."
+    },
+    "archive": {
+      "title": "Document archive",
+      "description": "Files are shown according to your role and selected access."
+    },
+    "search": {
+      "placeholder": "Search documents"
+    },
+    "table": {
+      "document": "Document",
+      "access": "Access",
+      "object": "Object",
+      "date": "Date",
+      "actions": "Actions"
+    },
+    "actions": {
+      "addDocument": "Add document",
+      "configureAccess": "Configure access",
+      "download": "Download",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saving": "Saving...",
+      "saveDocument": "Save document"
+    },
+    "deleteModal": {
+      "title": "Delete document?",
+      "description": "Document \"{title}\" will be deleted."
+    },
+    "create": {
+      "title": "Add document"
+    },
+    "accessModal": {
+      "title": "Configure access"
+    },
+    "fields": {
+      "title": "Title",
+      "titlePlaceholder": "For example: rental agreement",
+      "access": "Access",
+      "building": "Building",
+      "apartment": "Apartment",
+      "documentApartment": "Apartment for document",
+      "selectApartment": "Select apartment",
+      "chooseFile": "Choose file",
+      "fileTypes": "PDF, DOCX, JPG or PNG"
+    },
+    "fallbacks": {
+      "apartment": "Apartment",
+      "apartmentShort": "Apt.",
+      "noApartments": "No apartments",
+      "unknownSize": "size not specified",
+      "notSpecified": "Not specified"
+    },
+    "aria": {
+      "selectBuilding": "Select building",
+      "selectApartment": "Select apartment"
+    },
+    "loading": "Loading documents...",
+    "empty": {
+      "title": "No documents yet",
+      "description": "Add the first file and choose who can access it."
+    },
+    "toast": {
+      "saved": "Document saved.",
+      "deleted": "Document deleted.",
+      "accessUpdated": "Document access updated."
+    },
+    "errors": {
+      "loadFailed": "Failed to load documents.",
+      "fileRequired": "Choose a file.",
+      "buildingRequired": "Select a building for access.",
+      "apartmentRequired": "Select an apartment for the document.",
+      "saveFailed": "Could not save the file.",
+      "deleteFailed": "Could not delete the document.",
+      "accessUpdateFailed": "Could not change document access."
+    }
   },
   "dashboard": {
     "statBuildings": "Buildings",
@@ -128,6 +274,17 @@
     "documentCenter": "Document center",
     "documentCenterDesc": "Frequently used files and reports",
     "updated": "Updated {date}",
+    "managementCompany": {
+      "managedObjects": "Managed objects",
+      "buildings": "Buildings",
+      "apartments": "Apartments",
+      "totalObjects": "Total buildings and apartments",
+      "meterReadings": "Meter readings",
+      "submittedThisMonth": "Apartments submitted this month: {coverage}%",
+      "month": "Month: {month}",
+      "submissionPeriod": "Submission period: {period}",
+      "openReadings": "Open readings"
+    },
     "landlord": {
       "viewLabel": "Landlord view",
       "portfolioTitle": "Portfolio overview",
@@ -281,7 +438,45 @@
     "managementCompanyTitle": "Management Company",
     "managementCompanyDescription": "Meter readings from all properties",
     "ownerLandlordTitle": "Owner/Landlord",
-    "ownerLandlordDescription": "Your meter readings"
+    "ownerLandlordDescription": "Your meter readings",
+    "resident": {
+      "meterLabels": {
+        "coldWater": "Cold water",
+        "hotWater": "Hot water"
+      },
+      "closedDefault": "The reading submission period is currently closed.",
+      "closedWithDates": "The reading submission period is closed. Available from {start} to {end}.",
+      "loadFailed": "Failed to load readings",
+      "enterAtLeastOne": "Enter at least one reading",
+      "submissionClosed": "The reading submission period is currently closed",
+      "alreadySubmitted": "Readings for this month have already been submitted",
+      "alreadySubmittedWithPeriod": "Readings for this month have already been submitted.",
+      "mustBeNumber": "The reading must be a number",
+      "belowPrevious": "{meter}: reading cannot be lower than the previous value",
+      "submitted": "Readings submitted",
+      "submitFailed": "Failed to submit readings",
+      "submitTitle": "Submit readings",
+      "submitDescription": "Submit current readings for your meters",
+      "loading": "Loading...",
+      "noApartments": "No apartments are linked to you yet.",
+      "historyTitle": "Reading history",
+      "readingsCount": "{count} readings",
+      "date": "Date",
+      "apartment": "Apartment",
+      "apartmentOption": "№ {apartment}",
+      "apartmentNumber": "Apartment № {apartment}",
+      "meter": "Meter",
+      "previousShort": "Prev.",
+      "currentShort": "Current",
+      "consumption": "Consumption",
+      "emptyHistory": "No reading history yet.",
+      "previousReading": "Previous reading",
+      "currentReading": "Current reading",
+      "serialPrefix": "№",
+      "submitting": "Submitting...",
+      "submit": "Submit readings",
+      "noMeters": "Meters have not been added for your apartments yet."
+    }
   },
   "apartments": {
     "common": {
@@ -414,12 +609,16 @@
           "export": "Export",
           "import": "Import",
           "importLoading": "Importing...",
+          "add": "Add",
           "addResident": "Add resident",
           "addApartment": "Add apartment",
           "deleteAll": "Delete all apartments",
           "invitations": "Invitation list"
         },
         "dialogs": {
+          "add": {
+            "title": "Add"
+          },
           "import": {
             "title": "Import apartments",
             "description": "Upload an apartment file for the selected building. Excel, JSON and XML are supported.",
@@ -483,6 +682,17 @@
               "xml": "<apartments>\n  <apartment>\n    <number>16</number>\n    <cadastralNumber>1009086439</cadastralNumber>\n    <address>Silciema iela 13 k-3-16</address>\n    <cadastralPart>3063/261802</cadastralPart>\n    <commonPropertyShare>46023</commonPropertyShare>\n    <owner>Mārtiņš Mihailovs</owner>\n    <ownerEmail>martins@example.com</ownerEmail>\n    <floor>4</floor>\n    <apartmentType>46026</apartmentType>\n    <heatingArea>30.7</heatingArea>\n    <managementArea>30.7</managementArea>\n    <declaredResidents>1</declaredResidents>\n    <waterReadings>\n      <coldmeterwater>\n        <serialNumber>2526524</serialNumber>\n        <history>\n          <reading><month>1</month><year>2026</year><currentValue>430.432</currentValue></reading>\n          <reading><month>2</month><year>2026</year><currentValue>432.99</currentValue></reading>\n          <reading><month>3</month><year>2026</year><currentValue>435.501</currentValue></reading>\n        </history>\n      </coldmeterwater>\n      <hotmeterwater>\n        <serialNumber>1720368800</serialNumber>\n        <history>\n          <reading><month>1</month><year>2026</year><currentValue>276.86</currentValue></reading>\n          <reading><month>2</month><year>2026</year><currentValue>278.6</currentValue></reading>\n          <reading><month>3</month><year>2026</year><currentValue>280.285</currentValue></reading>\n        </history>\n      </hotmeterwater>\n    </waterReadings>\n  </apartment>\n</apartments>"
             }
           },
+          "importResult": {
+            "title": "Import result",
+            "description": "Review the imported apartments and press OK",
+            "imported": "Imported: {count}",
+            "duplicates": "Skipped duplicates: {count}",
+            "errors": "Errors: {count}",
+            "importedApartments": "Imported apartments",
+            "emptyImported": "No apartments were imported.",
+            "duplicateRows": "Skipped duplicates",
+            "errorRows": "Import errors"
+          },
           "export": {
             "title": "Export data",
             "description": "Choose the file format and which data to export.",
@@ -535,6 +745,18 @@
               "coldWaterMeters": "Cold water meters in the apartment"
             }
           },
+          "createResident": {
+            "submit": "Create resident",
+            "creating": "Creating...",
+            "fields": {
+              "apartment": "Apartment",
+              "apartmentPlaceholder": "Choose apartment",
+              "firstName": "First name",
+              "lastName": "Last name",
+              "email": "Email",
+              "phone": "Phone"
+            }
+          },
           "deleteAll": {
             "title": "Delete apartments",
             "description": "Delete all apartments in the current list?",
@@ -544,31 +766,60 @@
           },
           "invitations": {
             "title": "Invitation list",
+            "description": "Send invitations to selected email addresses from the current apartment list.",
             "loading": "Loading invitations...",
-            "empty": "No invitations yet.",
-            "apartment": "Apartment: {apartment}"
+            "empty": "No available invitation email addresses yet.",
+            "apartment": "Apartment: {apartment}",
+            "revoke": "Cancel invitation",
+            "revoking": "Cancelling...",
+            "sendSelected": "Send invitation",
+            "sending": "Sending...",
+            "selectAllReady": "Select all ready",
+            "selected": "Selected: {count}",
+            "columns": {
+              "select": "Select",
+              "apartment": "Apartment",
+              "name": "Name",
+              "email": "Email",
+              "status": "Status"
+            },
+            "statuses": {
+              "ready": "Ready to send",
+              "pending": "Invitation already sent",
+              "occupied": "Apartment occupied"
+            }
           }
         },
         "feedback": {
           "exportSuccess": "Data export completed.",
           "importSuccess": "Apartment import completed.",
           "apartmentCreated": "Apartment {apartment} was created.",
+          "residentCreated": "Resident {resident} was created.",
           "nothingToExport": "There is no data to export.",
           "noVacantApartmentsToDelete": "There are no vacant apartments to delete.",
-          "bulkDeleteSuccess": "Deleted apartments: {deleted}. Skipped: {skipped}."
+          "bulkDeleteSuccess": "Deleted apartments: {deleted}. Skipped: {skipped}.",
+          "noInvitationsToSend": "There are no ready invitations to send.",
+          "bulkInvitationsResult": "Invitations sent: {sent}. Failed: {failed}.",
+          "invitationRevoked": "Invitation was cancelled."
         },
         "errors": {
           "companyMissing": "The companyId for this action is missing.",
           "chooseBuildingFirst": "Choose a building first for this action.",
           "chooseBuildingForDelete": "Choose a specific building before bulk deletion.",
           "apartmentNumberRequired": "Enter the apartment number.",
+          "residentApartmentRequired": "Choose an apartment for the resident.",
+          "residentNameRequired": "Enter the resident name.",
+          "residentEmailInvalid": "Enter a valid resident email.",
           "hotWaterMetersInvalid": "Hot water meter count must be 0 or greater.",
           "coldWaterMetersInvalid": "Cold water meter count must be 0 or greater.",
           "exportFailed": "Failed to export data.",
           "importFailed": "Failed to import apartments.",
           "createFailed": "Failed to create apartment.",
+          "residentCreateFailed": "Failed to create resident.",
           "bulkDeleteFailed": "Failed to delete apartments.",
-          "invitationsLoadFailed": "Failed to load invitations."
+          "invitationsLoadFailed": "Failed to load invitations.",
+          "bulkInvitationsFailed": "Failed to send invitations.",
+          "invitationRevokeFailed": "Failed to cancel invitation."
         }
       },
       "columns": {
@@ -598,19 +849,38 @@
         "ownerFirstName": "Owner's first name",
         "ownerLastName": "Owner's last name",
         "ownerContractNumber": "Contract number",
-        "ownerContractFile": "Contract"
+        "ownerContractFile": "Contract",
+        "documentsAccess": "Access to documents"
       },
       "placeholders": {
         "firstName": "Enter first name",
         "lastName": "Enter last name",
         "phone": "Enter phone",
-        "email": "tenant@example.com"
+        "email": "tenant@example.com",
+        "ownerEmail": "owner@example.com",
+        "contractNumber": "12345"
       },
       "actions": {
         "addTenant": "Add tenant",
         "adding": "Adding...",
+        "invite": "Invite",
+        "sending": "Sending...",
+        "attachContract": "Attach contract",
+        "replaceContract": "Attach / replace contract",
+        "editTenant": "Edit tenant",
+        "editOwner": "Edit owner",
+        "save": "Save",
+        "saving": "Saving...",
+        "cancel": "Cancel",
         "delete": "Delete",
         "resend": "Resend"
+      },
+      "ownerTable": {
+        "title": "Current owner",
+        "status": "Status",
+        "invitedAt": "Invitation date",
+        "actions": "Actions",
+        "deleted": "Deleted"
       },
       "owner": {
         "activated": "Activated",
@@ -676,6 +946,10 @@
       "deletingInvoice": "Deleting...",
       "deleteInvoiceSuccess": "Invoice deleted.",
       "deleteInvoiceFailed": "Could not delete the invoice.",
+      "resendInvoice": "Resend invoice email",
+      "resendingInvoice": "Sending...",
+      "resendInvoiceSuccess": "Invoice email sent.",
+      "resendInvoiceFailed": "Could not send the invoice email.",
       "meterReadings": "Meter readings",
       "companyQuestions": "If you have any questions, contact the management company.",
       "columns": {
@@ -872,6 +1146,8 @@
     "invitationBuilding": "Building",
     "invitationFrom": "From manager",
     "invitationExpired": "This invitation has expired or is invalid",
+    "invitationExistingAccount": "This invitation email already has an account. Sign in to accept the invitation.",
+    "invitationSignInToAccept": "Sign in and accept invitation",
     "rightPanelBadge": "DOMERA PLATFORM",
     "rightPanelTitle": "Manage apartments, residents and payments in one place.",
     "rightPanelDesc": "Sign in to your workspace, track key metrics and maintain clear communication with residents.",
@@ -1026,13 +1302,32 @@
         "firstNamePlaceholder": "First name",
         "lastNamePlaceholder": "Last name",
         "emailPlaceholder": "staff@example.com",
+        "phonePlaceholder": "+371 20000000",
+        "positionLabel": "Position",
+        "positionPlaceholder": "Property manager",
         "roleLabel": "Role",
+        "createAccount": "Create account and send access invitation",
+        "showContactToResidents": "Contact info is available to residents",
+        "contactOnly": "No account",
+        "publicContact": "Visible to residents",
         "add": "Add",
         "adding": "Adding...",
         "remove": "Remove",
         "removing": "Removing...",
         "removeConfirm": "Remove {name} from the company?",
         "empty": "No members have been added yet."
+      },
+      "residentContacts": {
+        "title": "Contacts for residents",
+        "description": "Add management company contact information that residents can see.",
+        "nameLabel": "Name and surname",
+        "namePlaceholder": "Name and surname",
+        "commentLabel": "Position",
+        "commentPlaceholder": "Position",
+        "add": "Add contact",
+        "edit": "Edit contact",
+        "save": "Save contact",
+        "empty": "No resident contacts have been added yet."
       }
     },
     "apiKeys": {
@@ -1192,6 +1487,7 @@
       "companySaveFailed": "Failed to save company details.",
       "memberEmailRequired": "Enter member email.",
       "memberFieldsRequired": "Enter first name, last name and email.",
+      "contactFieldsRequired": "Enter contact name and email or phone.",
       "memberAddFailed": "Failed to add member.",
       "memberRemoveFailed": "Failed to remove member.",
       "notificationSettingsSaveFailed": "Failed to save notification settings."

@@ -9,6 +9,7 @@ import {
 import { Request } from 'express';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RequestUser } from '../../common/auth/request-user.type';
+import { PASSWORD_COMPLEXITY_MESSAGE, PASSWORD_COMPLEXITY_REGEX } from '../../common/auth/password-policy';
 import { isPropertyMemberRole, isStaffRole, resolveAccountType } from '../../common/auth/role.constants';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
@@ -161,6 +162,8 @@ export class InvitationsService {
 
     const apartmentId = typeof payload.apartmentId === 'string' ? payload.apartmentId.trim() : '';
     const email = typeof payload.email === 'string' ? normalizeEmail(payload.email) : '';
+    const firstName = typeof payload.firstName === 'string' ? payload.firstName.trim() : '';
+    const lastName = typeof payload.lastName === 'string' ? payload.lastName.trim() : '';
     if (!apartmentId || !email) {
       throw new BadRequestException('apartmentId and email are required');
     }
@@ -195,6 +198,8 @@ export class InvitationsService {
       email,
       status: 'pending',
       tokenHash,
+      ...(firstName ? { firstName } : {}),
+      ...(lastName ? { lastName } : {}),
       createdAt: new Date(),
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       invitedByUid: user.uid,
@@ -288,6 +293,8 @@ export class InvitationsService {
         inviteType: typeof invitation.inviteType === 'string' ? invitation.inviteType : 'resident',
         role: typeof invitation.role === 'string' ? invitation.role : 'Resident',
         accountType: typeof invitation.accountType === 'string' ? invitation.accountType : 'Resident',
+        firstName: typeof invitation.firstName === 'string' ? invitation.firstName : undefined,
+        lastName: typeof invitation.lastName === 'string' ? invitation.lastName : undefined,
         apartmentLabel: display.apartmentLabel,
         buildingLabel: display.buildingLabel,
         managerLabel: display.managerLabel,
@@ -351,6 +358,9 @@ export class InvitationsService {
       const companyId = typeof invitation.companyId === 'string' ? invitation.companyId : '';
       const firstName = typeof invitation.firstName === 'string' ? invitation.firstName : undefined;
       const lastName = typeof invitation.lastName === 'string' ? invitation.lastName : undefined;
+      const phone = typeof invitation.phone === 'string' && invitation.phone.trim() ? invitation.phone.trim() : undefined;
+      const position = typeof invitation.position === 'string' && invitation.position.trim() ? invitation.position.trim() : undefined;
+      const showContactToResidents = invitation.showContactToResidents === true;
       const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || undefined;
 
       await db.collection('users').doc(uid).set(
@@ -361,6 +371,9 @@ export class InvitationsService {
           ...(firstName ? { firstName } : {}),
           ...(lastName ? { lastName } : {}),
           ...(fullName ? { fullName, name: fullName, displayName: fullName } : {}),
+          ...(phone ? { phone } : {}),
+          ...(position ? { position, jobTitle: position } : {}),
+          ...(isCompanyMemberInvitation ? { showContactToResidents } : {}),
           role: invitationRole,
           accountType: invitationAccountType,
           ...(apartmentId ? { apartmentId, apartmentIds: [apartmentId] } : {}),
@@ -404,7 +417,28 @@ export class InvitationsService {
           { merge: true },
         );
       } else {
-        await db.collection('apartments').doc(apartmentId).set({ residentId: uid }, { merge: true });
+        const apartmentRef = db.collection('apartments').doc(apartmentId);
+        const apartmentSnap = await apartmentRef.get();
+        const apartment = apartmentSnap.exists ? (apartmentSnap.data() as Record<string, unknown>) : {};
+        const tenants = Array.isArray(apartment.tenants)
+          ? (apartment.tenants as Record<string, unknown>[])
+          : [];
+        const nextTenants = tenants.map((tenant) => {
+          const tenantEmail = typeof tenant.email === 'string' ? tenant.email.trim().toLowerCase() : '';
+          const tenantUserId = typeof tenant.userId === 'string' ? tenant.userId.trim() : '';
+          const matches = tenantUserId === uid || Boolean(tenantEmail && tenantEmail === invitationEmail);
+
+          if (!matches) return tenant;
+
+          return {
+            ...tenant,
+            userId: uid,
+            status: 'Active',
+            acceptedAt: new Date(),
+          };
+        });
+
+        await apartmentRef.set({ residentId: uid, tenants: nextTenants }, { merge: true });
       }
       await db.collection('invitations').doc(docId).set(
         {
@@ -435,8 +469,8 @@ export class InvitationsService {
       return { success: true, mode: 'authenticated' };
     }
 
-    if (!password || password.length < 6) {
-      throw new BadRequestException('Password must be at least 6 characters');
+    if (!PASSWORD_COMPLEXITY_REGEX.test(password)) {
+      throw new BadRequestException(PASSWORD_COMPLEXITY_MESSAGE);
     }
 
     let accountExists = false;

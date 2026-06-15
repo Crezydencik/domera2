@@ -47,6 +47,14 @@ __decorate([
     __metadata("design:type", String)
 ], InvitationSummaryDto.prototype, "accountType", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ required: false }),
+    __metadata("design:type", String)
+], InvitationSummaryDto.prototype, "firstName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ required: false }),
+    __metadata("design:type", String)
+], InvitationSummaryDto.prototype, "lastName", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ example: 'pending' }),
     __metadata("design:type", String)
 ], InvitationSummaryDto.prototype, "status", void 0);

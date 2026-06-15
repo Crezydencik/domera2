@@ -43,6 +43,26 @@ export class MeterReadingsService {
       apartment.ownerActivated === true,
     );
     const isPrimaryResident = typeof apartment.residentId === 'string' && apartment.residentId === user.uid;
+    
+    // Helper function to check if tenant is within lease dates
+    const isTenantActive = (tenant: Record<string, unknown>): boolean => {
+      const fromDate = typeof tenant.fromDate === 'string' ? new Date(tenant.fromDate) : null;
+      const until = typeof tenant.until === 'string' ? new Date(tenant.until) : null;
+      const now = new Date();
+      
+      // Check start date
+      if (fromDate && now < fromDate) {
+        return false; // Lease hasn't started yet
+      }
+      
+      // Check end date
+      if (until && now > until) {
+        return false; // Lease has ended
+      }
+      
+      return true; // Within lease period
+    };
+    
     const isTenantWithSubmit =
       Array.isArray(apartment.tenants) &&
       apartment.tenants.some((tenant) => {
@@ -52,7 +72,7 @@ export class MeterReadingsService {
         const permissions = Array.isArray(t.permissions)
           ? t.permissions.filter((p): p is string => typeof p === 'string')
           : [];
-        return userId === user.uid && permissions.includes('submitMeter');
+        return userId === user.uid && permissions.includes('submitMeter') && isTenantActive(t);
       });
 
     return isOwner || isPrimaryResident || isTenantWithSubmit;
@@ -62,6 +82,7 @@ export class MeterReadingsService {
     apartmentId: string,
     apartment: Record<string, unknown>,
     buildingInfo?: { name?: string; address?: string },
+    user?: RequestUser,
   ) {
     const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
     const entries: Record<string, unknown>[] = [];
@@ -88,16 +109,35 @@ export class MeterReadingsService {
       const group = wr[key] as Record<string, unknown> | undefined;
       if (!group || !Array.isArray(group.history)) continue;
       const serialNumber = typeof group.serialNumber === 'string' ? group.serialNumber : '';
+      let tenantFromDate: Date | null = null;
+      let tenantUntilDate: Date | null = null;
+      if (user) {
+        const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+        const currentTenant = tenants.find((tenant) => {
+          if (!tenant || typeof tenant !== 'object') return false;
+          const t = tenant as Record<string, unknown>;
+          return typeof t.userId === 'string' && t.userId === user.uid;
+        });
+        if (currentTenant) {
+          const t = currentTenant as Record<string, unknown>;
+          if (typeof t.fromDate === 'string') tenantFromDate = new Date(t.fromDate);
+          if (typeof t.until === 'string') tenantUntilDate = new Date(t.until);
+        }
+      }
+
       for (const item of group.history as Record<string, unknown>[]) {
         // Нормализуем submittedAt в ISO 8601 формат
         let submittedAt: string | undefined;
+        let submittedAtDate: Date | null = null;
         if (item.submittedAt) {
           if (item.submittedAt instanceof Date) {
+            submittedAtDate = item.submittedAt;
             submittedAt = item.submittedAt.toISOString();
           } else if (typeof item.submittedAt === 'string') {
             // Если уже строка, пробуем парсить как дату и обратно в ISO
             const parsed = new Date(item.submittedAt);
             if (!Number.isNaN(parsed.getTime())) {
+              submittedAtDate = parsed;
               submittedAt = parsed.toISOString();
             } else {
               submittedAt = item.submittedAt;
@@ -107,13 +147,19 @@ export class MeterReadingsService {
             const ts = item.submittedAt as Record<string, unknown>;
             if (typeof ts._seconds === 'number') {
               const ms = ts._seconds * 1000 + ((typeof ts._nanoseconds === 'number' ? ts._nanoseconds : 0) / 1000000);
-              submittedAt = new Date(ms).toISOString();
+              submittedAtDate = new Date(ms);
+              submittedAt = submittedAtDate.toISOString();
             }
           }
         }
+
+        const historyVisible = !user || !submittedAtDate
+          ? true
+          : !((tenantFromDate && submittedAtDate < tenantFromDate) || (tenantUntilDate && submittedAtDate > tenantUntilDate));
         
         entries.push({ 
           ...item, 
+          historyVisible,
           apartmentId: String(item.apartmentId ?? apartmentId), 
           apartmentNumber,
           buildingId,
@@ -150,7 +196,7 @@ export class MeterReadingsService {
         throw new ForbiddenException('Access denied for company');
       }
 
-      return { items: this.extractApartmentReadings(apartmentId, apartment, await this.loadBuildingInfo(apartment)) };
+      return { items: this.extractApartmentReadings(apartmentId, apartment, await this.loadBuildingInfo(apartment), user) };
     }
 
     if (isPropertyMemberRole(user.role)) {
@@ -175,7 +221,7 @@ export class MeterReadingsService {
     const items = snap.docs.flatMap((doc) => {
       const data = doc.data() as Record<string, unknown>;
       const bId = typeof data.buildingId === 'string' ? data.buildingId : '';
-      return this.extractApartmentReadings(doc.id, data, buildingMap.get(bId));
+      return this.extractApartmentReadings(doc.id, data, buildingMap.get(bId), isPropertyMemberRole(user.role) ? user : undefined);
     });
 
     return { items };
@@ -256,14 +302,20 @@ export class MeterReadingsService {
         ? new Date(year, month, 0, 12, 0, 0)
         : now;
 
+    const previousValue = Number(payload.previousValue ?? 0);
+    const currentValue = Number(payload.currentValue ?? 0);
+    const consumption = Number.isFinite(currentValue) && Number.isFinite(previousValue)
+      ? Number(Math.max(0, currentValue - previousValue).toFixed(3))
+      : 0;
+
     const reading = {
       id: randomUUID(),
       apartmentId,
       meterId,
       submittedAt,
-      previousValue: Number(payload.previousValue ?? 0),
-      currentValue: Number(payload.currentValue ?? 0),
-      consumption: Number(payload.consumption ?? 0),
+      previousValue,
+      currentValue,
+      consumption,
       buildingId: typeof payload.buildingId === 'string' ? payload.buildingId : '',
       month,
       year,

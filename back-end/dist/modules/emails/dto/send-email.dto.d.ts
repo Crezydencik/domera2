@@ -1,8 +1,14 @@
 import { EmailLanguage } from '../email.types';
+export type EmailAttachmentDto = {
+    filename: string;
+    content: string;
+    contentType?: string;
+};
 export declare class SendEmailDto {
     to: string;
     subject: string;
     html: string;
+    attachments?: EmailAttachmentDto[];
 }
 export declare class SendRegistrationCodeEmailDto {
     to: string;
@@ -50,6 +56,7 @@ export declare class SendInvoiceGeneratedEmailDto {
     apartmentNumber?: string;
     buildingName?: string;
     language?: EmailLanguage;
+    attachments?: EmailAttachmentDto[];
 }
 export declare class SendMeterReadingReminderEmailDto {
     to: string;

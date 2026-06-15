@@ -27,6 +27,7 @@ function isSameSnapshot(a: AuthSessionState, b: AuthSessionState) {
     a.isAuthenticated === b.isAuthenticated &&
     a.userId === b.userId &&
     a.email === b.email &&
+    a.name === b.name &&
     a.accountType === b.accountType &&
     a.role === b.role &&
     a.companyId === b.companyId &&

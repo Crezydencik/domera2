@@ -18,6 +18,15 @@ let AuditLogService = AuditLogService_1 = class AuditLogService {
         this.firebaseAdminService = firebaseAdminService;
         this.logger = new common_1.Logger(AuditLogService_1.name);
     }
+    buildLogEntry(event, timestampField) {
+        const { request, ...safeEvent } = event;
+        return {
+            ...safeEvent,
+            ip: request?.ip ?? null,
+            userAgent: request?.headers['user-agent'] ?? null,
+            [timestampField]: new Date(),
+        };
+    }
     generateReadableId(apartmentId, apartmentNumber, companyId) {
         const companyCode = companyId
             ? companyId.substring(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, 'X')
@@ -58,12 +67,7 @@ let AuditLogService = AuditLogService_1 = class AuditLogService {
                     }
                 }
                 const readableDocId = this.generateReadableId(event.apartmentId, apartmentNumber, event.companyId);
-                const logEntry = {
-                    ...event,
-                    ip: event.request?.ip ?? null,
-                    userAgent: event.request?.headers['user-agent'] ?? null,
-                    timestamp: new Date(),
-                };
+                const logEntry = this.buildLogEntry(event, 'timestamp');
                 const docRef = this.firebaseAdminService.firestore
                     .collection('audit_logs')
                     .doc(readableDocId);
@@ -89,12 +93,9 @@ let AuditLogService = AuditLogService_1 = class AuditLogService {
                 }
             }
             else {
-                await this.firebaseAdminService.firestore.collection('audit_logs').add({
-                    ...event,
-                    ip: event.request?.ip ?? null,
-                    userAgent: event.request?.headers['user-agent'] ?? null,
-                    createdAt: new Date(),
-                });
+                await this.firebaseAdminService.firestore
+                    .collection('audit_logs')
+                    .add(this.buildLogEntry(event, 'createdAt'));
             }
         }
         catch (error) {

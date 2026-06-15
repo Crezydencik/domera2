@@ -50,6 +50,8 @@ export declare class InvitationsController {
             inviteType: string;
             role: string;
             accountType: string;
+            firstName: string | undefined;
+            lastName: string | undefined;
             apartmentLabel: string;
             buildingLabel: string;
             managerLabel: string;

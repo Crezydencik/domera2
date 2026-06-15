@@ -189,6 +189,14 @@ let BuildingsService = class BuildingsService {
             companyPhone: this.firstString(data.companyPhone, data.contactPhone, data.phone) || undefined,
         };
     }
+    async getCompanyCreationAccess(companyId) {
+        const snap = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
+        const data = snap.exists ? snap.data() : {};
+        return {
+            allowed: data.canCreateBuildings === true || data.buildingCreationAllowed === true,
+            company: data,
+        };
+    }
     getCompanyStorageFolders(companyId) {
         const base = `companies/${companyId}`;
         return [
@@ -272,11 +280,14 @@ let BuildingsService = class BuildingsService {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         await this.enforceRateLimit(request, 'buildings:creation-access', `${user.uid}:${normalizedCompanyId}`, 40);
+        const access = await this.getCompanyCreationAccess(normalizedCompanyId);
         return {
-            allowed: true,
+            allowed: access.allowed,
             requiresSubscription: false,
-            requiresCode: false,
-            message: null,
+            requiresCode: true,
+            message: access.allowed
+                ? null
+                : 'Building creation is disabled for this company. Ask the platform administrator to grant access.',
         };
     }
     async list(request, user, companyId) {
@@ -329,6 +340,10 @@ let BuildingsService = class BuildingsService {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         await this.enforceRateLimit(request, 'buildings:create', `${user.uid}:${companyId}`, 20);
+        const creationAccess = await this.getCompanyCreationAccess(companyId);
+        if (!creationAccess.allowed) {
+            throw new common_1.ForbiddenException('Building creation is disabled for this company');
+        }
         const db = this.firebaseAdminService.firestore;
         const companySummary = await this.getCompanySummary(companyId);
         const data = {

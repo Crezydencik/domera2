@@ -1,5 +1,20 @@
-import { apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
+import { DomeraApiError, apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
 import { InvoicesWorkspace } from "./_invoices-workspace";
+
+type ListLoadResult = {
+  items: Record<string, unknown>[];
+  error?: string;
+};
+
+async function loadInvoiceList(path: string): Promise<ListLoadResult> {
+  try {
+    const response = await apiFetch<{ items?: Record<string, unknown>[] }>(path);
+    return { items: response.items ?? [] };
+  } catch (error) {
+    const status = error instanceof DomeraApiError ? ` (${error.status})` : "";
+    return { items: [], error: status || " " };
+  }
+}
 
 export default async function InvoicesPage({
   searchParams,
@@ -10,15 +25,15 @@ export default async function InvoicesPage({
   const data = await getRoleDataBundle(params.role);
   const uploadHistory =
     data.role === "managementCompany" && data.companyId
-      ? await apiFetch<{ items?: Record<string, unknown>[] }>(
+      ? await loadInvoiceList(
           `/invoices/uploads?companyId=${encodeURIComponent(data.companyId)}&limit=25`,
-        ).catch(() => ({ items: [] }))
+        )
       : { items: [] };
   const pendingApprovals =
     data.role === "managementCompany" && data.companyId
-      ? await apiFetch<{ items?: Record<string, unknown>[] }>(
+      ? await loadInvoiceList(
           `/invoices/pending-approvals?companyId=${encodeURIComponent(data.companyId)}&limit=100`,
-        ).catch(() => ({ items: [] }))
+        )
       : { items: [] };
 
   return (
@@ -30,6 +45,8 @@ export default async function InvoicesPage({
       apartments={data.apartments}
       uploadHistory={uploadHistory.items ?? []}
       pendingApprovals={pendingApprovals.items ?? []}
+      uploadHistoryError={uploadHistory.error}
+      pendingApprovalsError={pendingApprovals.error}
     />
   );
 }

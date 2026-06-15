@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
 type RateLimitEntry = { count: number; resetAt: number };
+const TRUST_PROXY_HEADERS = process.env.TRUST_PROXY_HEADERS === 'true';
 
 @Injectable()
 export class RateLimitService implements OnModuleDestroy {
@@ -54,15 +55,17 @@ export class RateLimitService implements OnModuleDestroy {
   }
 
   private getClientIp(request: Request): string {
-    const xff = request.headers['x-forwarded-for'];
-    if (typeof xff === 'string' && xff.trim()) {
-      const first = xff.split(',')[0]?.trim();
-      if (first) return first;
-    }
+    if (TRUST_PROXY_HEADERS) {
+      const xff = request.headers['x-forwarded-for'];
+      if (typeof xff === 'string' && xff.trim()) {
+        const first = xff.split(',')[0]?.trim();
+        if (first) return first;
+      }
 
-    const realIp = request.headers['x-real-ip'];
-    if (typeof realIp === 'string' && realIp.trim()) {
-      return realIp.trim();
+      const realIp = request.headers['x-real-ip'];
+      if (typeof realIp === 'string' && realIp.trim()) {
+        return realIp.trim();
+      }
     }
 
     return request.ip || 'unknown-ip';

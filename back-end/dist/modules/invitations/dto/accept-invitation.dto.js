@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AcceptInvitationDto = void 0;
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
+const password_policy_1 = require("../../../common/auth/password-policy");
 class AcceptInvitationDto {
 }
 exports.AcceptInvitationDto = AcceptInvitationDto;
@@ -28,10 +29,11 @@ __decorate([
     __metadata("design:type", String)
 ], AcceptInvitationDto.prototype, "invitationId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'Password for registration flow.', minLength: 6 }),
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Password for registration flow.', minLength: 8 }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(6),
+    (0, class_validator_1.MinLength)(8),
+    (0, class_validator_1.Matches)(password_policy_1.PASSWORD_COMPLEXITY_REGEX, { message: password_policy_1.PASSWORD_COMPLEXITY_MESSAGE }),
     __metadata("design:type", String)
 ], AcceptInvitationDto.prototype, "password", void 0);
 __decorate([

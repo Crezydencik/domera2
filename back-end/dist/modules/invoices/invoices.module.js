@@ -13,11 +13,13 @@ const roles_guard_1 = require("../../common/auth/roles.guard");
 const invoices_controller_1 = require("./invoices.controller");
 const invoices_service_1 = require("./invoices.service");
 const invoice_upload_auth_guard_1 = require("./invoice-upload-auth.guard");
+const email_module_1 = require("../emails/email.module");
 let InvoicesModule = class InvoicesModule {
 };
 exports.InvoicesModule = InvoicesModule;
 exports.InvoicesModule = InvoicesModule = __decorate([
     (0, common_1.Module)({
+        imports: [email_module_1.EmailModule],
         controllers: [invoices_controller_1.InvoicesController],
         providers: [invoices_service_1.InvoicesService, firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard, invoice_upload_auth_guard_1.InvoiceUploadAuthGuard],
     })

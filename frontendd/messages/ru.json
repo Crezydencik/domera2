@@ -69,6 +69,7 @@
       "notifications": {
         "title": "Уведомления",
         "openAria": "Открыть уведомления",
+        "dismissAria": "Скрыть уведомление",
         "refresh": "Обновить",
         "loading": "Загрузка уведомлений...",
         "empty": "Пока нет уведомлений.",
@@ -94,7 +95,15 @@
       "profile": {
         "openAria": "Открыть меню профиля",
         "title": "Профиль",
-        "settings": "Настройки"
+        "settings": "Настройки",
+        "propertyRoles": {
+          "owner": "Собственник",
+          "tenant": "Арендатор"
+        },
+        "viewProfile": "Профиль",
+        "accountSettings": "Настройки аккаунта",
+        "signOut": "Выйти",
+        "signingOut": "Выходим..."
       }
     },
     "brand": "Domera",
@@ -107,6 +116,137 @@
     "admin": "Админ",
     "management": "Управление",
     "resident": "Жилец"
+  },
+  "documents": {
+    "tabs": {
+      "all": "Все документы",
+      "apartments": "Квартиры",
+      "shared": "Общий доступ",
+      "internalArchive": "Архив УК",
+      "management": "От УК",
+      "openAccess": "Открытый доступ",
+      "personal": "Архив"
+    },
+    "scopes": {
+      "buildingResidents": {
+        "label": "Общий доступ с УК",
+        "description": "Виден жильцам выбранного дома и управляющей компании."
+      },
+      "apartmentResidents": {
+        "label": "К конкретной квартире",
+        "description": "Виден жильцам выбранной квартиры и УК."
+      },
+      "apartmentPrivate": {
+        "label": "Собственник и арендатор",
+        "description": "Только для собственника и арендатора."
+      },
+      "privateApartment": {
+        "label": "Личный документ квартиры",
+        "description": "Виден только владельцу записи. УК этот файл не увидит."
+      },
+      "managementArchive": {
+        "label": "Архив управляющей компании",
+        "shareLabel": "Поделиться с УК",
+        "description": "Виден сотрудникам управляющей компании, без публикации жильцам.",
+        "ownerShareDescription": "Виден управляющей компании и владельцу документа."
+      }
+    },
+    "apartmentBlock": {
+      "sectionTitle": "Документы квартиры",
+      "blockTitle": "Документы этой квартиры",
+      "attachTitle": "Прикрепить к квартире",
+      "apartmentResidentsScope": "Жильцам этой квартиры и УК",
+      "privateScope": "Только мне, УК не видит",
+      "selectFile": "Выберите файл",
+      "attachDocument": "Прикрепить документ",
+      "attaching": "Прикрепляем...",
+      "loading": "Загружаем документы квартиры...",
+      "privateDocument": "Личный документ",
+      "apartmentDocument": "Документ квартиры",
+      "emptyTitle": "Документы к квартире не прикреплены",
+      "emptyDescription": "Добавьте файл, и он появится в этой квартире.",
+      "deleteTitle": "Удалить документ?",
+      "deleteDescription": "Документ \"{title}\" будет удалён.",
+      "uploadSuccess": "Документ прикреплён к квартире.",
+      "uploadFailed": "Не удалось прикрепить документ к квартире.",
+      "deleteSuccess": "Документ удалён.",
+      "deleteFailed": "Не удалось удалить документ."
+    },
+    "archive": {
+      "title": "Архив документов",
+      "description": "Файлы показываются с учётом роли и выбранного доступа."
+    },
+    "search": {
+      "placeholder": "Поиск по документам"
+    },
+    "table": {
+      "document": "Документ",
+      "access": "Доступ",
+      "object": "Объект",
+      "date": "Дата",
+      "actions": "Действия"
+    },
+    "actions": {
+      "addDocument": "Добавить документ",
+      "configureAccess": "Настроить доступ",
+      "download": "Скачать",
+      "delete": "Удалить",
+      "cancel": "Отмена",
+      "save": "Сохранить",
+      "saving": "Сохраняем...",
+      "saveDocument": "Сохранить документ"
+    },
+    "deleteModal": {
+      "title": "Удалить документ?",
+      "description": "Документ \"{title}\" будет удалён."
+    },
+    "create": {
+      "title": "Добавить документ"
+    },
+    "accessModal": {
+      "title": "Настроить доступ"
+    },
+    "fields": {
+      "title": "Название",
+      "titlePlaceholder": "Например: договор аренды",
+      "access": "Доступ",
+      "building": "Дом",
+      "apartment": "Квартира",
+      "documentApartment": "Квартира для документа",
+      "selectApartment": "Выберите квартиру",
+      "chooseFile": "Выберите файл",
+      "fileTypes": "PDF, DOCX, JPG или PNG"
+    },
+    "fallbacks": {
+      "apartment": "Квартира",
+      "apartmentShort": "Кв.",
+      "noApartments": "Квартир нет",
+      "unknownSize": "размер не указан",
+      "notSpecified": "Не указан"
+    },
+    "aria": {
+      "selectBuilding": "Выбрать дом",
+      "selectApartment": "Выбрать квартиру"
+    },
+    "loading": "Загружаем документы...",
+    "empty": {
+      "title": "Документов пока нет",
+      "description": "Добавьте первый файл и выберите, кому он будет доступен."
+    },
+    "toast": {
+      "saved": "Документ сохранён.",
+      "deleted": "Документ удалён.",
+      "accessUpdated": "Доступ к документу обновлён."
+    },
+    "errors": {
+      "loadFailed": "Не удалось загрузить документы.",
+      "fileRequired": "Выберите файл.",
+      "buildingRequired": "Выберите дом для доступа.",
+      "apartmentRequired": "Выберите квартиру для документа.",
+      "saveFailed": "Не удалось сохранить файл.",
+      "deleteFailed": "Не удалось удалить документ.",
+      "accessUpdateFailed": "Не удалось изменить доступ документа."
+    }
   },
   "dashboard": {
     "statBuildings": "Здания",
@@ -128,6 +268,17 @@
     "documentCenter": "Центр документов",
     "documentCenterDesc": "Часто используемые файлы и отчёты",
     "updated": "Обновлено {date}",
+    "managementCompany": {
+      "managedObjects": "Объекты в управлении",
+      "buildings": "Дома",
+      "apartments": "Квартиры",
+      "totalObjects": "Всего домов и квартир",
+      "meterReadings": "Показания счётчиков",
+      "submittedThisMonth": "Квартир сдали в этом месяце: {coverage}%",
+      "month": "Месяц: {month}",
+      "submissionPeriod": "Период сдачи: {period}",
+      "openReadings": "Открыть показания"
+    },
     "landlord": {
       "viewLabel": "Вид владельца",
       "portfolioTitle": "Обзор портфеля",
@@ -281,7 +432,45 @@
     "managementCompanyTitle": "УК",
     "managementCompanyDescription": "Показания со всех объектов",
     "ownerLandlordTitle": "Владелец/Арендатор",
-    "ownerLandlordDescription": "Ваши показания"
+    "ownerLandlordDescription": "Ваши показания",
+    "resident": {
+      "meterLabels": {
+        "coldWater": "Холодная вода",
+        "hotWater": "Горячая вода"
+      },
+      "closedDefault": "Период сдачи показаний сейчас закрыт.",
+      "closedWithDates": "Период сдачи показаний закрыт. Доступно с {start} по {end}.",
+      "loadFailed": "Не удалось загрузить показания",
+      "enterAtLeastOne": "Введите хотя бы одно показание",
+      "submissionClosed": "Период сдачи показаний сейчас закрыт",
+      "alreadySubmitted": "Показания за этот месяц уже сданы",
+      "alreadySubmittedWithPeriod": "Показания за этот месяц уже сданы.",
+      "mustBeNumber": "Показание должно быть числом",
+      "belowPrevious": "{meter}: показание не может быть меньше предыдущего",
+      "submitted": "Показания отправлены",
+      "submitFailed": "Не удалось отправить показания",
+      "submitTitle": "Сдача показаний",
+      "submitDescription": "Передайте текущие показания по вашим счётчикам",
+      "loading": "Загрузка...",
+      "noApartments": "К вам пока не привязаны квартиры.",
+      "historyTitle": "История показаний",
+      "readingsCount": "{count} показаний",
+      "date": "Дата",
+      "apartment": "Квартира",
+      "apartmentOption": "№ {apartment}",
+      "apartmentNumber": "Квартира № {apartment}",
+      "meter": "Счётчик",
+      "previousShort": "Пред.",
+      "currentShort": "Текущ.",
+      "consumption": "Расход",
+      "emptyHistory": "Истории показаний пока нет.",
+      "previousReading": "Предыдущее показание",
+      "currentReading": "Текущее показание",
+      "serialPrefix": "№",
+      "submitting": "Отправка...",
+      "submit": "Сдать показания",
+      "noMeters": "Для ваших квартир ещё не добавлены счётчики."
+    }
   },
   "apartments": {
     "common": {
@@ -414,12 +603,16 @@
           "export": "Экспорт",
           "import": "Импорт",
           "importLoading": "Импорт...",
+          "add": "Добавить",
           "addResident": "Добавить жильца",
           "addApartment": "Добавить квартиру",
           "deleteAll": "Удалить все квартиры",
           "invitations": "Список приглашений"
         },
         "dialogs": {
+          "add": {
+            "title": "Добавить"
+          },
           "import": {
             "title": "Импорт квартир",
             "description": "Загрузите файл с квартирами для выбранного дома. Поддерживаются Excel, JSON и XML.",
@@ -483,6 +676,17 @@
               "xml": "<apartments>\n  <apartment>\n    <number>16</number>\n    <cadastralNumber>1009086439</cadastralNumber>\n    <address>Silciema iela 13 k-3-16</address>\n    <cadastralPart>3063/261802</cadastralPart>\n    <commonPropertyShare>46023</commonPropertyShare>\n    <owner>Mārtiņš Mihailovs</owner>\n    <ownerEmail>martins@example.com</ownerEmail>\n    <floor>4</floor>\n    <apartmentType>46026</apartmentType>\n    <heatingArea>30.7</heatingArea>\n    <managementArea>30.7</managementArea>\n    <declaredResidents>1</declaredResidents>\n    <waterReadings>\n      <coldmeterwater>\n        <serialNumber>2526524</serialNumber>\n        <history>\n          <reading><month>1</month><year>2026</year><currentValue>430.432</currentValue></reading>\n          <reading><month>2</month><year>2026</year><currentValue>432.99</currentValue></reading>\n          <reading><month>3</month><year>2026</year><currentValue>435.501</currentValue></reading>\n        </history>\n      </coldmeterwater>\n      <hotmeterwater>\n        <serialNumber>1720368800</serialNumber>\n        <history>\n          <reading><month>1</month><year>2026</year><currentValue>276.86</currentValue></reading>\n          <reading><month>2</month><year>2026</year><currentValue>278.6</currentValue></reading>\n          <reading><month>3</month><year>2026</year><currentValue>280.285</currentValue></reading>\n        </history>\n      </hotmeterwater>\n    </waterReadings>\n  </apartment>\n</apartments>"
             }
           },
+          "importResult": {
+            "title": "Результат импорта",
+            "description": "Проверьте импортированные квартиры и нажмите ОК",
+            "imported": "Импортировано: {count}",
+            "duplicates": "Пропущено дублей: {count}",
+            "errors": "Ошибок: {count}",
+            "importedApartments": "Импортированные квартиры",
+            "emptyImported": "Квартиры не были импортированы.",
+            "duplicateRows": "Пропущенные дубли",
+            "errorRows": "Ошибки импорта"
+          },
           "export": {
             "title": "Экспорт данных",
             "description": "Выберите формат и состав выгружаемых данных.",
@@ -535,6 +739,18 @@
               "coldWaterMeters": "Счётчиков холодной воды в квартире"
             }
           },
+          "createResident": {
+            "submit": "Создать жильца",
+            "creating": "Создание...",
+            "fields": {
+              "apartment": "Квартира",
+              "apartmentPlaceholder": "Выберите квартиру",
+              "firstName": "Имя",
+              "lastName": "Фамилия",
+              "email": "Email",
+              "phone": "Телефон"
+            }
+          },
           "deleteAll": {
             "title": "Удалить квартиры",
             "description": "Удалить все квартиры в текущем списке?",
@@ -544,31 +760,60 @@
           },
           "invitations": {
             "title": "Список приглашений",
+            "description": "Можно отправить приглашения всем выбранным e-mail из текущего списка квартир.",
             "loading": "Загрузка приглашений...",
-            "empty": "Приглашений пока нет.",
-            "apartment": "Квартира: {apartment}"
+            "empty": "Доступных e-mail для приглашений пока нет.",
+            "apartment": "Квартира: {apartment}",
+            "revoke": "Отменить приглашение",
+            "revoking": "Отмена...",
+            "sendSelected": "Отправить приглашение",
+            "sending": "Отправляем...",
+            "selectAllReady": "Выбрать все готовые",
+            "selected": "Выбрано: {count}",
+            "columns": {
+              "select": "Выбрать",
+              "apartment": "Квартира",
+              "name": "Имя",
+              "email": "Email",
+              "status": "Статус"
+            },
+            "statuses": {
+              "ready": "Готово к отправке",
+              "pending": "Приглашение уже отправлено",
+              "occupied": "Квартира занята"
+            }
           }
         },
         "feedback": {
           "exportSuccess": "Экспорт данных завершён.",
           "importSuccess": "Импорт квартир завершён.",
           "apartmentCreated": "Квартира {apartment} создана.",
+          "residentCreated": "Жилец {resident} создан.",
           "nothingToExport": "Нет данных для экспорта.",
           "noVacantApartmentsToDelete": "Нет свободных квартир для удаления.",
-          "bulkDeleteSuccess": "Удалено квартир: {deleted}. Пропущено: {skipped}."
+          "bulkDeleteSuccess": "Удалено квартир: {deleted}. Пропущено: {skipped}.",
+          "noInvitationsToSend": "Нет готовых приглашений для отправки.",
+          "bulkInvitationsResult": "Приглашения отправлены: {sent}. Ошибок: {failed}.",
+          "invitationRevoked": "Приглашение отменено."
         },
         "errors": {
           "companyMissing": "Не найден companyId для этого действия.",
           "chooseBuildingFirst": "Сначала выберите дом для этого действия.",
           "chooseBuildingForDelete": "Сначала выберите конкретный дом перед массовым удалением.",
           "apartmentNumberRequired": "Укажите номер квартиры.",
+          "residentApartmentRequired": "Выберите квартиру для жильца.",
+          "residentNameRequired": "Введите имя жильца.",
+          "residentEmailInvalid": "Введите корректный email жильца.",
           "hotWaterMetersInvalid": "Количество счётчиков горячей воды должно быть 0 или больше.",
           "coldWaterMetersInvalid": "Количество счётчиков холодной воды должно быть 0 или больше.",
           "exportFailed": "Не удалось экспортировать данные.",
           "importFailed": "Не удалось импортировать квартиры.",
           "createFailed": "Не удалось создать квартиру.",
+          "residentCreateFailed": "Не удалось создать жильца.",
           "bulkDeleteFailed": "Не удалось удалить квартиры.",
-          "invitationsLoadFailed": "Не удалось загрузить приглашения."
+          "invitationsLoadFailed": "Не удалось загрузить приглашения.",
+          "bulkInvitationsFailed": "Не удалось отправить приглашения.",
+          "invitationRevokeFailed": "Не удалось отменить приглашение."
         }
       },
       "columns": {
@@ -598,19 +843,38 @@
         "ownerFirstName": "Имя владельца",
         "ownerLastName": "Фамилия владельца",
         "ownerContractNumber": "Номер договора",
-        "ownerContractFile": "Договор"
+        "ownerContractFile": "Договор",
+        "documentsAccess": "Доступ к документам"
       },
       "placeholders": {
         "firstName": "Введите имя",
         "lastName": "Введите фамилию",
         "phone": "Введите телефон",
-        "email": "tenant@example.com"
+        "email": "tenant@example.com",
+        "ownerEmail": "owner@example.com",
+        "contractNumber": "12345"
       },
       "actions": {
         "addTenant": "Добавить арендатора",
         "adding": "Добавление...",
+        "invite": "Пригласить",
+        "sending": "Отправка...",
+        "attachContract": "Прикрепить договор",
+        "replaceContract": "Прикрепить / заменить договор",
+        "editTenant": "Редактировать арендатора",
+        "editOwner": "Редактирование владельца",
+        "save": "Сохранить",
+        "saving": "Сохранение...",
+        "cancel": "Отмена",
         "delete": "Удалить",
         "resend": "Повторно отправить"
+      },
+      "ownerTable": {
+        "title": "Текущий владелец",
+        "status": "Статус",
+        "invitedAt": "Дата приглашения",
+        "actions": "Действия",
+        "deleted": "Удалён"
       },
       "owner": {
         "activated": "Активирован",
@@ -676,6 +940,10 @@
       "deletingInvoice": "\u0423\u0434\u0430\u043B\u044F\u0435\u043C...",
       "deleteInvoiceSuccess": "\u0421\u0447\u0451\u0442 \u0443\u0434\u0430\u043B\u0451\u043D.",
       "deleteInvoiceFailed": "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u0447\u0451\u0442.",
+      "resendInvoice": "\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0441\u0447\u0451\u0442 \u043F\u043E\u0432\u0442\u043E\u0440\u043D\u043E",
+      "resendingInvoice": "\u041E\u0442\u043F\u0440\u0430\u0432\u043A\u0430...",
+      "resendInvoiceSuccess": "\u0421\u0447\u0451\u0442 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D.",
+      "resendInvoiceFailed": "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0441\u0447\u0451\u0442.",
       "meterReadings": "Показания счётчиков",
       "companyQuestions": "Если у вас есть вопросы, свяжитесь с управляющей компанией.",
       "columns": {
@@ -872,6 +1140,8 @@
     "invitationBuilding": "Здание",
     "invitationFrom": "От управляющего",
     "invitationExpired": "Это приглашение истекло или недействительно",
+    "invitationExistingAccount": "У этого e-mail уже есть аккаунт. Войдите, чтобы принять приглашение.",
+    "invitationSignInToAccept": "Войти и принять приглашение",
     "rightPanelBadge": "ПЛАТФОРМА DOMERA",
     "rightPanelTitle": "Управляйте квартирами, жильцами и платежами в одном месте.",
     "rightPanelDesc": "Войдите в свою рабочую среду, следите за ключевыми показателями и поддерживайте связь с жильцами.",
@@ -1026,13 +1296,32 @@
         "firstNamePlaceholder": "Имя",
         "lastNamePlaceholder": "Фамилия",
         "emailPlaceholder": "sotrudnik@example.com",
+        "phonePlaceholder": "+371 20000000",
+        "positionLabel": "Должность",
+        "positionPlaceholder": "Управляющий домом",
         "roleLabel": "Роль",
+        "createAccount": "Создать аккаунт и отправить приглашение",
+        "showContactToResidents": "Контактная информация доступна жильцам",
+        "contactOnly": "Без аккаунта",
+        "publicContact": "Видно жильцам",
         "add": "Добавить",
         "adding": "Добавляем...",
         "remove": "Удалить",
         "removing": "Удаляем...",
         "removeConfirm": "Удалить {name} из компании?",
         "empty": "Участники пока не добавлены."
+      },
+      "residentContacts": {
+        "title": "Контакты для жильцов",
+        "description": "Добавьте контактную информацию управляющей компании, которая будет видна жильцам.",
+        "nameLabel": "Имя и фамилия",
+        "namePlaceholder": "Имя и фамилия",
+        "commentLabel": "Должность",
+        "commentPlaceholder": "Должность",
+        "add": "Добавить контакт",
+        "edit": "Редактировать контакт",
+        "save": "Сохранить контакт",
+        "empty": "Контакты для жильцов пока не добавлены."
       }
     },
     "apiKeys": {
@@ -1192,6 +1481,7 @@
       "companySaveFailed": "Не удалось сохранить данные компании.",
       "memberEmailRequired": "Введите e-mail участника.",
       "memberFieldsRequired": "Введите имя, фамилию и e-mail.",
+      "contactFieldsRequired": "Введите имя контакта и e-mail или телефон.",
       "memberAddFailed": "Не удалось добавить участника.",
       "memberRemoveFailed": "Не удалось удалить участника.",
       "notificationSettingsSaveFailed": "Не удалось сохранить настройки уведомлений."

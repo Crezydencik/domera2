@@ -1,6 +1,6 @@
-export declare const USER_ROLES: readonly ["ManagementCompany", "Accountant", "Resident", "Landlord"];
+export declare const USER_ROLES: readonly ["PlatformAdmin", "ManagementCompany", "Accountant", "Resident", "Landlord"];
 export type UserRole = (typeof USER_ROLES)[number];
-export declare const ACCOUNT_TYPES: readonly ["ManagementCompany", "Resident", "Landlord"];
+export declare const ACCOUNT_TYPES: readonly ["PlatformAdmin", "ManagementCompany", "Resident", "Landlord"];
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 export declare const STAFF_ROLES: readonly ["ManagementCompany", "Accountant"];
 export declare const PROPERTY_MEMBER_ROLES: readonly ["Resident", "Landlord"];
@@ -21,6 +21,7 @@ export declare function resolveAccountType(input: {
     role?: unknown;
     accountType?: unknown;
 }): AccountType | undefined;
+export declare function isPlatformAdminRole(role: unknown): boolean;
 export declare function isStaffRole(role: unknown): boolean;
 export declare function isPropertyMemberRole(role: unknown): boolean;
 export declare function isPublicRegistrationRole(role: unknown): boolean;

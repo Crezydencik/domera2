@@ -1,0 +1,7 @@
+{
+  "framework": "nextjs",
+  "installCommand": "npm --prefix frontendd ci",
+  "buildCommand": "npm --prefix frontendd run build",
+  "devCommand": "npm --prefix frontendd run dev",
+  "outputDirectory": "frontendd/.next"
+}

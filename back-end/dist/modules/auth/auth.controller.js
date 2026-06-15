@@ -95,6 +95,9 @@ let AuthController = class AuthController {
         if (statusCode === 401) {
             throw new common_1.HttpException({ statusCode: 401, message }, common_1.HttpStatus.UNAUTHORIZED);
         }
+        if (statusCode === 403) {
+            throw new common_1.HttpException({ statusCode: 403, message }, common_1.HttpStatus.FORBIDDEN);
+        }
         if (statusCode === 409) {
             throw new common_1.HttpException({ statusCode: 409, message }, common_1.HttpStatus.CONFLICT);
         }
@@ -111,7 +114,7 @@ let AuthController = class AuthController {
     }
     getAccountCatalog() {
         return {
-            accountTypes: role_constants_1.ACCOUNT_TYPES,
+            accountTypes: role_constants_1.PUBLIC_REGISTRATION_ROLES,
             roles: role_constants_1.ROLE_CATALOG,
         };
     }

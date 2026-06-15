@@ -19,6 +19,7 @@ const firebase_admin_service_1 = require("../../common/infrastructure/firebase/f
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
 const audit_log_service_1 = require("../../common/services/audit-log.service");
 const invitation_token_1 = require("../../common/utils/invitation-token");
+const email_service_1 = require("../emails/email.service");
 const MAX_INVOICE_PDF_BYTES = 10 * 1024 * 1024;
 const MAX_INVOICE_BATCH_FILES = 50;
 const MAX_INVOICE_ZIP_BYTES = 100 * 1024 * 1024;
@@ -27,11 +28,13 @@ const MAX_INVOICE_ZIP_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
 const INVOICE_STATUSES = new Set(['draft', 'pending', 'issued', 'paid', 'overdue', 'cancelled']);
 const UPLOAD_SOURCES = new Set(['api', 'manual', 'sftp', 'email', 'zip', 'accounting']);
 const ALLOWED_PDF_PROXY_HOSTS = new Set(['firebasestorage.googleapis.com', 'storage.googleapis.com']);
+const PUBLIC_INVOICE_LINK_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 let InvoicesService = InvoicesService_1 = class InvoicesService {
-    constructor(firebaseAdminService, rateLimitService, auditLogService) {
+    constructor(firebaseAdminService, rateLimitService, auditLogService, emailService) {
         this.firebaseAdminService = firebaseAdminService;
         this.rateLimitService = rateLimitService;
         this.auditLogService = auditLogService;
+        this.emailService = emailService;
         this.logger = new common_1.Logger(InvoicesService_1.name);
     }
     assertAuthenticated(user) {
@@ -367,11 +370,108 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             .doc(apartmentId)
             .collection('invoices');
     }
+    getApartmentInvoiceExternalIdsCollection(apartmentId) {
+        return this.firebaseAdminService.firestore
+            .collection('apartments')
+            .doc(apartmentId)
+            .collection('invoice_external_ids');
+    }
+    getApartmentPendingInvoiceExternalIdsCollection(apartmentId) {
+        return this.firebaseAdminService.firestore
+            .collection('apartments')
+            .doc(apartmentId)
+            .collection('invoice_pending_external_ids');
+    }
+    getApartmentInvoicePublicLinksCollection(apartmentId) {
+        return this.firebaseAdminService.firestore
+            .collection('apartments')
+            .doc(apartmentId)
+            .collection('invoice_public_links');
+    }
     resolveInvoiceApartmentId(ref, data, fallbackApartmentId) {
         return this.firstString(data.apartmentId, fallbackApartmentId, ref.parent.parent?.id);
     }
     invoiceApartmentCompanyId(apartment) {
         return apartment ? this.extractCompanyIds(apartment)[0] ?? '' : '';
+    }
+    parseOptionalDate(value) {
+        if (value instanceof Date && !Number.isNaN(value.getTime()))
+            return value;
+        if (value && typeof value === 'object') {
+            const record = value;
+            if (typeof record.toDate === 'function') {
+                const date = record.toDate();
+                return Number.isNaN(date.getTime()) ? null : date;
+            }
+            const seconds = typeof record.seconds === 'number' ? record.seconds : record._seconds;
+            if (typeof seconds === 'number')
+                return new Date(seconds * 1000);
+        }
+        if (typeof value === 'string' && value.trim()) {
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? null : date;
+        }
+        return null;
+    }
+    invoiceDateRange(data) {
+        const period = this.firstString(data.period);
+        const match = /^(\d{4})-(\d{2})$/.exec(period);
+        if (match) {
+            const year = Number(match[1]);
+            const monthIndex = Number(match[2]) - 1;
+            return {
+                start: new Date(year, monthIndex, 1, 0, 0, 0),
+                end: new Date(year, monthIndex + 1, 0, 23, 59, 59),
+            };
+        }
+        const date = this.parseOptionalDate(data.invoiceDate ?? data.dueDate ?? data.createdAt);
+        return date ? { start: date, end: date } : null;
+    }
+    memberAccessForApartment(user, apartment) {
+        const normalizedUserEmail = (0, invitation_token_1.normalizeEmail)(user.email ?? '');
+        const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
+        const residentId = typeof apartment.residentId === 'string' ? apartment.residentId : '';
+        const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
+        if (residentId === user.uid)
+            return { type: 'resident' };
+        if (apartment.ownerActivated === true &&
+            ((ownerId && ownerId === user.uid) || Boolean(normalizedUserEmail && ownerEmail === normalizedUserEmail))) {
+            return { type: 'owner' };
+        }
+        const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+        for (const tenant of tenants) {
+            if (!tenant || typeof tenant !== 'object')
+                continue;
+            const record = tenant;
+            const tenantEmail = typeof record.email === 'string' ? (0, invitation_token_1.normalizeEmail)(record.email) : '';
+            const matches = (typeof record.userId === 'string' && record.userId === user.uid) ||
+                Boolean(normalizedUserEmail && tenantEmail === normalizedUserEmail);
+            if (!matches)
+                continue;
+            return {
+                type: 'tenant',
+                fromDate: this.parseOptionalDate(record.fromDate),
+                until: this.parseOptionalDate(record.until),
+            };
+        }
+        return null;
+    }
+    isInvoiceVisibleForPropertyMember(user, apartment, invoice) {
+        if (!apartment)
+            return false;
+        const access = this.memberAccessForApartment(user, apartment);
+        if (!access)
+            return false;
+        if (access.type !== 'tenant')
+            return true;
+        const range = this.invoiceDateRange(invoice);
+        if (!range)
+            return false;
+        if (access.fromDate && range.end < access.fromDate)
+            return false;
+        if (access.until && range.start > access.until)
+            return false;
+        return true;
     }
     apartmentMatchesInvoiceFilters(params) {
         const companyId = this.firstString(params.companyId);
@@ -748,6 +848,131 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             fileName,
             contentType: response.headers.get('content-type') || 'application/pdf',
         };
+    }
+    async resolveInvoicePdfPayload(invoice, invoiceId) {
+        const fileName = this.resolveInvoicePdfFileName(invoice, invoiceId);
+        const storagePath = this.firstString(invoice.storagePath);
+        const pdfUrl = this.firstString(invoice.pdfUrl);
+        if (storagePath) {
+            const storageBucket = this.firstString(invoice.storageBucket);
+            const bucket = storageBucket
+                ? this.firebaseAdminService.storage.bucket(storageBucket)
+                : this.firebaseAdminService.storageBucket;
+            const file = bucket.file(storagePath);
+            try {
+                const [metadata] = await file.getMetadata();
+                const size = Number(metadata.size ?? 0);
+                if (Number.isFinite(size) && size > MAX_INVOICE_PDF_BYTES) {
+                    throw new common_1.BadRequestException('Invoice PDF is too large');
+                }
+                const [buffer] = await file.download();
+                return {
+                    buffer,
+                    fileName,
+                    contentType: typeof metadata.contentType === 'string' && metadata.contentType
+                        ? metadata.contentType
+                        : 'application/pdf',
+                };
+            }
+            catch (error) {
+                if (error instanceof common_1.BadRequestException) {
+                    throw error;
+                }
+                if (!pdfUrl) {
+                    throw new common_1.NotFoundException('Invoice PDF not found');
+                }
+                this.logger.warn(`invoice.pdf.storage_download_failed invoiceId=${invoiceId} reason=${this.errorMessage(error)}`);
+            }
+        }
+        if (!pdfUrl) {
+            throw new common_1.NotFoundException('Invoice PDF not found');
+        }
+        return this.downloadInvoicePdfFromUrl(pdfUrl, fileName);
+    }
+    hashPublicInvoiceToken(token) {
+        return (0, node_crypto_1.createHash)('sha256').update(token).digest('hex');
+    }
+    resolvePublicAppBaseUrl(request) {
+        const configured = this.firstString(process.env.FRONTEND_URL, process.env.PUBLIC_FRONTEND_URL, process.env.APP_PUBLIC_URL, process.env.NEXT_PUBLIC_APP_URL);
+        if (configured) {
+            return configured.replace(/\/+$/, '');
+        }
+        const host = request.get('host') || `localhost:${process.env.PORT || '4000'}`;
+        const protocol = request.protocol || 'http';
+        if (host.startsWith('localhost') || host.startsWith('127.0.0.1')) {
+            const hostname = host.split(':')[0] || 'localhost';
+            return `${protocol}://${hostname}:3000`;
+        }
+        return 'https://domera.app';
+    }
+    async createPublicInvoicePdfLink(params) {
+        const token = (0, node_crypto_1.randomBytes)(32).toString('hex');
+        const tokenHash = this.hashPublicInvoiceToken(token);
+        const now = new Date();
+        await this.getApartmentInvoicePublicLinksCollection(params.apartmentId).doc(tokenHash).set({
+            invoiceId: params.invoiceId,
+            invoicePath: params.invoicePath,
+            apartmentId: params.apartmentId,
+            companyId: params.companyId || null,
+            buildingId: params.buildingId || null,
+            recipientEmail: params.recipientEmail,
+            createdAt: now,
+            expiresAt: new Date(now.getTime() + PUBLIC_INVOICE_LINK_TTL_MS),
+            createdBy: 'invoice.approval',
+        });
+        return this.publicInvoiceViewLink(token, params.request);
+    }
+    publicInvoiceViewLink(token, request) {
+        return `${this.resolvePublicAppBaseUrl(request)}/pdf/${encodeURIComponent(token)}`;
+    }
+    resolveInvoiceEmailLanguage(invoice, apartment) {
+        const language = this.firstString(invoice.language, invoice.locale, apartment.language, apartment.locale).slice(0, 2).toLowerCase();
+        return language === 'en' || language === 'ru' || language === 'lv' ? language : 'lv';
+    }
+    resolveInvoiceEmailAmount(invoice) {
+        const currency = this.firstString(invoice.currency, 'EUR') || 'EUR';
+        const amount = invoice.amount;
+        if (typeof amount === 'number' && Number.isFinite(amount)) {
+            return `${amount.toFixed(2)} ${currency}`;
+        }
+        return this.firstString(invoice.amount, invoice.totalAmount, invoice.total, `0 ${currency}`);
+    }
+    async sendApprovedInvoiceEmail(params) {
+        const recipientEmail = (0, invitation_token_1.normalizeEmail)(this.firstString(params.invoiceData.residentEmail, params.apartment.residentEmail, params.apartment.ownerEmail));
+        if (!recipientEmail) {
+            this.logger.warn(`invoice.email.skipped_missing_recipient invoiceId=${params.invoiceId}`);
+            return;
+        }
+        const [pdf, invoiceLink] = await Promise.all([
+            this.resolveInvoicePdfPayload(params.invoiceData, params.invoiceId),
+            this.createPublicInvoicePdfLink({
+                request: params.request,
+                invoiceId: params.invoiceId,
+                invoicePath: params.invoicePath,
+                apartmentId: params.apartmentId,
+                companyId: params.companyId,
+                buildingId: params.buildingId,
+                recipientEmail,
+            }),
+        ]);
+        await this.emailService.sendInvoiceGenerated({
+            to: recipientEmail,
+            tenantName: this.firstString(params.invoiceData.residentName, params.apartment.residentName, params.apartment.ownerName),
+            apartmentNumber: this.firstString(params.invoiceData.apartmentNumber, params.apartment.number, params.apartment.apartmentNumber),
+            buildingName: this.firstString(params.invoiceData.buildingName, params.apartment.buildingName),
+            invoiceNumber: this.firstString(params.invoiceData.invoiceNumber, params.invoiceData.externalId, params.invoiceId),
+            amount: this.resolveInvoiceEmailAmount(params.invoiceData),
+            dueDate: this.firstString(params.invoiceData.dueDate, params.invoiceData.paymentDueDate, params.invoiceData.period, ''),
+            invoiceLink,
+            language: this.resolveInvoiceEmailLanguage(params.invoiceData, params.apartment),
+            attachments: [
+                {
+                    filename: pdf.fileName,
+                    content: pdf.buffer.toString('base64'),
+                    contentType: pdf.contentType || 'application/pdf',
+                },
+            ],
+        });
     }
     async saveInvoicePdf(params) {
         const bucket = this.firebaseAdminService.storageBucket;
@@ -1442,8 +1667,8 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
                 const approvalId = `approval_${(0, node_crypto_1.randomUUID)().replace(/-/g, '').slice(0, 16)}`;
                 invoiceRef = db.collection('buildings').doc(buildingId).collection('invoice_approvals').doc(approvalId);
                 const approvalPath = invoiceRef.path;
-                uniqueRef = db.collection('invoice_pending_external_ids').doc(externalKey);
-                const invoiceExternalRef = db.collection('invoice_external_ids').doc(externalKey);
+                uniqueRef = this.getApartmentPendingInvoiceExternalIdsCollection(apartment.id).doc(externalKey);
+                const invoiceExternalRef = this.getApartmentInvoiceExternalIdsCollection(apartment.id).doc(externalKey);
                 storagePathForCleanup = this.buildPendingApprovalStoragePath({
                     companyId,
                     buildingId,
@@ -1562,7 +1787,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             const invoiceId = this.buildInvoiceId();
             invoiceRef = this.getApartmentInvoiceCollection(apartment.id).doc(invoiceId);
             const invoicePath = invoiceRef.path;
-            uniqueRef = db.collection('invoice_external_ids').doc(externalKey);
+            uniqueRef = this.getApartmentInvoiceExternalIdsCollection(apartment.id).doc(externalKey);
             storagePathForCleanup = this.buildStoragePath({
                 companyId,
                 buildingId,
@@ -1785,8 +2010,8 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const externalKey = this.firstString(data.externalIdKey) || this.hashExternalId(companyId, externalId);
         const invoiceRef = this.getApartmentInvoiceCollection(apartmentId).doc(invoiceId);
         const invoicePath = invoiceRef.path;
-        const invoiceExternalRef = db.collection('invoice_external_ids').doc(externalKey);
-        const pendingExternalRef = db.collection('invoice_pending_external_ids').doc(externalKey);
+        const invoiceExternalRef = this.getApartmentInvoiceExternalIdsCollection(apartmentId).doc(externalKey);
+        const pendingExternalRef = this.getApartmentPendingInvoiceExternalIdsCollection(apartmentId).doc(externalKey);
         const now = new Date();
         const invoiceData = {
             ...data,
@@ -1858,6 +2083,18 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             invoiceId,
             status: 'approved',
         });
+        void this.sendApprovedInvoiceEmail({
+            request,
+            invoiceId,
+            invoiceData,
+            apartment,
+            apartmentId,
+            companyId,
+            buildingId,
+            invoicePath,
+        }).catch((error) => {
+            this.logger.warn(`invoice.email.send_failed invoiceId=${invoiceId} reason=${this.errorMessage(error)}`);
+        });
         return {
             success: true,
             invoice_id: invoiceId,
@@ -1873,11 +2110,12 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const data = approval.data;
         const companyId = this.firstString(data.companyId);
         const buildingId = this.firstString(data.buildingId, approval.buildingId);
+        const apartmentId = this.firstString(data.apartmentId);
         const externalId = this.firstString(data.externalId);
         const externalKey = this.firstString(data.externalIdKey)
             || (companyId && externalId ? this.hashExternalId(companyId, externalId) : '');
-        const pendingExternalRef = externalKey
-            ? this.firebaseAdminService.firestore.collection('invoice_pending_external_ids').doc(externalKey)
+        const pendingExternalRef = externalKey && apartmentId
+            ? this.getApartmentPendingInvoiceExternalIdsCollection(apartmentId).doc(externalKey)
             : null;
         const storagePath = this.firstString(data.storagePath);
         const storageBucket = this.firstString(data.storageBucket);
@@ -1902,7 +2140,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             actorUid: user.uid,
             actorRole: user.role,
             companyId,
-            apartmentId: this.firstString(data.apartmentId),
+            apartmentId,
             metadata: {
                 approvalId,
                 externalId,
@@ -2236,13 +2474,29 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         else {
             return { items: [] };
         }
-        const snapshots = await Promise.all(buildingIds.map(async (buildingId) => ({
+        const snapshotResults = await Promise.allSettled(buildingIds.map(async (buildingId) => ({
             buildingId,
             snap: await db.collection('buildings').doc(buildingId).collection('invoice_uploads').get(),
         })));
-        const rawItems = await Promise.all(snapshots
+        const snapshots = snapshotResults.flatMap((result, index) => {
+            if (result.status === 'fulfilled')
+                return [result.value];
+            this.logger.warn(`invoice.upload.history.read.failed buildingId=${buildingIds[index] ?? 'unknown'} reason=${this.errorMessage(result.reason)}`);
+            return [];
+        });
+        const reconcileResults = await Promise.allSettled(snapshots
             .flatMap(({ buildingId, snap }) => snap.docs.map((historyDoc) => ({ buildingId, historyDoc })))
-            .map(({ buildingId, historyDoc }) => this.reconcileUploadHistoryDoc(buildingId, historyDoc)));
+            .map(async ({ buildingId, historyDoc }) => ({
+            buildingId,
+            historyDocId: historyDoc.id,
+            item: await this.reconcileUploadHistoryDoc(buildingId, historyDoc),
+        })));
+        const rawItems = reconcileResults.flatMap((result) => {
+            if (result.status === 'fulfilled')
+                return [result.value.item];
+            this.logger.warn(`invoice.upload.history.reconcile.failed reason=${this.errorMessage(result.reason)}`);
+            return [];
+        });
         const groupedByBatchId = new Map();
         const ungroupedItems = [];
         for (const item of rawItems) {
@@ -2351,8 +2605,18 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             const isTenant = tenants.some((tenant) => {
                 if (!tenant || typeof tenant !== 'object')
                     return false;
-                return typeof tenant.userId === 'string'
-                    && tenant.userId === user.uid;
+                const t = tenant;
+                if (typeof t.userId === 'string' && t.userId === user.uid) {
+                    const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
+                    const until = typeof t.until === 'string' ? new Date(t.until) : null;
+                    const now = new Date();
+                    if (fromDate && now < fromDate)
+                        return false;
+                    if (until && now > until)
+                        return false;
+                    return true;
+                }
+                return false;
             });
             if (isTenant) {
                 apartmentIds.add(doc.id);
@@ -2378,8 +2642,18 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             const isTenant = tenants.some((tenant) => {
                 if (!tenant || typeof tenant !== 'object')
                     return false;
-                return typeof tenant.userId === 'string'
-                    && tenant.userId === user.uid;
+                const t = tenant;
+                if (typeof t.userId === 'string' && t.userId === user.uid) {
+                    const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
+                    const until = typeof t.until === 'string' ? new Date(t.until) : null;
+                    const now = new Date();
+                    if (fromDate && now < fromDate)
+                        return false;
+                    if (until && now > until)
+                        return false;
+                    return true;
+                }
+                return false;
             });
             return isResident || isOwner || isTenant;
         })
@@ -2473,11 +2747,20 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             throw new common_1.ForbiddenException('Access denied for apartment');
         }
         const apartmentIdsToLoad = requestedApartmentId ? [requestedApartmentId] : accessibleApartmentIds;
-        const snapshots = await Promise.all(apartmentIdsToLoad.map(async (apartmentId) => ({
-            apartmentId,
-            snapshot: await this.getApartmentInvoiceCollection(apartmentId).get(),
-        })));
-        const items = snapshots.flatMap(({ apartmentId, snapshot }) => snapshot.docs.map((doc) => this.invoiceItemFromDoc(doc, apartmentId)));
+        const snapshots = await Promise.all(apartmentIdsToLoad.map(async (apartmentId) => {
+            const [apartmentSnap, snapshot] = await Promise.all([
+                this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId).get(),
+                this.getApartmentInvoiceCollection(apartmentId).get(),
+            ]);
+            return {
+                apartmentId,
+                apartment: apartmentSnap.exists ? apartmentSnap.data() : undefined,
+                snapshot,
+            };
+        }));
+        const items = snapshots.flatMap(({ apartmentId, apartment, snapshot }) => snapshot.docs
+            .map((doc) => this.invoiceItemFromDoc(doc, apartmentId, apartment))
+            .filter((item) => this.isInvoiceVisibleForPropertyMember(user, apartment, item)));
         return { items, query };
     }
     async byId(user, invoiceId) {
@@ -2504,44 +2787,93 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
     }
     async pdf(user, invoiceId) {
         const invoice = await this.byId(user, invoiceId);
-        const fileName = this.resolveInvoicePdfFileName(invoice, invoiceId);
-        const storagePath = this.firstString(invoice.storagePath);
-        const pdfUrl = this.firstString(invoice.pdfUrl);
-        if (storagePath) {
-            const storageBucket = this.firstString(invoice.storageBucket);
-            const bucket = storageBucket
-                ? this.firebaseAdminService.storage.bucket(storageBucket)
-                : this.firebaseAdminService.storageBucket;
-            const file = bucket.file(storagePath);
-            try {
-                const [metadata] = await file.getMetadata();
-                const size = Number(metadata.size ?? 0);
-                if (Number.isFinite(size) && size > MAX_INVOICE_PDF_BYTES) {
-                    throw new common_1.BadRequestException('Invoice PDF is too large');
-                }
-                const [buffer] = await file.download();
-                return {
-                    buffer,
-                    fileName,
-                    contentType: typeof metadata.contentType === 'string' && metadata.contentType
-                        ? metadata.contentType
-                        : 'application/pdf',
-                };
-            }
-            catch (error) {
-                if (error instanceof common_1.BadRequestException) {
-                    throw error;
-                }
-                if (!pdfUrl) {
-                    throw new common_1.NotFoundException('Invoice PDF not found');
-                }
-                this.logger.warn(`invoice.pdf.storage_download_failed invoiceId=${invoiceId} reason=${this.errorMessage(error)}`);
-            }
-        }
-        if (!pdfUrl) {
+        return this.resolveInvoicePdfPayload(invoice, invoiceId);
+    }
+    async publicPdf(token) {
+        const normalizedToken = this.firstString(token);
+        if (!normalizedToken) {
             throw new common_1.NotFoundException('Invoice PDF not found');
         }
-        return this.downloadInvoicePdfFromUrl(pdfUrl, fileName);
+        const linkSnap = await this.firebaseAdminService.firestore
+            .collectionGroup('invoice_public_links')
+            .where('tokenHash', '==', this.hashPublicInvoiceToken(normalizedToken))
+            .limit(1)
+            .get();
+        const legacyLinkSnap = linkSnap.empty
+            ? await this.firebaseAdminService.firestore
+                .collection('invoice_public_links')
+                .doc(this.hashPublicInvoiceToken(normalizedToken))
+                .get()
+            : null;
+        const linkDoc = linkSnap.docs[0] ?? (legacyLinkSnap?.exists ? legacyLinkSnap : undefined);
+        if (!linkDoc?.exists) {
+            throw new common_1.NotFoundException('Invoice PDF not found');
+        }
+        const link = linkDoc.data();
+        const expiresAt = link.expiresAt;
+        const expiryDate = expiresAt && typeof expiresAt.toDate === 'function'
+            ? expiresAt.toDate()
+            : null;
+        if (expiryDate && expiryDate.getTime() < Date.now()) {
+            throw new common_1.NotFoundException('Invoice PDF not found');
+        }
+        const invoicePath = this.firstString(link.invoicePath);
+        const invoiceId = this.firstString(link.invoiceId);
+        if (!invoicePath || !invoiceId) {
+            throw new common_1.NotFoundException('Invoice PDF not found');
+        }
+        const invoiceSnap = await this.firebaseAdminService.firestore.doc(invoicePath).get();
+        if (!invoiceSnap.exists) {
+            throw new common_1.NotFoundException('Invoice PDF not found');
+        }
+        return this.resolveInvoicePdfPayload({ id: invoiceId, ...invoiceSnap.data() }, invoiceId);
+    }
+    async resendEmail(request, user, invoiceId) {
+        this.assertAuthenticated(user);
+        if (!this.isStaff(user)) {
+            throw new common_1.ForbiddenException('Insufficient permissions');
+        }
+        const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'invoice:resend-email', `${user.uid}:${invoiceId}`), 20, 60_000);
+        if (!rl.allowed)
+            throw new common_1.BadRequestException('Too many requests');
+        const invoice = await this.findInvoiceDocument(invoiceId, user);
+        const invoiceData = invoice.data;
+        const targetCompanyId = typeof invoiceData.companyId === 'string' ? invoiceData.companyId : undefined;
+        if (user.companyId && targetCompanyId && user.companyId !== targetCompanyId) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
+        const apartmentId = this.firstString(invoice.apartmentId, invoiceData.apartmentId);
+        if (!apartmentId) {
+            throw new common_1.NotFoundException('Apartment not found');
+        }
+        const apartmentSnap = await this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId).get();
+        if (!apartmentSnap.exists) {
+            throw new common_1.NotFoundException('Apartment not found');
+        }
+        const apartment = apartmentSnap.data();
+        const companyId = this.firstString(invoiceData.companyId, this.invoiceApartmentCompanyId(apartment));
+        const buildingId = this.firstString(invoiceData.buildingId, apartment.buildingId, apartment.houseId);
+        await this.sendApprovedInvoiceEmail({
+            request,
+            invoiceId,
+            invoiceData,
+            apartment,
+            apartmentId,
+            companyId,
+            buildingId,
+            invoicePath: invoice.ref.path,
+        });
+        void this.auditLogService.write({
+            request,
+            action: 'invoice.email_resend',
+            status: 'success',
+            actorUid: user.uid,
+            actorRole: user.role,
+            companyId,
+            apartmentId,
+            metadata: { invoiceId },
+        });
+        return { success: true };
     }
     async update(request, user, invoiceId, payload) {
         this.assertAuthenticated(user);
@@ -2594,17 +2926,18 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         }
         const storagePath = typeof current.storagePath === 'string' ? current.storagePath : '';
         const storageBucket = typeof current.storageBucket === 'string' ? current.storageBucket : '';
+        const apartmentId = this.firstString(current.apartmentId, ref.parent.parent?.id);
         const externalId = this.firstString(current.externalId);
         const companyId = this.firstString(targetCompanyId, user.companyId);
         const externalIdKey = this.firstString(current.externalIdKey)
             || (companyId && externalId ? this.hashExternalId(companyId, externalId) : '');
         await ref.delete();
         await Promise.allSettled([
-            externalIdKey
-                ? db.collection('invoice_external_ids').doc(externalIdKey).delete()
+            externalIdKey && apartmentId
+                ? this.getApartmentInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey).delete()
                 : Promise.resolve(),
-            externalIdKey
-                ? db.collection('invoice_pending_external_ids').doc(externalIdKey).delete()
+            externalIdKey && apartmentId
+                ? this.getApartmentPendingInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey).delete()
                 : Promise.resolve(),
             storagePath
                 ? (storageBucket
@@ -2634,5 +2967,6 @@ exports.InvoicesService = InvoicesService = InvoicesService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService,
         rate_limit_service_1.RateLimitService,
-        audit_log_service_1.AuditLogService])
+        audit_log_service_1.AuditLogService,
+        email_service_1.EmailService])
 ], InvoicesService);

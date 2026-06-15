@@ -30,7 +30,7 @@ export declare class InvoicesController {
             createdByUid: string;
         };
     }>;
-    upload(request: Request, user: RequestUser, file: UploadedBinaryFile | undefined, body: Record<string, unknown>): Promise<{
+    upload(request: Request, user: RequestUser, uploadedFiles: UploadedBinaryFile[] | undefined, body: Record<string, unknown>): Promise<{
         success: boolean;
         approval_id: string;
         company_id: string;
@@ -46,6 +46,22 @@ export declare class InvoicesController {
         apartment_id: string;
         message: string;
         approval_id?: undefined;
+    }> | Promise<{
+        success: boolean;
+        batch_id: string;
+        total: number;
+        processed: number;
+        failed: number;
+        message: string;
+        results: {
+            index: number;
+            fileName: string;
+            success: boolean;
+            invoice_id?: string;
+            approval_id?: string;
+            message?: string;
+            error?: string;
+        }[];
     }>;
     uploadBatch(request: Request, user: RequestUser, uploadedFiles: UploadedBinaryFile[] | undefined, body: Record<string, unknown>): Promise<{
         success: boolean;
@@ -106,6 +122,10 @@ export declare class InvoicesController {
     cancelPendingApproval(request: Request, user: RequestUser, approvalId: string): Promise<{
         success: boolean;
         message: string;
+    }>;
+    publicPdf(request: Request, token: string, response: Response): Promise<void>;
+    resendEmail(request: Request, user: RequestUser, invoiceId: string): Promise<{
+        success: boolean;
     }>;
     pdf(user: RequestUser, invoiceId: string, response: Response): Promise<void>;
     byId(user: RequestUser, invoiceId: string): Promise<{

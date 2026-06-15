@@ -49,6 +49,92 @@ interface ManagedBuildingOption {
   apartmentCount: number;
 }
 
+type UnknownRecord = Record<string, unknown>;
+
+function text(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return "";
+}
+
+function numberValue(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function consumptionValue(currentValue: number, previousValue: number) {
+  return Number(Math.max(0, currentValue - previousValue).toFixed(3));
+}
+
+function formatConsumption(value: unknown) {
+  const parsed = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed.toFixed(3) : "—";
+}
+
+function readingConsumption(reading: MeterReadingRecord | null | undefined) {
+  if (!reading) return "—";
+  const currentValue = Number(String(reading.currentValue ?? "").replace(",", "."));
+  const previousValue = Number(String(reading.previousValue ?? "").replace(",", "."));
+  if (!Number.isFinite(currentValue) || !Number.isFinite(previousValue)) {
+    return formatConsumption(reading.consumption);
+  }
+  return formatConsumption(consumptionValue(currentValue, previousValue));
+}
+
+function meterFromWaterReading(
+  key: "coldmeterwater" | "hotmeterwater",
+  group: unknown,
+  fallbackApartmentId: string,
+): MeterInfo | null {
+  if (!group || typeof group !== "object") return null;
+  const data = group as UnknownRecord;
+  const meterId = text(data.meterId, data.id, data.serialNumber, `${fallbackApartmentId}:${key}`);
+  const isHot = key === "hotmeterwater";
+
+  return {
+    meterType: isHot ? "Hot Water" : "Cold Water",
+    meterKey: key,
+    meterId,
+    serialNumber: text(data.serialNumber),
+    readings: [],
+    latestReading: null,
+  };
+}
+
+function fallbackMetersFromBuilding(apartmentId: string, building: UnknownRecord | undefined): MeterInfo[] {
+  const readingConfig = building?.readingConfig && typeof building.readingConfig === "object"
+    ? building.readingConfig as UnknownRecord
+    : {};
+
+  if (!readingConfig.waterEnabled) return [];
+
+  const meters: MeterInfo[] = [];
+  if (numberValue(readingConfig.coldWaterMetersPerResident) > 0) {
+    meters.push({
+      meterType: "Cold Water",
+      meterKey: "coldmeterwater",
+      meterId: `${apartmentId}:coldmeterwater`,
+      serialNumber: "",
+      readings: [],
+      latestReading: null,
+    });
+  }
+  if (numberValue(readingConfig.hotWaterMetersPerResident) > 0) {
+    meters.push({
+      meterType: "Hot Water",
+      meterKey: "hotmeterwater",
+      meterId: `${apartmentId}:hotmeterwater`,
+      serialNumber: "",
+      readings: [],
+      latestReading: null,
+    });
+  }
+
+  return meters;
+}
+
 function readingMonthKey(reading: MeterReadingRecord | null | undefined) {
   if (!reading) return "";
 
@@ -357,7 +443,7 @@ export default function ManagementCompanyPage() {
         meterKey: meter.meterKey,
         previousValue,
         currentValue,
-        consumption: Math.max(0, currentValue - previousValue),
+        consumption: consumptionValue(currentValue, previousValue),
         buildingId: submitApt.building,
         month,
         year,
@@ -401,11 +487,6 @@ export default function ManagementCompanyPage() {
         prev.map((a) => {
           if (a.apartmentId !== submitApt.apartmentId) return a;
           const now = new Date();
-          const submittedAtStr = now.toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-          });
           return {
             ...a,
             meters: a.meters.map((m) => {
@@ -413,36 +494,42 @@ export default function ManagementCompanyPage() {
                 const currentVal = Number(submitCold.replace(",", "."));
                 const previousReading = previousReadingForMonth(m, submitMonth);
                 const prevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+                const nextReading: MeterReadingRecord = {
+                  id: `local-${submitApt.apartmentId}-${m.meterKey ?? m.meterId ?? "cold"}-${submitMonth}`,
+                  previousValue: String(prevVal),
+                  currentValue: String(currentVal),
+                  consumption: formatConsumption(consumptionValue(currentVal, prevVal)),
+                  submittedAt: `${submitMonth}-${String(now.getDate()).padStart(2, "0")}`,
+                  month,
+                  year,
+                  status: "submitted" as const,
+                };
                 return {
                   ...m,
-                  latestReading: {
-                    id: m.latestReading?.id ?? "",
-                    previousValue: String(prevVal),
-                    currentValue: String(currentVal),
-                    consumption: String(Math.max(0, currentVal - prevVal)),
-                    submittedAt: submittedAtStr,
-                    month,
-                    year,
-                    status: "submitted" as const,
-                  },
+                  readings: [nextReading, ...m.readings.filter((reading) => readingMonthKey(reading) !== submitMonth)]
+                    .sort((left, right) => readingMonthKey(right).localeCompare(readingMonthKey(left))),
+                  latestReading: nextReading,
                 };
               }
               if (hotMeter && submitHot && (m.meterKey === "hotmeterwater" || m.meterId === hotMeter.meterId)) {
                 const currentVal = Number(submitHot.replace(",", "."));
                 const previousReading = previousReadingForMonth(m, submitMonth);
                 const prevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+                const nextReading: MeterReadingRecord = {
+                  id: `local-${submitApt.apartmentId}-${m.meterKey ?? m.meterId ?? "hot"}-${submitMonth}`,
+                  previousValue: String(prevVal),
+                  currentValue: String(currentVal),
+                  consumption: formatConsumption(consumptionValue(currentVal, prevVal)),
+                  submittedAt: `${submitMonth}-${String(now.getDate()).padStart(2, "0")}`,
+                  month,
+                  year,
+                  status: "submitted" as const,
+                };
                 return {
                   ...m,
-                  latestReading: {
-                    id: m.latestReading?.id ?? "",
-                    previousValue: String(prevVal),
-                    currentValue: String(currentVal),
-                    consumption: String(Math.max(0, currentVal - prevVal)),
-                    submittedAt: submittedAtStr,
-                    month,
-                    year,
-                    status: "submitted" as const,
-                  },
+                  readings: [nextReading, ...m.readings.filter((reading) => readingMonthKey(reading) !== submitMonth)]
+                    .sort((left, right) => readingMonthKey(right).localeCompare(readingMonthKey(left))),
+                  latestReading: nextReading,
                 };
               }
               return m;
@@ -501,9 +588,10 @@ export default function ManagementCompanyPage() {
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const [rawResponse, buildingsResponse] = await Promise.all([
+        const [rawResponse, buildingsResponse, apartmentsResponse] = await Promise.all([
           apiFetch(`/meter-readings?companyId=${encodeURIComponent(String(companyId))}`, { signal: controller.signal }),
           apiFetch(`/buildings?companyId=${encodeURIComponent(String(companyId))}`, { signal: controller.signal }).catch(() => null),
+          apiFetch(`/apartments?companyId=${encodeURIComponent(String(companyId))}`, { signal: controller.signal }).catch(() => null),
         ]);
         clearTimeout(timeoutId);
         const response = rawResponse as unknown;
@@ -513,14 +601,23 @@ export default function ManagementCompanyPage() {
         const buildingItems = Array.isArray((buildingsResponse as { items?: unknown[] } | null)?.items)
           ? ((buildingsResponse as { items?: unknown[] }).items ?? [])
           : [];
+        const apartmentItems = Array.isArray((apartmentsResponse as { items?: unknown[] } | null)?.items)
+          ? ((apartmentsResponse as { items?: unknown[] }).items ?? [])
+          : [];
+        const buildingDataById = new Map<string, UnknownRecord>();
+        buildingItems.forEach((item) => {
+          const building = item as UnknownRecord;
+          const id = text(building.id, building.buildingId);
+          if (id) buildingDataById.set(id, building);
+        });
         
         if (isMounted) {
           setManagedBuildings(
             buildingItems
               .map((item) => {
-                const building = item as Record<string, unknown>;
-                const id = String(building.id || building.buildingId || "");
-                const label = String(building.address || building.street || building.location || building.name || building.title || id);
+                const building = item as UnknownRecord;
+                const id = text(building.id, building.buildingId);
+                const label = text(building.address, building.street, building.location, building.name, building.title, id);
                 const apartmentCount = Number(building.apartmentsCount ?? building.apartments ?? 0);
                 return id ? { id, label, apartmentCount: Number.isFinite(apartmentCount) ? apartmentCount : 0 } : null;
               })
@@ -528,21 +625,60 @@ export default function ManagementCompanyPage() {
               .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" })),
           );
 
+          const apartmentMap = new Map<string, ApartmentMeterData>();
+
+          apartmentItems.forEach((item: unknown) => {
+            const apartment = item as UnknownRecord;
+            const apartmentId = text(apartment.id, apartment.apartmentId, apartment.readableId);
+            if (!apartmentId) return;
+
+            const buildingId = text(apartment.buildingId);
+            const buildingData = buildingDataById.get(buildingId);
+            const buildingLabel = text(
+              apartment.buildingAddress,
+              apartment.buildingName,
+              buildingData?.address,
+              buildingData?.street,
+              buildingData?.location,
+              buildingData?.name,
+              buildingData?.title,
+              buildingId ? `#${buildingId}` : "Unknown",
+            );
+            const waterReadings = apartment.waterReadings && typeof apartment.waterReadings === "object"
+              ? apartment.waterReadings as UnknownRecord
+              : {};
+            const meters = [
+              meterFromWaterReading("coldmeterwater", waterReadings.coldmeterwater, apartmentId),
+              meterFromWaterReading("hotmeterwater", waterReadings.hotmeterwater, apartmentId),
+            ].filter((meter): meter is MeterInfo => Boolean(meter));
+            const fallbackMeters = meters.length > 0 ? [] : fallbackMetersFromBuilding(apartmentId, buildingData);
+
+            apartmentMap.set(apartmentId, {
+              id: apartmentId,
+              apartmentId,
+              apartment: text(apartment.number, apartment.apartmentNumber, apartment.label, apartment.name, apartmentId),
+              building: buildingId || buildingLabel,
+              buildingLabel,
+              meters: meters.length > 0 ? meters : fallbackMeters,
+            });
+          });
+
           if (items.length > 0) {
             // Группируем показания по квартирам
-            const apartmentMap = new Map<string, ApartmentMeterData>();
 
             items.forEach((item: unknown) => {
-              const i = item as Record<string, unknown>;
+              const i = item as UnknownRecord;
               const apartmentId = String(i.apartmentId || "");
+              if (!apartmentId) return;
               const apartmentNumber = String(
                 i.apartmentNumber || i.apartment || apartmentId || "—"
               );
               const buildingId = String(i.buildingId || "");
               const buildingName = String(i.buildingName || "");
               const buildingAddress = String(i.buildingAddress || "");
-              const buildingLabel = buildingAddress || buildingName || (buildingId ? `#${buildingId}` : "Unknown");
-              const building = buildingId || buildingLabel;
+              const existingApartment = apartmentMap.get(apartmentId);
+              const buildingLabel = buildingAddress || buildingName || existingApartment?.buildingLabel || (buildingId ? `#${buildingId}` : "Unknown");
+              const building = buildingId || existingApartment?.building || buildingLabel;
               
               // Определяем тип счётчика
               let meterType = "Water";
@@ -568,7 +704,7 @@ export default function ManagementCompanyPage() {
                 id: String(i.id || Math.random()),
                 currentValue: String(i.currentValue || "0"),
                 previousValue: String(i.previousValue || "0"),
-                consumption: String(i.consumption || "0"),
+                consumption: formatConsumption(i.consumption),
                 submittedAt: formattedDate,
                 month: typeof i.month === "number" ? i.month : Number(i.month) || undefined,
                 year: typeof i.year === "number" ? i.year : Number(i.year) || undefined,
@@ -584,10 +720,10 @@ export default function ManagementCompanyPage() {
               if (apartmentMap.has(apartmentId)) {
                 const existing = apartmentMap.get(apartmentId)!;
                 // Ищем существующий счётчик того же типа
-                const existingMeter = existing.meters.find(m => m.meterType === meterType);
+                const existingMeter = existing.meters.find(m => m.meterType === meterType || (meterKeyTyped && m.meterKey === meterKeyTyped));
                 if (existingMeter) {
                   existingMeter.readings.push(reading);
-                  existingMeter.readings.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+                  existingMeter.readings.sort((a, b) => readingMonthKey(b).localeCompare(readingMonthKey(a)));
                   existingMeter.latestReading = existingMeter.readings[0];
                   if (!existingMeter.serialNumber && i.serialNumber) {
                     existingMeter.serialNumber = String(i.serialNumber);
@@ -627,7 +763,7 @@ export default function ManagementCompanyPage() {
             const apartmentList = Array.from(apartmentMap.values());
             setApartments(apartmentList);
           } else {
-            setApartments([]);
+            setApartments(Array.from(apartmentMap.values()));
           }
         }
       } catch (err) {
@@ -787,8 +923,14 @@ export default function ManagementCompanyPage() {
     if (searchQuery && !item.apartment.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     if (statusFilter !== "all") {
       // Проверяем, есть ли хотя бы один счётчик с нужным статусом
-      const hasStatus = item.meters.some(m => m.latestReading?.status === statusFilter);
-      if (!hasStatus) return false;
+      const dates = item.meters
+        .map((m) => m.latestReading?.submittedAt)
+        .filter((d): d is string => Boolean(d) && d !== "â€”");
+      const latestDate = dates.length > 0 ? dates.sort().reverse()[0] : "â€”";
+      const periodStatus = getPeriodStatus(latestDate);
+      const hasReadingStatus = item.meters.some((m) => m.latestReading?.status === statusFilter);
+      if (statusFilter === "pending") return periodStatus === "pending" || hasReadingStatus;
+      if (!hasReadingStatus) return false;
     }
     return true;
   });
@@ -1174,15 +1316,10 @@ export default function ManagementCompanyPage() {
                       const isHot = meter.meterType.toLowerCase().includes("hot");
                       const dotColor = isHot ? "bg-red-500" : "bg-blue-500";
                       const consumptionColor = isHot ? "text-red-600" : "text-blue-600";
-                      const currMonth = meter.latestReading?.month;
-                      const currYear = meter.latestReading?.year;
-                      const currLabel = currMonth && currYear ? `${currYear}.${String(currMonth).padStart(2, "0")}` : "";
-                      let prevLabel = "";
-                      if (currMonth && currYear) {
-                        const prevM = currMonth === 1 ? 12 : currMonth - 1;
-                        const prevY = currMonth === 1 ? currYear - 1 : currYear;
-                        prevLabel = `${prevY}.${String(prevM).padStart(2, "0")}`;
-                      }
+                      const currPeriod = readingMonthKey(meter.latestReading);
+                      const currLabel = readingMonthLabel(meter.latestReading) ?? "";
+                      const previousReading = currPeriod ? previousReadingForMonth(meter, currPeriod) : null;
+                      const prevLabel = readingMonthLabel(previousReading) ?? "";
                       return (
                         <div key={idx} className="rounded-md border border-slate-100 bg-slate-50/50 px-2.5 py-2">
                           <div className="flex items-center justify-between gap-2 text-xs">
@@ -1195,7 +1332,7 @@ export default function ManagementCompanyPage() {
                           <div className="mt-2 grid grid-cols-3 items-end gap-1 text-sm tabular-nums">
                             <div>
                               <div className="text-[10px] uppercase tracking-wide text-slate-400">{prevLabel || t("prevShort")}</div>
-                              <div className="text-slate-500">{meter.latestReading?.previousValue ?? "—"}</div>
+                              <div className="text-slate-500">{previousReadingValue(previousReading)}</div>
                             </div>
                             <div>
                               <div className="text-[10px] uppercase tracking-wide text-slate-400">{currLabel || t("currShort")}</div>
@@ -1203,7 +1340,7 @@ export default function ManagementCompanyPage() {
                             </div>
                             <div className="text-right">
                               <div className="text-[10px] uppercase tracking-wide text-slate-400">{t("useShort")}</div>
-                              <div className={`font-semibold ${consumptionColor}`}>+{meter.latestReading?.consumption ?? "—"} m³</div>
+                              <div className={`font-semibold ${consumptionColor}`}>+{readingConsumption(meter.latestReading)} m³</div>
                             </div>
                           </div>
                         </div>
@@ -1230,7 +1367,8 @@ export default function ManagementCompanyPage() {
                           const byMonth = new Map<string, Array<{ meter: MeterInfo; r: MeterReadingRecord }>>();
                           apt.meters.forEach((meter) => {
                             meter.readings.forEach((r) => {
-                              const key = r.submittedAt.substring(0, 7);
+                              const key = readingMonthKey(r);
+                              if (!key) return;
                               if (!byMonth.has(key)) byMonth.set(key, []);
                               byMonth.get(key)!.push({ meter, r });
                             });
@@ -1266,7 +1404,7 @@ export default function ManagementCompanyPage() {
                                           </div>
                                           <div className="text-right tabular-nums">
                                             <div className="text-slate-500">{r.previousValue} → <span className="font-semibold text-slate-900">{r.currentValue}</span></div>
-                                            <div className={`font-semibold ${consumptionColor}`}>+{r.consumption} m³</div>
+                                            <div className={`font-semibold ${consumptionColor}`}>+{readingConsumption(r)} m³</div>
                                           </div>
                                         </div>
                                       );
@@ -1332,22 +1470,17 @@ export default function ManagementCompanyPage() {
                         <td className="px-3 py-3 align-top">
                           <div className="flex gap-1.5">
                             {apt.meters.map((meter, idx) => {
-                              const currMonth = meter.latestReading?.month;
-                              const currYear = meter.latestReading?.year;
-                              const currLabel = currMonth && currYear ? `${currYear}.${String(currMonth).padStart(2, "0")}` : "";
-                              let prevLabel = "";
-                              if (currMonth && currYear) {
-                                const prevM = currMonth === 1 ? 12 : currMonth - 1;
-                                const prevY = currMonth === 1 ? currYear - 1 : currYear;
-                                prevLabel = `${prevY}.${String(prevM).padStart(2, "0")}`;
-                              }
+                              const currPeriod = readingMonthKey(meter.latestReading);
+                              const currLabel = readingMonthLabel(meter.latestReading) ?? "";
+                              const previousReading = currPeriod ? previousReadingForMonth(meter, currPeriod) : null;
+                              const prevLabel = readingMonthLabel(previousReading) ?? "";
                               const isHot = meter.meterType.toLowerCase().includes("hot");
                               const consumptionColor = isHot ? "text-red-600" : "text-blue-600";
                               return (
                                 <div key={idx} className="flex items-center justify-center gap-2.5 text-sm tabular-nums">
                                   <div className="flex flex-col items-end leading-tight">
                                     {prevLabel && <span className="text-[10px] uppercase tracking-wide text-slate-400">{prevLabel}</span>}
-                                    <span className="text-slate-500">{meter.latestReading?.previousValue ?? "—"}</span>
+                                    <span className="text-slate-500">{previousReadingValue(previousReading)}</span>
                                   </div>
                                   <svg className="h-3 w-3 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
                                   <div className="flex flex-col items-end leading-tight">
@@ -1355,7 +1488,7 @@ export default function ManagementCompanyPage() {
                                     <span className="font-semibold text-slate-900">{meter.latestReading?.currentValue ?? "—"}</span>
                                   </div>
                                   <span className="text-slate-300">=</span>
-                                  <span className={`font-semibold ${consumptionColor}`}>+{meter.latestReading?.consumption ?? "—"} m³</span>
+                                  <span className={`font-semibold ${consumptionColor}`}>+{readingConsumption(meter.latestReading)} m³</span>
                                 </div>
                               );
                             })}
@@ -1411,7 +1544,8 @@ export default function ManagementCompanyPage() {
                                   apt.meters.forEach(meter => {
                                     meter.readings.forEach(reading => {
                                       // Извлекаем YYYY-MM из submittedAt (формат: 2026-04-26T09:20:00)
-                                      const monthKey = reading.submittedAt.substring(0, 7); // "2026-04"
+                                      const monthKey = readingMonthKey(reading); // "2026-04"
+                                      if (!monthKey) return;
                                       if (!readingsByMonth.has(monthKey)) {
                                         readingsByMonth.set(monthKey, []);
                                       }
@@ -1430,7 +1564,8 @@ export default function ManagementCompanyPage() {
                                   return sortedMonths.map(monthKey => {
                                     const [year, month] = monthKey.split('-');
                                     const monthLabel = `${year}-${month}`;
-                                    const isMonthExpanded = expandedApartments.has(`month-${monthKey}`);
+                                    const monthToggleKey = `${apt.id}-${monthKey}`;
+                                    const isMonthExpanded = expandedApartments.has(`month-${monthToggleKey}`);
                                     const monthReadings = readingsByMonth.get(monthKey) || [];
                                     
                                     return (
@@ -1439,7 +1574,7 @@ export default function ManagementCompanyPage() {
                                         <div className="flex items-center bg-white hover:bg-slate-50 transition-colors">
                                           <button
                                             type="button"
-                                            onClick={() => toggleMonth(monthKey)}
+                                            onClick={() => toggleMonth(monthToggleKey)}
                                             className="flex flex-1 items-center justify-between px-4 py-2.5"
                                           >
                                             <div className="flex items-center gap-3">
@@ -1509,7 +1644,7 @@ export default function ManagementCompanyPage() {
                                                       <td className="py-2.5 px-2 text-slate-600 tabular-nums">{dateFormatted}</td>
                                                       <td className="py-2.5 px-2 text-right text-slate-500 tabular-nums">{item.reading.previousValue}</td>
                                                       <td className="py-2.5 px-2 text-right font-semibold text-slate-900 tabular-nums">{item.reading.currentValue}</td>
-                                                      <td className="py-2.5 px-2 text-right tabular-nums font-semibold text-slate-700">+{item.reading.consumption}</td>
+                                                      <td className="py-2.5 px-2 text-right tabular-nums font-semibold text-slate-700">+{readingConsumption(item.reading)}</td>
                                                       <td className="py-2.5 px-2 text-center">
                                                         {(() => {
                                                           const cfg = item.reading.status === "verified"

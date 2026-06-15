@@ -10,6 +10,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { BuildingsModule } from './modules/buildings/buildings.module';
 import { CompanyModule } from './modules/company/company.module';
 import { CompanyInvitationsModule } from './modules/company-invitations/company-invitations.module';
+import { DocumentsModule } from './modules/documents/documents.module';
 import { EmailModule } from './modules/emails/email.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
@@ -35,6 +36,7 @@ import { UsersModule } from './modules/users/users.module';
     CompanyModule,
     InvitationsModule,
     CompanyInvitationsModule,
+    DocumentsModule,
     ApartmentsModule,
     InvoicesModule,
     MeterReadingsModule,

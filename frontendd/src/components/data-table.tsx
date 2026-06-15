@@ -7,16 +7,38 @@ interface DataTableProps {
   columns: string[];
   rows: ReactNode[][];
   pageSize?: number;
+  mobileHiddenColumns?: number[];
 }
 
-export function DataTable({ columns, rows, pageSize = 50 }: DataTableProps) {
+export function DataTable({ columns, rows, pageSize = 50, mobileHiddenColumns = [] }: DataTableProps) {
   const [page, setPage] = useState(0);
   const totalPages = Math.ceil(rows.length / pageSize);
   const visibleRows = rows.slice(page * pageSize, (page + 1) * pageSize);
+  const mobileHiddenColumnSet = new Set(mobileHiddenColumns);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200">
-      <div className="overflow-x-auto">
+      <div className="divide-y divide-slate-100 bg-white md:hidden">
+        {visibleRows.map((row, rowIndex) => (
+          <article key={page * pageSize + rowIndex} className="grid gap-3 p-4">
+            {row.map((cell, cellIndex) => {
+              if (mobileHiddenColumnSet.has(cellIndex)) return null;
+
+              return (
+                <div key={cellIndex} className="grid grid-cols-[minmax(88px,0.38fr)_minmax(0,1fr)] gap-3 text-sm">
+                  <span className="break-words text-xs font-semibold uppercase leading-5 text-slate-500">
+                    {columns[cellIndex] ?? ""}
+                  </span>
+                  <span className="min-w-0 break-words text-right leading-5 text-slate-800">
+                    {cell}
+                  </span>
+                </div>
+              );
+            })}
+          </article>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto md:block">
         <table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
           <thead className="bg-slate-50 text-slate-500">
             <tr>

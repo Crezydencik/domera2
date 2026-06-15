@@ -1,6 +1,9 @@
-export type DashboardRole = "managementCompany" | "resident" | "landlord";
+export type DashboardRole = "platformAdmin" | "managementCompany" | "resident" | "landlord";
 
 const roleAliases: Record<string, DashboardRole> = {
+  platformadmin: "platformAdmin",
+  superadmin: "platformAdmin",
+  admin: "platformAdmin",
   managementcompany: "managementCompany",
   management: "managementCompany",
   manager: "managementCompany",

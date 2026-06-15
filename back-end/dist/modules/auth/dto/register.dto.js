@@ -35,9 +35,9 @@ __decorate([
     __metadata("design:type", String)
 ], RegisterDto.prototype, "password", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ enum: role_constants_1.ACCOUNT_TYPES }),
+    (0, swagger_1.ApiProperty)({ enum: role_constants_1.PUBLIC_REGISTRATION_ROLES }),
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.IsIn)([...role_constants_1.ACCOUNT_TYPES]),
+    (0, class_validator_1.IsIn)([...role_constants_1.PUBLIC_REGISTRATION_ROLES]),
     __metadata("design:type", String)
 ], RegisterDto.prototype, "accountType", void 0);
 __decorate([

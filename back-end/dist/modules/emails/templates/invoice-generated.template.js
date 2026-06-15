@@ -2,87 +2,75 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.invoiceGeneratedTemplates = void 0;
 const baseStyles = {
-    container: 'font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a;',
-    heading: 'margin:0 0 12px;font-size:24px;font-weight:700;',
-    subHeading: 'margin:12px 0 8px;font-size:16px;font-weight:600;',
-    paragraph: 'margin:0 0 12px;line-height:1.6;',
-    button: 'display:inline-block;padding:12px 24px;background:#4f46e5;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;',
-    infoBox: 'background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px;margin:12px 0;',
-    footer: 'margin:20px 0 0;padding:16px 0;border-top:1px solid #e2e8f0;color:#64748b;font-size:13px;line-height:1.5;',
+    page: 'margin:0;padding:32px 16px;background:#f8fafc;font-family:Arial,sans-serif;color:#334155;',
+    card: 'max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:40px 32px;text-align:center;',
+    logo: 'margin:0 0 28px;font-size:34px;font-weight:800;letter-spacing:1px;color:#ef3340;',
+    company: 'margin:0 0 20px;font-size:16px;font-weight:700;color:#334155;',
+    heading: 'margin:0 0 28px;font-size:22px;font-weight:700;color:#475569;line-height:1.35;',
+    row: 'margin:12px 0;font-size:16px;line-height:1.5;',
+    value: 'font-weight:700;color:#475569;',
+    button: 'display:inline-block;margin:24px 0 34px;padding:13px 32px;border:1px solid #ef3340;border-radius:4px;color:#ef3340;text-decoration:none;font-size:16px;font-weight:700;',
+    note: 'margin:0;font-size:15px;line-height:1.6;color:#334155;',
+    footer: 'max-width:640px;margin:16px auto 0;text-align:center;font-size:12px;line-height:1.5;color:#64748b;',
 };
 exports.invoiceGeneratedTemplates = {
     en: (params) => ({
-        subject: `Invoice #${params.invoiceNumber} is ready - Domera`,
+        subject: `Invoice ${params.invoiceNumber} is ready - Domera`,
         html: `
-      <div style="${baseStyles.container}">
-        <h2 style="${baseStyles.heading}">Your invoice is ready</h2>
-        <p style="${baseStyles.paragraph}">
-          Hello${params.tenantName ? ` ${params.tenantName}` : ''},
-        </p>
-        <p style="${baseStyles.paragraph}">
-          A new invoice has been generated for your ${params.apartmentNumber ? `apartment ${params.apartmentNumber}` : 'unit'}${params.buildingName ? ` in ${params.buildingName}` : ''}.
-        </p>
-        <div style="${baseStyles.infoBox}">
-          <p style="margin:0;"><strong>Invoice #:</strong> ${params.invoiceNumber}</p>
-          <p style="margin:8px 0 0;"><strong>Amount:</strong> ${params.amount}</p>
-          <p style="margin:8px 0 0;"><strong>Due Date:</strong> ${params.dueDate}</p>
+      <div style="${baseStyles.page}">
+        <div style="${baseStyles.card}">
+          <div style="${baseStyles.logo}">DOMERA</div>
+          <p style="${baseStyles.company}">${params.buildingName || 'Domera'}</p>
+          <h2 style="${baseStyles.heading}">Invoice for services ${params.invoiceNumber}</h2>
+          ${params.tenantName ? `<p style="${baseStyles.row}">Hello, <span style="${baseStyles.value}">${params.tenantName}</span></p>` : ''}
+          ${params.apartmentNumber ? `<p style="${baseStyles.row}">Apartment <span style="${baseStyles.value}">${params.apartmentNumber}</span></p>` : ''}
+          <p style="${baseStyles.row}">Amount <span style="${baseStyles.value}">${params.amount}</span></p>
+          <p style="${baseStyles.row}">Due date <span style="${baseStyles.value}">${params.dueDate || '-'}</span></p>
+          <a href="${params.invoiceLink}" style="${baseStyles.button}">View invoice</a>
+          <p style="${baseStyles.note}">The invoice is attached to this email.</p>
+          <p style="${baseStyles.note}">Detailed invoice information is available by the button above.</p>
         </div>
-        <p style="${baseStyles.paragraph}">
-          <a href="${params.invoiceLink}" style="${baseStyles.button}">View & Pay Invoice</a>
-        </p>
-        <div style="${baseStyles.footer}">
-          <p>Please ensure payment by the due date to avoid late fees.</p>
-        </div>
+        <p style="${baseStyles.footer}">This is an automatically generated email, please do not reply.</p>
       </div>
     `,
     }),
     ru: (params) => ({
-        subject: `Счет #${params.invoiceNumber} готов - Domera`,
+        subject: `Счёт ${params.invoiceNumber} готов - Domera`,
         html: `
-      <div style="${baseStyles.container}">
-        <h2 style="${baseStyles.heading}">Ваш счет готов</h2>
-        <p style="${baseStyles.paragraph}">
-          Здравствуйте${params.tenantName ? `, ${params.tenantName}` : ''},
-        </p>
-        <p style="${baseStyles.paragraph}">
-          Новый счет был сгенерирован для вашей ${params.apartmentNumber ? `квартиры ${params.apartmentNumber}` : 'единицы'}${params.buildingName ? ` в ${params.buildingName}` : ''}.
-        </p>
-        <div style="${baseStyles.infoBox}">
-          <p style="margin:0;"><strong>Номер счета:</strong> ${params.invoiceNumber}</p>
-          <p style="margin:8px 0 0;"><strong>Сумма:</strong> ${params.amount}</p>
-          <p style="margin:8px 0 0;"><strong>Срок оплаты:</strong> ${params.dueDate}</p>
+      <div style="${baseStyles.page}">
+        <div style="${baseStyles.card}">
+          <div style="${baseStyles.logo}">DOMERA</div>
+          <p style="${baseStyles.company}">${params.buildingName || 'Domera'}</p>
+          <h2 style="${baseStyles.heading}">Счёт за услуги ${params.invoiceNumber}</h2>
+          ${params.tenantName ? `<p style="${baseStyles.row}">Здравствуйте, <span style="${baseStyles.value}">${params.tenantName}</span></p>` : ''}
+          ${params.apartmentNumber ? `<p style="${baseStyles.row}">Квартира <span style="${baseStyles.value}">${params.apartmentNumber}</span></p>` : ''}
+          <p style="${baseStyles.row}">Сумма <span style="${baseStyles.value}">${params.amount}</span></p>
+          <p style="${baseStyles.row}">Срок <span style="${baseStyles.value}">${params.dueDate || '-'}</span></p>
+          <a href="${params.invoiceLink}" style="${baseStyles.button}">Посмотреть</a>
+          <p style="${baseStyles.note}">Счёт прикреплён к этому письму.</p>
+          <p style="${baseStyles.note}">Детальная информация доступна по кнопке выше.</p>
         </div>
-        <p style="${baseStyles.paragraph}">
-          <a href="${params.invoiceLink}" style="${baseStyles.button}">Просмотреть и оплатить</a>
-        </p>
-        <div style="${baseStyles.footer}">
-          <p>Пожалуйста, обеспечьте оплату до указанной даты, чтобы избежать штрафа.</p>
-        </div>
+        <p style="${baseStyles.footer}">Это автоматическое письмо, пожалуйста, не отвечайте на него.</p>
       </div>
     `,
     }),
     lv: (params) => ({
-        subject: `Rēķins #${params.invoiceNumber} ir gatavs - Domera`,
+        subject: `Rēķins ${params.invoiceNumber} ir gatavs - Domera`,
         html: `
-      <div style="${baseStyles.container}">
-        <h2 style="${baseStyles.heading}">Jūsu rēķins ir gatavs</h2>
-        <p style="${baseStyles.paragraph}">
-          Sveiki${params.tenantName ? `, ${params.tenantName}` : ''},
-        </p>
-        <p style="${baseStyles.paragraph}">
-          Jūsu ${params.apartmentNumber ? `dzīvoklim ${params.apartmentNumber}` : 'vienībai'}${params.buildingName ? ` ${params.buildingName}` : ''} ir ģenerēts jauns rēķins.
-        </p>
-        <div style="${baseStyles.infoBox}">
-          <p style="margin:0;"><strong>Rēķina numurs:</strong> ${params.invoiceNumber}</p>
-          <p style="margin:8px 0 0;"><strong>Summa:</strong> ${params.amount}</p>
-          <p style="margin:8px 0 0;"><strong>Maksāšanas termiņš:</strong> ${params.dueDate}</p>
+      <div style="${baseStyles.page}">
+        <div style="${baseStyles.card}">
+          <div style="${baseStyles.logo}">DOMERA</div>
+          <p style="${baseStyles.company}">${params.buildingName || 'Domera'}</p>
+          <h2 style="${baseStyles.heading}">Rēķins par pakalpojumiem ${params.invoiceNumber}</h2>
+          ${params.tenantName ? `<p style="${baseStyles.row}">Sveiki, <span style="${baseStyles.value}">${params.tenantName}</span></p>` : ''}
+          ${params.apartmentNumber ? `<p style="${baseStyles.row}">Dzīvoklis <span style="${baseStyles.value}">${params.apartmentNumber}</span></p>` : ''}
+          <p style="${baseStyles.row}">Summa <span style="${baseStyles.value}">${params.amount}</span></p>
+          <p style="${baseStyles.row}">Termiņš <span style="${baseStyles.value}">${params.dueDate || '-'}</span></p>
+          <a href="${params.invoiceLink}" style="${baseStyles.button}">Skatīt</a>
+          <p style="${baseStyles.note}">Rēķins ir pievienots šim e-pastam.</p>
+          <p style="${baseStyles.note}">Detalizēta rēķina informācija ir pieejama ar pogu augstāk.</p>
         </div>
-        <p style="${baseStyles.paragraph}">
-          <a href="${params.invoiceLink}" style="${baseStyles.button}">Skatīt un apmaksāt</a>
-        </p>
-        <div style="${baseStyles.footer}">
-          <p>Lūdzu, apmaksājiet līdz termiņam, lai izvairītos no kavēšanās maksas.</p>
-        </div>
+        <p style="${baseStyles.footer}">Šis ir automātiski sagatavots e-pasts, lūdzam uz to neatbildēt.</p>
       </div>
     `,
     }),

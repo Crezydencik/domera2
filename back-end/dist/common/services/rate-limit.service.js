@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RateLimitService = void 0;
 const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
+const TRUST_PROXY_HEADERS = process.env.TRUST_PROXY_HEADERS === 'true';
 let RateLimitService = class RateLimitService {
     constructor() {
         this.memCache = new Map();
@@ -47,15 +48,17 @@ let RateLimitService = class RateLimitService {
         return (0, node_crypto_1.createHash)('sha256').update(key).digest('hex');
     }
     getClientIp(request) {
-        const xff = request.headers['x-forwarded-for'];
-        if (typeof xff === 'string' && xff.trim()) {
-            const first = xff.split(',')[0]?.trim();
-            if (first)
-                return first;
-        }
-        const realIp = request.headers['x-real-ip'];
-        if (typeof realIp === 'string' && realIp.trim()) {
-            return realIp.trim();
+        if (TRUST_PROXY_HEADERS) {
+            const xff = request.headers['x-forwarded-for'];
+            if (typeof xff === 'string' && xff.trim()) {
+                const first = xff.split(',')[0]?.trim();
+                if (first)
+                    return first;
+            }
+            const realIp = request.headers['x-real-ip'];
+            if (typeof realIp === 'string' && realIp.trim()) {
+                return realIp.trim();
+            }
         }
         return request.ip || 'unknown-ip';
     }

@@ -182,9 +182,22 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
       const nextSettings = settingsResponse.settings;
       setSettings(nextSettings);
 
-      const nextItems = Array.isArray(response.items)
+      const allItems = Array.isArray(response.items)
         ? response.items.map((item) => toNotificationItem(item as UnknownRecord))
         : [];
+
+      // Deduplicate owner invitations (keep only one per apartment+building)
+      const seenInvitations = new Set<string>();
+      const nextItems = allItems.filter((item) => {
+        if (item.type === "owner-invitation") {
+          const key = `${item.apartmentNumber}-${item.buildingName}`;
+          if (seenInvitations.has(key)) {
+            return false;
+          }
+          seenInvitations.add(key);
+        }
+        return true;
+      });
 
       setItems(nextItems);
       if (canLoadOwnerStatus(nextSettings)) {

@@ -221,6 +221,7 @@ export function ApartmentsManagementView({
           apartmentRecord={item}
           currentResidentId={residentId}
           currentResidentName={residentName}
+          isOccupied={occupancyStatus === "occupied"}
           residentOptions={residentOptions}
         />
       ) : (

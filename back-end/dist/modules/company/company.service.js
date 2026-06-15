@@ -62,6 +62,14 @@ let CompanyService = class CompanyService {
         }
         return '';
     }
+    toOptionalTrimmedString(value) {
+        return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+    }
+    normalizeStaffContacts(value) {
+        return Array.isArray(value)
+            ? value.filter((item) => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+            : [];
+    }
     getBuildingApiKeyCollection(buildingId) {
         return this.firebaseAdminService.firestore
             .collection('buildings')
@@ -290,7 +298,40 @@ let CompanyService = class CompanyService {
         if (user.companyId && user.companyId !== companyId && !manager.includes(user.uid) && !userIds.includes(user.uid)) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
-        return { id: snap.id, ...data };
+        const publicContactsSnap = await this.firebaseAdminService.firestore
+            .collection('users')
+            .where('companyId', '==', companyId)
+            .where('showContactToResidents', '==', true)
+            .get();
+        const staffContacts = this.normalizeStaffContacts(data.staffContacts);
+        const publicStaffContacts = staffContacts
+            .filter((contact) => contact.showContactToResidents === true)
+            .map((contact) => ({
+            id: this.firstString(contact.id, contact.email),
+            fullName: this.firstString(contact.fullName, contact.name, contact.email),
+            email: this.firstString(contact.email),
+            phone: this.firstString(contact.phone),
+            position: this.firstString(contact.position, contact.jobTitle, contact.comment),
+            comment: this.firstString(contact.comment),
+            role: this.firstString(contact.role, 'ManagementCompany'),
+        }));
+        const publicContacts = publicContactsSnap.docs
+            .map((doc) => {
+            const contact = doc.data();
+            const fullName = this.firstString(contact.fullName, [contact.firstName, contact.lastName]
+                .filter((value) => typeof value === 'string' && value.trim().length > 0)
+                .join(' '), contact.name, contact.displayName, contact.email);
+            return {
+                id: doc.id,
+                fullName,
+                email: this.firstString(contact.email),
+                phone: this.firstString(contact.phone, contact.phoneNumber),
+                position: this.firstString(contact.position, contact.jobTitle),
+                role: this.firstString(contact.role, contact.accountType),
+            };
+        })
+            .filter((contact) => contact.fullName || contact.email || contact.phone);
+        return { id: snap.id, ...data, staffContacts, publicContacts: [...publicContacts, ...publicStaffContacts] };
     }
     async update(request, user, companyId, payload) {
         this.assertAuthenticated(user);
@@ -505,6 +546,9 @@ let CompanyService = class CompanyService {
             fullName,
             name: fullName,
             displayName: fullName,
+            ...(params.phone ? { phone: params.phone } : {}),
+            ...(params.position ? { position: params.position, jobTitle: params.position } : {}),
+            showContactToResidents: params.showContactToResidents,
             companyId: params.companyId,
             role: params.role,
             accountType,
@@ -532,6 +576,9 @@ let CompanyService = class CompanyService {
             firstName: params.firstName,
             lastName: params.lastName,
             fullName,
+            phone: params.phone,
+            position: params.position,
+            showContactToResidents: params.showContactToResidents,
             role: params.role,
             accountType,
             companyId: params.companyId,
@@ -550,6 +597,9 @@ let CompanyService = class CompanyService {
             email: params.email,
             firstName: params.firstName,
             lastName: params.lastName,
+            ...(params.phone ? { phone: params.phone } : {}),
+            ...(params.position ? { position: params.position, jobTitle: params.position } : {}),
+            showContactToResidents: params.showContactToResidents,
             role: params.role,
             accountType: (0, role_constants_1.resolveAccountType)({ role: params.role }) ?? 'ManagementCompany',
             inviteType: 'company-member',
@@ -587,14 +637,56 @@ let CompanyService = class CompanyService {
         const role = payload.role === 'Accountant' || payload.role === 'ManagementCompany' ? payload.role : null;
         const firstName = typeof payload.firstName === 'string' ? payload.firstName.trim() : '';
         const lastName = typeof payload.lastName === 'string' ? payload.lastName.trim() : '';
-        if (!email || !role || !firstName || !lastName) {
+        const phone = this.toOptionalTrimmedString(payload.phone);
+        const position = this.toOptionalTrimmedString(payload.position);
+        const comment = this.toOptionalTrimmedString(payload.comment);
+        const memberId = this.toOptionalTrimmedString(payload.memberId);
+        const showContactToResidents = payload.showContactToResidents === true;
+        const createAccount = payload.createAccount !== false;
+        if (createAccount && (!email || !role || !firstName || !lastName)) {
             throw new common_1.BadRequestException('email, firstName, lastName and role are required');
         }
+        if (!createAccount && (!firstName || (!email && !phone))) {
+            throw new common_1.BadRequestException('firstName and email or phone are required');
+        }
+        const resolvedRole = role ?? 'ManagementCompany';
         await this.enforceRateLimit(request, 'company:add-member', `${user.uid}:${companyId}`, 20);
         const companyRef = this.firebaseAdminService.firestore.collection('companies').doc(companyId);
         const companySnap = await companyRef.get();
         if (!companySnap.exists)
             throw new common_1.NotFoundException('Company not found');
+        const company = companySnap.data();
+        if (!createAccount) {
+            const fullName = [firstName, lastName].filter(Boolean).join(' ');
+            const staffContacts = this.normalizeStaffContacts(company.staffContacts);
+            const id = this.firstString(memberId, email ? staffContacts.find((contact) => this.firstString(contact.email).toLowerCase() === email)?.id : undefined, `contact_${(0, node_crypto_1.randomBytes)(8).toString('hex')}`);
+            const nextContact = {
+                id,
+                ...(email ? { email } : {}),
+                firstName,
+                ...(lastName ? { lastName } : {}),
+                fullName,
+                name: fullName,
+                ...(phone ? { phone } : {}),
+                ...(position ? { position, jobTitle: position } : {}),
+                ...(comment ? { comment } : {}),
+                showContactToResidents,
+                role: resolvedRole,
+                createAccount: false,
+            };
+            await companyRef.set({
+                staffContacts: [
+                    ...staffContacts.filter((contact) => this.firstString(contact.id) !== id && (!email || this.firstString(contact.email).toLowerCase() !== email)),
+                    nextContact,
+                ],
+                updatedAt: new Date(),
+            }, { merge: true });
+            return {
+                success: true,
+                mode: 'contact',
+                member: nextContact,
+            };
+        }
         let targetUid = '';
         try {
             const authUser = await this.firebaseAdminService.auth.getUserByEmail(email);
@@ -609,7 +701,10 @@ let CompanyService = class CompanyService {
                 email,
                 firstName,
                 lastName,
-                role,
+                phone,
+                position,
+                showContactToResidents,
+                role: resolvedRole,
             });
             return {
                 success: true,
@@ -617,7 +712,6 @@ let CompanyService = class CompanyService {
                 invitation,
             };
         }
-        const company = companySnap.data();
         const member = await this.attachMemberToCompany({
             companyId,
             company,
@@ -625,7 +719,10 @@ let CompanyService = class CompanyService {
             email,
             firstName,
             lastName,
-            role,
+            phone,
+            position,
+            showContactToResidents,
+            role: resolvedRole,
         });
         return {
             success: true,
@@ -656,6 +753,15 @@ let CompanyService = class CompanyService {
         if (!companySnap.exists)
             throw new common_1.NotFoundException('Company not found');
         const company = companySnap.data();
+        const staffContacts = this.normalizeStaffContacts(company.staffContacts);
+        const nextStaffContacts = staffContacts.filter((contact) => this.firstString(contact.id) !== normalizedMemberId);
+        if (nextStaffContacts.length !== staffContacts.length) {
+            await companyRef.set({
+                staffContacts: nextStaffContacts,
+                updatedAt: new Date(),
+            }, { merge: true });
+            return { success: true, memberId: normalizedMemberId };
+        }
         const userIds = Array.isArray(company.userIds)
             ? company.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
             : [];

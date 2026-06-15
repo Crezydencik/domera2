@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslations } from "next-intl";
 import { SectionCard } from "@/components/section-card";
 import { apiFetch } from "@/shared/api/client";
 import { notifyMeterReadingsChanged, notifyOwnerMeterReadingStatus } from "@/shared/hooks/use-app-notifications";
@@ -25,6 +26,7 @@ interface ReadingRow {
   currentValue: number;
   consumption: number;
   submittedAt: string;
+  historyVisible: boolean;
 }
 
 type PeriodGroup = {
@@ -44,11 +46,16 @@ type MonthGroup = {
 type BuildingOption = {
   id: string;
   submissionPeriod?: SubmissionPeriodValue | null;
+  waterEnabled?: boolean;
+  hotWaterMetersPerResident?: number;
+  coldWaterMetersPerResident?: number;
 };
 
-const METER_LABELS: Record<ResidentOwnerMeterOption["key"], string> = {
-  coldmeterwater: "Холодная вода",
-  hotmeterwater: "Горячая вода",
+type MeterLabels = Record<ResidentOwnerMeterOption["key"], string>;
+
+const DEFAULT_METER_LABELS: MeterLabels = {
+  coldmeterwater: "Cold water",
+  hotmeterwater: "Hot water",
 };
 
 function text(...values: unknown[]) {
@@ -62,6 +69,19 @@ function text(...values: unknown[]) {
 function numberValue(value: unknown, fallback = 0) {
   const parsed = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function consumptionValue(currentValue: number, previousValue: number) {
+  return Number(Math.max(0, currentValue - previousValue).toFixed(3));
+}
+
+function formatConsumption(value: unknown) {
+  const parsed = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed.toFixed(3) : "-";
+}
+
+function readingConsumption(reading: ReadingRow) {
+  return formatConsumption(consumptionValue(reading.currentValue, reading.previousValue));
 }
 
 function formatDate(value: unknown) {
@@ -113,11 +133,15 @@ function isSubmissionPeriodOpen(value?: SubmissionPeriodValue | null) {
   return today >= period.startDate && today <= period.endDate;
 }
 
-function submissionClosedMessage(value?: SubmissionPeriodValue | null) {
+function submissionClosedMessage(
+  value: SubmissionPeriodValue | null | undefined,
+  closedDefault: string,
+  closedWithDates: (start: string, end: string) => string,
+) {
   const period = resolveCurrentSubmissionPeriod(value);
-  if (!period) return "Период сдачи показаний сейчас закрыт.";
+  if (!period) return closedDefault;
 
-  return `Период сдачи показаний закрыт. Доступно с ${formatPeriodDate(period.startDate)} по ${formatPeriodDate(period.endDate)}.`;
+  return closedWithDates(formatPeriodDate(period.startDate), formatPeriodDate(period.endDate));
 }
 
 function monthLabelFromDate(value: string) {
@@ -125,7 +149,11 @@ function monthLabelFromDate(value: string) {
   return month && year ? `${month}.${year}` : value;
 }
 
-function meterFromGroup(key: ResidentOwnerMeterOption["key"], group: unknown): ResidentOwnerMeterOption | null {
+function meterFromGroup(
+  key: ResidentOwnerMeterOption["key"],
+  group: unknown,
+  meterLabels: MeterLabels = DEFAULT_METER_LABELS,
+): ResidentOwnerMeterOption | null {
   if (!group || typeof group !== "object") return null;
   const data = group as UnknownRecord;
   const meterId = text(data.meterId, data.id, data.serialNumber);
@@ -134,13 +162,13 @@ function meterFromGroup(key: ResidentOwnerMeterOption["key"], group: unknown): R
   return {
     key,
     id: meterId,
-    label: METER_LABELS[key],
+    label: meterLabels[key],
     serialNumber: text(data.serialNumber, data.meterId, "-"),
     previousValue: numberValue(data.currentValue, numberValue(data.previousValue)),
   };
 }
 
-function normalizeApartment(item: UnknownRecord): ResidentOwnerApartmentOption | null {
+function normalizeApartment(item: UnknownRecord, meterLabels: MeterLabels = DEFAULT_METER_LABELS): ResidentOwnerApartmentOption | null {
   const id = text(item.id, item.apartmentId);
   if (!id || id === "-") return null;
 
@@ -148,8 +176,8 @@ function normalizeApartment(item: UnknownRecord): ResidentOwnerApartmentOption |
     ? item.waterReadings as UnknownRecord
     : {};
   const meters = [
-    meterFromGroup("coldmeterwater", waterReadings.coldmeterwater),
-    meterFromGroup("hotmeterwater", waterReadings.hotmeterwater),
+    meterFromGroup("coldmeterwater", waterReadings.coldmeterwater, meterLabels),
+    meterFromGroup("hotmeterwater", waterReadings.hotmeterwater, meterLabels),
   ].filter((meter): meter is ResidentOwnerMeterOption => Boolean(meter));
 
   return {
@@ -174,6 +202,9 @@ function normalizeBuilding(item: UnknownRecord): BuildingOption | null {
 
   return {
     id,
+    waterEnabled: Boolean(readingConfig.waterEnabled),
+    hotWaterMetersPerResident: numberValue(readingConfig.hotWaterMetersPerResident),
+    coldWaterMetersPerResident: numberValue(readingConfig.coldWaterMetersPerResident),
     submissionPeriod: submissionPeriod?.startDate && submissionPeriod?.endDate
       ? {
           startDate: String(submissionPeriod.startDate),
@@ -184,7 +215,37 @@ function normalizeBuilding(item: UnknownRecord): BuildingOption | null {
   };
 }
 
-function normalizeReading(item: UnknownRecord): ReadingRow {
+function fallbackMetersFromBuilding(
+  apartmentId: string,
+  building: BuildingOption | undefined,
+  meterLabels: MeterLabels = DEFAULT_METER_LABELS,
+): ResidentOwnerMeterOption[] {
+  if (!building?.waterEnabled) return [];
+
+  const meters: ResidentOwnerMeterOption[] = [];
+  if (numberValue(building.coldWaterMetersPerResident) > 0) {
+    meters.push({
+      key: "coldmeterwater",
+      id: `${apartmentId}:coldmeterwater`,
+      label: meterLabels.coldmeterwater,
+      serialNumber: "-",
+      previousValue: 0,
+    });
+  }
+  if (numberValue(building.hotWaterMetersPerResident) > 0) {
+    meters.push({
+      key: "hotmeterwater",
+      id: `${apartmentId}:hotmeterwater`,
+      label: meterLabels.hotmeterwater,
+      serialNumber: "-",
+      previousValue: 0,
+    });
+  }
+
+  return meters;
+}
+
+function normalizeReading(item: UnknownRecord, meterLabels: MeterLabels = DEFAULT_METER_LABELS): ReadingRow {
   const meterKey = text(item.meterKey);
   const previousValue = numberValue(item.previousValue);
   const currentValue = numberValue(item.currentValue, numberValue(item.value));
@@ -194,11 +255,12 @@ function normalizeReading(item: UnknownRecord): ReadingRow {
     apartmentId: text(item.apartmentId),
     apartment: text(item.apartmentNumber, item.apartment, item.apartmentId, "-"),
     meterKey,
-    meterLabel: meterKey === "hotmeterwater" ? METER_LABELS.hotmeterwater : METER_LABELS.coldmeterwater,
+    meterLabel: meterKey === "hotmeterwater" ? meterLabels.hotmeterwater : meterLabels.coldmeterwater,
     previousValue,
     currentValue,
-    consumption: numberValue(item.consumption, Math.max(0, currentValue - previousValue)),
+    consumption: numberValue(item.consumption, consumptionValue(currentValue, previousValue)),
     submittedAt: formatDate(item.submittedAt),
+    historyVisible: item.historyVisible !== false,
   };
 }
 
@@ -325,7 +387,12 @@ function sortReadingsByDate(readings: ReadingRow[]) {
 }
 
 export function ResidentOwnerMeterReadings() {
+  const t = useTranslations("meterReadings.resident");
   const notify = useNotifications();
+  const meterLabels: MeterLabels = {
+    coldmeterwater: t("meterLabels.coldWater"),
+    hotmeterwater: t("meterLabels.hotWater"),
+  };
   const [apartments, setApartments] = useState<ResidentOwnerApartmentOption[]>([]);
   const [readings, setReadings] = useState<ReadingRow[]>([]);
   const [selectedApartmentId, setSelectedApartmentId] = useState("");
@@ -334,7 +401,7 @@ export function ResidentOwnerMeterReadings() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const period = currentMonth();
-  const monthGroups = groupReadingsByMonth(readings);
+  const monthGroups = groupReadingsByMonth(readings.filter((reading) => reading.historyVisible));
   const visibleApartments = selectedApartmentId
     ? apartments.filter((apartment) => apartment.id === selectedApartmentId)
     : apartments.slice(0, 1);
@@ -351,19 +418,24 @@ export function ResidentOwnerMeterReadings() {
       if (showLoading) setLoading(true);
       setError(null);
       const apartmentsResponse = await apiFetch<{ apartments?: UnknownRecord[]; buildings?: UnknownRecord[] }>("/resident/apartments");
-      const buildingPeriods = new Map(
+      const buildingOptions = new Map(
         (apartmentsResponse.buildings ?? [])
           .map(normalizeBuilding)
           .filter((item): item is BuildingOption => Boolean(item))
-          .map((building) => [building.id, building.submissionPeriod] as const),
+          .map((building) => [building.id, building] as const),
       );
       const normalizedApartments = (apartmentsResponse.apartments ?? [])
-        .map(normalizeApartment)
+        .map((item) => normalizeApartment(item, meterLabels))
         .filter((item): item is ResidentOwnerApartmentOption => Boolean(item))
-        .map((apartment) => ({
-          ...apartment,
-          submissionPeriod: buildingPeriods.get(apartment.buildingId) ?? apartment.submissionPeriod ?? null,
-        }));
+        .map((apartment) => {
+          const building = buildingOptions.get(apartment.buildingId);
+
+          return {
+            ...apartment,
+            meters: apartment.meters.length > 0 ? apartment.meters : fallbackMetersFromBuilding(apartment.id, building, meterLabels),
+            submissionPeriod: building?.submissionPeriod ?? apartment.submissionPeriod ?? null,
+          };
+        });
 
       const readingBatches = await Promise.all(
         normalizedApartments.map((apartment) =>
@@ -374,7 +446,7 @@ export function ResidentOwnerMeterReadings() {
 
       const normalizedReadings = readingBatches
         .flatMap((response) => response.items ?? [])
-        .map(normalizeReading);
+        .map((item) => normalizeReading(item, meterLabels));
 
       setApartments(normalizedApartments);
       setReadings(sortReadingsByDate(normalizedReadings));
@@ -385,7 +457,7 @@ export function ResidentOwnerMeterReadings() {
       );
       setValues({});
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Не удалось загрузить показания");
+      setError(caughtError instanceof Error ? caughtError.message : t("loadFailed"));
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -419,17 +491,17 @@ export function ResidentOwnerMeterReadings() {
     );
 
     if (filledMeters.length === 0) {
-      notify.info("Введите хотя бы одно показание");
+      notify.info(t("enterAtLeastOne"));
       return;
     }
 
     if (!submissionOpen) {
-      notify.info("Период сдачи показаний сейчас закрыт");
+      notify.info(t("submissionClosed"));
       return;
     }
 
     if (currentMonthSubmitted) {
-      notify.info("Показания за этот месяц уже сданы");
+      notify.info(t("alreadySubmitted"));
       return;
     }
 
@@ -437,11 +509,11 @@ export function ResidentOwnerMeterReadings() {
       const currentValue = numberValue(values[residentOwnerMeterValueKey(apartment.id, meter.key)], NaN);
       const previousValue = previousValueForMeter(apartment, meter, readings, period);
       if (!Number.isFinite(currentValue)) {
-        notify.error("Показание должно быть числом");
+        notify.error(t("mustBeNumber"));
         return;
       }
       if (currentValue < previousValue) {
-        notify.error(`${meter.label}: показание не может быть меньше предыдущего`);
+        notify.error(t("belowPrevious", { meter: meter.label }));
         return;
       }
     }
@@ -463,7 +535,7 @@ export function ResidentOwnerMeterReadings() {
             meterKey: meter.key,
             previousValue,
             currentValue,
-            consumption: Math.max(0, currentValue - previousValue),
+            consumption: consumptionValue(currentValue, previousValue),
             buildingId: apartment.buildingId,
             month,
             year,
@@ -478,8 +550,9 @@ export function ResidentOwnerMeterReadings() {
           meterLabel: meter.label,
           previousValue,
           currentValue,
-          consumption: Math.max(0, currentValue - previousValue),
+          consumption: consumptionValue(currentValue, previousValue),
           submittedAt,
+          historyVisible: true,
         });
         optimisticIndex += 1;
       }
@@ -507,10 +580,10 @@ export function ResidentOwnerMeterReadings() {
         })),
       );
       setValues({});
-      notify.success("Показания отправлены");
+      notify.success(t("submitted"));
       notifyMeterReadingsChanged();
     } catch (caughtError) {
-      notify.error(caughtError instanceof Error ? caughtError.message : "Не удалось отправить показания");
+      notify.error(caughtError instanceof Error ? caughtError.message : t("submitFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -518,13 +591,13 @@ export function ResidentOwnerMeterReadings() {
 
   return (
     <div className="space-y-6">
-      <SectionCard title="Сдача показаний" description="Передайте текущие показания по вашим счётчикам">
+      <SectionCard title={t("submitTitle")} description={t("submitDescription")}>
         {loading ? (
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-slate-500">Загрузка...</div>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-slate-500">{t("loading")}</div>
         ) : error ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
         ) : apartments.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-slate-600">К вам пока не привязаны квартиры.</div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-slate-600">{t("noApartments")}</div>
         ) : (
           <ResidentOwnerSubmitForm
             apartments={submitApartments}
@@ -532,7 +605,11 @@ export function ResidentOwnerMeterReadings() {
             selectedApartmentId={selectedApartmentId}
             submissionOpen={submissionOpen}
             currentMonthSubmitted={currentMonthSubmitted}
-            closedMessage={submissionClosedMessage(selectedSubmissionPeriod)}
+            closedMessage={submissionClosedMessage(
+              selectedSubmissionPeriod,
+              t("closedDefault"),
+              (start, end) => t("closedWithDates", { start, end }),
+            )}
             values={values}
             period={period}
             submitting={submitting}
@@ -544,7 +621,7 @@ export function ResidentOwnerMeterReadings() {
 
         {!loading && !error ? (
           <div className="mt-8 space-y-4">
-            <h3 className="text-2xl font-bold text-slate-950">История показаний</h3>
+            <h3 className="text-2xl font-bold text-slate-950">{t("historyTitle")}</h3>
             {monthGroups.length > 0 ? (
               <div className="space-y-3">
                 {monthGroups.map((monthGroup) => (
@@ -555,7 +632,7 @@ export function ResidentOwnerMeterReadings() {
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-4 bg-slate-50 px-4 py-3 transition hover:bg-slate-100">
                       <div>
                         <p className="font-semibold text-slate-900">{monthGroup.label}</p>
-                        <p className="text-sm text-slate-500">{monthGroup.count} показаний</p>
+                        <p className="text-sm text-slate-500">{t("readingsCount", { count: monthGroup.count })}</p>
                       </div>
                       <span className="text-xl leading-none text-slate-400 transition group-open:rotate-180">⌄</span>
                     </summary>
@@ -565,11 +642,11 @@ export function ResidentOwnerMeterReadings() {
                         <div key={group.key} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                           <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50/70 px-4 py-2.5">
                             <div>
-                              <p className="text-xs text-slate-500">Дата</p>
+                              <p className="text-xs text-slate-500">{t("date")}</p>
                               <p className="text-sm font-semibold text-slate-900">{group.date}</p>
                             </div>
                             <div className="text-left sm:text-right">
-                              <p className="text-xs text-slate-500">Квартира</p>
+                              <p className="text-xs text-slate-500">{t("apartment")}</p>
                               <p className="text-sm font-semibold text-slate-900">{group.apartment}</p>
                             </div>
                           </div>
@@ -577,10 +654,10 @@ export function ResidentOwnerMeterReadings() {
                             <table className="w-full min-w-[560px] text-sm">
                               <thead className="text-left text-slate-500">
                                 <tr>
-                                  <th className="px-4 py-2 font-semibold">Счётчик</th>
-                                  <th className="px-4 py-2 text-right font-semibold">Пред.</th>
-                                  <th className="px-4 py-2 text-right font-semibold">Текущ.</th>
-                                  <th className="px-4 py-2 text-right font-semibold">Расход</th>
+                                  <th className="px-4 py-2 font-semibold">{t("meter")}</th>
+                                  <th className="px-4 py-2 text-right font-semibold">{t("previousShort")}</th>
+                                  <th className="px-4 py-2 text-right font-semibold">{t("currentShort")}</th>
+                                  <th className="px-4 py-2 text-right font-semibold">{t("consumption")}</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
@@ -589,7 +666,7 @@ export function ResidentOwnerMeterReadings() {
                                     <td className="px-4 py-3 text-slate-700">{reading.meterLabel}</td>
                                     <td className="px-4 py-3 text-right tabular-nums text-slate-600">{reading.previousValue}</td>
                                     <td className="px-4 py-3 text-right tabular-nums font-semibold text-slate-900">{reading.currentValue}</td>
-                                    <td className="px-4 py-3 text-right tabular-nums text-blue-700">{reading.consumption} m3</td>
+                                    <td className="px-4 py-3 text-right tabular-nums text-blue-700">{readingConsumption(reading)} m3</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -603,7 +680,7 @@ export function ResidentOwnerMeterReadings() {
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-slate-500">
-                Истории показаний пока нет.
+                {t("emptyHistory")}
               </div>
             )}
           </div>

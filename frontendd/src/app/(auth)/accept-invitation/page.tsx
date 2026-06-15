@@ -3,7 +3,7 @@
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -27,6 +27,8 @@ interface InvitationInfo {
   accountType: PublicAccountType;
   inviteType?: string;
   existingAccountDetected?: boolean;
+  firstName?: string;
+  lastName?: string;
 }
 
 function AcceptInvitationContent() {
@@ -61,6 +63,8 @@ function AcceptInvitationContent() {
         apartmentId?: string | null;
         accountType?: string;
         inviteType?: string;
+        firstName?: string;
+        lastName?: string;
         apartmentLabel?: string;
         buildingLabel?: string;
         managerLabel?: string;
@@ -90,17 +94,69 @@ function AcceptInvitationContent() {
                 : "Resident",
           inviteType: invitation.inviteType,
           existingAccountDetected: data.existingAccountDetected,
+          firstName: invitation.firstName,
+          lastName: invitation.lastName,
         });
+        setFirstName(invitation.firstName?.trim() ?? "");
+        setLastName(invitation.lastName?.trim() ?? "");
       })
       .catch(() => setInfo(null))
       .finally(() => setResolving(false));
   }, [params]);
 
+  const loginHref = useMemo(() => {
+    if (!info) return ROUTES.login;
+
+    const next = `${ROUTES.acceptInvitation}?token=${encodeURIComponent(info.token)}&accept=1`;
+    return `${ROUTES.login}?next=${encodeURIComponent(next)}`;
+  }, [info]);
+
+  const hasInvitedFullName = Boolean(info?.firstName?.trim() && info?.lastName?.trim());
+
+  useEffect(() => {
+    if (!info?.existingAccountDetected || params.get("accept") !== "1" || accepted) return;
+
+    let cancelled = false;
+    const invitationToken = info.token;
+
+    async function acceptAuthenticatedInvitation() {
+      setLoading(true);
+      setErrors({});
+
+      try {
+        await apiFetch("/invitations/accept", {
+          method: "POST",
+          body: JSON.stringify({
+            token: invitationToken,
+            gdprConsent: true,
+          }),
+        });
+
+        if (cancelled) return;
+        setAccepted(true);
+        router.push(ROUTES.dashboard);
+        router.refresh();
+      } catch (error) {
+        if (!cancelled) {
+          setErrors({ general: error instanceof Error ? error.message : s("dbError") });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void acceptAuthenticatedInvitation();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accepted, info, params, router, s]);
+
   async function handleAccept(e: React.FormEvent) {
     e.preventDefault();
     const next: Record<string, string> = {};
-    if (!firstName.trim()) next.firstName = "Required";
-    if (!lastName.trim()) next.lastName = "Required";
+    if (!hasInvitedFullName && !firstName.trim()) next.firstName = "Required";
+    if (!hasInvitedFullName && !lastName.trim()) next.lastName = "Required";
     if (!isStrongPassword(password)) next.password = s("form.passwordHint");
     if (password !== confirm) next.confirm = "Passwords do not match";
     if (Object.keys(next).length) { setErrors(next); return; }
@@ -224,10 +280,25 @@ function AcceptInvitationContent() {
 
       {info.existingAccountDetected && (
         <div className="mt-6 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          This invitation email already has an account. Please sign in first to continue.
+          {t("invitationExistingAccount")}
         </div>
       )}
 
+      {info.existingAccountDetected ? (
+        <div className="mt-6">
+          {errors.general && (
+            <div className="mb-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {errors.general}
+            </div>
+          )}
+          <Link href={loginHref}>
+            <Button variant="primary" size="lg" className="w-full" disabled={loading}>
+              {loading ? s("button.accepting") : t("invitationSignInToAccept")}
+            </Button>
+          </Link>
+        </div>
+      ) : (
+      <>
       {/* Registration form */}
       <form onSubmit={handleAccept} className="mt-6 flex flex-col gap-5">
         {errors.general && (
@@ -236,23 +307,25 @@ function AcceptInvitationContent() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <Input
-            label={s("form.firstName")}
-            placeholder={s("placeholder.firstName")}
-            value={firstName}
-            onChange={(e) => { setFirstName(e.target.value); setErrors((p) => ({ ...p, firstName: "" })); }}
-            error={errors.firstName}
-            autoFocus
-          />
-          <Input
-            label={s("form.lastName")}
-            placeholder={s("placeholder.lastName")}
-            value={lastName}
-            onChange={(e) => { setLastName(e.target.value); setErrors((p) => ({ ...p, lastName: "" })); }}
-            error={errors.lastName}
-          />
-        </div>
+        {!hasInvitedFullName && (
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label={s("form.firstName")}
+              placeholder={s("placeholder.firstName")}
+              value={firstName}
+              onChange={(e) => { setFirstName(e.target.value); setErrors((p) => ({ ...p, firstName: "" })); }}
+              error={errors.firstName}
+              autoFocus
+            />
+            <Input
+              label={s("form.lastName")}
+              placeholder={s("placeholder.lastName")}
+              value={lastName}
+              onChange={(e) => { setLastName(e.target.value); setErrors((p) => ({ ...p, lastName: "" })); }}
+              error={errors.lastName}
+            />
+          </div>
+        )}
 
         <Input
           label={s("form.email")}
@@ -297,10 +370,12 @@ function AcceptInvitationContent() {
 
       <p className="mt-6 text-center text-sm text-slate-500">
         {t("haveAccount")}{" "}
-        <Link href={ROUTES.login} className="font-medium text-blue-600 hover:underline">
+        <Link href={loginHref} className="font-medium text-blue-600 hover:underline">
           {s("button.login")}
         </Link>
       </p>
+      </>
+      )}
     </div>
   );
 }

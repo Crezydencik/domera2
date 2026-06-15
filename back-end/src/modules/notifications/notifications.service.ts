@@ -31,6 +31,34 @@ export class NotificationsService {
     private readonly rateLimitService: RateLimitService,
   ) {}
 
+  private userNotificationsCollection(userId: string): FirebaseFirestore.CollectionReference {
+    return this.firebaseAdminService.firestore
+      .collection('users')
+      .doc(userId)
+      .collection('notifications');
+  }
+
+  private notificationCreatedAtMillis(item: Record<string, unknown>): number {
+    const createdAt = item.createdAt;
+    if (createdAt instanceof Date) return createdAt.getTime();
+    if (createdAt && typeof (createdAt as { toMillis?: unknown }).toMillis === 'function') {
+      return (createdAt as { toMillis: () => number }).toMillis();
+    }
+    return 0;
+  }
+
+  private async findNotificationDocument(notificationId: string): Promise<FirebaseFirestore.DocumentSnapshot | null> {
+    const nestedSnap = await this.firebaseAdminService.firestore
+      .collectionGroup('notifications')
+      .where('notificationId', '==', notificationId)
+      .limit(1)
+      .get();
+    if (!nestedSnap.empty) return nestedSnap.docs[0] ?? null;
+
+    const legacySnap = await this.firebaseAdminService.firestore.collection('notifications').doc(notificationId).get();
+    return legacySnap.exists ? legacySnap : null;
+  }
+
   private assertAuth(user: RequestUser | undefined): asserts user is RequestUser {
     if (!user?.uid) throw new UnauthorizedException('Authentication required');
   }
@@ -123,18 +151,31 @@ export class NotificationsService {
       return { items: [] };
     }
 
-    const snap = await this.firebaseAdminService.firestore
-      .collection('notifications')
-      .where('userId', '==', normalizedUserId)
-      .orderBy('createdAt', 'desc')
-      .limit(100)
-      .get();
+    const [nestedSnap, legacySnap] = await Promise.all([
+      this.userNotificationsCollection(normalizedUserId)
+        .orderBy('createdAt', 'desc')
+        .limit(100)
+        .get(),
+      this.firebaseAdminService.firestore
+        .collection('notifications')
+        .where('userId', '==', normalizedUserId)
+        .orderBy('createdAt', 'desc')
+        .limit(100)
+        .get(),
+    ]);
 
-    const items = snap.docs
-      .map<{ id: string } & Record<string, unknown>>((doc) => ({
+    const itemsById = new Map<string, { id: string } & Record<string, unknown>>();
+    [...nestedSnap.docs, ...legacySnap.docs].forEach((doc) => {
+      const data = doc.data() as Record<string, unknown>;
+      itemsById.set(doc.id, {
         id: doc.id,
-        ...(doc.data() as Record<string, unknown>),
-      }))
+        ...data,
+      });
+    });
+
+    const items = Array.from(itemsById.values())
+      .sort((left, right) => this.notificationCreatedAtMillis(right) - this.notificationCreatedAtMillis(left))
+      .slice(0, 100)
       .filter((item) => item.read !== true);
 
     const filteredItems = items.filter((item) => {
@@ -159,14 +200,15 @@ export class NotificationsService {
     this.ensureUserAccess(user, targetUserId);
     await this.enforceRateLimit(request, 'notifications:create', `${user.uid}:${targetUserId}`, 40);
 
+    const ref = this.userNotificationsCollection(targetUserId).doc();
     const data = {
       ...payload,
+      notificationId: ref.id,
       userId: targetUserId,
       read: Boolean(payload.read ?? false),
       createdAt: new Date(),
     };
 
-    const ref = this.firebaseAdminService.firestore.collection('notifications').doc();
     await ref.set(data);
 
     return { id: ref.id, ...data };
@@ -178,9 +220,8 @@ export class NotificationsService {
 
     await this.enforceRateLimit(request, 'notifications:read', `${user.uid}:${notificationId}`, 80);
 
-    const ref = this.firebaseAdminService.firestore.collection('notifications').doc(notificationId);
-    const snap = await ref.get();
-    if (!snap.exists) throw new NotFoundException('Notification not found');
+    const snap = await this.findNotificationDocument(notificationId);
+    if (!snap?.exists) throw new NotFoundException('Notification not found');
 
     const data = snap.data() as Record<string, unknown>;
     const targetUserId = typeof data.userId === 'string' ? data.userId : '';
@@ -188,7 +229,7 @@ export class NotificationsService {
 
     this.ensureUserAccess(user, targetUserId);
 
-    await ref.set({ read: true, readAt: new Date(), updatedAt: new Date() }, { merge: true });
+    await snap.ref.set({ read: true, readAt: new Date(), updatedAt: new Date() }, { merge: true });
     return { success: true };
   }
 
@@ -200,19 +241,25 @@ export class NotificationsService {
     this.ensureUserAccess(user, normalizedUserId);
     await this.enforceRateLimit(request, 'notifications:read-all', `${user.uid}:${normalizedUserId}`, 20);
 
-    const snap = await this.firebaseAdminService.firestore
-      .collection('notifications')
-      .where('userId', '==', normalizedUserId)
-      .where('read', '==', false)
-      .get();
+    const [nestedSnap, legacySnap] = await Promise.all([
+      this.userNotificationsCollection(normalizedUserId)
+        .where('read', '==', false)
+        .get(),
+      this.firebaseAdminService.firestore
+        .collection('notifications')
+        .where('userId', '==', normalizedUserId)
+        .where('read', '==', false)
+        .get(),
+    ]);
 
     const batch = this.firebaseAdminService.firestore.batch();
-    snap.docs.forEach((doc) => {
+    const docs = [...nestedSnap.docs, ...legacySnap.docs];
+    docs.forEach((doc) => {
       batch.set(doc.ref, { read: true, readAt: new Date(), updatedAt: new Date() }, { merge: true });
     });
     await batch.commit();
 
-    return { success: true, updated: snap.size };
+    return { success: true, updated: docs.length };
   }
 
   async remove(request: Request, user: RequestUser, notificationId: string) {
@@ -221,9 +268,8 @@ export class NotificationsService {
 
     await this.enforceRateLimit(request, 'notifications:delete', `${user.uid}:${notificationId}`, 40);
 
-    const ref = this.firebaseAdminService.firestore.collection('notifications').doc(notificationId);
-    const snap = await ref.get();
-    if (!snap.exists) throw new NotFoundException('Notification not found');
+    const snap = await this.findNotificationDocument(notificationId);
+    if (!snap?.exists) throw new NotFoundException('Notification not found');
 
     const data = snap.data() as Record<string, unknown>;
     const targetUserId = typeof data.userId === 'string' ? data.userId : '';
@@ -231,7 +277,7 @@ export class NotificationsService {
 
     this.ensureUserAccess(user, targetUserId);
 
-    await ref.delete();
+    await snap.ref.delete();
     return { success: true };
   }
 }

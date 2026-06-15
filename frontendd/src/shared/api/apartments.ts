@@ -70,7 +70,15 @@ export function getApartmentStorageSummary(apartmentId: string) {
 export function inviteApartmentTenant(
   apartmentId: string,
   email: string,
-  tenantData?: { firstName?: string; lastName?: string; phone?: string; contractNumber?: string },
+  tenantData?: {
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    contractNumber?: string;
+    fromDate?: string;
+    until?: string;
+    canViewDocuments?: boolean;
+  },
 ) {
   return apiFetch<ApartmentMutationResponse>(`/apartments/${encodeURIComponent(apartmentId)}/tenants/invite`, {
     method: "POST",
@@ -89,11 +97,39 @@ export function updateApartmentOwner(
   });
 }
 
+export function removeApartmentOwner(apartmentId: string) {
+  return apiFetch<ApartmentMutationResponse>(`/apartments/${encodeURIComponent(apartmentId)}/owner`, {
+    method: "DELETE",
+  });
+}
+
 export function removeApartmentTenant(apartmentId: string, tenantUserId: string) {
   return apiFetch<ApartmentMutationResponse>(
     `/apartments/${encodeURIComponent(apartmentId)}/tenants/${encodeURIComponent(tenantUserId)}`,
     {
       method: "DELETE",
+    },
+  );
+}
+
+export function updateApartmentTenant(
+  apartmentId: string,
+  tenantUserId: string,
+  tenantData: {
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    fromDate?: string;
+    until?: string;
+    status?: string;
+    canViewDocuments?: boolean;
+  },
+) {
+  return apiFetch<ApartmentMutationResponse>(
+    `/apartments/${encodeURIComponent(apartmentId)}/tenants/${encodeURIComponent(tenantUserId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(tenantData),
     },
   );
 }

@@ -19,6 +19,7 @@ const auth_module_1 = require("./modules/auth/auth.module");
 const buildings_module_1 = require("./modules/buildings/buildings.module");
 const company_module_1 = require("./modules/company/company.module");
 const company_invitations_module_1 = require("./modules/company-invitations/company-invitations.module");
+const documents_module_1 = require("./modules/documents/documents.module");
 const email_module_1 = require("./modules/emails/email.module");
 const invoices_module_1 = require("./modules/invoices/invoices.module");
 const invitations_module_1 = require("./modules/invitations/invitations.module");
@@ -47,6 +48,7 @@ exports.AppModule = AppModule = __decorate([
             company_module_1.CompanyModule,
             invitations_module_1.InvitationsModule,
             company_invitations_module_1.CompanyInvitationsModule,
+            documents_module_1.DocumentsModule,
             apartments_module_1.ApartmentsModule,
             invoices_module_1.InvoicesModule,
             meter_readings_module_1.MeterReadingsModule,

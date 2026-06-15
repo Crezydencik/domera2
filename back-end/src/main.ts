@@ -5,10 +5,33 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
+function parseAllowedOrigins(value: string | undefined): Set<string> {
+  const origins = new Set(
+    (value ?? '')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  );
+  if (process.env.NODE_ENV !== 'production' && origins.size === 0) {
+    origins.add('http://localhost:3000');
+    origins.add('http://127.0.0.1:3000');
+  }
+
+  return origins;
+}
+
 async function bootstrap() {
+  const allowedOrigins = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS ?? process.env.FRONTEND_URL);
   const app = await NestFactory.create(AppModule, {
     cors: {
-      origin: true,
+      origin(origin, callback) {
+        if (!origin || allowedOrigins.has(origin)) {
+          callback(null, true);
+          return;
+        }
+
+        callback(new Error('Origin is not allowed by CORS'), false);
+      },
       credentials: true,
     },
   });
@@ -17,7 +40,8 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidUnknownValues: false,
+      forbidUnknownValues: true,
+      forbidNonWhitelisted: true,
       transform: true,
     }),
   );
@@ -40,7 +64,7 @@ async function bootstrap() {
     const document = SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('api/docs', app, document, {
       swaggerOptions: {
-        persistAuthorization: true,
+        persistAuthorization: process.env.SWAGGER_PERSIST_AUTHORIZATION === 'true',
       },
       customSiteTitle: 'Domera Backend API Docs',
       jsonDocumentUrl: '/api/docs-json',

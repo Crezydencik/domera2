@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { FiAlertCircle, FiArrowRight, FiBell, FiCheckCircle, FiChevronDown, FiLogOut, FiMenu, FiSettings, FiUser, FiX } from "react-icons/fi";
 import { LocaleSwitcher } from "@/components/locale-switcher";
-import { LogoutButton } from "@/components/logout-button";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { apiFetch } from "@/shared/api/client";
 import { establishUserSession } from "@/shared/lib/auth-client";
+import { clearBrowserAuthCookies } from "@/shared/lib/auth-session";
 import { useAuthSession } from "@/shared/hooks/use-auth";
 import { useAppNotifications } from "@/shared/hooks/use-app-notifications";
 import { useNotifications as useToastNotifications } from "@/shared/hooks/use-notifications";
@@ -30,46 +31,100 @@ type NavItem = {
   icon: string;
 };
 
-const navByRole: Record<DashboardRole, NavItem[]> = {
-  managementCompany: [
-    { href: ROUTES.dashboard, label: "Dashboard", icon: "⌂" },
-    { href: ROUTES.buildings, label: "Buildings", icon: "▣" },
-    { href: ROUTES.apartments, label: "Apartments", icon: "▥" },
-    { href: ROUTES.residents, label: "Residents", icon: "◌" },
-    { href: ROUTES.meterReadings, label: "Meter Readings", icon: "◔" },
-    { href: ROUTES.invoices, label: "Billing / Invoices", icon: "€" },
-    // { href: ROUTES.debts, label: "Debts", icon: "!" },
-    // { href: ROUTES.documents, label: "Documents", icon: "▤" },
-    // { href: ROUTES.notifications, label: "Notifications", icon: "◉" },
-    { href: ROUTES.settings, label: "Settings", icon: "⚙" },
-  ],
-  resident: [
-    { href: ROUTES.dashboard, label: "Dashboard", icon: "⌂" },
-    { href: ROUTES.apartments, label: "My Apartments", icon: "▥" },
-    { href: ROUTES.meterReadings, label: "Meter Readings", icon: "◔" },
-    { href: ROUTES.invoices, label: "My Invoices", icon: "€" },
-    // { href: ROUTES.documents, label: "Documents", icon: "▤" },
-    // { href: ROUTES.notifications, label: "Notifications", icon: "◉" },
-    { href: ROUTES.settings, label: "Settings", icon: "⚙" },
-  ],
-  landlord: [
-    { href: ROUTES.dashboard, label: "Dashboard", icon: "⌂" },
-    { href: ROUTES.apartments, label: "My Apartments", icon: "▥" },
-    { href: ROUTES.residents, label: "Tenants", icon: "◌" },
-    { href: ROUTES.invoices, label: "Invoices", icon: "€" },
-    { href: ROUTES.meterReadings, label: "Meter Readings", icon: "◔" },
-    { href: ROUTES.documents, label: "Documents", icon: "▤" },
-    { href: ROUTES.notifications, label: "Notifications", icon: "◉" },
-    { href: ROUTES.settings, label: "Settings", icon: "⚙" },
-  ],
+type UserProfileSummary = {
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  name?: string;
+  displayName?: string;
+  username?: string;
+  userName?: string;
+  hasOwnership?: boolean;
+  hasTenancy?: boolean;
+  propertyRoles?: string[];
 };
 
-function readCookie(name: string): string {
-  if (typeof document === "undefined") return "";
-  return decodeURIComponent(document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))?.[1] ?? "");
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
+
+function resolveUserName(email: string): string {
+  const namePart = email.split("@")[0]?.trim();
+  if (!namePart) return "Domera user";
+
+  return namePart
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+  }
+
+function firstText(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
 }
 
-export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAwareSidebarProps) {
+function resolveProfileName(profile: UserProfileSummary | null, sessionName: string | undefined, fallbackEmail: string): string {
+  const joinedName = [profile?.firstName, profile?.lastName]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim())
+    .join(" ");
+  const fallbackName = resolveUserName(fallbackEmail);
+
+  return firstText(
+    joinedName,
+    profile?.fullName,
+    profile?.name,
+    profile?.displayName,
+    sessionName,
+    fallbackName,
+    profile?.username,
+    profile?.userName,
+  ) ?? fallbackName;
+}
+  
+  export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAwareSidebarProps) {
+    const tm = useTranslations("appShell.header.pageTitles");
+  const navByRole: Record<DashboardRole, NavItem[]> = {
+    platformAdmin: [
+      { href: ROUTES.dashboard, label: tm("dashboard"), icon: "A" },
+      { href: ROUTES.platformUsers, label: "Platform users", icon: "U" },
+      { href: ROUTES.settings, label: tm("settings"), icon: "S" },
+    ],
+    
+    managementCompany: [
+      { href: ROUTES.dashboard, label: tm("dashboard"), icon: "⌂" },
+      { href: ROUTES.buildings, label: tm("buildings"), icon: "▣" },
+      { href: ROUTES.apartments, label: tm("apartments"), icon: "▥" },
+      { href: ROUTES.residents, label: tm("residents"), icon: "◌" },
+      { href: ROUTES.meterReadings, label: tm("meterReadings"), icon: "◔" },
+      { href: ROUTES.invoices, label: tm("invoices"), icon: "€" },
+      // { href: ROUTES.debts, label: "Debts", icon: "!" },
+      { href: ROUTES.documents, label: tm("documents"), icon: "▤" },
+      // { href: ROUTES.notifications, label: tm("notifications"), icon: "◉" },
+      { href: ROUTES.settings, label: tm("settings"), icon: "⚙" },
+    ],
+    resident: [
+      { href: ROUTES.dashboard, label: tm("dashboard"), icon: "⌂" },
+      { href: ROUTES.apartments, label: tm("apartments"), icon: "▥" },
+      { href: ROUTES.meterReadings, label: tm("meterReadings"), icon: "◔" },
+      { href: ROUTES.invoices, label: tm("invoices"), icon: "€" },
+      { href: ROUTES.documents, label: tm("documents"), icon: "▤" },
+      // { href: ROUTES.notifications, label: tm("notifications"), icon: "◉" },
+      { href: ROUTES.settings, label: tm("settings"), icon: "⚙" },
+    ],
+    landlord: [
+      { href: ROUTES.dashboard, label: tm("dashboard"), icon: "⌂" },
+      { href: ROUTES.apartments, label: tm("apartments"), icon: "▥" },
+      { href: ROUTES.invoices, label: tm("invoices"), icon: "€" },
+      { href: ROUTES.meterReadings, label: tm("meterReadings"), icon: "◔" },
+      { href: ROUTES.documents, label: tm("documents"), icon: "▤" },
+      { href: ROUTES.settings, label: tm("settings"), icon: "⚙" },
+    ] }
   const t = useTranslations("appShell.header");
   const router = useRouter();
   const rawPathname = usePathname();
@@ -77,18 +132,48 @@ export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAw
   const role = normalizeDashboardRole(defaultRole);
   const navItems = navByRole[role];
   const [profileOpen, setProfileOpen] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [acceptingNotificationId, setAcceptingNotificationId] = useState<string | null>(null);
   const notifications = useAppNotifications({ previewLimit: 5 });
+  const notificationsOpen = notifications.isOpen;
+  const closeNotifications = notifications.close;
+  const notificationsRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
   const confirm = useConfirm();
   const toast = useToastNotifications();
   const session = useAuthSession();
+  const [profileSummary, setProfileSummary] = useState<UserProfileSummary | null>(null);
 
-  const userEmail = useMemo(() => readCookie("userEmail") || "user@domera.lv", []);
-  const roleLabel = t(`roles.${role}`);
+ const userEmail = session.email ?? "user@domera.lv";
+const userName = resolveProfileName(profileSummary, session.name, userEmail);
+  const userInitial = userName.slice(0, 1).toUpperCase();
+  const roleLabel = role === "platformAdmin" ? "Platform administrator" : t(`roles.${role}`);
+  const propertyRoleLabel = useMemo(() => {
+    const roles = new Set(
+      (profileSummary?.propertyRoles ?? [])
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim().toLowerCase()),
+    );
+
+    if (profileSummary?.hasOwnership) roles.add("owner");
+    if (profileSummary?.hasTenancy) roles.add("tenant");
+
+    const labels = [
+      roles.has("owner") ? t("profile.propertyRoles.owner") : "",
+      roles.has("tenant") ? t("profile.propertyRoles.tenant") : "",
+    ].filter(Boolean);
+
+    if (!labels.length && role === "managementCompany") {
+      return roleLabel;
+    }
+
+    return labels.join(" / ");
+  }, [profileSummary, role, roleLabel, t]);
   const pageTitle = useMemo(() => {
     const routeTitleMap: Array<{ href: string; key: string; exact?: boolean }> = [
       { href: ROUTES.dashboard, key: "dashboard", exact: true },
+      { href: ROUTES.platformUsers, key: "platformUsers" },
       { href: ROUTES.buildings, key: "buildings" },
       { href: ROUTES.apartments, key: "apartments" },
       { href: ROUTES.residents, key: "residents" },
@@ -103,6 +188,10 @@ export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAw
     const matchedRoute = routeTitleMap.find(({ href, exact }) =>
       exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`),
     );
+
+    if (matchedRoute?.key === "platformUsers") {
+      return "Platform users";
+    }
 
     return matchedRoute ? t(`pageTitles.${matchedRoute.key}`) : title;
   }, [pathname, t, title]);
@@ -127,7 +216,7 @@ export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAw
   }
 
   function getNotificationDisplay(item: NotificationItem) {
-    if (item.type !== "owner-invitation") {
+    if (item.type !== "owner-invitation" && item.type !== "tenant-invitation") {
       return {
         title: item.title,
         description: item.description,
@@ -144,6 +233,89 @@ export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAw
       }),
       channel: t("notifications.invitationChannel"),
       actionLabel: t("notifications.acceptInvitation"),
+    };
+  }
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        notificationsOpen &&
+        notificationsRef.current &&
+        !notificationsRef.current.contains(event.target as Node)
+      ) {
+        closeNotifications();
+      }
+
+      if (
+        profileOpen &&
+        profileRef.current &&
+        !profileRef.current.contains(event.target as Node)
+      ) {
+        setProfileOpen(false);
+      }
+    }
+
+    if (notificationsOpen || profileOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [closeNotifications, notificationsOpen, profileOpen]);
+
+  useEffect(() => {
+    if (!session.isAuthenticated) {
+      setProfileSummary(null);
+      return;
+    }
+
+    let active = true;
+
+    apiFetch<UserProfileSummary | null>("/users/me")
+      .then((profile) => {
+        if (active) setProfileSummary(profile);
+      })
+      .catch(() => {
+        if (active) setProfileSummary(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [session.isAuthenticated, session.userId]);
+
+  async function handleLogout() {
+    setLogoutLoading(true);
+
+    try {
+      await fetch(`${apiBaseUrl}/auth/clear-cookies`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Local cleanup is still enough to leave the app shell.
+    } finally {
+      clearBrowserAuthCookies();
+      setProfileOpen(false);
+      router.push(ROUTES.login);
+      router.refresh();
+      setLogoutLoading(false);
+    }
+  }
+
+  function getNotificationTone(item: NotificationItem) {
+    if (item.type === "owner-invitation" || item.type === "tenant-invitation") {
+      return {
+        icon: FiCheckCircle,
+        container: "bg-emerald-50 text-emerald-950",
+        iconBox: "bg-emerald-100 text-emerald-600",
+        action: "text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700",
+      };
+    }
+
+    return {
+      icon: FiAlertCircle,
+      container: "bg-blue-50 text-blue-950",
+      iconBox: "bg-blue-100 text-blue-600",
+      action: "text-blue-600 hover:bg-blue-100 hover:text-blue-700",
     };
   }
 
@@ -186,7 +358,7 @@ export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAw
           idToken: "",
           userId: session.userId,
           email: session.email,
-          accountType: "Landlord",
+          accountType: item.type === "tenant-invitation" ? "Resident" : "Landlord",
         }).catch(() => null);
       }
 
@@ -236,9 +408,7 @@ export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAw
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 lg:hidden"
                 aria-label="Close menu"
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
+                <FiX className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -263,12 +433,6 @@ export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAw
               ))}
             </nav>
           </div>
-
-          {/* Sidebar footer */}
-          <div className="shrink-0 border-t border-slate-100 px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">{roleLabel}</p>
-            <p className="mt-0.5 truncate text-xs text-slate-500">{userEmail}</p>
-          </div>
         </aside>
 
         <div className="min-w-0 flex-1 lg:ml-72">
@@ -282,9 +446,7 @@ export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAw
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 lg:hidden"
                 aria-label="Open menu"
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-                  <path d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
+                <FiMenu className="h-5 w-5" aria-hidden="true" />
               </button>
 
               {/* Title */}
@@ -301,80 +463,85 @@ export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAw
                 </div>
 
                 {/* Notifications */}
-                <div className="relative">
+                <div className="relative" ref={notificationsRef}>
                   <button
                     type="button"
                     onClick={() => {
                       notifications.toggle();
                       setProfileOpen(false);
                     }}
-                    className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                    className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-950 shadow-sm transition hover:border-slate-300 hover:bg-white"
                     aria-label={t("notifications.openAria")}
                   >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4.5 w-4.5">
-                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                    </svg>
+                    <FiBell className="h-5 w-5" aria-hidden="true" />
                     {notifications.count > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-color-blue-600 px-1 text-[9px] font-bold text-white">
-                        {notifications.count}
-                      </span>
+                      <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-slate-50" />
                     )}
                   </button>
 
                   {notifications.isOpen && (
-                    <div className="absolute right-0 z-20 mt-2 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/15">
-                      <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-blue-50/70 px-4 py-3">
+                    <div className="absolute right-0 z-20 mt-3 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-900/12">
+                      <div className="border-b border-slate-100 px-4 py-3">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-slate-950">{t("notifications.title")}</p>
-                            <p className="mt-0.5 text-xs text-slate-500">
-                              {notifications.count > 0 ? `${notifications.count}` : t("notifications.empty")}
-                            </p>
+                            <p className="text-sm font-bold leading-5 text-slate-950">{t("notifications.title")}</p>
                           </div>
-                          {notifications.count > 0 ? (
-                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-blue-600 px-2 text-xs font-bold text-white">
-                              {notifications.count}
-                            </span>
-                          ) : null}
                         </div>
                       </div>
 
-                      <div className="p-3">
+                      <div className="space-y-2 p-3">
                         {notifications.isLoading ? (
-                          <div className="rounded-xl bg-slate-50 px-3 py-4 text-sm text-slate-500">{t("notifications.loading")}</div>
+                          <div className="rounded-lg bg-slate-100 px-3 py-3 text-sm text-slate-500">{t("notifications.loading")}</div>
                         ) : notifications.error ? (
-                          <div className="rounded-xl bg-red-50 px-3 py-4 text-sm text-red-600">{notifications.error}</div>
+                          <div className="rounded-lg bg-red-50 px-3 py-3 text-sm text-red-600">{notifications.error}</div>
                         ) : notifications.hasItems ? (
-                          <div className="space-y-2">
+                          <>
                           {notifications.previewItems.map((item) => {
                             const display = getNotificationDisplay(item);
+                            const tone = getNotificationTone(item);
+                            const ToneIcon = tone.icon;
 
                             return (
-                            <div key={item.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 text-sm text-slate-700 shadow-sm">
-                              <div className="flex items-start justify-between gap-3">
-                                <p className="font-semibold leading-snug text-slate-950">{display.title}</p>
-                                <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
-                                  {display.channel}
-                                </span>
+                            <div key={item.id} className={`flex items-start gap-3 rounded-lg px-3 py-3 ${tone.container}`}>
+                              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone.iconBox}`}>
+                                <ToneIcon className="h-4 w-4" aria-hidden="true" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-bold leading-5">{display.title}</p>
+                                    <p className="line-clamp-2 text-xs leading-4 text-slate-600">{display.description}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => notifications.dismiss(item.id)}
+                                    className="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-white/60 hover:text-slate-700"
+                                    aria-label={t("notifications.dismissAria")}
+                                  >
+                                    <FiX className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                </div>
+                                <div className="mt-1.5 flex items-center">
+                                  {item.actionHref && display.actionLabel ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleNotificationAction(item)}
+                                      disabled={acceptingNotificationId === item.id}
+                                      className={`inline-flex h-6 w-6 items-center justify-center rounded-md transition disabled:pointer-events-none disabled:opacity-60 ${tone.action}`}
+                                      aria-label={display.actionLabel}
+                                      title={display.actionLabel}
+                                    >
+                                      <FiArrowRight className="h-4 w-4" aria-hidden="true" />
+                                    </button>
+                                  ) : null}
+                                </div>
                               </div>
-                              <p className="mt-1 text-xs leading-5 text-slate-500">{display.description}</p>
-                              {item.actionHref && display.actionLabel ? (
-                                <button
-                                  type="button"
-                                  onClick={() => void handleNotificationAction(item)}
-                                  disabled={acceptingNotificationId === item.id}
-                                  className="mt-3 inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-xs font-bold text-white shadow-sm shadow-blue-600/20 transition hover:bg-blue-700"
-                                >
-                                  {acceptingNotificationId === item.id ? t("notifications.acceptingInvitation") : display.actionLabel}
-                                </button>
-                              ) : null}
                             </div>
                             );
                           })}
-                          </div>
+                          </>
                         ) : (
-                          <div className="rounded-xl bg-slate-50 px-3 py-4 text-sm text-slate-500">{t("notifications.empty")}</div>
+                          <div className="rounded-lg bg-slate-100 px-3 py-3 text-sm text-slate-500">{t("notifications.empty")}</div>
                         )}
                       </div>
                     </div>
@@ -382,31 +549,73 @@ export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAw
                 </div>
 
                 {/* Profile */}
-                <div className="relative">
+                <div className="relative" ref={profileRef}>
                   <button
                     type="button"
                     onClick={() => {
                       setProfileOpen((value) => !value);
                       notifications.close();
                     }}
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-white hover:bg-slate-700"
+                    className="flex h-10 min-w-10 items-center gap-2 rounded-full border border-slate-200 bg-white p-1 pr-2 text-left shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
                     aria-label={t("profile.openAria")}
+                    aria-expanded={profileOpen}
                   >
-                    {userEmail.slice(0, 1).toUpperCase()}
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-600 text-sm font-bold text-white">
+                      {userInitial}
+                    </span>
+                    <span className="hidden min-w-0 max-w-36 sm:block lg:max-w-44">
+                      <span className="block truncate text-sm font-semibold leading-4 text-slate-950">{userName}</span>
+                      {propertyRoleLabel ? (
+                        <span className="block truncate text-[11px] leading-4 text-slate-500">{propertyRoleLabel}</span>
+                      ) : null}
+                    </span>
+                    <FiChevronDown
+                      className={`hidden h-4 w-4 shrink-0 text-slate-500 transition sm:block ${profileOpen ? "rotate-180" : ""}`}
+                      aria-hidden="true"
+                    />
                   </button>
 
                   {profileOpen && (
-                    <div className="absolute right-0 z-20 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
-                      <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">{t("profile.title")}</p>
-                      <p className="mt-1.5 break-all text-sm font-medium text-slate-900">{userEmail}</p>
-                      <div className="mt-3 flex flex-col gap-1.5">
+                    <div className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-900/10">
+                      <div className="flex items-center gap-3 px-4 py-3">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-600 text-base font-bold text-white">
+                          {userInitial}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-950">{userName}</p>
+                          <p className="truncate text-sm text-slate-500">{userEmail}</p>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-100 py-2">
                         <Link
                           href={ROUTES.settings}
-                          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+                          onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                         >
-                          {t("profile.settings")}
+                          <FiUser className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span>{t("profile.viewProfile")}</span>
                         </Link>
-                        <LogoutButton />
+                        <Link
+                          href={ROUTES.settings}
+                          onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
+                        >
+                          <FiSettings className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span>{t("profile.accountSettings")}</span>
+                        </Link>
+                      </div>
+
+                      <div className="border-t border-slate-100 py-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleLogout()}
+                          disabled={logoutLoading}
+                          className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950 disabled:pointer-events-none disabled:opacity-60"
+                        >
+                          <FiLogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span>{logoutLoading ? t("profile.signingOut") : t("profile.signOut")}</span>
+                        </button>
                       </div>
                     </div>
                   )}

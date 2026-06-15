@@ -5,15 +5,22 @@ exports.normalizeUserRole = normalizeUserRole;
 exports.normalizeAccountType = normalizeAccountType;
 exports.resolveUserRole = resolveUserRole;
 exports.resolveAccountType = resolveAccountType;
+exports.isPlatformAdminRole = isPlatformAdminRole;
 exports.isStaffRole = isStaffRole;
 exports.isPropertyMemberRole = isPropertyMemberRole;
 exports.isPublicRegistrationRole = isPublicRegistrationRole;
-exports.USER_ROLES = ['ManagementCompany', 'Accountant', 'Resident', 'Landlord'];
-exports.ACCOUNT_TYPES = ['ManagementCompany', 'Resident', 'Landlord'];
+exports.USER_ROLES = ['PlatformAdmin', 'ManagementCompany', 'Accountant', 'Resident', 'Landlord'];
+exports.ACCOUNT_TYPES = ['PlatformAdmin', 'ManagementCompany', 'Resident', 'Landlord'];
 exports.STAFF_ROLES = ['ManagementCompany', 'Accountant'];
 exports.PROPERTY_MEMBER_ROLES = ['Resident', 'Landlord'];
 exports.PUBLIC_REGISTRATION_ROLES = ['ManagementCompany', 'Resident', 'Landlord'];
 exports.ROLE_CATALOG = [
+    {
+        role: 'PlatformAdmin',
+        accountType: 'PlatformAdmin',
+        label: 'Platform administrator',
+        isAssignableOnRegistration: false,
+    },
     {
         role: 'ManagementCompany',
         accountType: 'ManagementCompany',
@@ -40,6 +47,12 @@ exports.ROLE_CATALOG = [
     },
 ];
 const ROLE_ALIASES = {
+    platformadmin: 'PlatformAdmin',
+    'platform-admin': 'PlatformAdmin',
+    platform_admin: 'PlatformAdmin',
+    superadmin: 'PlatformAdmin',
+    'super-admin': 'PlatformAdmin',
+    admin: 'PlatformAdmin',
     managementcompany: 'ManagementCompany',
     'management-company': 'ManagementCompany',
     management_company: 'ManagementCompany',
@@ -53,6 +66,12 @@ const ROLE_ALIASES = {
     owner: 'Landlord',
 };
 const ACCOUNT_TYPE_ALIASES = {
+    platformadmin: 'PlatformAdmin',
+    'platform-admin': 'PlatformAdmin',
+    platform_admin: 'PlatformAdmin',
+    superadmin: 'PlatformAdmin',
+    'super-admin': 'PlatformAdmin',
+    admin: 'PlatformAdmin',
     managementcompany: 'ManagementCompany',
     'management-company': 'ManagementCompany',
     management_company: 'ManagementCompany',
@@ -105,6 +124,9 @@ function resolveAccountType(input) {
     if (normalizedRole === 'Accountant')
         return 'ManagementCompany';
     return normalizedRole;
+}
+function isPlatformAdminRole(role) {
+    return normalizeUserRole(role) === 'PlatformAdmin';
 }
 function isStaffRole(role) {
     const normalizedRole = normalizeUserRole(role);

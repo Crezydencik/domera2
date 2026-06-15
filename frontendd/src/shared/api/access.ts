@@ -2,6 +2,7 @@ import { ROUTES } from "@/shared/lib/routes";
 import { type DashboardRole, normalizeDashboardRole } from "@/shared/role-ui";
 
 export const roleCookieValues: Record<DashboardRole, string> = {
+  platformAdmin: "PlatformAdmin",
   managementCompany: "ManagementCompany",
   resident: "Resident",
   landlord: "Landlord",
@@ -15,7 +16,17 @@ export const authRoutes = new Set<string>([
   ROUTES.acceptInvitation,
 ]);
 
+export const publicRoutes = [
+  "/invoices/public",
+  "/pdf",
+];
+
 export const allowedRoutesByRole: Record<DashboardRole, string[]> = {
+  platformAdmin: [
+    ROUTES.dashboard,
+    ROUTES.platformUsers,
+    ROUTES.settings,
+  ],
   managementCompany: [
     ROUTES.dashboard,
     ROUTES.buildings,
@@ -62,6 +73,10 @@ export function matchesPath(pathname: string, route: string) {
 }
 
 export function isProtectedPath(pathname: string) {
+  if (publicRoutes.some((route) => matchesPath(pathname, route))) {
+    return false;
+  }
+
   return Object.values(allowedRoutesByRole).some((routes) => routes.some((route) => matchesPath(pathname, route)));
 }
 

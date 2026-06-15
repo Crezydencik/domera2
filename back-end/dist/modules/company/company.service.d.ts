@@ -16,6 +16,8 @@ export declare class CompanyService {
     private hashApiKey;
     private buildApiKey;
     private firstString;
+    private toOptionalTrimmedString;
+    private normalizeStaffContacts;
     private getBuildingApiKeyCollection;
     private firestoreDateToIso;
     private mapApiKeyDocument;
@@ -34,6 +36,15 @@ export declare class CompanyService {
         id: string;
     }>;
     byId(request: Request, user: RequestUser, companyId: string): Promise<{
+        staffContacts: Record<string, unknown>[];
+        publicContacts: {
+            id: string;
+            fullName: string;
+            email: string;
+            phone: string;
+            position: string;
+            role: string;
+        }[];
         id: string;
     }>;
     update(request: Request, user: RequestUser, companyId: string, payload: Record<string, unknown>): Promise<{
@@ -87,6 +98,25 @@ export declare class CompanyService {
     addMember(request: Request, user: RequestUser, companyId: string, payload: Record<string, unknown>): Promise<{
         success: boolean;
         mode: string;
+        member: {
+            showContactToResidents: boolean;
+            role: string;
+            createAccount: boolean;
+            comment?: string | undefined;
+            position?: string | undefined;
+            jobTitle?: string | undefined;
+            phone?: string | undefined;
+            fullName: string;
+            name: string;
+            lastName?: string | undefined;
+            firstName: string;
+            email?: string | undefined;
+            id: string;
+        };
+        invitation?: undefined;
+    } | {
+        success: boolean;
+        mode: string;
         invitation: {
             invitationId: string;
             invitationLink: string;
@@ -102,8 +132,11 @@ export declare class CompanyService {
             firstName: string;
             lastName: string;
             fullName: string;
+            phone: string | undefined;
+            position: string | undefined;
+            showContactToResidents: boolean;
             role: "ManagementCompany" | "Accountant";
-            accountType: "ManagementCompany" | "Resident" | "Landlord";
+            accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
             companyId: string;
         };
         invitation?: undefined;

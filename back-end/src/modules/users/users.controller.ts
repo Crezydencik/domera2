@@ -27,6 +27,18 @@ export class UsersController {
     return this.usersService.me(request, user);
   }
 
+  @Patch(':userId/building-creation-access')
+  @ApiOperation({ summary: 'Grant or revoke building creation access for a management company user' })
+  @ApiParam({ name: 'userId', required: true, type: String })
+  setBuildingCreationAccess(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('userId') userId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.usersService.setBuildingCreationAccess(request, user, userId, body);
+  }
+
   @Get(':userId')
   @ApiOperation({ summary: 'Get user by id' })
   @ApiParam({ name: 'userId', required: true, type: String })
@@ -50,8 +62,8 @@ export class UsersController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get users by company' })
-  @ApiQuery({ name: 'companyId', required: true, type: String })
+  @ApiOperation({ summary: 'Get users by company, or all users for platform administrators' })
+  @ApiQuery({ name: 'companyId', required: false, type: String })
   listByCompany(
     @Req() request: Request,
     @CurrentUser() user: RequestUser,

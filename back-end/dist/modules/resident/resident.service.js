@@ -21,6 +21,11 @@ let ResidentService = class ResidentService {
     toOptionalString(value) {
         return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
     }
+    normalizeStaffContacts(value) {
+        return Array.isArray(value)
+            ? value.filter((item) => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+            : [];
+    }
     toSerializable(value) {
         if (value == null)
             return value;
@@ -100,8 +105,18 @@ let ResidentService = class ResidentService {
             const isTenant = tenants.some((tenant) => {
                 if (!tenant || typeof tenant !== 'object')
                     return false;
-                return typeof tenant.userId === 'string'
-                    && tenant.userId === user.uid;
+                const t = tenant;
+                if (typeof t.userId === 'string' && t.userId === user.uid) {
+                    const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
+                    const until = typeof t.until === 'string' ? new Date(t.until) : null;
+                    const now = new Date();
+                    if (fromDate && now < fromDate)
+                        return false;
+                    if (until && now > until)
+                        return false;
+                    return true;
+                }
+                return false;
             });
             if (isTenant) {
                 mergedApartments.set(doc.id, {
@@ -120,7 +135,18 @@ let ResidentService = class ResidentService {
             const isTenant = tenants.some((tenant) => {
                 if (!tenant || typeof tenant !== 'object')
                     return false;
-                return this.toOptionalString(tenant.userId) === user.uid;
+                const t = tenant;
+                if (this.toOptionalString(t.userId) === user.uid) {
+                    const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
+                    const until = typeof t.until === 'string' ? new Date(t.until) : null;
+                    const now = new Date();
+                    if (fromDate && now < fromDate)
+                        return false;
+                    if (until && now > until)
+                        return false;
+                    return true;
+                }
+                return false;
             });
             return isPrimaryResident || isActivatedOwner || isTenant;
         };
@@ -136,9 +162,51 @@ let ResidentService = class ResidentService {
             id: snap.id,
             ...snap.data(),
         }));
+        const companyIds = new Set();
+        const pushCompanyId = (value) => {
+            const companyId = this.toOptionalString(value);
+            if (companyId)
+                companyIds.add(companyId);
+        };
+        for (const apartment of apartments) {
+            pushCompanyId(apartment.companyId);
+            pushCompanyId(apartment.managementCompanyId);
+            pushCompanyId(apartment.managerCompanyId);
+            if (Array.isArray(apartment.companyIds)) {
+                apartment.companyIds.forEach(pushCompanyId);
+            }
+            const managedBy = apartment.managedBy && typeof apartment.managedBy === 'object'
+                ? apartment.managedBy
+                : null;
+            pushCompanyId(managedBy?.companyId);
+        }
+        for (const building of buildings) {
+            pushCompanyId(building.companyId);
+            const managedBy = building.managedBy && typeof building.managedBy === 'object'
+                ? building.managedBy
+                : null;
+            pushCompanyId(managedBy?.companyId);
+        }
+        const companyRefs = Array.from(companyIds).map((id) => db.collection('companies').doc(id));
+        const companySnaps = companyRefs.length > 0 ? await db.getAll(...companyRefs) : [];
+        const managementCompanies = companySnaps
+            .filter((snap) => snap.exists)
+            .map((snap) => {
+            const company = snap.data();
+            const staffContacts = this.normalizeStaffContacts(company.staffContacts)
+                .filter((contact) => contact.createAccount === false);
+            return {
+                id: snap.id,
+                companyName: this.toOptionalString(company.companyName) ?? this.toOptionalString(company.name),
+                companyEmail: this.toOptionalString(company.companyEmail) ?? this.toOptionalString(company.email),
+                companyPhone: this.toOptionalString(company.companyPhone) ?? this.toOptionalString(company.phone),
+                staffContacts,
+            };
+        });
         return {
             apartments: this.toSerializable(apartments),
             buildings: this.toSerializable(buildings),
+            managementCompanies: this.toSerializable(managementCompanies),
         };
     }
 };

@@ -31,15 +31,21 @@ export function updateCompany(companyId: string, payload: Record<string, unknown
 export function addCompanyMember(
   companyId: string,
   payload: {
+    memberId?: string;
     email: string;
     firstName: string;
     lastName: string;
+    phone?: string;
+    position?: string;
+    comment?: string;
+    showContactToResidents?: boolean;
+    createAccount?: boolean;
     role: "ManagementCompany" | "Accountant";
   },
 ) {
   return apiFetch<{
     success?: boolean;
-    mode?: "attached" | "invitation";
+    mode?: "attached" | "invitation" | "contact";
     invitation?: Record<string, unknown>;
     member?: Record<string, unknown>;
   }>(`/company/${encodeURIComponent(companyId)}/members`, {

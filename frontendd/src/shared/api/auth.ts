@@ -35,6 +35,13 @@ type UserProfileResponse = {
   id?: string;
   uid?: string;
   email?: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  name?: string;
+  displayName?: string;
+  username?: string;
+  userName?: string;
   role?: string;
   accountType?: string;
   companyId?: string;
@@ -114,6 +121,7 @@ function persistSessionHints(params: {
   role: PublicUserRole;
   accountType: PublicAccountType;
   email: string;
+  name?: string;
   userId?: string;
   companyId?: string;
   apartmentId?: string;
@@ -130,6 +138,12 @@ function persistSessionHints(params: {
   document.cookie = `domera_role=${roleValue}${cookieSuffix}`;
   document.cookie = `userEmail=${encodeURIComponent(params.email)}${cookieSuffix}`;
 
+  if (params.name) {
+    document.cookie = `userName=${encodeURIComponent(params.name)}${cookieSuffix}`;
+  } else {
+    document.cookie = "userName=; Max-Age=0; path=/; SameSite=Lax";
+  }
+
   if (params.userId) {
     document.cookie = `userId=${encodeURIComponent(params.userId)}${cookieSuffix}`;
   }
@@ -142,6 +156,41 @@ function persistSessionHints(params: {
     document.cookie = `domera_apartmentId=${encodeURIComponent(params.apartmentId)}${cookieSuffix}`;
   }
 
+  notifyAuthSessionChanged();
+}
+
+function resolveProfileName(profile?: UserProfileResponse | null): string | undefined {
+  const firstName = profile?.firstName?.trim();
+  const lastName = profile?.lastName?.trim();
+  const joinedName = [firstName, lastName].filter(Boolean).join(" ").trim();
+
+  return (
+    joinedName ||
+    profile?.fullName?.trim() ||
+    profile?.name?.trim() ||
+    profile?.displayName?.trim() ||
+    undefined
+  );
+}
+
+function resolvePayloadName(payload: Record<string, unknown>): string | undefined {
+  const firstName = typeof payload.firstName === "string" ? payload.firstName.trim() : "";
+  const lastName = typeof payload.lastName === "string" ? payload.lastName.trim() : "";
+  const joinedName = [firstName, lastName].filter(Boolean).join(" ").trim();
+
+  return (
+    joinedName ||
+    (typeof payload.fullName === "string" ? payload.fullName.trim() : "") ||
+    (typeof payload.name === "string" ? payload.name.trim() : "") ||
+    (typeof payload.displayName === "string" ? payload.displayName.trim() : "") ||
+    undefined
+  );
+}
+
+function persistBrowserName(name: string) {
+  if (typeof document === "undefined") return;
+
+  document.cookie = `userName=${encodeURIComponent(name)}; max-age=${60 * 60 * 24 * 30}; path=/; SameSite=Lax`;
   notifyAuthSessionChanged();
 }
 
@@ -261,6 +310,7 @@ export async function establishUserSession(params: {
     role: resolvedRole,
     accountType: resolvedAccountType,
     email: params.email,
+    name: resolveProfileName(profile),
     userId: params.userId,
     companyId: profile?.companyId,
     apartmentId: profile?.apartmentId,
@@ -278,10 +328,20 @@ export async function establishUserSession(params: {
 }
 
 export async function saveUserProfile(userId: string, payload: Record<string, unknown>) {
-  return apiFetch<{ success: boolean }>(`/users/${encodeURIComponent(userId)}/upsert`, {
+  const result = await apiFetch<{ success: boolean }>(`/users/${encodeURIComponent(userId)}/upsert`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
+
+  const currentUserId = typeof document === "undefined"
+    ? ""
+    : decodeURIComponent(document.cookie.match(/(?:^|; )userId=([^;]*)/)?.[1] ?? "");
+  const nextName = resolvePayloadName(payload);
+  if (nextName && currentUserId === userId) {
+    persistBrowserName(nextName);
+  }
+
+  return result;
 }
 
 export async function changeAccountEmail(email: string) {

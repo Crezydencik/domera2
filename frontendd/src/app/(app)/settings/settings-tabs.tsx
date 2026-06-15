@@ -14,6 +14,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { changeAccountEmail, changeAccountPassword, saveUserProfile } from "@/shared/api/auth";
 import {
   addCompanyMember,
@@ -61,6 +62,11 @@ type CompanyMember = {
   id: string;
   email: string;
   name: string;
+  phone?: string;
+  position?: string;
+  comment?: string;
+  showContactToResidents?: boolean;
+  createAccount?: boolean;
   role: string;
 };
 
@@ -1243,7 +1249,7 @@ function ApiKeyPanel({
                       <div className="min-w-0">
                         <p className="text-sm font-bold text-black">{t("apiKeys.batchEndpointTitle")}</p>
                         <code className="mt-2 block overflow-x-auto rounded-lg bg-slate-950 px-3 py-2 text-xs text-white">
-                          POST /api/invoices/upload-batch
+                          POST /api/invoices/upload
                         </code>
                       </div>
                       <div className="min-w-0">
@@ -1269,13 +1275,13 @@ function ApiKeyPanel({
                       {t("apiKeys.contentTypeWarning")}
                     </p>
                     <pre className="overflow-x-auto rounded-lg bg-slate-950 px-3 py-3 text-xs leading-6 text-white">
-{`curl -X POST https://api.domera.app/api/invoices/upload-batch \\
+{`curl -X POST https://api.domera.app/api/invoices/upload \\
   -H "X-API-Key: <api_key>" \\
   -F "files=@apt-12.pdf" \\
   -F "files=@apt-15.pdf" \\
   -F "items=@items.json;type=application/json"
 
-curl -X POST https://api.domera.app/api/invoices/upload-batch \\
+curl -X POST https://api.domera.app/api/invoices/upload \\
   -H "X-API-Key: <api_key>" \\
   -F "files=@invoices.zip;type=application/zip"`}
                     </pre>
@@ -1549,7 +1555,14 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   const [memberEmail, setMemberEmail] = useState("");
   const [memberFirstName, setMemberFirstName] = useState("");
   const [memberLastName, setMemberLastName] = useState("");
+  const [memberPhone, setMemberPhone] = useState("");
+  const [memberPosition, setMemberPosition] = useState("");
+  const [memberComment, setMemberComment] = useState("");
+  const [memberShowContactToResidents, setMemberShowContactToResidents] = useState(false);
+  const [memberCreateAccount, setMemberCreateAccount] = useState(true);
   const [memberRole, setMemberRole] = useState<CompanyMemberRole>("ManagementCompany");
+  const [memberModalOpen, setMemberModalOpen] = useState(false);
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<EditableCompanyField>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isAddingMember, setIsAddingMember] = useState(false);
@@ -1568,6 +1581,65 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   const roleLabel = (role: string) => {
     if (role === "Accountant") return t("company.roles.accountant");
     return t("company.roles.managementCompany");
+  };
+
+  const accountMembers = members.filter((member) => member.createAccount !== false);
+  const residentContacts = members.filter((member) => member.createAccount === false);
+
+  const resetMemberForm = () => {
+    setMemberEmail("");
+    setMemberFirstName("");
+    setMemberLastName("");
+    setMemberPhone("");
+    setMemberPosition("");
+    setMemberComment("");
+    setMemberShowContactToResidents(false);
+    setMemberCreateAccount(true);
+    setMemberRole("ManagementCompany");
+    setEditingContactId(null);
+  };
+
+  const openMemberModal = () => {
+    resetMemberForm();
+    setFeedback("");
+    setFeedbackTone("error");
+    setMemberCreateAccount(true);
+    setMemberShowContactToResidents(false);
+    setMemberModalOpen(true);
+  };
+
+  const openResidentContactModal = () => {
+    resetMemberForm();
+    setFeedback("");
+    setFeedbackTone("error");
+    setMemberRole("ManagementCompany");
+    setMemberCreateAccount(false);
+    setMemberShowContactToResidents(true);
+    setMemberModalOpen(true);
+  };
+
+  const openEditResidentContactModal = (contact: CompanyMember) => {
+    setFeedback("");
+    setFeedbackTone("error");
+    setEditingContactId(contact.id);
+    setMemberEmail(contact.email);
+    setMemberFirstName(contact.name);
+    setMemberLastName("");
+    setMemberPhone(contact.phone ?? "");
+    setMemberPosition("");
+    setMemberComment(contact.position ?? contact.comment ?? "");
+    setMemberRole("ManagementCompany");
+    setMemberCreateAccount(false);
+    setMemberShowContactToResidents(true);
+    setMemberModalOpen(true);
+  };
+
+  const closeMemberModal = () => {
+    if (isAddingMember) return;
+    setFeedback("");
+    setFeedbackTone("error");
+    setMemberModalOpen(false);
+    setEditingContactId(null);
   };
 
   const startEdit = (field: Exclude<EditableCompanyField, null>) => {
@@ -1621,8 +1693,18 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     const email = memberEmail.trim().toLowerCase();
     const firstName = memberFirstName.trim();
     const lastName = memberLastName.trim();
-    if (!email || !firstName || !lastName) {
+    const phone = memberPhone.trim();
+    const position = memberCreateAccount ? memberPosition.trim() : memberComment.trim();
+    const comment = "";
+    if (memberCreateAccount && (!email || !firstName || !lastName)) {
       const message = t("errors.memberFieldsRequired");
+      setFeedbackTone("error");
+      setFeedback(message);
+      notify.error(message);
+      return;
+    }
+    if (!memberCreateAccount && (!firstName || (!email && !phone))) {
+      const message = t("errors.contactFieldsRequired");
       setFeedbackTone("error");
       setFeedback(message);
       notify.error(message);
@@ -1634,31 +1716,50 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
 
     try {
       const result = await addCompanyMember(details.companyId, {
+        memberId: editingContactId ?? undefined,
         email,
         firstName,
         lastName,
+        phone: phone || undefined,
+        position: position || undefined,
+        comment: comment || undefined,
+        showContactToResidents: memberShowContactToResidents,
+        createAccount: memberCreateAccount,
         role: memberRole,
       });
       const nextMember = result.member ?? {};
-      const id = typeof nextMember.id === "string" ? nextMember.id : email;
+      const id = typeof nextMember.id === "string" ? nextMember.id : email || `${firstName}-${lastName}-${Date.now()}`;
       const savedRole = typeof nextMember.role === "string" ? nextMember.role : memberRole;
-      const fullName = [firstName, lastName].join(" ");
+      const savedPhone = typeof nextMember.phone === "string" ? nextMember.phone : phone;
+      const savedPosition = typeof nextMember.position === "string" ? nextMember.position : position;
+      const savedComment = typeof nextMember.comment === "string" ? nextMember.comment : "";
+      const savedShowContactToResidents = typeof nextMember.showContactToResidents === "boolean"
+        ? nextMember.showContactToResidents
+        : memberShowContactToResidents;
+      const savedCreateAccount = typeof nextMember.createAccount === "boolean"
+        ? nextMember.createAccount
+        : memberCreateAccount;
+      const fullName = [firstName, lastName].filter(Boolean).join(" ");
 
       setMembers((current) => {
-        const filtered = current.filter((item) => item.id !== id && item.email.toLowerCase() !== email);
+        const filtered = current.filter((item) => item.id !== id && item.id !== editingContactId && (!email || item.email.toLowerCase() !== email));
         return [
           ...filtered,
           {
             id,
             email,
             name: fullName,
+            phone: savedPhone,
+            position: savedPosition,
+            comment: savedComment,
+            showContactToResidents: savedShowContactToResidents,
+            createAccount: savedCreateAccount,
             role: savedRole,
           },
         ];
       });
-      setMemberEmail("");
-      setMemberFirstName("");
-      setMemberLastName("");
+      resetMemberForm();
+      setMemberModalOpen(false);
       notify.success(result.mode === "invitation" ? t("toast.memberInvitationSent") : t("toast.memberAdded"));
     } catch (error) {
       const message = error instanceof Error ? error.message : t("errors.memberAddFailed");
@@ -1728,81 +1829,19 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
       </div>
 
       <div className="mt-8 border-t border-slate-200 pt-7">
-        <h3 className="text-lg font-bold text-black">{t("company.members.title")}</h3>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{t("company.members.description")}</p>
-
-        <form
-          className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void addMember();
-          }}
-        >
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label className="block min-w-0">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {t("fields.firstName")}
-              </span>
-              <input
-                type="text"
-                value={memberFirstName}
-                disabled={isAddingMember}
-                onChange={(event) => setMemberFirstName(event.target.value)}
-                placeholder={t("company.members.firstNamePlaceholder")}
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
-              />
-            </label>
-            <label className="block min-w-0">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {t("fields.lastName")}
-              </span>
-              <input
-                type="text"
-                value={memberLastName}
-                disabled={isAddingMember}
-                onChange={(event) => setMemberLastName(event.target.value)}
-                placeholder={t("company.members.lastNamePlaceholder")}
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
-              />
-            </label>
-            <label className="block min-w-0">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {t("fields.email")}
-              </span>
-              <input
-                type="email"
-                value={memberEmail}
-                disabled={isAddingMember}
-                onChange={(event) => setMemberEmail(event.target.value)}
-                placeholder={t("company.members.emailPlaceholder")}
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
-              />
-            </label>
-            <label className="block min-w-0">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {t("company.members.roleLabel")}
-              </span>
-              <select
-                value={memberRole}
-                disabled={isAddingMember}
-                onChange={(event) => setMemberRole(event.target.value as CompanyMemberRole)}
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
-              >
-                <option value="ManagementCompany">{t("company.roles.managementCompany")}</option>
-                <option value="Accountant">{t("company.roles.accountant")}</option>
-              </select>
-            </label>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-black">{t("company.members.title")}</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{t("company.members.description")}</p>
           </div>
-          <div className="mt-4 flex justify-end">
-            <Button type="submit" variant="dark" size="pill" disabled={isAddingMember} className="h-11 px-6 font-bold">
-              {isAddingMember ? t("company.members.adding") : t("company.members.add")}
-            </Button>
-          </div>
-        </form>
+          <Button type="button" variant="dark" size="pill" onClick={openMemberModal} className="h-11 px-6 font-bold">
+            {t("company.members.add")}
+          </Button>
+        </div>
 
         <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
-          {members.length > 0 ? (
-            members.map((member) => {
+          {accountMembers.length > 0 ? (
+            accountMembers.map((member) => {
               const canRemove = member.id !== currentUserId && member.id !== details.companyId;
               const isRemoving = removingMemberId === member.id;
 
@@ -1811,8 +1850,18 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-black">{member.name || member.email}</p>
                   <p className="truncate text-sm text-slate-600">{member.email || t("emptyValue")}</p>
+                  {member.phone || member.position ? (
+                    <p className="truncate text-xs text-slate-500">
+                      {[member.position, member.phone].filter(Boolean).join(" · ")}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  {member.showContactToResidents ? (
+                    <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      {t("company.members.publicContact")}
+                    </span>
+                  ) : null}
                   <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                     {roleLabel(member.role)}
                   </span>
@@ -1837,6 +1886,217 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
           )}
         </div>
       </div>
+
+      <div className="mt-8 border-t border-slate-200 pt-7">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-black">{t("company.residentContacts.title")}</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{t("company.residentContacts.description")}</p>
+          </div>
+          <Button type="button" variant="dark" size="pill" onClick={openResidentContactModal} className="h-11 px-6 font-bold">
+            {t("company.residentContacts.add")}
+          </Button>
+        </div>
+
+        <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
+          {residentContacts.length > 0 ? (
+            residentContacts.map((contact) => {
+              const isRemoving = removingMemberId === contact.id;
+
+              return (
+                <div key={contact.id || contact.email} className="grid gap-3 border-t border-slate-200 px-4 py-3 first:border-t-0 sm:grid-cols-[1fr_auto] sm:items-center">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-black">{contact.name || contact.email || contact.phone}</p>
+                    <p className="truncate text-sm text-slate-600">
+                      {[contact.email, contact.phone].filter(Boolean).join(" · ") || t("emptyValue")}
+                    </p>
+                    {contact.position ? <p className="truncate text-xs text-slate-500">{contact.position}</p> : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      {t("company.members.publicContact")}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="inlineLink"
+                      size="link"
+                      disabled={isRemoving}
+                      onClick={() => openEditResidentContactModal(contact)}
+                      className="text-xs font-semibold"
+                    >
+                      {t("actions.edit")}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="inlineLink"
+                      size="link"
+                      disabled={isRemoving}
+                      onClick={() => void removeMember(contact)}
+                      className="text-xs font-semibold text-red-600 hover:text-red-700"
+                    >
+                      {isRemoving ? t("company.members.removing") : t("company.members.remove")}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <p className="px-4 py-5 text-sm text-slate-600">{t("company.residentContacts.empty")}</p>
+          )}
+        </div>
+      </div>
+
+      <Modal
+        open={memberModalOpen}
+        onClose={closeMemberModal}
+        title={
+          memberCreateAccount
+            ? t("company.members.add")
+            : editingContactId
+              ? t("company.residentContacts.edit")
+              : t("company.residentContacts.add")
+        }
+        size="lg"
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void addMember();
+          }}
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="block min-w-0">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {memberCreateAccount ? t("fields.firstName") : t("company.residentContacts.nameLabel")}
+              </span>
+              <input
+                type="text"
+                value={memberFirstName}
+                disabled={isAddingMember}
+                onChange={(event) => setMemberFirstName(event.target.value)}
+                placeholder={memberCreateAccount ? t("company.members.firstNamePlaceholder") : t("company.residentContacts.namePlaceholder")}
+                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
+              />
+            </label>
+            {memberCreateAccount ? (
+              <label className="block min-w-0">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {t("fields.lastName")}
+                </span>
+                <input
+                  type="text"
+                  value={memberLastName}
+                  disabled={isAddingMember}
+                  onChange={(event) => setMemberLastName(event.target.value)}
+                  placeholder={t("company.members.lastNamePlaceholder")}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+            ) : null}
+            <label className="block min-w-0">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {t("fields.email")}
+              </span>
+              <input
+                type="email"
+                value={memberEmail}
+                disabled={isAddingMember}
+                onChange={(event) => setMemberEmail(event.target.value)}
+                placeholder={t("company.members.emailPlaceholder")}
+                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
+              />
+            </label>
+            <label className="block min-w-0">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {t("fields.phone")}
+              </span>
+              <input
+                type="tel"
+                value={memberPhone}
+                disabled={isAddingMember}
+                onChange={(event) => setMemberPhone(event.target.value)}
+                placeholder={t("company.members.phonePlaceholder")}
+                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
+              />
+            </label>
+            {memberCreateAccount ? (
+              <label className="block min-w-0">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {t("company.members.positionLabel")}
+                </span>
+                <input
+                  type="text"
+                  value={memberPosition}
+                  disabled={isAddingMember}
+                  onChange={(event) => setMemberPosition(event.target.value)}
+                  placeholder={t("company.members.positionPlaceholder")}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+            ) : (
+              <label className="block min-w-0 md:col-span-2">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {t("company.residentContacts.commentLabel")}
+                </span>
+                <textarea
+                  value={memberComment}
+                  disabled={isAddingMember}
+                  onChange={(event) => setMemberComment(event.target.value)}
+                  placeholder={t("company.residentContacts.commentPlaceholder")}
+                  rows={3}
+                  className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+            )}
+            {memberCreateAccount ? (
+              <label className="block min-w-0">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {t("company.members.roleLabel")}
+                </span>
+                <select
+                  value={memberRole}
+                  disabled={isAddingMember}
+                  onChange={(event) => setMemberRole(event.target.value as CompanyMemberRole)}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
+                >
+                  <option value="ManagementCompany">{t("company.roles.managementCompany")}</option>
+                  <option value="Accountant">{t("company.roles.accountant")}</option>
+                </select>
+              </label>
+            ) : null}
+          </div>
+          {memberCreateAccount ? (
+            <label className="flex min-w-0 items-start gap-3 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={memberShowContactToResidents}
+                disabled={isAddingMember}
+                onChange={(event) => setMemberShowContactToResidents(event.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-black focus:ring-black"
+              />
+              <span>{t("company.members.showContactToResidents")}</span>
+            </label>
+          ) : null}
+          {feedback && feedbackTone === "error" ? (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{feedback}</p>
+          ) : null}
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" disabled={isAddingMember} onClick={closeMemberModal}>
+              {t("actions.cancel")}
+            </Button>
+            <Button type="submit" variant="dark" disabled={isAddingMember} className="font-bold">
+              {isAddingMember
+                ? t("company.members.adding")
+                : memberCreateAccount
+                  ? t("company.members.add")
+                  : editingContactId
+                    ? t("company.residentContacts.save")
+                    : t("company.residentContacts.add")}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

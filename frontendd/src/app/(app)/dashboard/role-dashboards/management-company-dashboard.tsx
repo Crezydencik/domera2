@@ -1,89 +1,172 @@
-import { MiniBadge, PlaceholderBarChart, PlaceholderLineChart, StatCard, SurfaceCard } from "./shared";
+import Link from "next/link";
+import { getLocale, getTranslations } from "next-intl/server";
+import { FiExternalLink } from "react-icons/fi";
+import { BuildingReadingsSelector } from "./building-readings-selector";
 import type { RoleDataBundle } from "@/shared/lib/domera-api.server";
+import { ROUTES } from "@/shared/lib/routes";
 
-function parseAmount(value: string): number {
-  const numeric = Number(value.replace(/[^\d.-]/g, ""));
-  return Number.isFinite(numeric) ? numeric : 0;
+type SubmissionPeriod = NonNullable<RoleDataBundle["buildings"][number]["readingConfig"]>["submissionPeriod"];
+
+function getReadingApartmentKey(reading: RoleDataBundle["meterReadings"][number]): string | undefined {
+  return reading.apartmentId || reading.apartment;
 }
 
-export function ManagementCompanyDashboard({ data }: { data: RoleDataBundle }) {
-  const apartmentCount = data.apartments.length || data.buildings.reduce((total, item) => total + Number(item.apartments || 0), 0);
-  const activeResidents = data.residents.length;
-  const totalRevenue = data.invoices.reduce((total, item) => total + parseAmount(item.amount), 0);
-  const totalDebt = data.invoices
-    .filter((item) => item.status !== "Paid")
-    .reduce((total, item) => total + parseAmount(item.amount), 0);
-  const readingCoverage = apartmentCount > 0 ? Math.round((data.meterReadings.length / apartmentCount) * 100) : 0;
-  const overdueCount = data.invoices.filter((item) => item.status === "Overdue").length;
+function getApartmentId(apartment: RoleDataBundle["apartments"][number]): string | undefined {
+  const id = apartment.id ?? apartment.apartmentId ?? apartment.readableId;
+  return typeof id === "string" && id.trim() ? id.trim() : undefined;
+}
+
+function getApartmentBuildingId(apartment: RoleDataBundle["apartments"][number]): string | undefined {
+  const buildingId = apartment.buildingId ?? apartment.building;
+  return typeof buildingId === "string" && buildingId.trim() ? buildingId.trim() : undefined;
+}
+
+function isReadingFromMonth(reading: RoleDataBundle["meterReadings"][number], month: number, year: number): boolean {
+  if (reading.month === month && reading.year === year) {
+    return true;
+  }
+
+  const submittedAt = new Date(reading.submittedAt);
+
+  return !Number.isNaN(submittedAt.getTime()) && submittedAt.getMonth() + 1 === month && submittedAt.getFullYear() === year;
+}
+
+function formatMonthLabel(date: Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(date);
+}
+
+function formatShortDate(date: Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit" }).format(date);
+}
+
+function resolveSubmissionWindow(period: SubmissionPeriod | undefined, fallbackDate: Date) {
+  const year = fallbackDate.getFullYear();
+  const month = fallbackDate.getMonth();
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const defaultStart = new Date(year, month, 1);
+  const defaultEnd = new Date(year, month, lastDay);
+
+  if (!period?.startDate || !period.endDate) {
+    return { start: defaultStart, end: defaultEnd };
+  }
+
+  const savedStart = new Date(period.startDate);
+  const savedEnd = new Date(period.endDate);
+
+  if (Number.isNaN(savedStart.getTime()) || Number.isNaN(savedEnd.getTime())) {
+    return { start: defaultStart, end: defaultEnd };
+  }
+
+  if (!period.monthly) {
+    return { start: savedStart, end: savedEnd };
+  }
+
+  const clampDay = (day: number) => Math.min(Math.max(day, 1), lastDay);
+
+  return {
+    start: new Date(year, month, clampDay(savedStart.getDate())),
+    end: new Date(year, month, clampDay(savedEnd.getDate())),
+  };
+}
+
+export async function ManagementCompanyDashboard({ data, selectedBuildingId }: { data: RoleDataBundle; selectedBuildingId?: string }) {
+  const t = await getTranslations("dashboard.managementCompany");
+  const locale = await getLocale();
+  const buildingOptions = data.buildings.map((building) => ({
+    id: building.id,
+    label: building.address && building.address !== "—" ? building.address : building.name,
+  }));
+  const effectiveBuildingId =
+    selectedBuildingId && data.buildings.some((building) => building.id === selectedBuildingId)
+      ? selectedBuildingId
+      : data.buildings[0]?.id;
+  const selectedBuilding = data.buildings.find((building) => building.id === effectiveBuildingId);
+  const apartmentIdsByBuilding = new Map<string, string>();
+
+  data.apartments.forEach((apartment) => {
+    const apartmentId = getApartmentId(apartment);
+    const buildingId = getApartmentBuildingId(apartment);
+    if (apartmentId && buildingId) {
+      apartmentIdsByBuilding.set(apartmentId, buildingId);
+    }
+  });
+
+  const totalApartmentCount = data.apartments.length || data.buildings.reduce((total, item) => total + Number(item.apartments || 0), 0);
+  const selectedBuildingApartments = effectiveBuildingId
+    ? data.apartments.filter((apartment) => getApartmentBuildingId(apartment) === effectiveBuildingId)
+    : data.apartments;
+  const selectedBuildingApartmentCount = Number(selectedBuilding?.apartments || 0);
+  const selectedApartmentCount = selectedBuildingApartmentCount > 0 ? selectedBuildingApartmentCount : selectedBuildingApartments.length;
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+  const submittedApartmentKeys = new Set(
+    data.meterReadings
+      .filter((item) => isReadingFromMonth(item, currentMonth, currentYear))
+      .filter((item) => {
+        if (!effectiveBuildingId) return true;
+        if (item.buildingId) return item.buildingId === effectiveBuildingId;
+        const apartmentKey = getReadingApartmentKey(item);
+        return apartmentKey ? apartmentIdsByBuilding.get(apartmentKey) === effectiveBuildingId : false;
+      })
+      .map(getReadingApartmentKey)
+      .filter((value): value is string => Boolean(value)),
+  );
+  const submittedApartmentCount = submittedApartmentKeys.size;
+  const readingCoverage = selectedApartmentCount > 0 ? Math.round((submittedApartmentCount / selectedApartmentCount) * 100) : 0;
+  const portfolioSubmissionPeriod = selectedBuilding?.readingConfig?.submissionPeriod;
+  const submissionWindow = resolveSubmissionWindow(portfolioSubmissionPeriod, now);
+  const readingMonthLabel = formatMonthLabel(now, locale);
+  const submissionWindowLabel = `${formatShortDate(submissionWindow.start, locale)} - ${formatShortDate(submissionWindow.end, locale)}`;
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-orange-200 bg-orange-50/70 p-5 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm font-medium text-orange-700">Welcome to Domera</p>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-900">Management company workspace</h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-600">
-              Monitor buildings, apartments, invoices and operational issues from one clear control panel.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white">Get started</button>
-            <button className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700">Dismiss</button>
+    <div>
+      <section className="grid max-w-4xl gap-4 md:grid-cols-2">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-slate-500">{t("managedObjects")}</p>
+              <div className="mt-4 space-y-3">
+                <div className="flex items-baseline justify-between gap-4">
+                  <p className="text-sm font-medium text-slate-600">{t("buildings")}</p>
+                  <p className="text-3xl font-semibold text-slate-900">{data.buildings.length}</p>
+                </div>
+                <div className="flex items-baseline justify-between gap-4">
+                  <p className="text-sm font-medium text-slate-600">{t("apartments")}</p>
+                  <p className="text-3xl font-semibold text-slate-900">{totalApartmentCount}</p>
+                </div>
+              </div>
+              <p className="mt-4 text-sm text-slate-500">{t("totalObjects")}</p>
+            </div>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-orange-50 text-orange-600">
+              <span className="h-2.5 w-2.5 rounded-full bg-orange-600" />
+            </div>
           </div>
         </div>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <StatCard label="Total Buildings" value={String(data.buildings.length)} hint="Live portfolio count from backend" accent="orange" />
-        <StatCard label="Total Apartments" value={String(apartmentCount)} hint="Synced from apartment registry" accent="blue" />
-        <StatCard label="Monthly Revenue" value={new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(totalRevenue)} hint="Calculated from invoice data" accent="green" />
-        <StatCard label="Total Debt" value={new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(totalDebt)} hint={`${overdueCount} overdue invoices`} accent="red" />
-        <StatCard label="Submitted Readings" value={`${readingCoverage}%`} hint="Coverage based on apartment activity" accent="yellow" />
-        <StatCard label="Active Residents" value={String(activeResidents)} hint="Users linked to the company" accent="purple" />
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-2">
-        <SurfaceCard title="Payments over time">
-          <PlaceholderLineChart />
-        </SurfaceCard>
-        <SurfaceCard title="Debt distribution">
-          <PlaceholderBarChart />
-        </SurfaceCard>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <SurfaceCard title="Priority tasks">
-          <div className="space-y-3">
-            {[
-              [`${overdueCount} overdue invoices need review`, "Billing"],
-              [`${Math.max(apartmentCount - data.meterReadings.length, 0)} apartments still need readings`, "Users"],
-              [`${data.buildings.length} buildings synced with backend`, "Maintenance"],
-            ].map(([title, tag]) => (
-              <div key={title} className="flex items-center justify-between rounded-2xl border border-slate-100 p-3">
-                <p className="font-medium text-slate-800">{title}</p>
-                <MiniBadge>{tag}</MiniBadge>
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm text-slate-500">{t("meterReadings")}</p>
+              {buildingOptions.length > 1 && effectiveBuildingId ? (
+                <BuildingReadingsSelector buildings={buildingOptions} selectedBuildingId={effectiveBuildingId} />
+              ) : null}
+              <p className="mt-3 text-3xl font-semibold text-slate-900">{submittedApartmentCount} / {selectedApartmentCount}</p>
+              <p className="mt-2 text-sm text-slate-500">{t("submittedThisMonth", { coverage: readingCoverage })}</p>
+              <div className="mt-3 space-y-1 text-sm text-slate-600">
+                <p>{t("month", { month: readingMonthLabel })}</p>
+                <p>{t("submissionPeriod", { period: submissionWindowLabel })}</p>
               </div>
-            ))}
+            </div>
+            <Link
+              href={ROUTES.meterReadings}
+              title={t("openReadings")}
+              aria-label={t("openReadings")}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-900 transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            >
+              <FiExternalLink className="h-4 w-4" aria-hidden="true" />
+            </Link>
           </div>
-        </SurfaceCard>
-
-        <SurfaceCard title="Role permissions live">
-          <div className="space-y-3 text-sm text-slate-600">
-            <div className="rounded-2xl border border-slate-100 p-3">
-              <p className="font-medium text-slate-900">Management company</p>
-              <p className="mt-1">Full access to buildings, residents, debts, documents and settings.</p>
-            </div>
-            <div className="rounded-2xl border border-slate-100 p-3">
-              <p className="font-medium text-slate-900">Resident</p>
-              <p className="mt-1">Sees invoices, readings, documents and notifications only.</p>
-            </div>
-            <div className="rounded-2xl border border-slate-100 p-3">
-              <p className="font-medium text-slate-900">Landlord</p>
-              <p className="mt-1">Tracks owned apartments, tenants, invoice status and portfolio health.</p>
-            </div>
-          </div>
-        </SurfaceCard>
+        </div>
       </section>
     </div>
   );

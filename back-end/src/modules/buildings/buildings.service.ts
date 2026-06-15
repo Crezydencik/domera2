@@ -245,6 +245,16 @@ export class BuildingsService {
     };
   }
 
+  private async getCompanyCreationAccess(companyId: string) {
+    const snap = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
+    const data = snap.exists ? (snap.data() as Record<string, unknown>) : {};
+
+    return {
+      allowed: data.canCreateBuildings === true || data.buildingCreationAllowed === true,
+      company: data,
+    };
+  }
+
   private getCompanyStorageFolders(companyId: string): string[] {
     const base = `companies/${companyId}`;
 
@@ -367,12 +377,15 @@ export class BuildingsService {
     }
 
     await this.enforceRateLimit(request, 'buildings:creation-access', `${user.uid}:${normalizedCompanyId}`, 40);
+    const access = await this.getCompanyCreationAccess(normalizedCompanyId);
 
     return {
-      allowed: true,
+      allowed: access.allowed,
       requiresSubscription: false,
-      requiresCode: false,
-      message: null,
+      requiresCode: true,
+      message: access.allowed
+        ? null
+        : 'Building creation is disabled for this company. Ask the platform administrator to grant access.',
     };
   }
 
@@ -436,6 +449,10 @@ export class BuildingsService {
     }
 
     await this.enforceRateLimit(request, 'buildings:create', `${user.uid}:${companyId}`, 20);
+    const creationAccess = await this.getCompanyCreationAccess(companyId);
+    if (!creationAccess.allowed) {
+      throw new ForbiddenException('Building creation is disabled for this company');
+    }
 
     const db = this.firebaseAdminService.firestore;
     const companySummary = await this.getCompanySummary(companyId);

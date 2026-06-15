@@ -33,6 +33,11 @@ let EmailService = class EmailService {
                 to: payload.to,
                 subject: payload.subject,
                 html: payload.html,
+                attachments: payload.attachments?.map((attachment) => ({
+                    filename: attachment.filename,
+                    content: attachment.content,
+                    contentType: attachment.contentType,
+                })),
             });
             if (response.error) {
                 throw new Error(`Resend error: ${response.error.message}`);
@@ -121,6 +126,7 @@ let EmailService = class EmailService {
             to: dto.to,
             subject: template.subject,
             html: template.html,
+            attachments: dto.attachments,
         });
     }
     async sendMeterReadingReminder(dto) {

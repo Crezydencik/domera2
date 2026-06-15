@@ -21,6 +21,7 @@ export declare class BuildingsService {
     private getBuildingOccupancyStats;
     private applyOccupancyStats;
     private getCompanySummary;
+    private getCompanyCreationAccess;
     private getCompanyStorageFolders;
     private getBuildingStorageFolders;
     private markStorageFolders;
@@ -30,7 +31,7 @@ export declare class BuildingsService {
         allowed: boolean;
         requiresSubscription: boolean;
         requiresCode: boolean;
-        message: null;
+        message: string | null;
     }>;
     list(request: Request, user: RequestUser, companyId: string): Promise<{
         items: {

@@ -19,6 +19,7 @@ const audit_log_service_1 = require("../../common/services/audit-log.service");
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
 const firebase_admin_service_1 = require("../../common/infrastructure/firebase/firebase-admin.service");
 const role_constants_1 = require("../../common/auth/role.constants");
+const users_service_1 = require("../users/users.service");
 const CODE_TTL_MS = 60 * 60 * 1000;
 const TOKEN_TTL_MS = 60 * 60 * 1000;
 const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
@@ -26,14 +27,31 @@ const MAX_ATTEMPTS = 6;
 const COLLECTION = 'registration_email_codes';
 const EMAIL_CHANGE_COLLECTION = 'email_change_requests';
 let AuthService = class AuthService {
-    constructor(firebaseAdminService, configService, rateLimitService, auditLogService) {
+    constructor(firebaseAdminService, configService, rateLimitService, auditLogService, usersService) {
         this.firebaseAdminService = firebaseAdminService;
         this.configService = configService;
         this.rateLimitService = rateLimitService;
         this.auditLogService = auditLogService;
+        this.usersService = usersService;
     }
     normalizeEmail(email) {
         return email.trim().toLowerCase();
+    }
+    getConfiguredPlatformAdmins() {
+        const splitList = (value) => String(value ?? '')
+            .split(/[,\s;]+/)
+            .map((item) => item.trim().toLowerCase())
+            .filter(Boolean);
+        return {
+            emails: new Set(splitList(this.configService.get('PLATFORM_ADMIN_EMAILS'))),
+            uids: new Set(splitList(this.configService.get('PLATFORM_ADMIN_UIDS'))),
+        };
+    }
+    isConfiguredPlatformAdmin(input) {
+        const { emails, uids } = this.getConfiguredPlatformAdmins();
+        const uid = input.uid?.trim().toLowerCase();
+        const email = input.email?.trim().toLowerCase();
+        return Boolean((uid && uids.has(uid)) || (email && emails.has(email)));
     }
     normalizeLocale(locale) {
         if (!locale)
@@ -52,6 +70,12 @@ let AuthService = class AuthService {
     }
     hashToken(token) {
         return (0, node_crypto_1.createHash)('sha256').update(token).digest('hex');
+    }
+    emailChangeRequestsCollection(uid) {
+        return this.firebaseAdminService.firestore
+            .collection('users')
+            .doc(uid)
+            .collection(EMAIL_CHANGE_COLLECTION);
     }
     async validateRegistrationVerification(email, verificationToken) {
         const db = this.firebaseAdminService.firestore;
@@ -279,12 +303,17 @@ let AuthService = class AuthService {
         const ref = this.firebaseAdminService.firestore.collection('users').doc(input.uid);
         const snap = await ref.get();
         const current = snap.exists ? snap.data() : {};
-        const accountType = (0, role_constants_1.resolveAccountType)({ role: current.role, accountType: input.accountType ?? current.accountType }) ??
-            this.inferAccountTypeFromEmail(input.email);
-        const role = (0, role_constants_1.resolveUserRole)({
-            role: input.role ?? current.role,
-            accountType: input.accountType ?? current.accountType ?? accountType,
-        }) ?? accountType;
+        const isPlatformAdmin = this.isConfiguredPlatformAdmin({ uid: input.uid, email: input.email });
+        const accountType = isPlatformAdmin
+            ? 'PlatformAdmin'
+            : ((0, role_constants_1.resolveAccountType)({ role: current.role, accountType: input.accountType ?? current.accountType }) ??
+                this.inferAccountTypeFromEmail(input.email));
+        const role = isPlatformAdmin
+            ? 'PlatformAdmin'
+            : ((0, role_constants_1.resolveUserRole)({
+                role: input.role ?? current.role,
+                accountType: input.accountType ?? current.accountType ?? accountType,
+            }) ?? accountType);
         const firstName = (typeof input.firstName === 'string' && input.firstName.trim()) ||
             (typeof current.firstName === 'string' ? current.firstName : undefined);
         const lastName = (typeof input.lastName === 'string' && input.lastName.trim()) ||
@@ -456,6 +485,20 @@ let AuthService = class AuthService {
             }
             catch {
             }
+        }
+        if (this.isConfiguredPlatformAdmin({ uid: decoded.uid, email: decoded.email })) {
+            role = 'PlatformAdmin';
+            accountType = 'PlatformAdmin';
+            companyId = undefined;
+            apartmentId = undefined;
+            await this.firebaseAdminService.firestore.collection('users').doc(decoded.uid).set({
+                uid: decoded.uid,
+                email: decoded.email,
+                role,
+                accountType,
+                companyId: firestore_1.FieldValue.delete(),
+                updatedAt: new Date(),
+            }, { merge: true });
         }
         const ttlMinutes = Number(this.configService.get('FIREBASE_SESSION_TTL_MINUTES') ?? '30');
         const ttlMs = Math.min(Math.max(ttlMinutes, 5), 24 * 60) * 60 * 1000;
@@ -637,6 +680,9 @@ let AuthService = class AuthService {
             throw this.createServiceError('You must accept the privacy policy and terms of use', 400);
         }
         const accountType = (0, role_constants_1.resolveAccountType)({ accountType: input.accountType }) ?? 'Resident';
+        if (!(0, role_constants_1.isPublicRegistrationRole)(accountType)) {
+            throw this.createServiceError('This account type cannot be created through public registration', 403);
+        }
         const role = (0, role_constants_1.resolveUserRole)({ role: input.accountType, accountType }) ?? accountType;
         const fullName = [input.firstName?.trim(), input.lastName?.trim()]
             .filter((value) => Boolean(value))
@@ -740,7 +786,7 @@ let AuthService = class AuthService {
         const token = (0, node_crypto_1.randomUUID)();
         const tokenHash = this.hashToken(token);
         const now = Date.now();
-        await this.firebaseAdminService.firestore.collection(EMAIL_CHANGE_COLLECTION).doc(tokenHash).set({
+        await this.emailChangeRequestsCollection(user.uid).doc(tokenHash).set({
             uid: user.uid,
             currentEmail,
             nextEmail,
@@ -783,12 +829,20 @@ let AuthService = class AuthService {
             throw this.createServiceError('Verification token is required', 400);
         }
         const tokenHash = this.hashToken(rawToken);
-        const ref = this.firebaseAdminService.firestore.collection(EMAIL_CHANGE_COLLECTION).doc(tokenHash);
-        const snap = await ref.get();
-        if (!snap.exists) {
+        const snap = await this.firebaseAdminService.firestore
+            .collectionGroup(EMAIL_CHANGE_COLLECTION)
+            .where('tokenHash', '==', tokenHash)
+            .limit(1)
+            .get();
+        const legacySnap = snap.empty
+            ? await this.firebaseAdminService.firestore.collection(EMAIL_CHANGE_COLLECTION).doc(tokenHash).get()
+            : null;
+        const requestDoc = snap.docs[0] ?? (legacySnap?.exists ? legacySnap : undefined);
+        if (!requestDoc?.exists) {
             throw this.createServiceError('Verification link is invalid or expired', 404);
         }
-        const data = snap.data();
+        const ref = requestDoc.ref;
+        const data = requestDoc.data();
         const uid = typeof data.uid === 'string' ? data.uid : '';
         const nextEmail = typeof data.nextEmail === 'string' ? this.normalizeEmail(data.nextEmail) : '';
         const currentEmail = typeof data.currentEmail === 'string' ? this.normalizeEmail(data.currentEmail) : '';
@@ -812,12 +866,20 @@ let AuthService = class AuthService {
                 throw error;
             }
         }
+        const userRef = this.firebaseAdminService.firestore.collection('users').doc(uid);
+        const userSnap = await userRef.get();
+        const currentUserData = userSnap.exists ? userSnap.data() : {};
         await this.firebaseAdminService.auth.updateUser(uid, { email: nextEmail });
-        await this.firebaseAdminService.firestore.collection('users').doc(uid).set({
+        await userRef.set({
             uid,
             email: nextEmail,
             updatedAt: new Date(),
         }, { merge: true });
+        await this.usersService.syncLinkedApartmentProfiles(uid, currentUserData, {
+            ...currentUserData,
+            uid,
+            email: nextEmail,
+        });
         await ref.set({ status: 'confirmed', confirmedAt: new Date(), updatedAt: new Date() }, { merge: true });
         void this.auditLogService.write({
             request,
@@ -1012,5 +1074,6 @@ exports.AuthService = AuthService = __decorate([
     __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService,
         config_1.ConfigService,
         rate_limit_service_1.RateLimitService,
-        audit_log_service_1.AuditLogService])
+        audit_log_service_1.AuditLogService,
+        users_service_1.UsersService])
 ], AuthService);

@@ -14,4 +14,14 @@ export class SendInvitationDto {
   @IsOptional()
   @IsString()
   inviteType?: string;
+
+  @ApiPropertyOptional({ description: 'Invitee first name.' })
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @ApiPropertyOptional({ description: 'Invitee last name.' })
+  @IsOptional()
+  @IsString()
+  lastName?: string;
 }

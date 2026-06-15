@@ -65,6 +65,10 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
+], InvoiceItemDto.prototype, "fileName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
 ], InvoiceItemDto.prototype, "currency", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),

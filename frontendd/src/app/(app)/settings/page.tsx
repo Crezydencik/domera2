@@ -118,6 +118,10 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     apiKeys = normalizeApiKeyItems(apiKeysResult.items);
   }
 
+  const staffContacts = Array.isArray(company?.staffContacts)
+    ? company.staffContacts.filter((item): item is UnknownRecord => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+
   return (
     <div className="w-full">
       <SettingsTabs
@@ -150,8 +154,23 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               id: item.id,
               email: item.email ?? "",
               name: item.fullName,
+              phone: item.phone ?? "",
+              position: firstString(item.position, item.jobTitle, item.comment),
+              showContactToResidents: item.showContactToResidents === true,
+              createAccount: true,
               role: item.role,
-            })),
+            }))
+            .concat(staffContacts.map((item) => ({
+              id: firstString(item.id, item.email),
+              email: firstString(item.email),
+              name: firstString(item.fullName, item.name, [item.firstName, item.lastName].filter((value) => typeof value === "string" && value.trim()).join(" ")),
+              phone: firstString(item.phone),
+              position: firstString(item.position, item.jobTitle),
+              comment: firstString(item.comment),
+              showContactToResidents: item.showContactToResidents === true,
+              createAccount: item.createAccount !== true ? false : true,
+              role: firstString(item.role, "ManagementCompany"),
+            }))),
         }}
       />
     </div>

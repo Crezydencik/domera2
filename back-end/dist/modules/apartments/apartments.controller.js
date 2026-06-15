@@ -24,6 +24,27 @@ const role_constants_1 = require("../../common/auth/role.constants");
 const apartments_service_1 = require("./apartments.service");
 const import_apartments_dto_1 = require("./dto/import-apartments.dto");
 const import_apartments_response_dto_1 = require("./dto/import-apartments-response.dto");
+const APARTMENT_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+const APARTMENT_IMPORT_EXTENSIONS = new Set(['.csv', '.json', '.xml', '.xlsx']);
+const APARTMENT_IMPORT_MIME_TYPES = new Set([
+    'text/csv',
+    'text/plain',
+    'application/csv',
+    'application/json',
+    'application/xml',
+    'text/xml',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+]);
+function apartmentImportFileFilter(_request, file, callback) {
+    const name = file.originalname?.toLowerCase() ?? '';
+    const mimeType = file.mimetype?.toLowerCase() ?? '';
+    const extension = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+    if (APARTMENT_IMPORT_EXTENSIONS.has(extension) || APARTMENT_IMPORT_MIME_TYPES.has(mimeType)) {
+        callback(null, true);
+        return;
+    }
+    callback(new common_1.BadRequestException('Only CSV, JSON, XML, and XLSX files are allowed'), false);
+}
 let ApartmentsController = class ApartmentsController {
     constructor(apartmentsService) {
         this.apartmentsService = apartmentsService;
@@ -52,6 +73,9 @@ let ApartmentsController = class ApartmentsController {
             contractNumber: body.contractNumber,
         });
     }
+    removeOwner(request, user, apartmentId) {
+        return this.apartmentsService.removeOwner(request, user, apartmentId);
+    }
     remove(request, user, apartmentId) {
         return this.apartmentsService.remove(request, user, apartmentId);
     }
@@ -63,10 +87,16 @@ let ApartmentsController = class ApartmentsController {
             lastName: body.lastName,
             phone: body.phone,
             contractNumber: body.contractNumber,
+            fromDate: body.fromDate,
+            until: body.until,
+            canViewDocuments: body.canViewDocuments,
         });
     }
     removeTenant(request, user, apartmentId, tenantUserId) {
         return this.apartmentsService.removeTenant(request, user, apartmentId, tenantUserId);
+    }
+    updateTenant(request, user, apartmentId, tenantUserId, body) {
+        return this.apartmentsService.updateTenant(request, user, apartmentId, tenantUserId, body);
     }
     resendOwnerInvitation(request, user, apartmentId, ownerEmail) {
         return this.apartmentsService.resendOwnerInvitation(request, user, apartmentId, decodeURIComponent(ownerEmail));
@@ -172,6 +202,18 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], ApartmentsController.prototype, "updateOwner", null);
 __decorate([
+    (0, common_1.Delete)(':apartmentId/owner'),
+    (0, swagger_1.ApiOperation)({ summary: 'Remove apartment owner' }),
+    (0, swagger_1.ApiParam)({ name: 'apartmentId', required: true, type: String }),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES, 'Landlord'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('apartmentId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:returntype", void 0)
+], ApartmentsController.prototype, "removeOwner", null);
+__decorate([
     (0, common_1.Delete)(':apartmentId'),
     (0, swagger_1.ApiOperation)({ summary: 'Delete apartment' }),
     (0, swagger_1.ApiParam)({ name: 'apartmentId', required: true, type: String }),
@@ -209,6 +251,21 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, String, String]),
     __metadata("design:returntype", void 0)
 ], ApartmentsController.prototype, "removeTenant", null);
+__decorate([
+    (0, common_1.Patch)(':apartmentId/tenants/:tenantUserId'),
+    (0, swagger_1.ApiOperation)({ summary: 'Update tenant details' }),
+    (0, swagger_1.ApiParam)({ name: 'apartmentId', required: true, type: String }),
+    (0, swagger_1.ApiParam)({ name: 'tenantUserId', required: true, type: String }),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES, 'Landlord'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('apartmentId')),
+    __param(3, (0, common_1.Param)('tenantUserId')),
+    __param(4, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, String, Object]),
+    __metadata("design:returntype", void 0)
+], ApartmentsController.prototype, "updateTenant", null);
 __decorate([
     (0, common_1.Post)(':apartmentId/owner/:ownerEmail/resend-invitation'),
     (0, swagger_1.ApiOperation)({ summary: 'Resend invitation to owner' }),
@@ -250,8 +307,11 @@ __decorate([
 ], ApartmentsController.prototype, "unassignResident", null);
 __decorate([
     (0, common_1.Post)('import'),
-    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file')),
-    (0, swagger_1.ApiOperation)({ summary: 'Import apartments from Excel, CSV, JSON or XML file' }),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file', {
+        limits: { fileSize: APARTMENT_IMPORT_MAX_BYTES, files: 1 },
+        fileFilter: apartmentImportFileFilter,
+    })),
+    (0, swagger_1.ApiOperation)({ summary: 'Import apartments from CSV, JSON, XML or XLSX file' }),
     (0, swagger_1.ApiConsumes)('multipart/form-data'),
     (0, swagger_1.ApiBody)({
         schema: {

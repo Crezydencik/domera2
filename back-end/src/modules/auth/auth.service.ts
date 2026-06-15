@@ -16,8 +16,13 @@ import { RegisterDto } from './dto/register.dto';
 import { ChangeEmailDto } from './dto/change-email.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
-import { normalizeUserRole, resolveAccountType, resolveUserRole } from '../../common/auth/role.constants';
+import {
+  isPublicRegistrationRole,
+  resolveAccountType,
+  resolveUserRole,
+} from '../../common/auth/role.constants';
 import { RequestUser } from '../../common/auth/request-user.type';
+import { UsersService } from '../users/users.service';
 
 const CODE_TTL_MS = 60 * 60 * 1000;
 const TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -35,10 +40,32 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly rateLimitService: RateLimitService,
     private readonly auditLogService: AuditLogService,
+    private readonly usersService: UsersService,
   ) {}
 
   private normalizeEmail(email: string): string {
     return email.trim().toLowerCase();
+  }
+
+  private getConfiguredPlatformAdmins() {
+    const splitList = (value?: string) =>
+      String(value ?? '')
+        .split(/[,\s;]+/)
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+
+    return {
+      emails: new Set(splitList(this.configService.get<string>('PLATFORM_ADMIN_EMAILS'))),
+      uids: new Set(splitList(this.configService.get<string>('PLATFORM_ADMIN_UIDS'))),
+    };
+  }
+
+  private isConfiguredPlatformAdmin(input: { uid?: string; email?: string }): boolean {
+    const { emails, uids } = this.getConfiguredPlatformAdmins();
+    const uid = input.uid?.trim().toLowerCase();
+    const email = input.email?.trim().toLowerCase();
+
+    return Boolean((uid && uids.has(uid)) || (email && emails.has(email)));
   }
 
   private normalizeLocale(locale?: string): LocalizedLocale {
@@ -59,6 +86,13 @@ export class AuthService {
 
   private hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
+  }
+
+  private emailChangeRequestsCollection(uid: string) {
+    return this.firebaseAdminService.firestore
+      .collection('users')
+      .doc(uid)
+      .collection(EMAIL_CHANGE_COLLECTION);
   }
 
   private async validateRegistrationVerification(email: string, verificationToken: string) {
@@ -362,14 +396,17 @@ export class AuthService {
     const snap = await ref.get();
     const current = snap.exists ? (snap.data() as Record<string, unknown>) : {};
 
-    const accountType =
-      resolveAccountType({ role: current.role, accountType: input.accountType ?? current.accountType }) ??
-      this.inferAccountTypeFromEmail(input.email);
-    const role =
-      resolveUserRole({
-        role: input.role ?? current.role,
-        accountType: input.accountType ?? current.accountType ?? accountType,
-      }) ?? accountType;
+    const isPlatformAdmin = this.isConfiguredPlatformAdmin({ uid: input.uid, email: input.email });
+    const accountType = isPlatformAdmin
+      ? 'PlatformAdmin'
+      : (resolveAccountType({ role: current.role, accountType: input.accountType ?? current.accountType }) ??
+        this.inferAccountTypeFromEmail(input.email));
+    const role = isPlatformAdmin
+      ? 'PlatformAdmin'
+      : (resolveUserRole({
+          role: input.role ?? current.role,
+          accountType: input.accountType ?? current.accountType ?? accountType,
+        }) ?? accountType);
 
     const firstName =
       (typeof input.firstName === 'string' && input.firstName.trim()) ||
@@ -597,6 +634,25 @@ export class AuthService {
       } catch {
         // keep verified token data if profile hydration is unavailable
       }
+    }
+
+    if (this.isConfiguredPlatformAdmin({ uid: decoded.uid, email: decoded.email })) {
+      role = 'PlatformAdmin';
+      accountType = 'PlatformAdmin';
+      companyId = undefined;
+      apartmentId = undefined;
+
+      await this.firebaseAdminService.firestore.collection('users').doc(decoded.uid).set(
+        {
+          uid: decoded.uid,
+          email: decoded.email,
+          role,
+          accountType,
+          companyId: FieldValue.delete(),
+          updatedAt: new Date(),
+        },
+        { merge: true },
+      );
     }
 
     const ttlMinutes = Number(this.configService.get<string>('FIREBASE_SESSION_TTL_MINUTES') ?? '30');
@@ -829,6 +885,9 @@ export class AuthService {
       throw this.createServiceError('You must accept the privacy policy and terms of use', 400);
     }
     const accountType = resolveAccountType({ accountType: input.accountType }) ?? 'Resident';
+    if (!isPublicRegistrationRole(accountType)) {
+      throw this.createServiceError('This account type cannot be created through public registration', 403);
+    }
     const role = resolveUserRole({ role: input.accountType, accountType }) ?? accountType;
     const fullName = [input.firstName?.trim(), input.lastName?.trim()]
       .filter((value): value is string => Boolean(value))
@@ -951,7 +1010,7 @@ export class AuthService {
     const tokenHash = this.hashToken(token);
     const now = Date.now();
 
-    await this.firebaseAdminService.firestore.collection(EMAIL_CHANGE_COLLECTION).doc(tokenHash).set({
+    await this.emailChangeRequestsCollection(user.uid).doc(tokenHash).set({
       uid: user.uid,
       currentEmail,
       nextEmail,
@@ -1000,14 +1059,22 @@ export class AuthService {
     }
 
     const tokenHash = this.hashToken(rawToken);
-    const ref = this.firebaseAdminService.firestore.collection(EMAIL_CHANGE_COLLECTION).doc(tokenHash);
-    const snap = await ref.get();
+    const snap = await this.firebaseAdminService.firestore
+      .collectionGroup(EMAIL_CHANGE_COLLECTION)
+      .where('tokenHash', '==', tokenHash)
+      .limit(1)
+      .get();
+    const legacySnap = snap.empty
+      ? await this.firebaseAdminService.firestore.collection(EMAIL_CHANGE_COLLECTION).doc(tokenHash).get()
+      : null;
+    const requestDoc = snap.docs[0] ?? (legacySnap?.exists ? legacySnap : undefined);
 
-    if (!snap.exists) {
+    if (!requestDoc?.exists) {
       throw this.createServiceError('Verification link is invalid or expired', 404);
     }
 
-    const data = snap.data() as {
+    const ref = requestDoc.ref;
+    const data = requestDoc.data() as {
       uid?: string;
       currentEmail?: string;
       nextEmail?: string;
@@ -1041,8 +1108,12 @@ export class AuthService {
       }
     }
 
+    const userRef = this.firebaseAdminService.firestore.collection('users').doc(uid);
+    const userSnap = await userRef.get();
+    const currentUserData = userSnap.exists ? (userSnap.data() as Record<string, unknown>) : {};
+
     await this.firebaseAdminService.auth.updateUser(uid, { email: nextEmail });
-    await this.firebaseAdminService.firestore.collection('users').doc(uid).set(
+    await userRef.set(
       {
         uid,
         email: nextEmail,
@@ -1050,6 +1121,11 @@ export class AuthService {
       },
       { merge: true },
     );
+    await this.usersService.syncLinkedApartmentProfiles(uid, currentUserData, {
+      ...currentUserData,
+      uid,
+      email: nextEmail,
+    });
     await ref.set({ status: 'confirmed', confirmedAt: new Date(), updatedAt: new Date() }, { merge: true });
 
     void this.auditLogService.write({

@@ -24,6 +24,32 @@ let NotificationsService = class NotificationsService {
         this.firebaseAdminService = firebaseAdminService;
         this.rateLimitService = rateLimitService;
     }
+    userNotificationsCollection(userId) {
+        return this.firebaseAdminService.firestore
+            .collection('users')
+            .doc(userId)
+            .collection('notifications');
+    }
+    notificationCreatedAtMillis(item) {
+        const createdAt = item.createdAt;
+        if (createdAt instanceof Date)
+            return createdAt.getTime();
+        if (createdAt && typeof createdAt.toMillis === 'function') {
+            return createdAt.toMillis();
+        }
+        return 0;
+    }
+    async findNotificationDocument(notificationId) {
+        const nestedSnap = await this.firebaseAdminService.firestore
+            .collectionGroup('notifications')
+            .where('notificationId', '==', notificationId)
+            .limit(1)
+            .get();
+        if (!nestedSnap.empty)
+            return nestedSnap.docs[0] ?? null;
+        const legacySnap = await this.firebaseAdminService.firestore.collection('notifications').doc(notificationId).get();
+        return legacySnap.exists ? legacySnap : null;
+    }
     assertAuth(user) {
         if (!user?.uid)
             throw new common_1.UnauthorizedException('Authentication required');
@@ -93,17 +119,29 @@ let NotificationsService = class NotificationsService {
         if (!settings.general) {
             return { items: [] };
         }
-        const snap = await this.firebaseAdminService.firestore
-            .collection('notifications')
-            .where('userId', '==', normalizedUserId)
-            .orderBy('createdAt', 'desc')
-            .limit(100)
-            .get();
-        const items = snap.docs
-            .map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-        }))
+        const [nestedSnap, legacySnap] = await Promise.all([
+            this.userNotificationsCollection(normalizedUserId)
+                .orderBy('createdAt', 'desc')
+                .limit(100)
+                .get(),
+            this.firebaseAdminService.firestore
+                .collection('notifications')
+                .where('userId', '==', normalizedUserId)
+                .orderBy('createdAt', 'desc')
+                .limit(100)
+                .get(),
+        ]);
+        const itemsById = new Map();
+        [...nestedSnap.docs, ...legacySnap.docs].forEach((doc) => {
+            const data = doc.data();
+            itemsById.set(doc.id, {
+                id: doc.id,
+                ...data,
+            });
+        });
+        const items = Array.from(itemsById.values())
+            .sort((left, right) => this.notificationCreatedAtMillis(right) - this.notificationCreatedAtMillis(left))
+            .slice(0, 100)
             .filter((item) => item.read !== true);
         const filteredItems = items.filter((item) => {
             const type = typeof item.type === 'string' ? item.type : '';
@@ -124,13 +162,14 @@ let NotificationsService = class NotificationsService {
             throw new common_1.BadRequestException('userId is required');
         this.ensureUserAccess(user, targetUserId);
         await this.enforceRateLimit(request, 'notifications:create', `${user.uid}:${targetUserId}`, 40);
+        const ref = this.userNotificationsCollection(targetUserId).doc();
         const data = {
             ...payload,
+            notificationId: ref.id,
             userId: targetUserId,
             read: Boolean(payload.read ?? false),
             createdAt: new Date(),
         };
-        const ref = this.firebaseAdminService.firestore.collection('notifications').doc();
         await ref.set(data);
         return { id: ref.id, ...data };
     }
@@ -139,16 +178,15 @@ let NotificationsService = class NotificationsService {
         if (!notificationId?.trim())
             throw new common_1.BadRequestException('notificationId is required');
         await this.enforceRateLimit(request, 'notifications:read', `${user.uid}:${notificationId}`, 80);
-        const ref = this.firebaseAdminService.firestore.collection('notifications').doc(notificationId);
-        const snap = await ref.get();
-        if (!snap.exists)
+        const snap = await this.findNotificationDocument(notificationId);
+        if (!snap?.exists)
             throw new common_1.NotFoundException('Notification not found');
         const data = snap.data();
         const targetUserId = typeof data.userId === 'string' ? data.userId : '';
         if (!targetUserId)
             throw new common_1.ForbiddenException('Invalid notification owner');
         this.ensureUserAccess(user, targetUserId);
-        await ref.set({ read: true, readAt: new Date(), updatedAt: new Date() }, { merge: true });
+        await snap.ref.set({ read: true, readAt: new Date(), updatedAt: new Date() }, { merge: true });
         return { success: true };
     }
     async markAllRead(request, user, userId) {
@@ -158,33 +196,38 @@ let NotificationsService = class NotificationsService {
             throw new common_1.BadRequestException('userId is required');
         this.ensureUserAccess(user, normalizedUserId);
         await this.enforceRateLimit(request, 'notifications:read-all', `${user.uid}:${normalizedUserId}`, 20);
-        const snap = await this.firebaseAdminService.firestore
-            .collection('notifications')
-            .where('userId', '==', normalizedUserId)
-            .where('read', '==', false)
-            .get();
+        const [nestedSnap, legacySnap] = await Promise.all([
+            this.userNotificationsCollection(normalizedUserId)
+                .where('read', '==', false)
+                .get(),
+            this.firebaseAdminService.firestore
+                .collection('notifications')
+                .where('userId', '==', normalizedUserId)
+                .where('read', '==', false)
+                .get(),
+        ]);
         const batch = this.firebaseAdminService.firestore.batch();
-        snap.docs.forEach((doc) => {
+        const docs = [...nestedSnap.docs, ...legacySnap.docs];
+        docs.forEach((doc) => {
             batch.set(doc.ref, { read: true, readAt: new Date(), updatedAt: new Date() }, { merge: true });
         });
         await batch.commit();
-        return { success: true, updated: snap.size };
+        return { success: true, updated: docs.length };
     }
     async remove(request, user, notificationId) {
         this.assertAuth(user);
         if (!notificationId?.trim())
             throw new common_1.BadRequestException('notificationId is required');
         await this.enforceRateLimit(request, 'notifications:delete', `${user.uid}:${notificationId}`, 40);
-        const ref = this.firebaseAdminService.firestore.collection('notifications').doc(notificationId);
-        const snap = await ref.get();
-        if (!snap.exists)
+        const snap = await this.findNotificationDocument(notificationId);
+        if (!snap?.exists)
             throw new common_1.NotFoundException('Notification not found');
         const data = snap.data();
         const targetUserId = typeof data.userId === 'string' ? data.userId : '';
         if (!targetUserId)
             throw new common_1.ForbiddenException('Invalid notification owner');
         this.ensureUserAccess(user, targetUserId);
-        await ref.delete();
+        await snap.ref.delete();
         return { success: true };
     }
 };

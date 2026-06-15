@@ -15,6 +15,15 @@ export declare class CompanyController {
         id: string;
     }>;
     byId(request: Request, user: RequestUser, companyId: string): Promise<{
+        staffContacts: Record<string, unknown>[];
+        publicContacts: {
+            id: string;
+            fullName: string;
+            email: string;
+            phone: string;
+            position: string;
+            role: string;
+        }[];
         id: string;
     }>;
     listApiKeys(request: Request, user: RequestUser, companyId: string): Promise<{
@@ -65,6 +74,25 @@ export declare class CompanyController {
     addMember(request: Request, user: RequestUser, companyId: string, body: Record<string, unknown>): Promise<{
         success: boolean;
         mode: string;
+        member: {
+            showContactToResidents: boolean;
+            role: string;
+            createAccount: boolean;
+            comment?: string | undefined;
+            position?: string | undefined;
+            jobTitle?: string | undefined;
+            phone?: string | undefined;
+            fullName: string;
+            name: string;
+            lastName?: string | undefined;
+            firstName: string;
+            email?: string | undefined;
+            id: string;
+        };
+        invitation?: undefined;
+    } | {
+        success: boolean;
+        mode: string;
         invitation: {
             invitationId: string;
             invitationLink: string;
@@ -80,8 +108,11 @@ export declare class CompanyController {
             firstName: string;
             lastName: string;
             fullName: string;
+            phone: string | undefined;
+            position: string | undefined;
+            showContactToResidents: boolean;
             role: "ManagementCompany" | "Accountant";
-            accountType: "ManagementCompany" | "Resident" | "Landlord";
+            accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
             companyId: string;
         };
         invitation?: undefined;

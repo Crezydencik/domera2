@@ -16,13 +16,12 @@ import {
   Query,
   Req,
   Res,
-  UploadedFile,
   UploadedFiles,
   UseFilters,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { AnyFilesInterceptor, FileInterceptor } from '@nestjs/platform-express';
+import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import {
   ApiBearerAuth,
@@ -51,12 +50,11 @@ import {
   ListInvoiceUploadsResponseDto,
   InvoiceItemDto,
   ListInvoicesResponseDto,
-  UploadInvoiceResponseDto,
 } from './dto/invoice-response.dto';
 import { ListInvoicesQueryDto } from './dto/list-invoices.query.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { SuccessResponseDto } from '../../common/dto/success-response.dto';
-import { UploadInvoiceDto, UploadInvoicesBatchDto } from './dto/upload-invoice.dto';
+import { UploadInvoicesBatchDto } from './dto/upload-invoice.dto';
 import { InvoiceUploadAuthGuard } from './invoice-upload-auth.guard';
 
 type UploadedBinaryFile = {
@@ -67,26 +65,9 @@ type UploadedBinaryFile = {
   size?: number;
 };
 
-const INVOICE_PDF_MAX_BYTES = 10 * 1024 * 1024;
 const INVOICE_ZIP_MAX_BYTES = 100 * 1024 * 1024;
 const INVOICE_BATCH_MAX_FILES = 50;
-
-function invoicePdfFileFilter(
-  _request: Request,
-  file: { fieldname?: string; originalname?: string; mimetype?: string },
-  callback: (error: Error | null, acceptFile: boolean) => void,
-) {
-  const name = file.originalname?.toLowerCase() ?? '';
-  const mimetype = file.mimetype?.toLowerCase() ?? '';
-  const looksLikePdf = name.endsWith('.pdf') || mimetype === 'application/pdf';
-
-  if (!looksLikePdf) {
-    callback(new BadRequestException('Only PDF files are allowed'), false);
-    return;
-  }
-
-  callback(null, true);
-}
+const INVOICE_ITEMS_MAX_BYTES = 1 * 1024 * 1024;
 
 function invoiceBatchFileFilter(
   _request: Request,
@@ -118,6 +99,21 @@ function invoiceBatchFileFilter(
   }
 
   callback(null, true);
+}
+
+function readItemsJson(file: UploadedBinaryFile | undefined): string | undefined {
+  if (!file) return undefined;
+
+  const size = file.size ?? file.buffer?.length ?? 0;
+  if (!file.buffer || size <= 0) {
+    throw new BadRequestException('items file is empty');
+  }
+
+  if (size > INVOICE_ITEMS_MAX_BYTES) {
+    throw new BadRequestException('items JSON file is too large');
+  }
+
+  return file.buffer.toString('utf8');
 }
 
 @Catch()
@@ -178,17 +174,20 @@ export class InvoicesController {
   @UseGuards(InvoiceUploadAuthGuard, RolesGuard)
   @Roles(...STAFF_ROLES)
   @UseFilters(InvoiceUploadExceptionFilter)
-  @UseInterceptors(FileInterceptor('file', {
-    limits: { fileSize: INVOICE_PDF_MAX_BYTES },
-    fileFilter: invoicePdfFileFilter,
+  @UseInterceptors(AnyFilesInterceptor({
+    limits: {
+      fileSize: INVOICE_ZIP_MAX_BYTES,
+      files: INVOICE_BATCH_MAX_FILES + 1,
+    },
+    fileFilter: invoiceBatchFileFilter,
   }))
   @HttpCode(200)
-  @ApiOperation({ summary: 'Upload an invoice PDF with billing metadata' })
+  @ApiOperation({ summary: 'Upload one invoice PDF, multiple PDFs, or a ZIP archive with billing metadata' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ type: UploadInvoiceDto })
+  @ApiBody({ type: UploadInvoicesBatchDto })
   @ApiOkResponse({
-    description: 'Invoice uploaded successfully.',
-    type: UploadInvoiceResponseDto,
+    description: 'Invoice upload processed.',
+    type: UploadInvoicesBatchResponseDto,
   })
   @ApiResponse({
     status: 400,
@@ -198,14 +197,38 @@ export class InvoicesController {
   upload(
     @Req() request: Request,
     @CurrentUser() user: RequestUser,
-    @UploadedFile() file: UploadedBinaryFile | undefined,
+    @UploadedFiles() uploadedFiles: UploadedBinaryFile[] | undefined,
     @Body() body: Record<string, unknown>,
   ) {
-    if (!file) {
+    const uploaded = uploadedFiles ?? [];
+    const itemsFile = uploaded.find((file) => file.fieldname === 'items');
+    const files = uploaded.filter((file) => file !== itemsFile);
+
+    if (files.length === 0) {
       throw new BadRequestException('File is required');
     }
 
-    return this.invoicesService.upload(request, user, file, body);
+    const uploadBody: Record<string, unknown> = {
+      ...body,
+      ...(itemsFile ? { items: readItemsJson(itemsFile) } : {}),
+    };
+    const hasBatchMetadata = uploadBody.items !== undefined
+      || uploadBody.invoices !== undefined
+      || uploadBody.metadata !== undefined;
+    const isZip = files.some((file) => {
+      const name = file.originalname?.toLowerCase() ?? '';
+      const mimetype = file.mimetype?.toLowerCase() ?? '';
+      return name.endsWith('.zip')
+        || mimetype === 'application/zip'
+        || mimetype === 'application/x-zip-compressed'
+        || mimetype === 'multipart/x-zip';
+    });
+
+    if (files.length === 1 && !isZip && !hasBatchMetadata) {
+      return this.invoicesService.upload(request, user, files[0]!, uploadBody);
+    }
+
+    return this.invoicesService.uploadBatch(request, user, files, uploadBody);
   }
 
   @Post('upload-batch')
@@ -248,7 +271,7 @@ export class InvoicesController {
 
     return this.invoicesService.uploadBatch(request, user, files, {
       ...body,
-      ...(itemsFile ? { items: itemsFile.buffer.toString('utf8') } : {}),
+      ...(itemsFile ? { items: readItemsJson(itemsFile) } : {}),
     });
   }
 
@@ -396,6 +419,52 @@ export class InvoicesController {
     @Param('approvalId') approvalId: string,
   ) {
     return this.invoicesService.cancelPendingApproval(request, user, approvalId);
+  }
+
+  @Get('public/:token/pdf')
+  @ApiOperation({ summary: 'Open invoice PDF by public token' })
+  @ApiParam({ name: 'token', type: String })
+  @ApiOkResponse({
+    description: 'Invoice PDF returned successfully.',
+  })
+  async publicPdf(
+    @Req() request: Request,
+    @Param('token') token: string,
+    @Res() response: Response,
+  ) {
+    if (request.query.raw !== '1') {
+      response.redirect(302, this.invoicesService.publicInvoiceViewLink(token, request));
+      return;
+    }
+
+    const pdf = await this.invoicesService.publicPdf(token);
+    const fallbackFileName = pdf.fileName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '').trim() || 'invoice.pdf';
+    const encodedFileName = encodeURIComponent(pdf.fileName);
+
+    response.setHeader('Content-Type', pdf.contentType || 'application/pdf');
+    response.setHeader('Content-Length', String(pdf.buffer.length));
+    response.setHeader('Content-Disposition', `inline; filename="${fallbackFileName}"; filename*=UTF-8''${encodedFileName}`);
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.end(pdf.buffer);
+  }
+
+  @Post(':invoiceId/resend-email')
+  @UseGuards(FirebaseAuthGuard, RolesGuard)
+  @Roles(...STAFF_ROLES)
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Resend invoice email to the apartment recipient' })
+  @ApiParam({ name: 'invoiceId', type: String })
+  @ApiOkResponse({
+    description: 'Invoice email resent successfully.',
+    type: SuccessResponseDto,
+  })
+  resendEmail(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('invoiceId') invoiceId: string,
+  ) {
+    return this.invoicesService.resendEmail(request, user, invoiceId);
   }
 
   @Get(':invoiceId/pdf')

@@ -74,6 +74,16 @@ export class CompanyService {
     return '';
   }
 
+  private toOptionalTrimmedString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  }
+
+  private normalizeStaffContacts(value: unknown): Array<Record<string, unknown>> {
+    return Array.isArray(value)
+      ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+      : [];
+  }
+
   private getBuildingApiKeyCollection(buildingId: string): FirebaseFirestore.CollectionReference {
     return this.firebaseAdminService.firestore
       .collection('buildings')
@@ -341,7 +351,50 @@ export class CompanyService {
       throw new ForbiddenException('Access denied for company');
     }
 
-    return { id: snap.id, ...data };
+    const publicContactsSnap = await this.firebaseAdminService.firestore
+      .collection('users')
+      .where('companyId', '==', companyId)
+      .where('showContactToResidents', '==', true)
+      .get();
+
+    const staffContacts = this.normalizeStaffContacts(data.staffContacts);
+    const publicStaffContacts = staffContacts
+      .filter((contact) => contact.showContactToResidents === true)
+      .map((contact) => ({
+        id: this.firstString(contact.id, contact.email),
+        fullName: this.firstString(contact.fullName, contact.name, contact.email),
+        email: this.firstString(contact.email),
+        phone: this.firstString(contact.phone),
+        position: this.firstString(contact.position, contact.jobTitle, contact.comment),
+        comment: this.firstString(contact.comment),
+        role: this.firstString(contact.role, 'ManagementCompany'),
+      }));
+
+    const publicContacts = publicContactsSnap.docs
+      .map((doc) => {
+        const contact = doc.data() as Record<string, unknown>;
+        const fullName = this.firstString(
+          contact.fullName,
+          [contact.firstName, contact.lastName]
+            .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+            .join(' '),
+          contact.name,
+          contact.displayName,
+          contact.email,
+        );
+
+        return {
+          id: doc.id,
+          fullName,
+          email: this.firstString(contact.email),
+          phone: this.firstString(contact.phone, contact.phoneNumber),
+          position: this.firstString(contact.position, contact.jobTitle),
+          role: this.firstString(contact.role, contact.accountType),
+        };
+      })
+      .filter((contact) => contact.fullName || contact.email || contact.phone);
+
+    return { id: snap.id, ...data, staffContacts, publicContacts: [...publicContacts, ...publicStaffContacts] };
   }
 
   async update(request: Request, user: RequestUser, companyId: string, payload: Record<string, unknown>) {
@@ -574,6 +627,9 @@ export class CompanyService {
     email: string;
     firstName: string;
     lastName: string;
+    phone?: string;
+    position?: string;
+    showContactToResidents: boolean;
     role: 'ManagementCompany' | 'Accountant';
   }) {
     const accountType = resolveAccountType({ role: params.role }) ?? 'ManagementCompany';
@@ -597,6 +653,9 @@ export class CompanyService {
         fullName,
         name: fullName,
         displayName: fullName,
+        ...(params.phone ? { phone: params.phone } : {}),
+        ...(params.position ? { position: params.position, jobTitle: params.position } : {}),
+        showContactToResidents: params.showContactToResidents,
         companyId: params.companyId,
         role: params.role,
         accountType,
@@ -633,6 +692,9 @@ export class CompanyService {
       firstName: params.firstName,
       lastName: params.lastName,
       fullName,
+      phone: params.phone,
+      position: params.position,
+      showContactToResidents: params.showContactToResidents,
       role: params.role,
       accountType,
       companyId: params.companyId,
@@ -647,6 +709,9 @@ export class CompanyService {
     email: string;
     firstName: string;
     lastName: string;
+    phone?: string;
+    position?: string;
+    showContactToResidents: boolean;
     role: 'ManagementCompany' | 'Accountant';
   }) {
     const rawToken = randomBytes(32).toString('hex');
@@ -663,6 +728,9 @@ export class CompanyService {
       email: params.email,
       firstName: params.firstName,
       lastName: params.lastName,
+      ...(params.phone ? { phone: params.phone } : {}),
+      ...(params.position ? { position: params.position, jobTitle: params.position } : {}),
+      showContactToResidents: params.showContactToResidents,
       role: params.role,
       accountType: resolveAccountType({ role: params.role }) ?? 'ManagementCompany',
       inviteType: 'company-member',
@@ -703,16 +771,68 @@ export class CompanyService {
     const role = payload.role === 'Accountant' || payload.role === 'ManagementCompany' ? payload.role : null;
     const firstName = typeof payload.firstName === 'string' ? payload.firstName.trim() : '';
     const lastName = typeof payload.lastName === 'string' ? payload.lastName.trim() : '';
+    const phone = this.toOptionalTrimmedString(payload.phone);
+    const position = this.toOptionalTrimmedString(payload.position);
+    const comment = this.toOptionalTrimmedString(payload.comment);
+    const memberId = this.toOptionalTrimmedString(payload.memberId);
+    const showContactToResidents = payload.showContactToResidents === true;
+    const createAccount = payload.createAccount !== false;
 
-    if (!email || !role || !firstName || !lastName) {
+    if (createAccount && (!email || !role || !firstName || !lastName)) {
       throw new BadRequestException('email, firstName, lastName and role are required');
     }
+    if (!createAccount && (!firstName || (!email && !phone))) {
+      throw new BadRequestException('firstName and email or phone are required');
+    }
+    const resolvedRole = role ?? 'ManagementCompany';
 
     await this.enforceRateLimit(request, 'company:add-member', `${user.uid}:${companyId}`, 20);
 
     const companyRef = this.firebaseAdminService.firestore.collection('companies').doc(companyId);
     const companySnap = await companyRef.get();
     if (!companySnap.exists) throw new NotFoundException('Company not found');
+    const company = companySnap.data() as Record<string, unknown>;
+
+    if (!createAccount) {
+      const fullName = [firstName, lastName].filter(Boolean).join(' ');
+      const staffContacts = this.normalizeStaffContacts(company.staffContacts);
+      const id = this.firstString(
+        memberId,
+        email ? staffContacts.find((contact) => this.firstString(contact.email).toLowerCase() === email)?.id : undefined,
+        `contact_${randomBytes(8).toString('hex')}`,
+      );
+      const nextContact = {
+        id,
+        ...(email ? { email } : {}),
+        firstName,
+        ...(lastName ? { lastName } : {}),
+        fullName,
+        name: fullName,
+        ...(phone ? { phone } : {}),
+        ...(position ? { position, jobTitle: position } : {}),
+        ...(comment ? { comment } : {}),
+        showContactToResidents,
+        role: resolvedRole,
+        createAccount: false,
+      };
+
+      await companyRef.set(
+        {
+          staffContacts: [
+            ...staffContacts.filter((contact) => this.firstString(contact.id) !== id && (!email || this.firstString(contact.email).toLowerCase() !== email)),
+            nextContact,
+          ],
+          updatedAt: new Date(),
+        },
+        { merge: true },
+      );
+
+      return {
+        success: true,
+        mode: 'contact',
+        member: nextContact,
+      };
+    }
 
     let targetUid = '';
     try {
@@ -727,7 +847,10 @@ export class CompanyService {
         email,
         firstName,
         lastName,
-        role,
+        phone,
+        position,
+        showContactToResidents,
+        role: resolvedRole,
       });
 
       return {
@@ -737,7 +860,6 @@ export class CompanyService {
       };
     }
 
-    const company = companySnap.data() as Record<string, unknown>;
     const member = await this.attachMemberToCompany({
       companyId,
       company,
@@ -745,7 +867,10 @@ export class CompanyService {
       email,
       firstName,
       lastName,
-      role,
+      phone,
+      position,
+      showContactToResidents,
+      role: resolvedRole,
     });
 
     return {
@@ -780,6 +905,20 @@ export class CompanyService {
     if (!companySnap.exists) throw new NotFoundException('Company not found');
 
     const company = companySnap.data() as Record<string, unknown>;
+    const staffContacts = this.normalizeStaffContacts(company.staffContacts);
+    const nextStaffContacts = staffContacts.filter((contact) => this.firstString(contact.id) !== normalizedMemberId);
+    if (nextStaffContacts.length !== staffContacts.length) {
+      await companyRef.set(
+        {
+          staffContacts: nextStaffContacts,
+          updatedAt: new Date(),
+        },
+        { merge: true },
+      );
+
+      return { success: true, memberId: normalizedMemberId };
+    }
+
     const userIds = Array.isArray(company.userIds)
       ? company.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
       : [];

@@ -44,7 +44,12 @@ export class EmailService {
         to: payload.to,
         subject: payload.subject,
         html: payload.html,
-      });
+        attachments: payload.attachments?.map((attachment) => ({
+          filename: attachment.filename,
+          content: attachment.content,
+          contentType: attachment.contentType,
+        })),
+      } as Parameters<Resend['emails']['send']>[0]);
 
       if (response.error) {
         throw new Error(`Resend error: ${response.error.message}`);
@@ -163,6 +168,7 @@ export class EmailService {
       to: dto.to,
       subject: template.subject,
       html: template.html,
+      attachments: dto.attachments,
     });
   }
 

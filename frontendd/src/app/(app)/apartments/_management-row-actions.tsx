@@ -55,6 +55,7 @@ interface ApartmentsManagementRowActionsProps {
   apartmentRecord: ApartmentRecord;
   currentResidentId?: string;
   currentResidentName?: string;
+  isOccupied?: boolean;
   residentOptions: ApartmentResidentOption[];
 }
 
@@ -111,6 +112,7 @@ export function ApartmentsManagementRowActions({
   apartmentRecord,
   currentResidentId,
   currentResidentName,
+  isOccupied = false,
   residentOptions,
 }: ApartmentsManagementRowActionsProps) {
   const t = useTranslations("apartments");
@@ -138,6 +140,7 @@ export function ApartmentsManagementRowActions({
     activated: apartmentRecord.ownerActivated === true || apartmentRecord.ownerActivated === "true",
     invitedAt: formatPossibleDate(apartmentRecord.ownerInvitedAt),
   };
+  const deleteBlockedByOccupant = isOccupied || Boolean(currentResidentId);
 
   const normalizedResidents = useMemo(() => {
     const map = new Map<string, ApartmentResidentOption>();
@@ -344,7 +347,7 @@ export function ApartmentsManagementRowActions({
         description={t("management.dialogs.deleteApartment.description", { apartment: apartmentLabel })}
       >
         <div className="space-y-4">
-          {currentResidentId ? (
+          {deleteBlockedByOccupant ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
               {t("management.dialogs.deleteApartment.occupiedHint")}
             </div>
@@ -374,7 +377,7 @@ export function ApartmentsManagementRowActions({
               variant="danger"
               size="sm"
               onClick={() => void handleDeleteApartment()}
-              disabled={isDeleting || isLoadingStorageSummary || Boolean(currentResidentId)}
+              disabled={isDeleting || isLoadingStorageSummary || deleteBlockedByOccupant}
             >
               {isDeleting ? t("management.dialogs.deleteApartment.deleting") : ui("delete")}
             </Button>

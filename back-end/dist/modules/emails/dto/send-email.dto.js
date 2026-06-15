@@ -26,6 +26,10 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], SendEmailDto.prototype, "html", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Array)
+], SendEmailDto.prototype, "attachments", void 0);
 class SendRegistrationCodeEmailDto {
 }
 exports.SendRegistrationCodeEmailDto = SendRegistrationCodeEmailDto;
@@ -201,6 +205,10 @@ __decorate([
     (0, class_validator_1.IsEnum)(['en', 'ru', 'lv']),
     __metadata("design:type", String)
 ], SendInvoiceGeneratedEmailDto.prototype, "language", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Array)
+], SendInvoiceGeneratedEmailDto.prototype, "attachments", void 0);
 class SendMeterReadingReminderEmailDto {
 }
 exports.SendMeterReadingReminderEmailDto = SendMeterReadingReminderEmailDto;

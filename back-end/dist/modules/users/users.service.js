@@ -26,17 +26,189 @@ let UsersService = class UsersService {
     isStaff(user) {
         return (0, role_constants_1.isStaffRole)(user.role);
     }
+    isPlatformAdmin(user) {
+        return (0, role_constants_1.isPlatformAdminRole)(user.role);
+    }
     ensureUserAccess(currentUser, targetUserId) {
         if (currentUser.uid === targetUserId)
+            return;
+        if (this.isPlatformAdmin(currentUser))
             return;
         if (!this.isStaff(currentUser))
             throw new common_1.ForbiddenException('Access denied');
     }
     ensureCompanyAccess(currentUser, companyId) {
+        if (this.isPlatformAdmin(currentUser))
+            return;
         if (this.isStaff(currentUser) && (!currentUser.companyId || currentUser.companyId === companyId)) {
             return;
         }
         throw new common_1.ForbiddenException('Access denied for company');
+    }
+    toOptionalString(value) {
+        return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+    }
+    normalizedEmail(value) {
+        return this.toOptionalString(value)?.toLowerCase() ?? '';
+    }
+    resolveProfileNames(data) {
+        const firstName = this.toOptionalString(data.firstName);
+        const lastName = this.toOptionalString(data.lastName);
+        const fallbackName = [firstName, lastName].filter(Boolean).join(' ');
+        const fullName = fallbackName ||
+            this.toOptionalString(data.fullName) ||
+            this.toOptionalString(data.name) ||
+            this.toOptionalString(data.displayName) ||
+            this.toOptionalString(data.username) ||
+            this.toOptionalString(data.userName) ||
+            this.toOptionalString(data.email) ||
+            '';
+        return {
+            firstName: firstName ?? '',
+            lastName: lastName ?? '',
+            fullName,
+        };
+    }
+    async resolvePropertyMembership(userId, email) {
+        const normalizedUserId = this.toOptionalString(userId);
+        const normalizedEmail = this.normalizedEmail(email);
+        const roles = new Set();
+        if (!normalizedUserId && !normalizedEmail) {
+            return {
+                hasOwnership: false,
+                hasTenancy: false,
+                propertyRoles: [],
+            };
+        }
+        const snap = await this.firebaseAdminService.firestore.collection('apartments').get();
+        for (const doc of snap.docs) {
+            const apartment = doc.data();
+            const ownerId = this.toOptionalString(apartment.ownerId);
+            const ownerEmail = this.normalizedEmail(apartment.ownerEmail);
+            if (apartment.ownerActivated === true &&
+                ((normalizedUserId && ownerId === normalizedUserId) ||
+                    Boolean(normalizedEmail && ownerEmail === normalizedEmail))) {
+                roles.add('owner');
+            }
+            const residentId = this.toOptionalString(apartment.residentId);
+            const residentEmail = this.normalizedEmail(apartment.residentEmail);
+            if ((normalizedUserId && residentId === normalizedUserId) ||
+                Boolean(normalizedEmail && residentEmail === normalizedEmail)) {
+                roles.add('tenant');
+            }
+            const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+            for (const tenant of tenants) {
+                if (!tenant || typeof tenant !== 'object')
+                    continue;
+                const item = tenant;
+                const status = this.toOptionalString(item.status)?.toLowerCase() ?? '';
+                if (['removed', 'deleted', 'revoked', 'inactive'].includes(status))
+                    continue;
+                const tenantUserId = this.toOptionalString(item.userId);
+                const tenantEmail = this.normalizedEmail(item.email);
+                if ((normalizedUserId && tenantUserId === normalizedUserId) ||
+                    Boolean(normalizedEmail && tenantEmail === normalizedEmail)) {
+                    roles.add('tenant');
+                }
+            }
+        }
+        return {
+            hasOwnership: roles.has('owner'),
+            hasTenancy: roles.has('tenant'),
+            propertyRoles: Array.from(roles),
+        };
+    }
+    async syncLinkedApartmentProfiles(userId, previousData, nextData) {
+        const normalizedUserId = this.toOptionalString(userId);
+        if (!normalizedUserId)
+            return;
+        const db = this.firebaseAdminService.firestore;
+        const previousEmail = this.normalizedEmail(previousData.email);
+        const nextEmail = this.normalizedEmail(nextData.email);
+        const emailCandidates = Array.from(new Set([previousEmail, nextEmail].filter(Boolean)));
+        const { firstName, lastName, fullName } = this.resolveProfileNames(nextData);
+        const phone = this.toOptionalString(nextData.phone) ?? this.toOptionalString(nextData.phoneNumber) ?? '';
+        const [residentSnap, ownerIdSnap, ...ownerEmailSnaps] = await Promise.all([
+            db.collection('apartments').where('residentId', '==', normalizedUserId).get(),
+            db.collection('apartments').where('ownerId', '==', normalizedUserId).get(),
+            ...emailCandidates.map((email) => db.collection('apartments').where('ownerEmail', '==', email).get()),
+        ]);
+        const apartmentDocs = new Map();
+        const addDocs = (docs) => {
+            for (const doc of docs) {
+                apartmentDocs.set(doc.id, doc);
+            }
+        };
+        addDocs(residentSnap.docs);
+        addDocs(ownerIdSnap.docs);
+        for (const snap of ownerEmailSnaps) {
+            addDocs(snap.docs);
+        }
+        const allApartmentsSnap = await db.collection('apartments').get();
+        for (const doc of allApartmentsSnap.docs) {
+            const apartment = doc.data();
+            const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+            const hasLinkedTenant = tenants.some((tenant) => {
+                if (!tenant || typeof tenant !== 'object')
+                    return false;
+                const item = tenant;
+                const tenantUserId = this.toOptionalString(item.userId);
+                const tenantEmail = this.normalizedEmail(item.email);
+                return tenantUserId === normalizedUserId || Boolean(tenantEmail && emailCandidates.includes(tenantEmail));
+            });
+            if (hasLinkedTenant) {
+                apartmentDocs.set(doc.id, doc);
+            }
+        }
+        await Promise.all(Array.from(apartmentDocs.values()).map(async (doc) => {
+            const apartment = doc.data();
+            const update = { updatedAt: new Date() };
+            const residentId = this.toOptionalString(apartment.residentId);
+            const ownerId = this.toOptionalString(apartment.ownerId);
+            const ownerEmail = this.normalizedEmail(apartment.ownerEmail);
+            if (residentId === normalizedUserId) {
+                update.residentName = fullName;
+                update.residentEmail = nextEmail || null;
+                update.residentFirstName = firstName || null;
+                update.residentLastName = lastName || null;
+                update.residentPhone = phone || null;
+            }
+            if (ownerId === normalizedUserId || Boolean(ownerEmail && emailCandidates.includes(ownerEmail))) {
+                update.owner = fullName;
+                update.ownerName = fullName;
+                update.ownerEmail = nextEmail || ownerEmail || null;
+                update.ownerFirstName = firstName || null;
+                update.ownerLastName = lastName || null;
+                update.ownerPhone = phone || null;
+            }
+            if (Array.isArray(apartment.tenants)) {
+                let changed = false;
+                const tenants = apartment.tenants.map((tenant) => {
+                    if (!tenant || typeof tenant !== 'object')
+                        return tenant;
+                    const tenantUserId = this.toOptionalString(tenant.userId);
+                    const tenantEmail = this.normalizedEmail(tenant.email);
+                    const matches = tenantUserId === normalizedUserId || Boolean(tenantEmail && emailCandidates.includes(tenantEmail));
+                    if (!matches)
+                        return tenant;
+                    changed = true;
+                    return {
+                        ...tenant,
+                        email: nextEmail || tenant.email,
+                        name: fullName || tenant.name,
+                        firstName: firstName || tenant.firstName,
+                        lastName: lastName || tenant.lastName,
+                        phone: phone || tenant.phone,
+                    };
+                });
+                if (changed) {
+                    update.tenants = tenants;
+                }
+            }
+            if (Object.keys(update).length > 1) {
+                await doc.ref.set(update, { merge: true });
+            }
+        }));
     }
     normalizeProfilePayload(currentUser, targetUserId, currentData, payload) {
         const nextPayload = { ...payload };
@@ -61,7 +233,10 @@ let UsersService = class UsersService {
             throw new common_1.BadRequestException(`Unsupported account type. Allowed account types: ${role_constants_1.ACCOUNT_TYPES.join(', ')}`);
         }
         const existingRole = (0, role_constants_1.normalizeUserRole)(currentData.role ?? currentUser.role);
-        if (!this.isStaff(currentUser)) {
+        if (requestedRole === 'PlatformAdmin' && existingRole !== 'PlatformAdmin') {
+            throw new common_1.ForbiddenException('Platform administrator access is controlled by server configuration');
+        }
+        if (!this.isStaff(currentUser) && !this.isPlatformAdmin(currentUser)) {
             if (requestedRole) {
                 if (existingRole && existingRole !== requestedRole) {
                     throw new common_1.ForbiddenException('Role changes require staff approval');
@@ -82,7 +257,10 @@ let UsersService = class UsersService {
             }
         }
         const normalizedCompanyId = typeof nextPayload.companyId === 'string' ? nextPayload.companyId.trim() : undefined;
-        if (normalizedCompanyId && currentUser.companyId && normalizedCompanyId !== currentUser.companyId) {
+        if (normalizedCompanyId &&
+            currentUser.companyId &&
+            normalizedCompanyId !== currentUser.companyId &&
+            !this.isPlatformAdmin(currentUser)) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         if (requestedRole)
@@ -123,6 +301,7 @@ let UsersService = class UsersService {
         await this.enforceRateLimit(request, 'users:me', user.uid, 80);
         const snap = await this.firebaseAdminService.firestore.collection('users').doc(user.uid).get();
         if (!snap.exists) {
+            const membership = await this.resolvePropertyMembership(user.uid, user.email);
             return {
                 id: user.uid,
                 uid: user.uid,
@@ -131,9 +310,12 @@ let UsersService = class UsersService {
                 accountType: user.accountType,
                 companyId: user.companyId,
                 apartmentId: user.apartmentId,
+                ...membership,
             };
         }
-        return { id: snap.id, ...snap.data() };
+        const data = snap.data();
+        const membership = await this.resolvePropertyMembership(user.uid, this.toOptionalString(data.email) ?? user.email);
+        return { id: snap.id, ...data, ...membership };
     }
     async byEmail(request, user, email) {
         this.assertAuth(user);
@@ -141,7 +323,7 @@ let UsersService = class UsersService {
         if (!normalizedEmail)
             throw new common_1.BadRequestException('email is required');
         await this.enforceRateLimit(request, 'users:by-email', `${user.uid}:${normalizedEmail}`, 50);
-        if (user.email?.toLowerCase() !== normalizedEmail && !this.isStaff(user)) {
+        if (user.email?.toLowerCase() !== normalizedEmail && !this.isStaff(user) && !this.isPlatformAdmin(user)) {
             throw new common_1.ForbiddenException('Access denied');
         }
         const snap = await this.firebaseAdminService.firestore
@@ -157,8 +339,12 @@ let UsersService = class UsersService {
     async listByCompany(request, user, companyId) {
         this.assertAuth(user);
         const normalizedCompanyId = companyId?.trim();
-        if (!normalizedCompanyId)
+        if (!normalizedCompanyId) {
+            if (this.isPlatformAdmin(user)) {
+                return this.listAll(request, user);
+            }
             throw new common_1.BadRequestException('companyId is required');
+        }
         this.ensureCompanyAccess(user, normalizedCompanyId);
         await this.enforceRateLimit(request, 'users:list', `${user.uid}:${normalizedCompanyId}`, 50);
         const snap = await this.firebaseAdminService.firestore
@@ -168,6 +354,51 @@ let UsersService = class UsersService {
         return {
             items: snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
         };
+    }
+    async listAll(request, user) {
+        this.assertAuth(user);
+        if (!this.isPlatformAdmin(user)) {
+            throw new common_1.ForbiddenException('Only platform administrators can list all users');
+        }
+        await this.enforceRateLimit(request, 'users:list-all', user.uid, 30);
+        const snap = await this.firebaseAdminService.firestore.collection('users').limit(500).get();
+        return {
+            items: snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+        };
+    }
+    async setBuildingCreationAccess(request, user, userId, payload) {
+        this.assertAuth(user);
+        if (!this.isPlatformAdmin(user)) {
+            throw new common_1.ForbiddenException('Only platform administrators can grant building creation access');
+        }
+        if (!userId?.trim())
+            throw new common_1.BadRequestException('userId is required');
+        await this.enforceRateLimit(request, 'users:building-creation-access', `${user.uid}:${userId}`, 40);
+        const ref = this.firebaseAdminService.firestore.collection('users').doc(userId);
+        const snap = await ref.get();
+        if (!snap.exists)
+            throw new common_1.BadRequestException('User profile not found');
+        const target = snap.data();
+        const targetRole = (0, role_constants_1.resolveUserRole)({ role: target.role, accountType: target.accountType });
+        const targetAccountType = (0, role_constants_1.resolveAccountType)({ role: target.role, accountType: target.accountType });
+        if (targetRole !== 'ManagementCompany' && targetRole !== 'Accountant' && targetAccountType !== 'ManagementCompany') {
+            throw new common_1.BadRequestException('Building creation access can be granted only to management company users');
+        }
+        const canCreateBuildings = payload.canCreateBuildings === true;
+        const companyId = this.toOptionalString(payload.companyId) ??
+            this.toOptionalString(target.companyId) ??
+            (targetAccountType === 'ManagementCompany' ? userId : undefined);
+        const updatedAt = new Date();
+        await ref.set({ canCreateBuildings, buildingCreationAccessUpdatedAt: updatedAt, updatedAt }, { merge: true });
+        if (companyId) {
+            await this.firebaseAdminService.firestore.collection('companies').doc(companyId).set({
+                canCreateBuildings,
+                buildingCreationAccessUpdatedAt: updatedAt,
+                buildingCreationAccessUpdatedBy: user.uid,
+                updatedAt,
+            }, { merge: true });
+        }
+        return { success: true, userId, companyId, canCreateBuildings };
     }
     async upsert(request, user, userId, payload) {
         this.assertAuth(user);
@@ -189,6 +420,7 @@ let UsersService = class UsersService {
             updatedAt: new Date(),
         };
         await ref.set(data, { merge: true });
+        await this.syncLinkedApartmentProfiles(userId, currentData, data);
         return { success: true };
     }
     async update(request, user, userId, payload) {
@@ -202,11 +434,17 @@ let UsersService = class UsersService {
         if (!snap.exists)
             throw new common_1.BadRequestException('User profile not found');
         const current = snap.data();
-        if (this.isStaff(user) && typeof current.companyId === 'string' && user.companyId && current.companyId !== user.companyId) {
+        if (this.isStaff(user) &&
+            !this.isPlatformAdmin(user) &&
+            typeof current.companyId === 'string' &&
+            user.companyId &&
+            current.companyId !== user.companyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         const normalizedPayload = this.normalizeProfilePayload(user, userId, current, payload);
-        await ref.set({ ...normalizedPayload, updatedAt: new Date() }, { merge: true });
+        const nextData = { ...current, ...normalizedPayload, updatedAt: new Date() };
+        await ref.set({ ...normalizedPayload, updatedAt: nextData.updatedAt }, { merge: true });
+        await this.syncLinkedApartmentProfiles(userId, current, nextData);
         return { success: true };
     }
 };

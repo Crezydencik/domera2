@@ -76,3 +76,9 @@ export async function deleteInvoiceAction(invoiceId: string) {
   revalidateBillingViews();
   return response;
 }
+
+export async function resendInvoiceEmailAction(invoiceId: string) {
+  return apiFetch<{ success?: boolean }>(`/invoices/${encodeURIComponent(invoiceId)}/resend-email`, {
+    method: "POST",
+  });
+}

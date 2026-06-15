@@ -7,6 +7,8 @@ export declare class InvitationSummaryDto {
     managerLabel?: string;
     inviteType?: string;
     accountType?: string;
+    firstName?: string;
+    lastName?: string;
     status: string;
     expiresAt: string | null;
 }

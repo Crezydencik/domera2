@@ -39,7 +39,7 @@ import { ChangeEmailDto } from './dto/change-email.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfirmEmailChangeDto } from './dto/confirm-email-change.dto';
 import { AuthService } from './auth.service';
-import { ACCOUNT_TYPES, ROLE_CATALOG } from '../../common/auth/role.constants';
+import { PUBLIC_REGISTRATION_ROLES, ROLE_CATALOG } from '../../common/auth/role.constants';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
 import { RequestUser } from '../../common/auth/request-user.type';
@@ -128,6 +128,10 @@ export class AuthController {
       throw new HttpException({ statusCode: 401, message }, HttpStatus.UNAUTHORIZED);
     }
 
+    if (statusCode === 403) {
+      throw new HttpException({ statusCode: 403, message }, HttpStatus.FORBIDDEN);
+    }
+
     if (statusCode === 409) {
       throw new HttpException({ statusCode: 409, message }, HttpStatus.CONFLICT);
     }
@@ -151,7 +155,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Get available account types and roles for registration and access control' })
   getAccountCatalog() {
     return {
-      accountTypes: ACCOUNT_TYPES,
+      accountTypes: PUBLIC_REGISTRATION_ROLES,
       roles: ROLE_CATALOG,
     };
   }

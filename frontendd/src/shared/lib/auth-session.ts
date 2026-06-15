@@ -4,6 +4,7 @@ export type BrowserAuthSession = {
   isAuthenticated: boolean;
   userId?: string;
   email?: string;
+  name?: string;
   accountType?: string;
   role: string;
   companyId?: string;
@@ -19,6 +20,7 @@ const authCookieNames = [
   "authToken",
   "userId",
   "userEmail",
+  "userName",
 ] as const;
 
 function parseCookieString(value: string) {
@@ -57,6 +59,7 @@ export function readBrowserAuthSession(): BrowserAuthSession {
     isAuthenticated: Boolean(sessionToken),
     userId: userId || undefined,
     email: cookies.userEmail?.trim() || undefined,
+    name: cookies.userName?.trim() || undefined,
     accountType: cookies.domera_accountType?.trim() || cookies.domera_role?.trim() || undefined,
     role: cookies.domera_role?.trim() || cookies.domera_accountType?.trim() || "managementCompany",
     companyId: cookies.domera_companyId?.trim() || undefined,

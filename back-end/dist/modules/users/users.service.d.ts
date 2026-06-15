@@ -8,29 +8,35 @@ export declare class UsersService {
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService);
     private assertAuth;
     private isStaff;
+    private isPlatformAdmin;
     private ensureUserAccess;
     private ensureCompanyAccess;
+    private toOptionalString;
+    private normalizedEmail;
+    private resolveProfileNames;
+    private resolvePropertyMembership;
+    syncLinkedApartmentProfiles(userId: string, previousData: Record<string, unknown>, nextData: Record<string, unknown>): Promise<void>;
     private normalizeProfilePayload;
     private enforceRateLimit;
     byId(request: Request, user: RequestUser, userId: string): Promise<{
         id: string;
     } | null>;
     me(request: Request, user: RequestUser): Promise<{
+        hasOwnership: boolean;
+        hasTenancy: boolean;
+        propertyRoles: string[];
         id: string;
         uid: string;
         email: string | undefined;
-        role: "ManagementCompany" | "Accountant" | "Resident" | "Landlord" | undefined;
-        accountType: "ManagementCompany" | "Resident" | "Landlord" | undefined;
+        role: "PlatformAdmin" | "ManagementCompany" | "Accountant" | "Resident" | "Landlord" | undefined;
+        accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord" | undefined;
         companyId: string | undefined;
         apartmentId: string | undefined;
     } | {
+        hasOwnership: boolean;
+        hasTenancy: boolean;
+        propertyRoles: string[];
         id: string;
-        uid?: undefined;
-        email?: undefined;
-        role?: undefined;
-        accountType?: undefined;
-        companyId?: undefined;
-        apartmentId?: undefined;
     }>;
     byEmail(request: Request, user: RequestUser, email: string): Promise<{
         id: string;
@@ -39,6 +45,17 @@ export declare class UsersService {
         items: {
             id: string;
         }[];
+    }>;
+    listAll(request: Request, user: RequestUser): Promise<{
+        items: {
+            id: string;
+        }[];
+    }>;
+    setBuildingCreationAccess(request: Request, user: RequestUser, userId: string, payload: Record<string, unknown>): Promise<{
+        success: boolean;
+        userId: string;
+        companyId: string | undefined;
+        canCreateBuildings: boolean;
     }>;
     upsert(request: Request, user: RequestUser, userId: string, payload: Record<string, unknown>): Promise<{
         success: boolean;

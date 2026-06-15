@@ -12,6 +12,9 @@ export declare class NotificationsService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService);
+    private userNotificationsCollection;
+    private notificationCreatedAtMillis;
+    private findNotificationDocument;
     private assertAuth;
     private ensureUserAccess;
     private enforceRateLimit;
@@ -30,6 +33,7 @@ export declare class NotificationsService {
         } & Record<string, unknown>)[];
     }>;
     create(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{
+        notificationId: string;
         userId: string;
         read: boolean;
         createdAt: Date;

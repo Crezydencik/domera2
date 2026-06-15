@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
+import { useTranslations } from "next-intl";
 import MeterReadingInput from "@/components/ui/meter-reading-input";
 
 export interface ResidentOwnerMeterOption {
@@ -75,6 +76,7 @@ export function ResidentOwnerSubmitForm({
   onSubmit,
   onValueChange,
 }: ResidentOwnerSubmitFormProps) {
+  const t = useTranslations("meterReadings.resident");
   const hasMeters = apartments.some((apartment) => apartment.meters.length > 0);
   const periodDisplay = periodLabels(period);
   const showApartmentSelector = apartmentOptions.length > 1 && onApartmentChange;
@@ -83,7 +85,7 @@ export function ResidentOwnerSubmitForm({
     <form className="space-y-4" onSubmit={onSubmit}>
       {showApartmentSelector ? (
         <label className="block max-w-sm">
-          <span className="mb-1 block text-sm font-semibold text-slate-700">Квартира</span>
+          <span className="mb-1 block text-sm font-semibold text-slate-700">{t("apartment")}</span>
           <select
             value={selectedApartmentId ?? ""}
             onChange={(event) => onApartmentChange(event.target.value)}
@@ -91,7 +93,7 @@ export function ResidentOwnerSubmitForm({
           >
             {apartmentOptions.map((apartment) => (
               <option key={apartment.id} value={apartment.id}>
-                № {apartment.label}
+                {t("apartmentOption", { apartment: apartment.label })}
               </option>
             ))}
           </select>
@@ -100,11 +102,11 @@ export function ResidentOwnerSubmitForm({
 
       {currentMonthSubmitted ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          Показания за этот месяц уже сданы.
+          {t("alreadySubmittedWithPeriod")}
         </div>
       ) : !submissionOpen ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          {closedMessage ?? "Период сдачи показаний сейчас закрыт."}
+          {closedMessage ?? t("closedDefault")}
         </div>
       ) : hasMeters ? (
         <div className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
@@ -112,7 +114,7 @@ export function ResidentOwnerSubmitForm({
             {apartments.map((apartment) => (
               <div key={apartment.id} className="space-y-3">
                 {apartments.length > 1 ? (
-                  <p className="text-base font-semibold text-slate-900">Квартира № {apartment.label}</p>
+                  <p className="text-base font-semibold text-slate-900">{t("apartmentNumber", { apartment: apartment.label })}</p>
                 ) : null}
 
                 <div className="grid min-w-0 items-start gap-5 lg:grid-cols-2">
@@ -132,9 +134,9 @@ export function ResidentOwnerSubmitForm({
                         onChange={(nextValue) => onValueChange(key, nextValue)}
                         size="compact"
                         labels={{
-                          previous: "Предыдущее показание",
-                          current: "Текущее показание",
-                          serialPrefix: "№",
+                          previous: t("previousReading"),
+                          current: t("currentReading"),
+                          serialPrefix: t("serialPrefix"),
                         }}
                       />
                     );
@@ -150,13 +152,13 @@ export function ResidentOwnerSubmitForm({
               disabled={submitting}
               className="inline-flex h-9 items-center justify-center rounded-lg bg-slate-900 px-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
-              {submitting ? "Отправка..." : "Сдать показания"}
+              {submitting ? t("submitting") : t("submit")}
             </button>
           </div>
         </div>
       ) : (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Для ваших квартир ещё не добавлены счётчики.
+          {t("noMeters")}
         </div>
       )}
     </form>

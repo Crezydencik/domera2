@@ -6,12 +6,6 @@ import { Button } from "@/components/ui/button";
 
 type DetailRow = [string, string];
 
-interface MeterSection {
-  title: string;
-  summaryRows: DetailRow[];
-  historyRows: string[][];
-}
-
 interface ApartmentFullInfoDialogProps {
   buttonLabel: string;
   title: string;
@@ -19,14 +13,10 @@ interface ApartmentFullInfoDialogProps {
   closeLabel: string;
   generalTitle: string;
   companyTitle: string;
-  metersTitle: string;
-  historyTitle: string;
   fieldColumnLabel: string;
   valueColumnLabel: string;
-  historyColumnLabels: [string, string, string, string, string, string];
   generalRows: DetailRow[];
   companyRows: DetailRow[];
-  meterSections: MeterSection[];
 }
 
 function ModalShell({
@@ -87,14 +77,10 @@ export function ApartmentFullInfoDialog({
   closeLabel,
   generalTitle,
   companyTitle,
-  metersTitle,
-  historyTitle,
   fieldColumnLabel,
   valueColumnLabel,
-  historyColumnLabels,
   generalRows,
   companyRows,
-  meterSections,
 }: ApartmentFullInfoDialogProps) {
   const [open, setOpen] = useState(false);
 
@@ -123,8 +109,14 @@ export function ApartmentFullInfoDialog({
             />
           </div>
 
-
-          
+          <div>
+            <p className="mb-3 text-sm font-semibold text-slate-900">{companyTitle}</p>
+            <DataTable
+              columns={[fieldColumnLabel, valueColumnLabel]}
+              rows={companyRows}
+              pageSize={100}
+            />
+          </div>
 
           <div className="flex justify-end pt-2">
             <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(false)}>

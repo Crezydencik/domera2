@@ -4,3 +4,9 @@ export function getInvitations(email?: string) {
   const query = email ? `?email=${encodeURIComponent(email)}` : "";
   return apiFetch<{ items?: Record<string, unknown>[] }>(`/invitations${query}`);
 }
+
+export function revokeInvitation(invitationId: string) {
+  return apiFetch<{ success?: boolean }>(`/invitations/${encodeURIComponent(invitationId)}/revoke`, {
+    method: "PATCH",
+  });
+}

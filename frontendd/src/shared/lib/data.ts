@@ -6,6 +6,11 @@ export interface BuildingReadingConfig {
   heatingEnabled: boolean;
   hotWaterMetersPerResident: number;
   coldWaterMetersPerResident: number;
+  submissionPeriod?: {
+    startDate: string;
+    endDate: string;
+    monthly: boolean;
+  } | null;
 }
 
 export interface Building {
@@ -26,6 +31,10 @@ export interface Resident {
   fullName: string;
   email?: string;
   phone?: string;
+  position?: string;
+  jobTitle?: string;
+  comment?: string;
+  showContactToResidents?: boolean;
   apartment: string;
   building: string;
   role: string;
@@ -50,6 +59,7 @@ export interface Invoice {
   externalId?: string;
   period?: string;
   invoiceDate?: string;
+  fileName?: string;
   currency?: string;
   comment?: string;
   pdfUrl?: string;
@@ -57,12 +67,19 @@ export interface Invoice {
 
 export interface MeterReading {
   id: string;
+  apartmentId?: string;
+  buildingId?: string;
   apartment: string;
   value: string;
   submittedAt: string;
   trend: string;
   month?: number;
   year?: number;
+  meterKey?: string;
+  serialNumber?: string;
+  previousValue?: number;
+  currentValue?: number;
+  consumption?: number;
 }
 
 export interface DocumentItem {

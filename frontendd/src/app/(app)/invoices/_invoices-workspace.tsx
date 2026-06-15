@@ -5,7 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FiAlertCircle, FiCheckCircle, FiEye, FiFileText, FiRefreshCw, FiTrash2, FiUploadCloud, FiX } from "react-icons/fi";
 import { DataTable } from "@/components/data-table";
 import { InvoiceDeleteButton } from "@/components/invoice-delete-button";
+import { InvoiceMobileRow } from "@/components/invoice-mobile-row";
 import { InvoicePdfViewerButton } from "@/components/invoice-pdf-viewer-button";
+import { InvoiceResendEmailButton } from "@/components/invoice-resend-email-button";
 import { SectionCard } from "@/components/section-card";
 import { Button } from "@/components/ui/button";
 import {
@@ -108,11 +110,16 @@ const COPY = {
     deletingInvoice: "Deleting...",
     deleteInvoiceSuccess: "Invoice deleted.",
     deleteInvoiceFailed: "Could not delete the invoice.",
+    resendInvoice: "Reissue invoice",
+    resendingInvoice: "Sending...",
+    resendInvoiceSuccess: "Invoice sent.",
+    resendInvoiceFailed: "Could not send the invoice.",
     ready: "Ready",
     success: "Uploaded",
     error: "Error",
     emptyInvoices: "No invoices yet.",
     emptyHistory: "No imports yet.",
+    loadFailed: "Could not load invoice data. Check the API connection and try again.",
     fileRejected: "Only PDF files can be uploaded.",
     selectBuilding: "Choose a building.",
     selectApartment: "Choose an apartment.",
@@ -180,11 +187,16 @@ const COPY = {
     deletingInvoice: "Удаляем...",
     deleteInvoiceSuccess: "Счёт удалён.",
     deleteInvoiceFailed: "Не удалось удалить счёт.",
+    resendInvoice: "Повторно выставить",
+    resendingInvoice: "Отправляем...",
+    resendInvoiceSuccess: "Счёт повторно выставлен.",
+    resendInvoiceFailed: "Не удалось повторно выставить счёт.",
     ready: "Готово",
     success: "Загружено",
     error: "Ошибка",
     emptyInvoices: "Счетов пока нет.",
     emptyHistory: "Импортов пока нет.",
+    loadFailed: "Не удалось загрузить данные счетов. Проверьте подключение к API.",
     fileRejected: "Можно загружать только PDF-файлы.",
     selectBuilding: "Выберите дом.",
     selectApartment: "Выберите квартиру.",
@@ -292,11 +304,16 @@ const COPY = {
     deletingInvoice: "Dzes...",
     deleteInvoiceSuccess: "Rekins dzests.",
     deleteInvoiceFailed: "Neizdevas dzest rekinu.",
+    resendInvoice: "Atkartoti izrakstit",
+    resendingInvoice: "Suta...",
+    resendInvoiceSuccess: "Rekins atkartoti izrakstits.",
+    resendInvoiceFailed: "Neizdevas atkartoti izrakstit rekinu.",
     ready: "Gatavs",
     success: "Augspieladets",
     error: "Kluda",
     emptyInvoices: "Rekinu vel nav.",
     emptyHistory: "Importu vel nav.",
+    loadFailed: "Neizdevas ieladet rekinu datus. Parbaudiet API savienojumu.",
     fileRejected: "Var augspieladet tikai PDF failus.",
     selectBuilding: "Izvelieties eku.",
     selectApartment: "Izvelieties dzivokli.",
@@ -469,6 +486,8 @@ export function InvoicesWorkspace({
   apartments,
   uploadHistory,
   pendingApprovals,
+  uploadHistoryError,
+  pendingApprovalsError,
 }: {
   role: DashboardRole;
   companyId?: string;
@@ -477,6 +496,8 @@ export function InvoicesWorkspace({
   apartments: RawRecord[];
   uploadHistory: RawRecord[];
   pendingApprovals: RawRecord[];
+  uploadHistoryError?: string;
+  pendingApprovalsError?: string;
 }) {
   const locale = useLocale();
   const copy = getCopy(locale);
@@ -514,6 +535,7 @@ export function InvoicesWorkspace({
 
   const [selectedBuildingId, setSelectedBuildingId] = useState(buildingOptions[0]?.id ?? "");
   const [selectedApartmentId, setSelectedApartmentId] = useState("");
+  const [selectedInvoiceApartmentId, setSelectedInvoiceApartmentId] = useState("");
   const [defaultPeriod, setDefaultPeriod] = useState(currentPeriodValue());
   const [selectedInvoicePeriod, setSelectedInvoicePeriod] = useState(currentPeriodValue());
   const [defaultInvoiceDate, setDefaultInvoiceDate] = useState(todayInputValue());
@@ -563,6 +585,23 @@ export function InvoicesWorkspace({
       setSelectedApartmentId("");
     }
   }, [filteredApartmentOptions, selectedApartmentId]);
+
+  useEffect(() => {
+    if (canImport) return;
+
+    const firstApartmentId = apartmentOptions[0]?.id ?? "";
+    if (!selectedInvoiceApartmentId && firstApartmentId) {
+      setSelectedInvoiceApartmentId(firstApartmentId);
+      return;
+    }
+
+    if (
+      selectedInvoiceApartmentId &&
+      !apartmentOptions.some((apartment) => apartment.id === selectedInvoiceApartmentId)
+    ) {
+      setSelectedInvoiceApartmentId(firstApartmentId);
+    }
+  }, [apartmentOptions, canImport, selectedInvoiceApartmentId]);
 
   const selectedQueueItem = queue.find((item) => item.id === selectedQueueId) ?? queue[0];
 
@@ -848,7 +887,23 @@ export function InvoicesWorkspace({
     return values.some((value) => firstString(value) === selectedBuildingId);
   }
 
+  function matchesSelectedInvoiceApartment(item: Invoice) {
+    if (!selectedInvoiceApartmentId) return true;
+
+    const selectedApartment = apartmentOptions.find((apartment) => apartment.id === selectedInvoiceApartmentId);
+    const selectedApartmentNumber = selectedApartment?.label.split(" - ")[0] ?? "";
+
+    return [item.apartmentId, item.apartment, item.apartmentNumber, item.displayNumber].some((value) => {
+      const normalized = firstString(value);
+      return normalized === selectedInvoiceApartmentId || (selectedApartmentNumber && normalized === selectedApartmentNumber);
+    });
+  }
+
   const filteredInvoices = invoices.filter((item) => {
+    if (!canImport) {
+      return matchesSelectedInvoiceApartment(item);
+    }
+
     const invoicePeriod = monthValueFromInvoice(item.period, item.invoiceDate, item.dueDate);
     return matchesSelectedBuilding(item.buildingId) && (!selectedInvoicePeriod || invoicePeriod === selectedInvoicePeriod);
   });
@@ -861,6 +916,7 @@ export function InvoicesWorkspace({
 
   const invoiceRows = filteredInvoices.map((item) => {
     const invoiceLabel = item.displayNumber || item.externalId || item.id;
+    const invoiceTitle = item.fileName || invoiceLabel;
     const secondaryLabel = firstString(
       item.accountNumber,
       item.contractNumber,
@@ -869,7 +925,7 @@ export function InvoicesWorkspace({
       item.externalId,
     );
 
-    return [
+    const row = [
       <div key={`${item.id}-invoice`} className="min-w-44">
         <p className="font-medium text-slate-900">{invoiceLabel}</p>
         {secondaryLabel && secondaryLabel !== invoiceLabel ? (
@@ -880,13 +936,19 @@ export function InvoicesWorkspace({
       item.resident,
       item.amount,
       item.period ?? item.invoiceDate ?? item.dueDate,
-      <StatusBadge key={`${item.id}-status`} status={item.status} copy={copy} />,
+    ];
+
+    if (canImport) {
+      row.push(<StatusBadge key={`${item.id}-status`} status={item.status} copy={copy} />);
+    }
+
+    row.push(
       <div key={`${item.id}-actions`} className="flex items-center gap-2">
         {item.pdfUrl ? (
           <InvoicePdfViewerButton
             href={item.pdfUrl}
             label={copy.pdf}
-            title={`${copy.colInvoice} ${invoiceLabel}`}
+            title={invoiceTitle}
             closeLabel={copy.close}
             loadingLabel={copy.openingPdf}
             errorLabel={copy.openPdfFailed}
@@ -894,6 +956,15 @@ export function InvoicesWorkspace({
         ) : (
           <span className="text-xs text-slate-400">-</span>
         )}
+        {canImport ? (
+          <InvoiceResendEmailButton
+            invoiceId={item.id}
+            label={copy.resendInvoice}
+            sendingLabel={copy.resendingInvoice}
+            successLabel={copy.resendInvoiceSuccess}
+            errorLabel={copy.resendInvoiceFailed}
+          />
+        ) : null}
         {canImport ? (
           <InvoiceDeleteButton
             invoiceId={item.id}
@@ -908,7 +979,30 @@ export function InvoicesWorkspace({
           />
         ) : null}
       </div>,
-    ];
+    );
+
+    return row;
+  });
+  const invoiceMobileRows = filteredInvoices.map((item) => {
+    const invoiceLabel = item.displayNumber || item.externalId || item.id;
+
+    return (
+      <InvoiceMobileRow
+        key={item.id}
+        id={item.id}
+        period={item.period}
+        fallbackDate={item.invoiceDate ?? item.dueDate}
+        amount={item.amount}
+        pdfUrl={item.pdfUrl}
+        fileName={item.fileName}
+        fallbackTitle={invoiceLabel}
+        locale={locale}
+        viewLabel={copy.pdf}
+        closeLabel={copy.close}
+        loadingLabel={copy.openingPdf}
+        errorLabel={copy.openPdfFailed}
+      />
+    );
   });
 
   const historyRows = filteredUploadHistory.map((item, index) => {
@@ -1118,7 +1212,11 @@ export function InvoicesWorkspace({
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              {approvalRows.length ? (
+              {pendingApprovalsError ? (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-5 text-sm text-rose-700">
+                  {copy.loadFailed}{pendingApprovalsError}
+                </div>
+              ) : approvalRows.length ? (
                 <DataTable
                   columns={[copy.colInvoice, copy.colApartment, copy.colAmount, copy.colPeriod, copy.colFile]}
                   rows={approvalRows}
@@ -1354,25 +1452,37 @@ export function InvoicesWorkspace({
       <SectionCard
         title={copy.invoicesTitle}
         description={copy.invoicesDescription}
-        headerAside={!canImport ? (
+        headerAside={!canImport && apartmentOptions.length > 1 ? (
           <div className="flex flex-wrap items-center justify-end gap-2">
             <label className="flex items-center gap-2 text-sm text-slate-600">
-              <span className="font-medium">{copy.period}</span>
-              <input
-                type="month"
-                value={selectedInvoicePeriod}
-                onChange={(event) => setSelectedInvoicePeriod(event.target.value)}
+              <span className="font-medium">{copy.apartment}</span>
+              <select
+                value={selectedInvoiceApartmentId}
+                onChange={(event) => setSelectedInvoiceApartmentId(event.target.value)}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
+              >
+                {apartmentOptions.map((apartment) => (
+                  <option key={apartment.id} value={apartment.id}>{apartment.label}</option>
+                ))}
+              </select>
             </label>
           </div>
         ) : undefined}
       >
         {invoiceRows.length ? (
-          <DataTable
-            columns={[copy.colInvoice, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colStatus, copy.colFile]}
-            rows={invoiceRows}
-          />
+          <>
+            <div className="grid gap-2 md:hidden">{invoiceMobileRows}</div>
+            <div className="hidden md:block">
+              <DataTable
+                columns={
+                  canImport
+                    ? [copy.colInvoice, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colStatus, copy.colFile]
+                    : [copy.colInvoice, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colFile]
+                }
+                rows={invoiceRows}
+              />
+            </div>
+          </>
         ) : (
           <div className="rounded-xl bg-slate-50 px-4 py-5 text-sm text-slate-500">{copy.emptyInvoices}</div>
         )}
@@ -1380,7 +1490,11 @@ export function InvoicesWorkspace({
 
       {canImport ? (
         <SectionCard title={copy.historyTitle} description={copy.historyDescription}>
-          {historyRows.length ? (
+          {uploadHistoryError ? (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-5 text-sm text-rose-700">
+              {copy.loadFailed}{uploadHistoryError}
+            </div>
+          ) : historyRows.length ? (
             <DataTable columns={[copy.colInvoice, copy.colFile, copy.colSource, copy.colDate, copy.colStatus]} rows={historyRows} pageSize={25} />
           ) : (
             <div className="rounded-xl bg-slate-50 px-4 py-5 text-sm text-slate-500">{copy.emptyHistory}</div>

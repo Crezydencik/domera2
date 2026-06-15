@@ -11,6 +11,7 @@ export declare class InvoiceItemDto {
     externalId?: string | null;
     period?: string | null;
     invoiceDate?: string | null;
+    fileName?: string | null;
     currency?: string | null;
     comment?: string | null;
 }

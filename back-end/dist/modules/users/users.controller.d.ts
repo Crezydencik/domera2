@@ -5,21 +5,27 @@ export declare class UsersController {
     private readonly usersService;
     constructor(usersService: UsersService);
     me(request: Request, user: RequestUser): Promise<{
+        hasOwnership: boolean;
+        hasTenancy: boolean;
+        propertyRoles: string[];
         id: string;
         uid: string;
         email: string | undefined;
-        role: "ManagementCompany" | "Accountant" | "Resident" | "Landlord" | undefined;
-        accountType: "ManagementCompany" | "Resident" | "Landlord" | undefined;
+        role: "PlatformAdmin" | "ManagementCompany" | "Accountant" | "Resident" | "Landlord" | undefined;
+        accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord" | undefined;
         companyId: string | undefined;
         apartmentId: string | undefined;
     } | {
+        hasOwnership: boolean;
+        hasTenancy: boolean;
+        propertyRoles: string[];
         id: string;
-        uid?: undefined;
-        email?: undefined;
-        role?: undefined;
-        accountType?: undefined;
-        companyId?: undefined;
-        apartmentId?: undefined;
+    }>;
+    setBuildingCreationAccess(request: Request, user: RequestUser, userId: string, body: Record<string, unknown>): Promise<{
+        success: boolean;
+        userId: string;
+        companyId: string | undefined;
+        canCreateBuildings: boolean;
     }>;
     byId(request: Request, user: RequestUser, userId: string): Promise<{
         id: string;

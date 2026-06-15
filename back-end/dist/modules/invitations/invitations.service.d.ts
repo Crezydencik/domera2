@@ -27,6 +27,8 @@ export declare class InvitationsService {
             inviteType: string;
             role: string;
             accountType: string;
+            firstName: string | undefined;
+            lastName: string | undefined;
             apartmentLabel: string;
             buildingLabel: string;
             managerLabel: string;

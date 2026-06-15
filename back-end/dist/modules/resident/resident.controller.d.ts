@@ -6,5 +6,6 @@ export declare class ResidentController {
     apartments(user: RequestUser): Promise<{
         apartments: unknown;
         buildings: unknown;
+        managementCompanies: unknown;
     }>;
 }

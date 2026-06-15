@@ -31,3 +31,15 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], SendInvitationDto.prototype, "inviteType", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Invitee first name.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendInvitationDto.prototype, "firstName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Invitee last name.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendInvitationDto.prototype, "lastName", void 0);

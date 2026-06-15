@@ -3,6 +3,7 @@ import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { EmailService } from '../emails/email.service';
 type UploadedInvoiceFile = {
     fieldname?: string;
     buffer: Buffer;
@@ -19,8 +20,9 @@ export declare class InvoicesService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
     private readonly auditLogService;
+    private readonly emailService;
     private readonly logger;
-    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService);
+    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService);
     private assertAuthenticated;
     private isStaff;
     private firstString;
@@ -49,8 +51,15 @@ export declare class InvoicesService {
     private getBuildingCompanyId;
     private getCompanyBuildingIds;
     private getApartmentInvoiceCollection;
+    private getApartmentInvoiceExternalIdsCollection;
+    private getApartmentPendingInvoiceExternalIdsCollection;
+    private getApartmentInvoicePublicLinksCollection;
     private resolveInvoiceApartmentId;
     private invoiceApartmentCompanyId;
+    private parseOptionalDate;
+    private invoiceDateRange;
+    private memberAccessForApartment;
+    private isInvoiceVisibleForPropertyMember;
     private apartmentMatchesInvoiceFilters;
     private invoiceItemFromDoc;
     private invoiceLocationFromDoc;
@@ -72,6 +81,14 @@ export declare class InvoicesService {
     private resolveInvoicePdfFileName;
     private assertSafeProxyUrl;
     private downloadInvoicePdfFromUrl;
+    private resolveInvoicePdfPayload;
+    private hashPublicInvoiceToken;
+    private resolvePublicAppBaseUrl;
+    private createPublicInvoicePdfLink;
+    publicInvoiceViewLink(token: string, request: Request): string;
+    private resolveInvoiceEmailLanguage;
+    private resolveInvoiceEmailAmount;
+    private sendApprovedInvoiceEmail;
     private saveInvoicePdf;
     private errorMessage;
     private parseJson;
@@ -190,6 +207,10 @@ export declare class InvoicesService {
         id: string;
     }>;
     pdf(user: RequestUser, invoiceId: string): Promise<InvoicePdfPayload>;
+    publicPdf(token: string): Promise<InvoicePdfPayload>;
+    resendEmail(request: Request, user: RequestUser, invoiceId: string): Promise<{
+        success: boolean;
+    }>;
     update(request: Request, user: RequestUser, invoiceId: string, payload: Record<string, unknown>): Promise<{
         success: boolean;
     }>;

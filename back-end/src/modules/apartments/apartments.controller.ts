@@ -44,6 +44,35 @@ type UploadedBinaryFile = {
   size?: number;
 };
 
+const APARTMENT_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+const APARTMENT_IMPORT_EXTENSIONS = new Set(['.csv', '.json', '.xml', '.xlsx']);
+const APARTMENT_IMPORT_MIME_TYPES = new Set([
+  'text/csv',
+  'text/plain',
+  'application/csv',
+  'application/json',
+  'application/xml',
+  'text/xml',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+]);
+
+function apartmentImportFileFilter(
+  _request: Request,
+  file: { originalname?: string; mimetype?: string },
+  callback: (error: Error | null, acceptFile: boolean) => void,
+) {
+  const name = file.originalname?.toLowerCase() ?? '';
+  const mimeType = file.mimetype?.toLowerCase() ?? '';
+  const extension = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+
+  if (APARTMENT_IMPORT_EXTENSIONS.has(extension) || APARTMENT_IMPORT_MIME_TYPES.has(mimeType)) {
+    callback(null, true);
+    return;
+  }
+
+  callback(new BadRequestException('Only CSV, JSON, XML, and XLSX files are allowed'), false);
+}
+
 @ApiTags('Apartments')
 @Controller('apartments')
 @UseGuards(FirebaseAuthGuard, RolesGuard)
@@ -129,6 +158,18 @@ export class ApartmentsController {
     });
   }
 
+  @Delete(':apartmentId/owner')
+  @ApiOperation({ summary: 'Remove apartment owner' })
+  @ApiParam({ name: 'apartmentId', required: true, type: String })
+  @Roles(...STAFF_ROLES, 'Landlord')
+  removeOwner(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('apartmentId') apartmentId: string,
+  ) {
+    return this.apartmentsService.removeOwner(request, user, apartmentId);
+  }
+
   @Delete(':apartmentId')
   @ApiOperation({ summary: 'Delete apartment' })
   @ApiParam({ name: 'apartmentId', required: true, type: String })
@@ -148,7 +189,16 @@ export class ApartmentsController {
     @Req() request: Request,
     @CurrentUser() user: RequestUser,
     @Param('apartmentId') apartmentId: string,
-    @Body() body: { email?: string; firstName?: string; lastName?: string; phone?: string; contractNumber?: string },
+    @Body() body: {
+      email?: string;
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      contractNumber?: string;
+      fromDate?: string;
+      until?: string;
+      canViewDocuments?: boolean;
+    },
   ) {
     if (!body?.email) throw new BadRequestException('email is required');
     return this.apartmentsService.addOrInviteTenant(request, user, apartmentId, body.email, {
@@ -156,6 +206,9 @@ export class ApartmentsController {
       lastName: body.lastName,
       phone: body.phone,
       contractNumber: body.contractNumber,
+      fromDate: body.fromDate,
+      until: body.until,
+      canViewDocuments: body.canViewDocuments,
     });
   }
 
@@ -171,6 +224,29 @@ export class ApartmentsController {
     @Param('tenantUserId') tenantUserId: string,
   ) {
     return this.apartmentsService.removeTenant(request, user, apartmentId, tenantUserId);
+  }
+
+  @Patch(':apartmentId/tenants/:tenantUserId')
+  @ApiOperation({ summary: 'Update tenant details' })
+  @ApiParam({ name: 'apartmentId', required: true, type: String })
+  @ApiParam({ name: 'tenantUserId', required: true, type: String })
+  @Roles(...STAFF_ROLES, 'Landlord')
+  updateTenant(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('apartmentId') apartmentId: string,
+    @Param('tenantUserId') tenantUserId: string,
+    @Body() body: {
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      fromDate?: string;
+      until?: string;
+      status?: string;
+      canViewDocuments?: boolean;
+    },
+  ) {
+    return this.apartmentsService.updateTenant(request, user, apartmentId, tenantUserId, body);
   }
 
   @Post(':apartmentId/owner/:ownerEmail/resend-invitation')
@@ -213,8 +289,11 @@ export class ApartmentsController {
   }
 
   @Post('import')
-  @UseInterceptors(FileInterceptor('file'))
-  @ApiOperation({ summary: 'Import apartments from Excel, CSV, JSON or XML file' })
+  @UseInterceptors(FileInterceptor('file', {
+    limits: { fileSize: APARTMENT_IMPORT_MAX_BYTES, files: 1 },
+    fileFilter: apartmentImportFileFilter,
+  }))
+  @ApiOperation({ summary: 'Import apartments from CSV, JSON, XML or XLSX file' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {

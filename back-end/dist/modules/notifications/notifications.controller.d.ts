@@ -27,6 +27,7 @@ export declare class NotificationsController {
         } & Record<string, unknown>)[];
     }>;
     create(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<{
+        notificationId: string;
         userId: string;
         read: boolean;
         createdAt: Date;

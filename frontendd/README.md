@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Domera frontend
 
-## Getting Started
+Next.js frontend for Domera.
 
-First, run the development server:
+## Local development
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app runs at `http://localhost:3000` and expects the backend API at `http://localhost:4000/api` unless overridden in `.env`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Vercel deployment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create the Vercel project with these settings:
 
-## Learn More
+- Root Directory: `domera2/frontendd`
+- Framework Preset: `Next.js`
+- Install Command: `npm ci`
+- Build Command: `npm run build`
 
-To learn more about Next.js, take a look at the following resources:
+Set these environment variables in Vercel:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api
+API_BASE_URL=https://your-backend-domain.example/api
+NEXT_PUBLIC_DEMO_COMPANY_ID=demo-company
+NEXT_PUBLIC_DEMO_APARTMENT_ID=demo-apartment
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+`NEXT_PUBLIC_API_BASE_URL` is used by browser-side requests. `API_BASE_URL` is used by server-side rendering and rewrites.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The Nest backend in `../back-end` is not deployed by this Vercel project. Deploy it separately and use its public `/api` URL in the variables above.

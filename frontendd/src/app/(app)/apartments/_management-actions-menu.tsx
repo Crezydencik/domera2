@@ -1,15 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { createApartment, deleteApartment, importApartments } from "@/shared/api/apartments";
+import { ModalShell } from "@/components/ui/modal-shell";
+import { createApartment, deleteApartment, importApartments, updateApartment, updateApartmentOwner } from "@/shared/api/apartments";
 import { apiFetch } from "@/shared/api/client";
+import { revokeInvitation } from "@/shared/api/invitations";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import type { BuildingReadingConfig } from "@/shared/lib/data";
-import { ROUTES } from "@/shared/lib/routes";
 
 export interface ManagementActionBuildingOption {
   id: string;
@@ -37,10 +37,29 @@ type InvitationRecord = {
   apartmentId?: string;
   status: string;
 };
+type InvitationListRow = {
+  key: string;
+  apartmentId: string;
+  apartmentLabel: string;
+  name: string;
+  email: string;
+  status: "occupied" | "pending" | "ready";
+  invitationId?: string;
+  firstName?: string;
+  lastName?: string;
+  contractNumber?: string;
+};
 
 type ExportFormat = "csv" | "json";
 type ExportScope = "apartments" | "meterReadings" | "apartmentsAndMeterReadings";
+type AddTab = "resident" | "apartment";
 type RawRecord = Record<string, unknown>;
+type ImportResult = {
+  imported: number;
+  skippedDuplicates: string[];
+  errors: string[];
+  createdApartments: string[];
+};
 type ImportFieldKey =
   | "cadastralNumber"
   | "address"
@@ -79,7 +98,7 @@ const IMPORT_FIELD_KEYS: ImportFieldKey[] = [
 ];
 
 const IMPORT_FORMATS = ["excel", "json", "xml"] as const;
-const IMPORT_ACCEPT = ".xlsx,.xls,.csv,.json,.xml";
+const IMPORT_ACCEPT = ".xlsx,.csv,.json,.xml";
 
 function normalizePrimitive(value: unknown): string | number | boolean | null {
   if (value == null) return null;
@@ -124,6 +143,29 @@ function downloadBlob(content: BlobPart, type: string, fileName: string) {
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function textValue(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+
+  return "";
+}
+
+function booleanValue(value: unknown) {
+  if (value === true) return true;
+  if (typeof value === "string") return value.trim().toLowerCase() === "true";
+  return false;
+}
+
+function isEmailLike(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function asStringArray(value: unknown) {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
 }
 
 function KebabIcon() {
@@ -194,44 +236,6 @@ function ListIcon() {
   );
 }
 
-function ModalShell({
-  open,
-  title,
-  children,
-  onClose,
-}: {
-  open: boolean;
-  title: string;
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="flex min-h-full items-center justify-center">
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="relative flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute right-4 top-4 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-            aria-label="Close"
-          >
-            ×
-          </button>
-          <h3 className="mb-4 shrink-0 pr-8 text-lg font-semibold text-slate-900">{title}</h3>
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">{children}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function ApartmentsManagementActionsMenu({
   companyId,
   buildings,
@@ -253,18 +257,30 @@ export function ApartmentsManagementActionsMenu({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [open, setOpen] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addTab, setAddTab] = useState<AddTab>("resident");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [invitesOpen, setInvitesOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [importResultOpen, setImportResultOpen] = useState(false);
   const [importBuildingId, setImportBuildingId] = useState<string>(selectedBuildingId?.trim() ?? "");
   const [exportOpen, setExportOpen] = useState(false);
   const [loadingImport, setLoadingImport] = useState(false);
   const [loadingCreate, setLoadingCreate] = useState(false);
+  const [loadingResidentCreate, setLoadingResidentCreate] = useState(false);
   const [loadingDeleteAll, setLoadingDeleteAll] = useState(false);
   const [loadingInvites, setLoadingInvites] = useState(false);
+  const [revokingInvitationId, setRevokingInvitationId] = useState<string | null>(null);
+  const [loadingBulkInvites, setLoadingBulkInvites] = useState(false);
   const [loadingExport, setLoadingExport] = useState(false);
   const [invitations, setInvitations] = useState<InvitationRecord[]>([]);
+  const [selectedInvitationRowKeys, setSelectedInvitationRowKeys] = useState<string[]>([]);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [residentFirstName, setResidentFirstName] = useState("");
+  const [residentLastName, setResidentLastName] = useState("");
+  const [residentEmail, setResidentEmail] = useState("");
+  const [residentPhone, setResidentPhone] = useState("");
+  const [residentApartmentId, setResidentApartmentId] = useState("");
   const [apartmentNumber, setApartmentNumber] = useState("");
   const [floor, setFloor] = useState("");
   const [area, setArea] = useState("");
@@ -280,11 +296,6 @@ export function ApartmentsManagementActionsMenu({
     return buildings.length === 1 ? buildings[0].id : undefined;
   }, [buildings, selectedBuildingId]);
 
-  const apartmentLabelById = useMemo(
-    () => new Map(apartments.map((apartment) => [apartment.id, apartment.number])),
-    [apartments],
-  );
-
   const effectiveBuilding = useMemo(
     () => buildings.find((building) => building.id === effectiveBuildingId),
     [buildings, effectiveBuildingId],
@@ -297,6 +308,65 @@ export function ApartmentsManagementActionsMenu({
   const importBuildingLabel = importBuilding?.label;
   const importExample = "";
   const buildingReadingConfig = effectiveBuilding?.readingConfig;
+
+  const invitationRows = useMemo<InvitationListRow[]>(() => {
+    const pendingInvitationsByApartment = new Map<string, InvitationRecord>();
+
+    for (const invitation of invitations) {
+      if (invitation.status.toLowerCase() !== "pending") continue;
+      if (invitation.apartmentId) pendingInvitationsByApartment.set(invitation.apartmentId, invitation);
+    }
+
+    return apartmentRecords
+      .map((record, index): InvitationListRow | null => {
+        const apartmentId = textValue(record.id, record.apartmentId);
+        const apartmentLabel = textValue(record.number, record.apartmentNumber, record.id, record.apartmentId);
+        const email = textValue(record.ownerEmail).toLowerCase();
+        if (!apartmentId || !email || !isEmailLike(email)) return null;
+
+        const firstName = textValue(record.ownerFirstName) || undefined;
+        const lastName = textValue(record.ownerLastName) || undefined;
+        const fallbackName = [firstName, lastName].filter(Boolean).join(" ").trim();
+        const name = textValue(record.owner, fallbackName, email);
+        const tenants = Array.isArray(record.tenants) ? record.tenants : [];
+        const occupied =
+          booleanValue(record.ownerActivated) ||
+          Boolean(textValue(record.ownerAcceptedAt, record.residentId)) ||
+          tenants.some((tenant) => {
+            if (!tenant || typeof tenant !== "object") return false;
+            const tenantRecord = tenant as Record<string, unknown>;
+            const status = textValue(tenantRecord.status).toLowerCase();
+            return Boolean(textValue(tenantRecord.userId)) || status === "active" || status === "accepted";
+          });
+        const pendingInvitation = pendingInvitationsByApartment.get(apartmentId);
+        const invitationId = pendingInvitation?.id;
+        const pending = Boolean(invitationId);
+
+        return {
+          key: `${apartmentId}-${email}-${index}`,
+          apartmentId,
+          apartmentLabel,
+          name,
+          email,
+          status: occupied ? "occupied" : pending ? "pending" : "ready",
+          invitationId: invitationId || undefined,
+          firstName,
+          lastName,
+          contractNumber: textValue(record.ownerContractNumber) || undefined,
+        };
+      })
+      .filter((row): row is InvitationListRow => Boolean(row));
+  }, [apartmentRecords, invitations]);
+
+  const readyInvitationRows = useMemo(
+    () => invitationRows.filter((row) => row.status === "ready"),
+    [invitationRows],
+  );
+  const selectedInvitationRows = useMemo(() => {
+    const selectedKeys = new Set(selectedInvitationRowKeys);
+    return readyInvitationRows.filter((row) => selectedKeys.has(row.key));
+  }, [readyInvitationRows, selectedInvitationRowKeys]);
+  const allReadyInvitationRowsSelected = readyInvitationRows.length > 0 && selectedInvitationRows.length === readyInvitationRows.length;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -322,10 +392,17 @@ export function ApartmentsManagementActionsMenu({
 
     setLoadingImport(true);
     try {
-      await importApartments({ file, buildingId: effectiveImportBuildingId, companyId, fileName: file.name });
+      const response = await importApartments({ file, buildingId: effectiveImportBuildingId, companyId, fileName: file.name });
+      const results = typeof response.results === "object" && response.results ? response.results as Record<string, unknown> : {};
+      setImportResult({
+        imported: Number(results.imported ?? 0) || 0,
+        skippedDuplicates: asStringArray(results.skippedDuplicates),
+        errors: asStringArray(results.errors),
+        createdApartments: asStringArray(results.createdApartments),
+      });
       notifications.success(t("feedback.importSuccess"));
       setImportOpen(false);
-      router.refresh();
+      setImportResultOpen(true);
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : t("errors.importFailed"));
     } finally {
@@ -336,8 +413,14 @@ export function ApartmentsManagementActionsMenu({
 
   function openImportModal() {
     setImportBuildingId(selectedBuildingId?.trim() ?? "");
+    setImportResult(null);
     setImportOpen(true);
     setOpen(false);
+  }
+
+  function closeImportResult() {
+    setImportResultOpen(false);
+    router.refresh();
   }
 
   function handleImportDrop(event: React.DragEvent<HTMLLabelElement>) {
@@ -346,7 +429,7 @@ export function ApartmentsManagementActionsMenu({
     void handleImportFile(event.dataTransfer.files?.[0]);
   }
 
-  function openCreateApartmentModal() {
+  function prepareApartmentFormDefaults() {
     setUseBuildingReadingDefaults(true);
 
     if (buildingReadingConfig?.waterEnabled) {
@@ -356,9 +439,78 @@ export function ApartmentsManagementActionsMenu({
       setHotWaterMeters("0");
       setColdWaterMeters("0");
     }
+  }
 
-    setCreateOpen(true);
+  function openAddModal() {
+    setAddTab("resident");
+    prepareApartmentFormDefaults();
+    setAddOpen(true);
     setOpen(false);
+  }
+
+  function openApartmentTab() {
+    setAddTab("apartment");
+    prepareApartmentFormDefaults();
+  }
+
+  async function handleCreateResident() {
+    if (!companyId) {
+      notifications.error(t("errors.companyMissing"));
+      return;
+    }
+
+    const email = residentEmail.trim().toLowerCase();
+    const firstName = residentFirstName.trim();
+    const lastName = residentLastName.trim();
+    const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+
+    if (!residentApartmentId) {
+      notifications.warning(t("errors.residentApartmentRequired"));
+      return;
+    }
+    if (!fullName) {
+      notifications.warning(t("errors.residentNameRequired"));
+      return;
+    }
+    if (!email || !isEmailLike(email)) {
+      notifications.warning(t("errors.residentEmailInvalid"));
+      return;
+    }
+
+    const userId = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `resident-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    setLoadingResidentCreate(true);
+    try {
+      await apiFetch<{ success?: boolean }>(`/users/${encodeURIComponent(userId)}/upsert`, {
+        method: "POST",
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          fullName,
+          email,
+          phone: residentPhone.trim(),
+          role: "Resident",
+          accountType: "Resident",
+          companyId,
+        }),
+      });
+      await updateApartment(residentApartmentId, { residentId: userId });
+
+      notifications.success(t("feedback.residentCreated", { resident: fullName }));
+      setResidentFirstName("");
+      setResidentLastName("");
+      setResidentEmail("");
+      setResidentPhone("");
+      setResidentApartmentId("");
+      setAddOpen(false);
+      router.refresh();
+    } catch (error) {
+      notifications.error(error instanceof Error ? error.message : t("errors.residentCreateFailed"));
+    } finally {
+      setLoadingResidentCreate(false);
+    }
   }
 
   async function fetchMeterReadingsForExport() {
@@ -497,7 +649,7 @@ export function ApartmentsManagementActionsMenu({
       setArea("");
       setDeclaredResidents("");
       setUseBuildingReadingDefaults(true);
-      setCreateOpen(false);
+      setAddOpen(false);
       router.refresh();
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : t("errors.createFailed"));
@@ -545,6 +697,7 @@ export function ApartmentsManagementActionsMenu({
 
     setLoadingInvites(true);
     setInvitesOpen(true);
+    setSelectedInvitationRowKeys([]);
     setOpen(false);
 
     try {
@@ -558,6 +711,7 @@ export function ApartmentsManagementActionsMenu({
           status: String(item.status ?? "pending"),
         }))
         .filter((item) => {
+          if (item.status.toLowerCase() !== "pending") return false;
           if (!selectedBuildingId || !item.apartmentId) return true;
           return apartments.some((apartment) => apartment.id === item.apartmentId && apartment.buildingId === selectedBuildingId);
         });
@@ -568,6 +722,75 @@ export function ApartmentsManagementActionsMenu({
     } finally {
       setLoadingInvites(false);
     }
+  }
+
+  async function handleRevokeInvitation(row: InvitationListRow) {
+    if (row.status !== "pending" || !row.invitationId || revokingInvitationId) return;
+
+    setRevokingInvitationId(row.invitationId);
+    try {
+      await revokeInvitation(row.invitationId);
+      setInvitations((items) =>
+        items.filter((item) => item.id !== row.invitationId),
+      );
+      notifications.success(t("feedback.invitationRevoked"));
+      router.refresh();
+    } catch (error) {
+      notifications.error(error instanceof Error ? error.message : t("errors.invitationRevokeFailed"));
+    } finally {
+      setRevokingInvitationId(null);
+    }
+  }
+
+  function toggleInvitationRow(rowKey: string) {
+    setSelectedInvitationRowKeys((current) =>
+      current.includes(rowKey) ? current.filter((key) => key !== rowKey) : [...current, rowKey],
+    );
+  }
+
+  function selectAllReadyInvitationRows() {
+    setSelectedInvitationRowKeys(readyInvitationRows.map((row) => row.key));
+  }
+
+  function toggleAllReadyInvitationRows() {
+    setSelectedInvitationRowKeys(allReadyInvitationRowsSelected ? [] : readyInvitationRows.map((row) => row.key));
+  }
+
+  async function handleSendSelectedInvitations() {
+    if (loadingBulkInvites) return;
+    if (!selectedInvitationRows.length) {
+      notifications.info(t("feedback.noInvitationsToSend"));
+      return;
+    }
+
+    setLoadingBulkInvites(true);
+    let sent = 0;
+    let failed = 0;
+
+    for (const row of selectedInvitationRows) {
+      try {
+        await updateApartmentOwner(row.apartmentId, row.email, {
+          firstName: row.firstName,
+          lastName: row.lastName,
+          contractNumber: row.contractNumber,
+        });
+        sent += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    setLoadingBulkInvites(false);
+    setSelectedInvitationRowKeys([]);
+
+    if (sent > 0) {
+      notifications.success(t("feedback.bulkInvitationsResult", { sent, failed }));
+      setInvitesOpen(false);
+      router.refresh();
+      return;
+    }
+
+    notifications.error(t("errors.bulkInvitationsFailed"));
   }
 
   return (
@@ -585,17 +808,17 @@ export function ApartmentsManagementActionsMenu({
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
           aria-label={t("openMenu")}
         >
           <KebabIcon />
         </button>
 
         {open && (
-          <div className="absolute right-0 z-30 mt-3 w-72 rounded-3xl border border-slate-900 bg-white p-3 shadow-2xl">
-            <div className="space-y-1.5">
-              <button type="button" onClick={() => { setExportOpen(true); setOpen(false); }} className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-slate-700 transition hover:bg-slate-50">
-                <span className="text-slate-500"><DownloadIcon /></span>
+          <div className="absolute right-0 z-30 mt-2 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white py-2 shadow-[0_18px_45px_rgba(15,23,42,0.16)]">
+            <div className="px-2">
+              <button type="button" onClick={() => { setExportOpen(true); setOpen(false); }} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition group-hover:bg-white group-hover:text-slate-800"><DownloadIcon /></span>
                 <span>{t("items.export")}</span>
               </button>
 
@@ -603,35 +826,167 @@ export function ApartmentsManagementActionsMenu({
                 type="button"
                 onClick={openImportModal}
                 disabled={loadingImport}
-                className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-violet-600 transition hover:bg-violet-50 disabled:opacity-60"
+                className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-violet-700 transition hover:bg-violet-50 disabled:opacity-60"
               >
-                <span><UploadIcon /></span>
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600 transition group-hover:bg-white"><UploadIcon /></span>
                 <span>{loadingImport ? t("items.importLoading") : t("items.import")}</span>
               </button>
 
-              <Link href={ROUTES.residents} onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-2xl px-3 py-2.5 text-emerald-600 transition hover:bg-emerald-50">
-                <span><UserPlusIcon /></span>
-                <span>{t("items.addResident")}</span>
-              </Link>
-
-              <button type="button" onClick={openCreateApartmentModal} className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-slate-800 transition hover:bg-slate-50">
-                <span><PlusIcon /></span>
-                <span>{t("items.addApartment")}</span>
+              <button type="button" onClick={openAddModal} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-slate-800 transition hover:bg-slate-50">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition group-hover:bg-white"><PlusIcon /></span>
+                <span>{t("items.add")}</span>
               </button>
 
-              <button type="button" onClick={() => { setDeleteOpen(true); setOpen(false); }} className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-red-600 transition hover:bg-red-50">
-                <span><TrashIcon /></span>
-                <span>{t("items.deleteAll")}</span>
-              </button>
+              <div className="my-2 border-t border-slate-100 pt-2">
+                <button type="button" onClick={() => { setDeleteOpen(true); setOpen(false); }} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-red-600 transition hover:bg-red-50">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600 transition group-hover:bg-white"><TrashIcon /></span>
+                  <span>{t("items.deleteAll")}</span>
+                </button>
+              </div>
 
-              <button type="button" onClick={() => void openInvitations()} className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-blue-600 transition hover:bg-blue-50">
-                <span><ListIcon /></span>
+              <button type="button" onClick={() => void openInvitations()} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition group-hover:bg-white"><ListIcon /></span>
                 <span>{t("items.invitations")}</span>
               </button>
             </div>
           </div>
         )}
       </div>
+
+      <ModalShell open={addOpen} onClose={() => !loadingResidentCreate && !loadingCreate && setAddOpen(false)} title={t("dialogs.add.title")} size="xl">
+        <div className="space-y-5">
+          <div className="grid rounded-2xl bg-slate-100 p-1 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setAddTab("resident")}
+              className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                addTab === "resident" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              <UserPlusIcon />
+              <span>{t("items.addResident")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={openApartmentTab}
+              className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                addTab === "apartment" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              <PlusIcon />
+              <span>{t("items.addApartment")}</span>
+            </button>
+          </div>
+
+          {addTab === "resident" ? (
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-1.5 text-sm sm:col-span-2">
+                  <span className="font-medium text-slate-700">{t("dialogs.createResident.fields.apartment")}</span>
+                  <select
+                    value={residentApartmentId}
+                    onChange={(event) => setResidentApartmentId(event.target.value)}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  >
+                    <option value="">{t("dialogs.createResident.fields.apartmentPlaceholder")}</option>
+                    {apartments.map((apartment) => (
+                      <option key={apartment.id} value={apartment.id}>
+                        #{apartment.number} {apartment.buildingId ? `- ${apartment.buildingId}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-slate-700">{t("dialogs.createResident.fields.firstName")}</span>
+                  <input value={residentFirstName} onChange={(event) => setResidentFirstName(event.target.value)} className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-slate-700">{t("dialogs.createResident.fields.lastName")}</span>
+                  <input value={residentLastName} onChange={(event) => setResidentLastName(event.target.value)} className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-slate-700">{t("dialogs.createResident.fields.email")}</span>
+                  <input value={residentEmail} onChange={(event) => setResidentEmail(event.target.value)} type="email" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-slate-700">{t("dialogs.createResident.fields.phone")}</span>
+                  <input value={residentPhone} onChange={(event) => setResidentPhone(event.target.value)} type="tel" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
+                </label>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button type="button" variant="secondary" size="sm" onClick={() => setAddOpen(false)} disabled={loadingResidentCreate}>{ui("cancel")}</Button>
+                <Button type="button" size="sm" onClick={() => void handleCreateResident()} disabled={loadingResidentCreate}>{loadingResidentCreate ? t("dialogs.createResident.creating") : t("dialogs.createResident.submit")}</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-slate-700">{t("dialogs.createApartment.fields.number")}</span>
+                  <input value={apartmentNumber} onChange={(event) => setApartmentNumber(event.target.value)} className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-slate-700">{t("dialogs.createApartment.fields.floor")}</span>
+                  <input value={floor} onChange={(event) => setFloor(event.target.value)} inputMode="numeric" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-slate-700">{t("dialogs.createApartment.fields.area")}</span>
+                  <input value={area} onChange={(event) => setArea(event.target.value)} inputMode="decimal" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-slate-700">{t("dialogs.createApartment.fields.declaredResidents")}</span>
+                  <input value={declaredResidents} onChange={(event) => setDeclaredResidents(event.target.value)} inputMode="numeric" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                </label>
+              </div>
+
+              {buildingReadingConfig?.waterEnabled ? (
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{t("dialogs.createApartment.readings.title")}</p>
+                    <p className="mt-1 text-sm text-slate-500">{t("dialogs.createApartment.readings.description")}</p>
+                  </div>
+
+                  <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={useBuildingReadingDefaults}
+                      onChange={(event) => setUseBuildingReadingDefaults(event.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>
+                      <span className="block font-medium text-slate-900">{t("dialogs.createApartment.readings.useBuildingDefaults")}</span>
+                      <span className="mt-1 block text-xs text-slate-500">
+                        {t("dialogs.createApartment.readings.buildingDefaultsHint", {
+                          hot: buildingReadingConfig.hotWaterMetersPerResident,
+                          cold: buildingReadingConfig.coldWaterMetersPerResident,
+                        })}
+                      </span>
+                    </span>
+                  </label>
+
+                  {!useBuildingReadingDefaults ? (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="flex flex-col gap-1.5 text-sm">
+                        <span className="font-medium text-slate-700">{t("dialogs.createApartment.readings.hotWaterMeters")}</span>
+                        <input value={hotWaterMeters} onChange={(event) => setHotWaterMeters(event.target.value)} inputMode="numeric" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-sm">
+                        <span className="font-medium text-slate-700">{t("dialogs.createApartment.readings.coldWaterMeters")}</span>
+                        <input value={coldWaterMeters} onChange={(event) => setColdWaterMeters(event.target.value)} inputMode="numeric" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button type="button" variant="secondary" size="sm" onClick={() => setAddOpen(false)} disabled={loadingCreate}>{ui("cancel")}</Button>
+                <Button type="button" size="sm" onClick={() => void handleCreateApartment()} disabled={loadingCreate}>{loadingCreate ? t("dialogs.createApartment.creating") : t("dialogs.createApartment.submit")}</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </ModalShell>
 
       <ModalShell open={exportOpen} onClose={() => !loadingExport && setExportOpen(false)} title={t("dialogs.export.title")}>
         <div className="space-y-5">
@@ -806,72 +1161,63 @@ export function ApartmentsManagementActionsMenu({
         </div>
       </ModalShell>
 
-      <ModalShell open={createOpen} onClose={() => !loadingCreate && setCreateOpen(false)} title={t("dialogs.createApartment.title")}>
-        <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-slate-700">{t("dialogs.createApartment.fields.number")}</span>
-              <input value={apartmentNumber} onChange={(event) => setApartmentNumber(event.target.value)} className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-slate-700">{t("dialogs.createApartment.fields.floor")}</span>
-              <input value={floor} onChange={(event) => setFloor(event.target.value)} inputMode="numeric" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-slate-700">{t("dialogs.createApartment.fields.area")}</span>
-              <input value={area} onChange={(event) => setArea(event.target.value)} inputMode="decimal" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-slate-700">{t("dialogs.createApartment.fields.declaredResidents")}</span>
-              <input value={declaredResidents} onChange={(event) => setDeclaredResidents(event.target.value)} inputMode="numeric" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
-            </label>
-          </div>
+      <ModalShell open={importResultOpen} onClose={closeImportResult} title={t("dialogs.importResult.title")}>
+        {importResult ? (
+          <div className="space-y-5">
+            <p className="text-sm text-slate-600">{t("dialogs.importResult.description")}</p>
 
-          {buildingReadingConfig?.waterEnabled ? (
-            <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{t("dialogs.createApartment.readings.title")}</p>
-                <p className="mt-1 text-sm text-slate-500">{t("dialogs.createApartment.readings.description")}</p>
-              </div>
-
-              <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={useBuildingReadingDefaults}
-                  onChange={(event) => setUseBuildingReadingDefaults(event.target.checked)}
-                  className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span>
-                  <span className="block font-medium text-slate-900">{t("dialogs.createApartment.readings.useBuildingDefaults")}</span>
-                  <span className="mt-1 block text-xs text-slate-500">
-                    {t("dialogs.createApartment.readings.buildingDefaultsHint", {
-                      hot: buildingReadingConfig.hotWaterMetersPerResident,
-                      cold: buildingReadingConfig.coldWaterMetersPerResident,
-                    })}
-                  </span>
-                </span>
-              </label>
-
-              {!useBuildingReadingDefaults ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="flex flex-col gap-1.5 text-sm">
-                    <span className="font-medium text-slate-700">{t("dialogs.createApartment.readings.hotWaterMeters")}</span>
-                    <input value={hotWaterMeters} onChange={(event) => setHotWaterMeters(event.target.value)} inputMode="numeric" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
-                  </label>
-                  <label className="flex flex-col gap-1.5 text-sm">
-                    <span className="font-medium text-slate-700">{t("dialogs.createApartment.readings.coldWaterMeters")}</span>
-                    <input value={coldWaterMeters} onChange={(event) => setColdWaterMeters(event.target.value)} inputMode="numeric" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
-                  </label>
-                </div>
-              ) : null}
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm leading-7 text-emerald-900">
+              <p className="font-semibold">{t("dialogs.importResult.imported", { count: importResult.imported })}</p>
+              <p>{t("dialogs.importResult.duplicates", { count: importResult.skippedDuplicates.length })}</p>
+              <p>{t("dialogs.importResult.errors", { count: importResult.errors.length })}</p>
             </div>
-          ) : null}
 
-          <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" size="sm" onClick={() => setCreateOpen(false)} disabled={loadingCreate}>{ui("cancel")}</Button>
-            <Button type="button" size="sm" onClick={() => void handleCreateApartment()} disabled={loadingCreate}>{loadingCreate ? t("dialogs.createApartment.creating") : t("dialogs.createApartment.submit")}</Button>
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-slate-900">{t("dialogs.importResult.importedApartments")}</p>
+              {importResult.createdApartments.length ? (
+                <div className="max-h-44 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  {importResult.createdApartments.map((apartment, index) => (
+                    <div key={`${apartment}-${index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700 shadow-sm ring-1 ring-slate-200">
+                      {apartment}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                  {t("dialogs.importResult.emptyImported")}
+                </div>
+              )}
+            </div>
+
+            {importResult.skippedDuplicates.length ? (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-slate-900">{t("dialogs.importResult.duplicateRows")}</p>
+                <div className="max-h-32 space-y-2 overflow-y-auto rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                  {importResult.skippedDuplicates.map((item, index) => (
+                    <div key={`${item}-${index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-amber-800 shadow-sm ring-1 ring-amber-100">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {importResult.errors.length ? (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-slate-900">{t("dialogs.importResult.errorRows")}</p>
+                <div className="max-h-32 space-y-2 overflow-y-auto rounded-2xl border border-red-200 bg-red-50 p-3">
+                  {importResult.errors.map((item, index) => (
+                    <div key={`${item}-${index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-red-700 shadow-sm ring-1 ring-red-100">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <Button type="button" className="w-full" onClick={closeImportResult}>{ui("ok")}</Button>
           </div>
-        </div>
+        ) : null}
       </ModalShell>
 
       <ModalShell open={deleteOpen} onClose={() => !loadingDeleteAll && setDeleteOpen(false)} title={t("dialogs.deleteAll.title")}>
@@ -888,28 +1234,100 @@ export function ApartmentsManagementActionsMenu({
         </div>
       </ModalShell>
 
-      <ModalShell open={invitesOpen} onClose={() => setInvitesOpen(false)} title={t("dialogs.invitations.title")}>
-        {loadingInvites ? (
-          <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">{t("dialogs.invitations.loading")}</div>
-        ) : invitations.length ? (
-          <div className="space-y-2">
-            {invitations.map((invitation) => (
-              <div key={invitation.id} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-slate-900">{invitation.email}</p>
-                    <p className="mt-1 text-slate-500">
-                      {t("dialogs.invitations.apartment", { apartment: invitation.apartmentId ? apartmentLabelById.get(invitation.apartmentId) ?? invitation.apartmentId : "—" })}
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium uppercase tracking-wide text-slate-600">{invitation.status}</span>
-                </div>
+      <ModalShell open={invitesOpen} onClose={() => setInvitesOpen(false)} title={t("dialogs.invitations.title")} size="xl">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">{t("dialogs.invitations.description")}</p>
+
+          {loadingInvites ? (
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">{t("dialogs.invitations.loading")}</div>
+          ) : invitationRows.length ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-200">
+              <div className="max-h-[55vh] overflow-auto">
+                <table className="w-full border-collapse text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-semibold text-slate-500">
+                    <tr>
+                      <th className="w-10 px-2 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={allReadyInvitationRowsSelected}
+                          disabled={!readyInvitationRows.length || loadingBulkInvites}
+                          onChange={toggleAllReadyInvitationRows}
+                          aria-label={t("dialogs.invitations.columns.select")}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                        />
+                      </th>
+                      <th className="px-4 py-3">{t("dialogs.invitations.columns.apartment")}</th>
+                      <th className="px-4 py-3">{t("dialogs.invitations.columns.name")}</th>
+                      <th className="px-4 py-3">{t("dialogs.invitations.columns.email")}</th>
+                      <th className="px-4 py-3">{t("dialogs.invitations.columns.status")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {invitationRows.map((row) => {
+                      const ready = row.status === "ready";
+                      const pending = row.status === "pending";
+                      const selected = selectedInvitationRowKeys.includes(row.key);
+
+                      return (
+                        <tr key={row.key} className="text-slate-700">
+                          <td className="px-2 py-3 text-center align-middle">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              disabled={!ready || loadingBulkInvites}
+                              onChange={() => toggleInvitationRow(row.key)}
+                              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                            />
+                          </td>
+                          <td className="px-4 py-3 align-middle font-semibold text-slate-900">#{row.apartmentLabel}</td>
+                          <td className="px-4 py-3 align-middle">{row.name}</td>
+                          <td className="px-4 py-3 align-middle font-medium text-slate-900">{row.email}</td>
+                          <td className="px-4 py-3 align-middle">
+                            <div className="flex items-center gap-2">
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                ready
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : pending
+                                    ? "bg-blue-100 text-blue-700"
+                                    : "bg-slate-100 text-slate-600"
+                              }`}>
+                                {t(`dialogs.invitations.statuses.${row.status}`)}
+                              </span>
+                              {pending && row.invitationId ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleRevokeInvitation(row)}
+                                  disabled={Boolean(revokingInvitationId)}
+                                  className="rounded-xl border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {revokingInvitationId === row.invitationId ? t("dialogs.invitations.revoking") : t("dialogs.invitations.revoke")}
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">{t("dialogs.invitations.empty")}</div>
+          )}
+
+          <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <Button type="button" variant="secondary" size="sm" onClick={selectAllReadyInvitationRows} disabled={!readyInvitationRows.length || loadingBulkInvites}>
+              {t("dialogs.invitations.selectAllReady")}
+            </Button>
+            <div className="flex items-center justify-end gap-3">
+              <span className="text-sm text-slate-500">{t("dialogs.invitations.selected", { count: selectedInvitationRows.length })}</span>
+              <Button type="button" size="sm" onClick={() => void handleSendSelectedInvitations()} disabled={!selectedInvitationRows.length || loadingBulkInvites}>
+                {loadingBulkInvites ? t("dialogs.invitations.sending") : t("dialogs.invitations.sendSelected")}
+              </Button>
+            </div>
           </div>
-        ) : (
-          <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">{t("dialogs.invitations.empty")}</div>
-        )}
+        </div>
       </ModalShell>
     </>
   );

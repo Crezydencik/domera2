@@ -1,4 +1,4 @@
-import { EmailTemplate, EmailLanguage } from '../email.types';
+import { EmailLanguage, EmailTemplate } from '../email.types';
 export interface InvoiceGeneratedParams {
     tenantName?: string;
     apartmentNumber?: string;

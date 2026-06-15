@@ -29,19 +29,9 @@ const update_invoice_dto_1 = require("./dto/update-invoice.dto");
 const success_response_dto_1 = require("../../common/dto/success-response.dto");
 const upload_invoice_dto_1 = require("./dto/upload-invoice.dto");
 const invoice_upload_auth_guard_1 = require("./invoice-upload-auth.guard");
-const INVOICE_PDF_MAX_BYTES = 10 * 1024 * 1024;
 const INVOICE_ZIP_MAX_BYTES = 100 * 1024 * 1024;
 const INVOICE_BATCH_MAX_FILES = 50;
-function invoicePdfFileFilter(_request, file, callback) {
-    const name = file.originalname?.toLowerCase() ?? '';
-    const mimetype = file.mimetype?.toLowerCase() ?? '';
-    const looksLikePdf = name.endsWith('.pdf') || mimetype === 'application/pdf';
-    if (!looksLikePdf) {
-        callback(new common_1.BadRequestException('Only PDF files are allowed'), false);
-        return;
-    }
-    callback(null, true);
-}
+const INVOICE_ITEMS_MAX_BYTES = 1 * 1024 * 1024;
 function invoiceBatchFileFilter(_request, file, callback) {
     const name = file.originalname?.toLowerCase() ?? '';
     const mimetype = file.mimetype?.toLowerCase() ?? '';
@@ -64,6 +54,18 @@ function invoiceBatchFileFilter(_request, file, callback) {
         return;
     }
     callback(null, true);
+}
+function readItemsJson(file) {
+    if (!file)
+        return undefined;
+    const size = file.size ?? file.buffer?.length ?? 0;
+    if (!file.buffer || size <= 0) {
+        throw new common_1.BadRequestException('items file is empty');
+    }
+    if (size > INVOICE_ITEMS_MAX_BYTES) {
+        throw new common_1.BadRequestException('items JSON file is too large');
+    }
+    return file.buffer.toString('utf8');
 }
 let InvoiceUploadExceptionFilter = class InvoiceUploadExceptionFilter {
     catch(exception, host) {
@@ -105,11 +107,32 @@ let InvoicesController = class InvoicesController {
     create(request, user, body) {
         return this.invoicesService.create(request, user, body);
     }
-    upload(request, user, file, body) {
-        if (!file) {
+    upload(request, user, uploadedFiles, body) {
+        const uploaded = uploadedFiles ?? [];
+        const itemsFile = uploaded.find((file) => file.fieldname === 'items');
+        const files = uploaded.filter((file) => file !== itemsFile);
+        if (files.length === 0) {
             throw new common_1.BadRequestException('File is required');
         }
-        return this.invoicesService.upload(request, user, file, body);
+        const uploadBody = {
+            ...body,
+            ...(itemsFile ? { items: readItemsJson(itemsFile) } : {}),
+        };
+        const hasBatchMetadata = uploadBody.items !== undefined
+            || uploadBody.invoices !== undefined
+            || uploadBody.metadata !== undefined;
+        const isZip = files.some((file) => {
+            const name = file.originalname?.toLowerCase() ?? '';
+            const mimetype = file.mimetype?.toLowerCase() ?? '';
+            return name.endsWith('.zip')
+                || mimetype === 'application/zip'
+                || mimetype === 'application/x-zip-compressed'
+                || mimetype === 'multipart/x-zip';
+        });
+        if (files.length === 1 && !isZip && !hasBatchMetadata) {
+            return this.invoicesService.upload(request, user, files[0], uploadBody);
+        }
+        return this.invoicesService.uploadBatch(request, user, files, uploadBody);
     }
     uploadBatch(request, user, uploadedFiles, body) {
         const uploaded = uploadedFiles ?? [];
@@ -120,7 +143,7 @@ let InvoicesController = class InvoicesController {
         }
         return this.invoicesService.uploadBatch(request, user, files, {
             ...body,
-            ...(itemsFile ? { items: itemsFile.buffer.toString('utf8') } : {}),
+            ...(itemsFile ? { items: readItemsJson(itemsFile) } : {}),
         });
     }
     list(user, query) {
@@ -154,6 +177,24 @@ let InvoicesController = class InvoicesController {
     }
     cancelPendingApproval(request, user, approvalId) {
         return this.invoicesService.cancelPendingApproval(request, user, approvalId);
+    }
+    async publicPdf(request, token, response) {
+        if (request.query.raw !== '1') {
+            response.redirect(302, this.invoicesService.publicInvoiceViewLink(token, request));
+            return;
+        }
+        const pdf = await this.invoicesService.publicPdf(token);
+        const fallbackFileName = pdf.fileName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '').trim() || 'invoice.pdf';
+        const encodedFileName = encodeURIComponent(pdf.fileName);
+        response.setHeader('Content-Type', pdf.contentType || 'application/pdf');
+        response.setHeader('Content-Length', String(pdf.buffer.length));
+        response.setHeader('Content-Disposition', `inline; filename="${fallbackFileName}"; filename*=UTF-8''${encodedFileName}`);
+        response.setHeader('Cache-Control', 'private, no-store');
+        response.setHeader('X-Content-Type-Options', 'nosniff');
+        response.end(pdf.buffer);
+    }
+    resendEmail(request, user, invoiceId) {
+        return this.invoicesService.resendEmail(request, user, invoiceId);
     }
     async pdf(user, invoiceId, response) {
         const pdf = await this.invoicesService.pdf(user, invoiceId);
@@ -199,17 +240,20 @@ __decorate([
     (0, common_1.UseGuards)(invoice_upload_auth_guard_1.InvoiceUploadAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
     (0, common_1.UseFilters)(InvoiceUploadExceptionFilter),
-    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file', {
-        limits: { fileSize: INVOICE_PDF_MAX_BYTES },
-        fileFilter: invoicePdfFileFilter,
+    (0, common_1.UseInterceptors)((0, platform_express_1.AnyFilesInterceptor)({
+        limits: {
+            fileSize: INVOICE_ZIP_MAX_BYTES,
+            files: INVOICE_BATCH_MAX_FILES + 1,
+        },
+        fileFilter: invoiceBatchFileFilter,
     })),
     (0, common_1.HttpCode)(200),
-    (0, swagger_1.ApiOperation)({ summary: 'Upload an invoice PDF with billing metadata' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Upload one invoice PDF, multiple PDFs, or a ZIP archive with billing metadata' }),
     (0, swagger_1.ApiConsumes)('multipart/form-data'),
-    (0, swagger_1.ApiBody)({ type: upload_invoice_dto_1.UploadInvoiceDto }),
+    (0, swagger_1.ApiBody)({ type: upload_invoice_dto_1.UploadInvoicesBatchDto }),
     (0, swagger_1.ApiOkResponse)({
-        description: 'Invoice uploaded successfully.',
-        type: invoice_response_dto_1.UploadInvoiceResponseDto,
+        description: 'Invoice upload processed.',
+        type: invoice_response_dto_1.UploadInvoicesBatchResponseDto,
     }),
     (0, swagger_1.ApiResponse)({
         status: 400,
@@ -218,7 +262,7 @@ __decorate([
     }),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
-    __param(2, (0, common_1.UploadedFile)()),
+    __param(2, (0, common_1.UploadedFiles)()),
     __param(3, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, Object, Object, Object]),
@@ -394,6 +438,38 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, String]),
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "cancelPendingApproval", null);
+__decorate([
+    (0, common_1.Get)('public/:token/pdf'),
+    (0, swagger_1.ApiOperation)({ summary: 'Open invoice PDF by public token' }),
+    (0, swagger_1.ApiParam)({ name: 'token', type: String }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Invoice PDF returned successfully.',
+    }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('token')),
+    __param(2, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", Promise)
+], InvoicesController.prototype, "publicPdf", null);
+__decorate([
+    (0, common_1.Post)(':invoiceId/resend-email'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({ summary: 'Resend invoice email to the apartment recipient' }),
+    (0, swagger_1.ApiParam)({ name: 'invoiceId', type: String }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Invoice email resent successfully.',
+        type: success_response_dto_1.SuccessResponseDto,
+    }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('invoiceId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "resendEmail", null);
 __decorate([
     (0, common_1.Get)(':invoiceId/pdf'),
     (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),

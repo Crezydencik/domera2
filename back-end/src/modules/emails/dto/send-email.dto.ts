@@ -1,6 +1,12 @@
 import { IsEmail, IsString, IsOptional, IsEnum } from 'class-validator';
 import { EmailLanguage, EmailType } from '../email.types';
 
+export type EmailAttachmentDto = {
+  filename: string;
+  content: string;
+  contentType?: string;
+};
+
 export class SendEmailDto {
   @IsEmail()
   to!: string;
@@ -10,6 +16,9 @@ export class SendEmailDto {
 
   @IsString()
   html!: string;
+
+  @IsOptional()
+  attachments?: EmailAttachmentDto[];
 }
 
 export class SendRegistrationCodeEmailDto {
@@ -144,6 +153,9 @@ export class SendInvoiceGeneratedEmailDto {
   @IsOptional()
   @IsEnum(['en', 'ru', 'lv'])
   language?: EmailLanguage;
+
+  @IsOptional()
+  attachments?: EmailAttachmentDto[];
 }
 
 export class SendMeterReadingReminderEmailDto {

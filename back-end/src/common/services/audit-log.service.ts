@@ -24,6 +24,17 @@ export class AuditLogService {
 
   constructor(private readonly firebaseAdminService: FirebaseAdminService) {}
 
+  private buildLogEntry(event: AuditEventInput, timestampField: 'timestamp' | 'createdAt') {
+    const { request, ...safeEvent } = event;
+
+    return {
+      ...safeEvent,
+      ip: request?.ip ?? null,
+      userAgent: request?.headers['user-agent'] ?? null,
+      [timestampField]: new Date(),
+    };
+  }
+
   /**
    * Generate a readable document ID from apartmentId, apartment number, and company ID
    * Format: AUDITAPT<companyCode><apartmentNumber><apartmentIdHash>
@@ -92,12 +103,7 @@ export class AuditLogService {
           event.companyId,
         );
         
-        const logEntry = {
-          ...event,
-          ip: event.request?.ip ?? null,
-          userAgent: event.request?.headers['user-agent'] ?? null,
-          timestamp: new Date(),
-        };
+        const logEntry = this.buildLogEntry(event, 'timestamp');
 
         const docRef = this.firebaseAdminService.firestore
           .collection('audit_logs')
@@ -131,12 +137,9 @@ export class AuditLogService {
         }
       } else {
         // No apartmentId, use traditional add() method
-        await this.firebaseAdminService.firestore.collection('audit_logs').add({
-          ...event,
-          ip: event.request?.ip ?? null,
-          userAgent: event.request?.headers['user-agent'] ?? null,
-          createdAt: new Date(),
-        });
+        await this.firebaseAdminService.firestore
+          .collection('audit_logs')
+          .add(this.buildLogEntry(event, 'createdAt'));
       }
     } catch (error) {
       this.logger.warn(

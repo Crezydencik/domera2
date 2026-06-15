@@ -4,9 +4,11 @@ export declare class ResidentService {
     private readonly firebaseAdminService;
     constructor(firebaseAdminService: FirebaseAdminService);
     private toOptionalString;
+    private normalizeStaffContacts;
     private toSerializable;
     apartments(user: RequestUser): Promise<{
         apartments: unknown;
         buildings: unknown;
+        managementCompanies: unknown;
     }>;
 }

@@ -25,6 +25,12 @@ export class InvitationSummaryDto {
   @ApiProperty({ required: false, example: 'Resident' })
   accountType?: string;
 
+  @ApiProperty({ required: false })
+  firstName?: string;
+
+  @ApiProperty({ required: false })
+  lastName?: string;
+
   @ApiProperty({ example: 'pending' })
   status!: string;
 

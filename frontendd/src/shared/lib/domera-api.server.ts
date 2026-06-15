@@ -32,7 +32,7 @@ const appConfig = {
 
 type UnknownRecord = Record<string, unknown>;
 type ApiListResponse = { items?: UnknownRecord[] };
-type ResidentHomeResponse = { apartments?: UnknownRecord[]; buildings?: UnknownRecord[] };
+type ResidentHomeResponse = { apartments?: UnknownRecord[]; buildings?: UnknownRecord[]; managementCompanies?: UnknownRecord[] };
 
 export interface RoleDataBundle {
   role: DashboardRole;
@@ -47,6 +47,7 @@ export interface RoleDataBundle {
   meterReadings: MeterReading[];
   documents: DocumentItem[];
   notifications: NotificationItem[];
+  managementCompanies: UnknownRecord[];
 }
 
 export class DomeraApiError extends Error {
@@ -204,6 +205,13 @@ function toBuilding(item: UnknownRecord): Building {
         heatingEnabled: Boolean(rawReadingConfig.heatingEnabled),
         hotWaterMetersPerResident: Math.max(0, firstNumber(rawReadingConfig.hotWaterMetersPerResident)),
         coldWaterMetersPerResident: Math.max(0, firstNumber(rawReadingConfig.coldWaterMetersPerResident)),
+        submissionPeriod: rawReadingConfig.submissionPeriod && typeof rawReadingConfig.submissionPeriod === "object"
+          ? {
+              startDate: firstDisplayString((rawReadingConfig.submissionPeriod as UnknownRecord).startDate),
+              endDate: firstDisplayString((rawReadingConfig.submissionPeriod as UnknownRecord).endDate),
+              monthly: Boolean((rawReadingConfig.submissionPeriod as UnknownRecord).monthly),
+            }
+          : null,
       }
     : undefined;
 
@@ -235,6 +243,10 @@ function toResident(
     fullName: resolvePersonName(item, residentId),
     email: typeof item.email === "string" && item.email.trim() ? item.email.trim() : undefined,
     phone: typeof item.phone === "string" && item.phone.trim() ? item.phone.trim() : undefined,
+    position: typeof item.position === "string" && item.position.trim() ? item.position.trim() : undefined,
+    jobTitle: typeof item.jobTitle === "string" && item.jobTitle.trim() ? item.jobTitle.trim() : undefined,
+    comment: typeof item.comment === "string" && item.comment.trim() ? item.comment.trim() : undefined,
+    showContactToResidents: item.showContactToResidents === true,
     apartment: firstString(item.apartment, item.apartmentNumber, item.apartmentId, context?.apartment),
     building: firstString(item.building, item.buildingName, item.companyId, context?.building),
     role: firstString(item.role, item.accountType, context?.role, "Resident"),
@@ -323,6 +335,7 @@ function toInvoice(item: UnknownRecord): Invoice {
     externalId: typeof item.externalId === "string" ? item.externalId : undefined,
     period: typeof item.period === "string" ? item.period : undefined,
     invoiceDate: item.invoiceDate ? formatDate(item.invoiceDate) : undefined,
+    fileName: firstDisplayString(item.fileName, item.file_name, item.originalFileName, item.original_file_name) || undefined,
     currency,
     comment: typeof item.comment === "string" ? item.comment : undefined,
     pdfUrl: buildInvoicePdfHref(id, item),
@@ -330,19 +343,32 @@ function toInvoice(item: UnknownRecord): Invoice {
 }
 
 function toMeterReading(item: UnknownRecord): MeterReading {
-  const value = firstNumber(item.currentValue, item.value, item.consumption);
-  const trend = firstNumber(item.consumption, item.currentValue);
+  const currentValue = firstNumber(item.currentValue, item.value);
+  const previousValue = firstNumber(item.previousValue);
+  const consumption = firstNumber(item.consumption, currentValue - previousValue);
   const month = firstOptionalNumber(item.month);
   const year = firstOptionalNumber(item.year);
+  const meterKey = typeof item.meterKey === "string" && item.meterKey.trim() ? item.meterKey.trim() : undefined;
+  const serialNumber =
+    typeof item.serialNumber === "string" && item.serialNumber.trim() ? item.serialNumber.trim() : undefined;
+  const value = currentValue;
+  const trend = consumption;
 
   return {
     id: firstString(item.id, item.meterId),
+    apartmentId: typeof item.apartmentId === "string" && item.apartmentId.trim() ? item.apartmentId.trim() : undefined,
+    buildingId: typeof item.buildingId === "string" && item.buildingId.trim() ? item.buildingId.trim() : undefined,
     apartment: firstString(item.apartment, item.apartmentNumber, item.apartmentId),
     value: `${value || 0} m³`,
     submittedAt: formatDate(item.submittedAt),
     trend: `${trend || 0}`,
     month,
     year,
+    meterKey,
+    serialNumber,
+    previousValue,
+    currentValue,
+    consumption,
   };
 }
 
@@ -363,6 +389,54 @@ function toDocument(item: UnknownRecord): DocumentItem {
     target: firstString(item.target, item.companyId, item.audience, "Workspace"),
     updatedAt: formatDate(item.updatedAt ?? item.createdAt),
   };
+}
+
+function getLinkedCompanyIds(apartments: UnknownRecord[], buildings: Building[], extraValues: unknown[] = []) {
+  const ids = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === "string" && value.trim() && value.trim() !== "â€”") {
+      ids.add(value.trim());
+    }
+  };
+
+  for (const apartment of apartments) {
+    add(apartment.companyId);
+    add(apartment.managementCompanyId);
+    add(apartment.managerCompanyId);
+    if (Array.isArray(apartment.companyIds)) apartment.companyIds.forEach(add);
+    const managedBy = apartment.managedBy && typeof apartment.managedBy === "object"
+      ? (apartment.managedBy as UnknownRecord)
+      : null;
+    add(managedBy?.companyId);
+  }
+
+  for (const building of buildings) {
+    add(building.companyId);
+    add(building.managedBy?.companyId);
+  }
+
+  extraValues.forEach(add);
+
+  return Array.from(ids);
+}
+
+function companyFallbacksFromBuildings(buildings: Building[]): UnknownRecord[] {
+  return buildings
+    .map<UnknownRecord | null>((building) => {
+      const managedBy = building.managedBy && typeof building.managedBy === "object" ? building.managedBy : {};
+      const id = firstDisplayString(building.companyId, managedBy.companyId, building.companyName);
+      const companyName = firstDisplayString(building.companyName, managedBy.companyName, managedBy.name, managedBy.title);
+
+      return id || companyName
+        ? {
+            id: id || companyName,
+            companyName,
+            companyEmail: firstDisplayString(managedBy.companyEmail, managedBy.email, managedBy.contactEmail),
+            companyPhone: firstDisplayString(managedBy.companyPhone, managedBy.phone, managedBy.contactPhone),
+          }
+        : null;
+    })
+    .filter((company): company is UnknownRecord => company !== null);
 }
 
 function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] {
@@ -509,6 +583,27 @@ async function getAuthenticatedContext(roleHint?: string) {
 export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBundle> {
   const { userId, profile, role, companyId, apartmentId } = await getAuthenticatedContext(roleHint);
 
+  if (role === "platformAdmin") {
+    const usersResponse = await apiFetchSafe<ApiListResponse>("/users");
+    const platformUsers = Array.isArray(usersResponse?.items) ? usersResponse.items.map((item) => toResident(item)) : [];
+
+    return {
+      role,
+      userId,
+      profile,
+      companyId,
+      apartmentId,
+      buildings: [],
+      apartments: [],
+      residents: platformUsers,
+      invoices: [],
+      meterReadings: [],
+      documents: [],
+      notifications: [],
+      managementCompanies: [],
+    };
+  }
+
   if (role === "managementCompany") {
     const [buildingsResponse, apartmentsResponse, residentsResponse, invoicesResponse, meterReadingsResponse, notificationsResponse, newsResponse] =
       await Promise.all([
@@ -553,6 +648,7 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
       meterReadings: liveMeterReadings,
       documents: liveDocuments,
       notifications: liveNotifications,
+      managementCompanies: [],
     };
   }
 
@@ -564,6 +660,7 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
   ]);
   const liveApartments = Array.isArray(residentHome?.apartments) ? residentHome.apartments : [];
   const liveBuildings = Array.isArray(residentHome?.buildings) ? residentHome.buildings.map(toBuilding) : [];
+  const residentHomeCompanies = Array.isArray(residentHome?.managementCompanies) ? residentHome.managementCompanies : [];
   const apartmentIds = liveApartments
     .map((item) => firstString(item.id, item.apartmentId))
     .filter((value) => value !== "—");
@@ -574,24 +671,51 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
       ? [apartmentId]
       : [];
 
-  const invoiceBatches = await Promise.all(
-    targetApartmentIds.map((item) => apiFetchSafe<ApiListResponse>(`/invoices?apartmentId=${encodeURIComponent(item)}`)),
-  );
+  const linkedCompanyIds = getLinkedCompanyIds(liveApartments, liveBuildings, [profile?.companyId, companyId]);
+  const [invoiceBatches, meterBatches, documentBatches, companyBatches] = await Promise.all([
+    Promise.all(
+      targetApartmentIds.map((item) => apiFetchSafe<ApiListResponse>(`/invoices?apartmentId=${encodeURIComponent(item)}`)),
+    ),
+    Promise.all(
+      targetApartmentIds.map((item) => apiFetchSafe<ApiListResponse>(`/meter-readings?apartmentId=${encodeURIComponent(item)}`)),
+    ),
+    Promise.all(
+      targetApartmentIds.map((item) => apiFetchSafe<ApiListResponse>(`/documents?apartmentId=${encodeURIComponent(item)}`)),
+    ),
+    Promise.all(
+      linkedCompanyIds.map((item) => apiFetchSafe<UnknownRecord>(`/company/${encodeURIComponent(item)}`)),
+    ),
+  ]);
 
-  const meterBatches = await Promise.all(
-    targetApartmentIds.map((item) => apiFetchSafe<ApiListResponse>(`/meter-readings?apartmentId=${encodeURIComponent(item)}`)),
-  );
-
-  const mergedInvoices = invoiceBatches.flatMap((response) =>
-    Array.isArray(response?.items) ? response.items.map(toInvoice) : [],
+  const mergedInvoices = Array.from(
+    new Map(
+      invoiceBatches
+        .flatMap((response) => (Array.isArray(response?.items) ? response.items.map(toInvoice) : []))
+        .map((invoice) => [invoice.id, invoice] as const),
+    ).values(),
   );
   const mergedMeterReadings = meterBatches.flatMap((response) =>
     Array.isArray(response?.items) ? response.items.map(toMeterReading) : [],
+  );
+  const liveDocuments = Array.from(
+    new Map(
+      documentBatches
+        .flatMap((response) => (Array.isArray(response?.items) ? response.items.map(toDocument) : []))
+        .map((document) => [document.id, document] as const),
+    ).values(),
   );
   const derivedResidents = deriveResidentsFromApartments(liveApartments);
   const liveNotifications = Array.isArray(notificationsResponse?.items)
     ? notificationsResponse.items.map(toNotification)
     : [];
+  const managementCompanies = Array.from(
+    new Map(
+      [...companyBatches.filter((item): item is UnknownRecord => Boolean(item)), ...companyFallbacksFromBuildings(liveBuildings)]
+        .concat(residentHomeCompanies)
+        .map((company) => [firstDisplayString(company.id, company.companyId, company.companyName), company] as const)
+        .filter(([key]) => Boolean(key)),
+    ).values(),
+  );
 
   return {
     role,
@@ -604,8 +728,9 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
     residents: derivedResidents,
     invoices: mergedInvoices,
     meterReadings: mergedMeterReadings,
-    documents: [],
+    documents: liveDocuments,
     notifications: liveNotifications,
+    managementCompanies,
   };
 }
 

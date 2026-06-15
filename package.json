@@ -2,6 +2,7 @@
   "name": "domera3",
   "private": true,
   "scripts": {
+    "build": "npm --prefix frontendd run build",
     "dev": "node tools/dev-all.cjs",
     "dev:backend": "npm --prefix back-end run start:dev",
     "dev:frontend": "npm --prefix frontendd run dev"

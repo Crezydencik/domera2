@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, Matches, MinLength } from 'class-validator';
-import { ACCOUNT_TYPES } from '../../../common/auth/role.constants';
+import { PUBLIC_REGISTRATION_ROLES } from '../../../common/auth/role.constants';
 import { PASSWORD_COMPLEXITY_MESSAGE, PASSWORD_COMPLEXITY_REGEX } from '../../../common/auth/password-policy';
 
 export class RegisterDto {
@@ -18,9 +18,9 @@ export class RegisterDto {
   @Matches(PASSWORD_COMPLEXITY_REGEX, { message: PASSWORD_COMPLEXITY_MESSAGE })
   password!: string;
 
-  @ApiProperty({ enum: ACCOUNT_TYPES })
+  @ApiProperty({ enum: PUBLIC_REGISTRATION_ROLES })
   @IsString()
-  @IsIn([...ACCOUNT_TYPES])
+  @IsIn([...PUBLIC_REGISTRATION_ROLES])
   accountType!: string;
 
   @ApiProperty({ description: 'Confirms that the user accepted the privacy policy' })

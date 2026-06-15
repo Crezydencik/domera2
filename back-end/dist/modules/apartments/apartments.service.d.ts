@@ -33,9 +33,11 @@ export declare class ApartmentsService {
     private isStaff;
     private getAccessibleApartmentIds;
     private canManageTenants;
+    private hasApartmentOccupant;
     private normalizeHeader;
     private normalizeApartmentNumber;
     private normalizeReadingConfigOverride;
+    private buildEmptyWaterReadings;
     private buildReadableCode;
     private buildRandomDigits;
     private resolveFrontendUrl;
@@ -45,6 +47,7 @@ export declare class ApartmentsService {
     private createApartmentInvitation;
     private resolveOwnerInvitationContext;
     private createOwnerInvitationNotification;
+    private createTenantInvitationNotification;
     private buildApartmentNumberCode;
     private generateApartmentReadableId;
     private getCellStringByHeader;
@@ -59,13 +62,15 @@ export declare class ApartmentsService {
     private asStructuredObject;
     private asStructuredArray;
     private sanitizeImportedText;
+    private makeUniqueImportHeaders;
     private appendStructuredWaterReadings;
     private looksLikeImportEntry;
     private extractImportEntries;
     private normalizeStructuredImportRow;
     private parseJsonImportRows;
     private parseXmlImportRows;
-    private parseSpreadsheetImportRows;
+    private parseCsvImportRows;
+    private parseXlsxImportRows;
     private parseImportRows;
     importFromFile(input: ImportInput): Promise<{
         success: boolean;
@@ -90,6 +95,7 @@ export declare class ApartmentsService {
     create(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{
         createdAt: Date;
         updatedAt: Date;
+        waterReadings?: Record<string, unknown> | undefined;
         readingConfigOverride?: {
             useBuildingDefaults: boolean;
             hotWaterMeters: number;
@@ -126,15 +132,34 @@ export declare class ApartmentsService {
     }): Promise<{
         success: boolean;
     }>;
+    removeOwner(request: Request, user: RequestUser, apartmentId: string): Promise<{
+        success: boolean;
+    }>;
     addOrInviteTenant(request: Request, user: RequestUser, apartmentId: string, emailInput: string, tenantData?: {
         firstName?: string;
         lastName?: string;
         phone?: string;
         contractNumber?: string;
+        fromDate?: string;
+        until?: string;
+        canViewDocuments?: boolean;
     }): Promise<{
         success: boolean;
+        invitationLink: string;
+        invitationId: string;
     }>;
     removeTenant(request: Request, user: RequestUser, apartmentId: string, userId: string): Promise<{
+        success: boolean;
+    }>;
+    updateTenant(request: Request, user: RequestUser, apartmentId: string, userId: string, tenantData: {
+        firstName?: string;
+        lastName?: string;
+        phone?: string;
+        fromDate?: string;
+        until?: string;
+        status?: string;
+        canViewDocuments?: boolean;
+    }): Promise<{
         success: boolean;
     }>;
     resendOwnerInvitation(request: Request, user: RequestUser, apartmentId: string, ownerEmail: string): Promise<{
