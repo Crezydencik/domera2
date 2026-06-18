@@ -108,6 +108,6 @@ __decorate([
 exports.DocumentsController = DocumentsController = __decorate([
     (0, common_1.Controller)('documents'),
     (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES, ...role_constants_1.PROPERTY_MEMBER_ROLES),
+    (0, roles_decorator_1.Roles)('PlatformAdmin', ...role_constants_1.STAFF_ROLES, ...role_constants_1.PROPERTY_MEMBER_ROLES),
     __metadata("design:paramtypes", [documents_service_1.DocumentsService])
 ], DocumentsController);

@@ -3,9 +3,9 @@
 import { DomeraApiError, apiFetch } from "@/shared/api/client";
 import { notifyAuthSessionChanged } from "@/shared/lib/auth-session";
 
-export type PublicAccountType = "ManagementCompany" | "Resident" | "Landlord";
+export type PublicAccountType = "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
 
-export type PublicUserRole = "ManagementCompany" | "Accountant" | "Resident" | "Landlord";
+export type PublicUserRole = "PlatformAdmin" | "ManagementCompany" | "Accountant" | "Resident" | "Landlord";
 
 export type RegisterInput = {
   email: string;
@@ -75,6 +75,10 @@ function normalizeAccountType(value?: string | null): PublicAccountType {
     .replace(/[^a-z]/gi, "")
     .toLowerCase();
 
+  if (normalized === "platformadmin" || normalized === "superadmin" || normalized === "admin") {
+    return "PlatformAdmin";
+  }
+
   if (normalized === "resident" || normalized === "tenant" || normalized === "renter") {
     return "Resident";
   }
@@ -91,6 +95,10 @@ function normalizeRole(value?: string | null): PublicUserRole {
     .trim()
     .replace(/[^a-z]/gi, "")
     .toLowerCase();
+
+  if (normalized === "platformadmin" || normalized === "superadmin" || normalized === "admin") {
+    return "PlatformAdmin";
+  }
 
   if (normalized === "accountant") {
     return "Accountant";
@@ -112,6 +120,7 @@ function toCookieValue(accountType: PublicAccountType): string {
 }
 
 export function accountTypeToDashboardRole(accountType: PublicAccountType): string {
+  if (accountType === "PlatformAdmin") return "platformAdmin";
   if (accountType === "Resident") return "resident";
   if (accountType === "Landlord") return "landlord";
   return "managementCompany";
@@ -134,6 +143,7 @@ function persistSessionHints(params: {
   const roleValue = params.role;
   const accountTypeValue = toCookieValue(params.accountType);
 
+  document.cookie = `domera_session=1${cookieSuffix}`;
   document.cookie = `domera_accountType=${accountTypeValue}${cookieSuffix}`;
   document.cookie = `domera_role=${roleValue}${cookieSuffix}`;
   document.cookie = `userEmail=${encodeURIComponent(params.email)}${cookieSuffix}`;
@@ -216,13 +226,18 @@ function mapAuthResponse(data: BackendAuthResponse, fallbackEmail: string, fallb
   };
 }
 
-export async function signInWithEmailPassword(email: string, password: string): Promise<FirebaseAuthResult> {
+export async function signInWithEmailPassword(
+  email: string,
+  password: string,
+  rememberMe?: boolean,
+): Promise<FirebaseAuthResult> {
   const normalizedEmail = email.trim().toLowerCase();
   const data = await apiFetch<BackendAuthResponse>("/auth/login", {
     method: "POST",
     body: JSON.stringify({
       email: normalizedEmail,
       password,
+      rememberMe,
     }),
   });
 
@@ -291,6 +306,7 @@ export async function establishUserSession(params: {
         idToken: params.idToken,
         userId: params.userId,
         email: params.email,
+        rememberMe: params.rememberMe,
       }),
     });
   }
@@ -303,8 +319,8 @@ export async function establishUserSession(params: {
     throw error;
   });
 
-  const resolvedAccountType = normalizeAccountType(profile?.accountType ?? profile?.role ?? params.accountType);
-  const resolvedRole = normalizeRole(profile?.role ?? params.role ?? resolvedAccountType);
+  const resolvedRole = normalizeRole(profile?.role ?? params.role ?? profile?.accountType ?? params.accountType);
+  const resolvedAccountType = normalizeAccountType(profile?.accountType ?? resolvedRole ?? params.accountType);
 
   persistSessionHints({
     role: resolvedRole,

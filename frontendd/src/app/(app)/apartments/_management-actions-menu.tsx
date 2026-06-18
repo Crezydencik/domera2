@@ -29,6 +29,7 @@ export interface ManagementActionApartment {
   residentId?: string;
   isOccupied?: boolean;
   isVacant?: boolean;
+  isLocked?: boolean;
 }
 
 type InvitationRecord = {
@@ -242,12 +243,14 @@ export function ApartmentsManagementActionsMenu({
   selectedBuildingId,
   apartments,
   apartmentRecords,
+  lockedBuildingIds,
 }: {
   companyId?: string;
   buildings: ManagementActionBuildingOption[];
   selectedBuildingId?: string;
   apartments: ManagementActionApartment[];
   apartmentRecords: RawRecord[];
+  lockedBuildingIds?: Set<string>;
 }) {
   const t = useTranslations("apartments.management.menu");
   const ui = useTranslations("ui");
@@ -295,6 +298,9 @@ export function ApartmentsManagementActionsMenu({
     if (selectedBuildingId?.trim()) return selectedBuildingId.trim();
     return buildings.length === 1 ? buildings[0].id : undefined;
   }, [buildings, selectedBuildingId]);
+  const lockedBuildings = lockedBuildingIds ?? new Set<string>();
+  const currentBuildingLocked = Boolean(effectiveBuildingId && lockedBuildings.has(effectiveBuildingId));
+  const selectedScopeLocked = Boolean(selectedBuildingId?.trim() && currentBuildingLocked);
 
   const effectiveBuilding = useMemo(
     () => buildings.find((building) => building.id === effectiveBuildingId),
@@ -320,6 +326,7 @@ export function ApartmentsManagementActionsMenu({
     return apartmentRecords
       .map((record, index): InvitationListRow | null => {
         const apartmentId = textValue(record.id, record.apartmentId);
+        if (apartments.some((apartment) => apartment.id === apartmentId && apartment.isLocked)) return null;
         const apartmentLabel = textValue(record.number, record.apartmentNumber, record.id, record.apartmentId);
         const email = textValue(record.ownerEmail).toLowerCase();
         if (!apartmentId || !email || !isEmailLike(email)) return null;
@@ -356,7 +363,7 @@ export function ApartmentsManagementActionsMenu({
         };
       })
       .filter((row): row is InvitationListRow => Boolean(row));
-  }, [apartmentRecords, invitations]);
+  }, [apartmentRecords, apartments, invitations]);
 
   const readyInvitationRows = useMemo(
     () => invitationRows.filter((row) => row.status === "ready"),
@@ -387,6 +394,10 @@ export function ApartmentsManagementActionsMenu({
     }
     if (!effectiveImportBuildingId) {
       notifications.warning(t("errors.chooseBuildingFirst"));
+      return;
+    }
+    if (lockedBuildings.has(effectiveImportBuildingId)) {
+      notifications.warning("This building is locked by the platform administrator.");
       return;
     }
 
@@ -425,7 +436,7 @@ export function ApartmentsManagementActionsMenu({
 
   function handleImportDrop(event: React.DragEvent<HTMLLabelElement>) {
     event.preventDefault();
-    if (loadingImport || !effectiveImportBuildingId) return;
+    if (loadingImport || !effectiveImportBuildingId || lockedBuildings.has(effectiveImportBuildingId)) return;
     void handleImportFile(event.dataTransfer.files?.[0]);
   }
 
@@ -442,6 +453,12 @@ export function ApartmentsManagementActionsMenu({
   }
 
   function openAddModal() {
+    if (currentBuildingLocked) {
+      notifications.warning("This building is locked by the platform administrator.");
+      setOpen(false);
+      return;
+    }
+
     setAddTab("resident");
     prepareApartmentFormDefaults();
     setAddOpen(true);
@@ -466,6 +483,10 @@ export function ApartmentsManagementActionsMenu({
 
     if (!residentApartmentId) {
       notifications.warning(t("errors.residentApartmentRequired"));
+      return;
+    }
+    if (apartments.some((apartment) => apartment.id === residentApartmentId && apartment.isLocked)) {
+      notifications.warning("This apartment belongs to a locked building.");
       return;
     }
     if (!fullName) {
@@ -607,6 +628,10 @@ export function ApartmentsManagementActionsMenu({
       notifications.warning(t("errors.chooseBuildingFirst"));
       return;
     }
+    if (lockedBuildings.has(effectiveBuildingId)) {
+      notifications.warning("This building is locked by the platform administrator.");
+      return;
+    }
     if (!apartmentNumber.trim()) {
       notifications.warning(t("errors.apartmentNumberRequired"));
       return;
@@ -665,7 +690,7 @@ export function ApartmentsManagementActionsMenu({
       return;
     }
 
-    const deletable = apartments.filter((apartment) => apartment.isVacant ?? !apartment.isOccupied);
+    const deletable = apartments.filter((apartment) => !apartment.isLocked && (apartment.isVacant ?? !apartment.isOccupied));
     if (deletable.length === 0) {
       notifications.info(t("feedback.noVacantApartmentsToDelete"));
       setDeleteOpen(false);
@@ -825,26 +850,26 @@ export function ApartmentsManagementActionsMenu({
               <button
                 type="button"
                 onClick={openImportModal}
-                disabled={loadingImport}
+                disabled={loadingImport || selectedScopeLocked}
                 className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-violet-700 transition hover:bg-violet-50 disabled:opacity-60"
               >
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600 transition group-hover:bg-white"><UploadIcon /></span>
                 <span>{loadingImport ? t("items.importLoading") : t("items.import")}</span>
               </button>
 
-              <button type="button" onClick={openAddModal} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-slate-800 transition hover:bg-slate-50">
+              <button type="button" onClick={openAddModal} disabled={selectedScopeLocked} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-slate-800 transition hover:bg-slate-50 disabled:opacity-60">
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition group-hover:bg-white"><PlusIcon /></span>
                 <span>{t("items.add")}</span>
               </button>
 
               <div className="my-2 border-t border-slate-100 pt-2">
-                <button type="button" onClick={() => { setDeleteOpen(true); setOpen(false); }} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-red-600 transition hover:bg-red-50">
+                <button type="button" onClick={() => { setDeleteOpen(true); setOpen(false); }} disabled={selectedScopeLocked} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-60">
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600 transition group-hover:bg-white"><TrashIcon /></span>
                   <span>{t("items.deleteAll")}</span>
                 </button>
               </div>
 
-              <button type="button" onClick={() => void openInvitations()} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50">
+              <button type="button" onClick={() => void openInvitations()} disabled={selectedScopeLocked} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition group-hover:bg-white"><ListIcon /></span>
                 <span>{t("items.invitations")}</span>
               </button>
@@ -890,8 +915,8 @@ export function ApartmentsManagementActionsMenu({
                   >
                     <option value="">{t("dialogs.createResident.fields.apartmentPlaceholder")}</option>
                     {apartments.map((apartment) => (
-                      <option key={apartment.id} value={apartment.id}>
-                        #{apartment.number} {apartment.buildingId ? `- ${apartment.buildingId}` : ""}
+                      <option key={apartment.id} value={apartment.id} disabled={apartment.isLocked}>
+                        #{apartment.number} {apartment.buildingId ? `- ${apartment.buildingId}` : ""}{apartment.isLocked ? " - Locked" : ""}
                       </option>
                     ))}
                   </select>
@@ -1067,8 +1092,8 @@ export function ApartmentsManagementActionsMenu({
             >
               <option value="">{t("dialogs.import.buildingPlaceholder")}</option>
               {buildings.map((building) => (
-                <option key={building.id} value={building.id}>
-                  {building.label}
+                <option key={building.id} value={building.id} disabled={lockedBuildings.has(building.id)}>
+                  {building.label}{lockedBuildings.has(building.id) ? " - Locked" : ""}
                 </option>
               ))}
             </select>
@@ -1081,7 +1106,7 @@ export function ApartmentsManagementActionsMenu({
               onDragOver={(event) => event.preventDefault()}
               onDrop={handleImportDrop}
               className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-5 py-8 text-center transition ${
-                effectiveImportBuildingId && !loadingImport
+                effectiveImportBuildingId && !loadingImport && !lockedBuildings.has(effectiveImportBuildingId)
                   ? "border-blue-200 bg-blue-50/60 text-blue-900 hover:border-blue-300 hover:bg-blue-50"
                   : "border-slate-200 bg-slate-50 text-slate-400"
               }`}

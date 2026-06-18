@@ -50,7 +50,7 @@ function buildContentDisposition(fileName: string) {
 
 @Controller('documents')
 @UseGuards(FirebaseAuthGuard, RolesGuard)
-@Roles(...STAFF_ROLES, ...PROPERTY_MEMBER_ROLES)
+@Roles('PlatformAdmin', ...STAFF_ROLES, ...PROPERTY_MEMBER_ROLES)
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 

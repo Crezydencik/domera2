@@ -35,6 +35,27 @@ export class BuildingsController {
     return this.buildingsService.getCreationAccess(request, user, companyId);
   }
 
+  @Post('creation-access/request')
+  @ApiOperation({ summary: 'Request building creation access from platform administrators' })
+  requestCreationAccess(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.buildingsService.requestCreationAccess(request, user, body);
+  }
+
+  @Delete('creation-access/request/:requestId')
+  @ApiOperation({ summary: 'Cancel a pending building creation request' })
+  @ApiParam({ name: 'requestId', required: true, type: String })
+  cancelCreationAccessRequest(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('requestId') requestId: string,
+  ) {
+    return this.buildingsService.cancelCreationAccessRequest(request, user, requestId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List buildings by company' })
   @ApiQuery({ name: 'companyId', required: true, type: String })
@@ -44,6 +65,39 @@ export class BuildingsController {
     @Query('companyId') companyId: string,
   ) {
     return this.buildingsService.list(request, user, companyId);
+  }
+
+  @Get('admin/all')
+  @Roles('PlatformAdmin')
+  @ApiOperation({ summary: 'List all buildings for platform administrators' })
+  listAllForAdmin(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.buildingsService.listAllForAdmin(request, user);
+  }
+
+  @Get('admin/billing-invoices')
+  @Roles('PlatformAdmin')
+  @ApiOperation({ summary: 'List platform billing invoices' })
+  listPlatformBillingInvoices(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.buildingsService.listPlatformBillingInvoices(request, user);
+  }
+
+  @Patch('admin/:buildingId/edit-lock')
+  @Roles('PlatformAdmin')
+  @ApiOperation({ summary: 'Lock or unlock building editing' })
+  @ApiParam({ name: 'buildingId', required: true, type: String })
+  setEditLock(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('buildingId') buildingId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.buildingsService.setEditLock(request, user, buildingId, body);
   }
 
   @Get(':buildingId')

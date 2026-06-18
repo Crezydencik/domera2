@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class SetSessionDto {
@@ -16,4 +16,9 @@ export class SetSessionDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  @ApiPropertyOptional({ default: false, description: 'Keep the session active for the longer remember-me window.' })
+  @IsOptional()
+  @IsBoolean()
+  rememberMe?: boolean;
 }

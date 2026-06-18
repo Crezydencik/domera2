@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 import { EmailLanguage, EmailPayload, EmailType, EmailTemplate } from './email.types';
@@ -20,6 +20,7 @@ export class EmailService {
   private resend!: Resend;
   private readonly from: string;
   private readonly apiKey: string;
+    private readonly logger = new Logger(EmailService.name);
 
   constructor(private readonly configService: ConfigService) {
     this.apiKey = this.configService.get<string>('RESEND_API_KEY') || '';
@@ -29,7 +30,7 @@ export class EmailService {
       this.resend = new Resend(this.apiKey);
     }
   }
-
+ 
   /**
    * Generic method to send any email
    */
@@ -50,6 +51,7 @@ export class EmailService {
           contentType: attachment.contentType,
         })),
       } as Parameters<Resend['emails']['send']>[0]);
+      console.log('RESEND RESPONSE', response);
 
       if (response.error) {
         throw new Error(`Resend error: ${response.error.message}`);
@@ -93,14 +95,21 @@ export class EmailService {
   /**
    * Send owner invitation email
    */
-  async sendOwnerInvitation(dto: SendOwnerInvitationEmailDto): Promise<{ id: string }> {
+async sendOwnerInvitation(
+    dto: SendOwnerInvitationEmailDto,
+  ): Promise<{ id: string }> {
     const language = this.normalizeLanguage(dto.language);
+
     const template = templates.ownerInvitationTemplates[language]({
       companyName: dto.companyName,
+      ownerName: dto.ownerName,
+      ownerEmail: dto.ownerEmail || dto.to,
       invitationLink: dto.invitationLink,
       buildingName: dto.buildingName,
       apartmentNumber: dto.apartmentNumber,
     });
+
+    this.logger.log(`Sending owner invitation to ${dto.to}`);
 
     return this.send({
       to: dto.to,

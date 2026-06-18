@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { ActionButtonGroup } from "@/components/ui/action-button-group";
 import { Button } from "@/components/ui/button";
-import { deleteApartment, getApartmentStorageSummary, unassignApartmentResident, updateApartment } from "@/shared/api/apartments";
+import { deleteApartment, getApartmentStorageSummary } from "@/shared/api/apartments";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { ROUTES } from "@/shared/lib/routes";
 import { TenantAccessManager } from "./[apartmentId]/tenant-access-manager";
@@ -20,10 +20,6 @@ type ApartmentStorageSummary = {
 export interface ApartmentResidentOption {
   id: string;
   label: string;
-}
-
-function looksLikeOpaqueId(value: string) {
-  return /^[A-Za-z0-9_-]{12,}$/.test(value.trim());
 }
 
 function toText(value: unknown, fallback = "") {
@@ -57,6 +53,7 @@ interface ApartmentsManagementRowActionsProps {
   currentResidentName?: string;
   isOccupied?: boolean;
   residentOptions: ApartmentResidentOption[];
+  readOnly?: boolean;
 }
 
 function ModalShell({
@@ -111,27 +108,18 @@ export function ApartmentsManagementRowActions({
   apartmentLabel,
   apartmentRecord,
   currentResidentId,
-  currentResidentName,
   isOccupied = false,
-  residentOptions,
+  readOnly = false,
 }: ApartmentsManagementRowActionsProps) {
   const t = useTranslations("apartments");
   const ui = useTranslations("ui");
   const router = useRouter();
   const notifications = useNotifications();
-  const currentResidentDisplay = currentResidentName?.trim() && !looksLikeOpaqueId(currentResidentName)
-    ? currentResidentName.trim()
-    : currentResidentId?.trim() && !looksLikeOpaqueId(currentResidentId)
-      ? currentResidentId.trim()
-      : "";
 
   const [accessManagementOpen, setAccessManagementOpen] = useState(false);
-  const [accessTab, setAccessTab] = useState<'resident' | 'owner'>('resident');
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [selectedResidentId, setSelectedResidentId] = useState(currentResidentId ?? "");
   const [storageSummary, setStorageSummary] = useState<ApartmentStorageSummary | null>(null);
   const [isLoadingStorageSummary, setIsLoadingStorageSummary] = useState(false);
-  const [isAssigning, setIsAssigning] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const ownerEmail = toText(apartmentRecord.ownerEmail, "—");
   const ownerData = {
@@ -142,66 +130,12 @@ export function ApartmentsManagementRowActions({
   };
   const deleteBlockedByOccupant = isOccupied || Boolean(currentResidentId);
 
-  const normalizedResidents = useMemo(() => {
-    const map = new Map<string, ApartmentResidentOption>();
-
-    for (const option of residentOptions) {
-      if (!option.id.trim()) continue;
-      map.set(option.id, option);
-    }
-
-    if (currentResidentId?.trim() && !map.has(currentResidentId)) {
-      map.set(currentResidentId, {
-        id: currentResidentId,
-        label: currentResidentDisplay || t("common.notSpecified"),
-      });
-    }
-
-    return [...map.values()].sort((left, right) =>
-      left.label.localeCompare(right.label, undefined, { sensitivity: "base", numeric: true }),
-    );
-  }, [currentResidentDisplay, currentResidentId, residentOptions, t]);
-
-  useEffect(() => {
-    if (accessManagementOpen && accessTab === 'resident') {
-      setSelectedResidentId(currentResidentId ?? "");
-    }
-  }, [accessManagementOpen, accessTab, currentResidentId]);
-
-  async function handleSaveResident() {
-    if (selectedResidentId === (currentResidentId ?? "")) {
-      setAccessManagementOpen(false);
+  async function handleDeleteApartment() {
+    if (readOnly) {
+      notifications.warning("This apartment belongs to a locked building.");
       return;
     }
 
-    setIsAssigning(true);
-
-    try {
-      if (selectedResidentId) {
-        const chosenResident = normalizedResidents.find((resident) => resident.id === selectedResidentId);
-        await updateApartment(apartmentId, { residentId: selectedResidentId });
-        notifications.success(
-          t("management.feedback.residentAssigned", {
-            resident: chosenResident?.label ?? selectedResidentId,
-            apartment: apartmentLabel,
-          }),
-        );
-      } else {
-        await unassignApartmentResident(apartmentId);
-        notifications.success(t("management.feedback.residentUnassigned", { apartment: apartmentLabel }));
-      }
-
-      setAccessManagementOpen(false);
-      router.refresh();
-    } catch (error) {
-      const fallback = t("management.errors.residentSaveFailed");
-      notifications.error(error instanceof Error ? error.message : fallback);
-    } finally {
-      setIsAssigning(false);
-    }
-  }
-
-  async function handleDeleteApartment() {
     setIsDeleting(true);
 
     try {
@@ -218,6 +152,11 @@ export function ApartmentsManagementRowActions({
   }
 
   async function openDeleteDialog() {
+    if (readOnly) {
+      notifications.warning("This apartment belongs to a locked building.");
+      return;
+    }
+
     setDeleteOpen(true);
     setStorageSummary(null);
     setIsLoadingStorageSummary(true);
@@ -241,22 +180,22 @@ export function ApartmentsManagementRowActions({
             icon: "info",
             tone: "info",
             onClick: () => router.push(`${ROUTES.apartments}/${encodeURIComponent(apartmentId)}`),
-            disabled: isAssigning || isDeleting,
+            disabled: isDeleting,
           },
           {
             key: `${apartmentId}-access`,
             label: t("management.actions.manageAccess"),
             icon: "user",
             tone: "warning",
-            disabled: isAssigning || isDeleting,
-            onClick: () => { setAccessTab('owner'); setAccessManagementOpen(true); },
+            disabled: readOnly || isDeleting,
+            onClick: () => setAccessManagementOpen(true),
           },
           {
             key: `${apartmentId}-delete`,
             label: t("management.actions.delete"),
             icon: "delete",
             tone: "danger",
-            disabled: isAssigning || isDeleting,
+            disabled: readOnly || isDeleting,
             onClick: () => void openDeleteDialog(),
           },
         ]}
@@ -264,80 +203,16 @@ export function ApartmentsManagementRowActions({
 
       <ModalShell
         open={accessManagementOpen}
-        onClose={() => !isAssigning && setAccessManagementOpen(false)}
+        onClose={() => setAccessManagementOpen(false)}
         title={t("management.actions.manageAccess")}
         description={t("management.dialogs.tenantAccess.description", { apartment: apartmentLabel })}
       >
-        <div>
-          <div className="mb-4 flex gap-2 border-b border-slate-200">
-            <button
-              className={`px-4 py-2 font-semibold ${accessTab === 'resident' ? 'border-b-2 border-amber-500 text-amber-700' : 'text-slate-500'}`}
-              onClick={() => setAccessTab('resident')}
-            >
-              {t("management.actions.assignResident")}
-            </button>
-            <button
-              className={`px-4 py-2 font-semibold ${accessTab === 'owner' ? 'border-b-2 border-amber-500 text-amber-700' : 'text-slate-500'}`}
-              onClick={() => setAccessTab('owner')}
-            >
-              {t("management.actions.manageAccess")}
-            </button>
-          </div>
-
-          {accessTab === 'resident' && (
-            <div className="space-y-4">
-              <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                <p className="font-medium text-slate-900">{t("management.dialogs.assignResident.currentResidentLabel")}</p>
-                <p className="mt-1">
-                  {currentResidentDisplay || (currentResidentId ? t("common.notSpecified") : t("management.dialogs.assignResident.noneAssigned"))}
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor={`resident-${apartmentId}`} className="mb-1.5 block text-sm font-medium text-slate-700">
-                  {t("management.dialogs.assignResident.fieldLabel")}
-                </label>
-                <select
-                  id={`resident-${apartmentId}`}
-                  value={selectedResidentId}
-                  onChange={(event) => setSelectedResidentId(event.target.value)}
-                  disabled={isAssigning || normalizedResidents.length === 0}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-                >
-                  <option value="">{t("management.dialogs.assignResident.noneOption")}</option>
-                  {normalizedResidents.map((resident) => (
-                    <option key={resident.id} value={resident.id}>
-                      {resident.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-xs text-slate-500">
-                  {normalizedResidents.length > 0
-                    ? t("management.dialogs.assignResident.hint")
-                    : t("management.dialogs.assignResident.empty")}
-                </p>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <Button type="button" variant="secondary" size="sm" onClick={() => setAccessManagementOpen(false)} disabled={isAssigning}>
-                  {ui("cancel")}
-                </Button>
-                <Button type="button" size="sm" onClick={() => void handleSaveResident()} disabled={isAssigning}>
-                  {isAssigning ? t("management.dialogs.assignResident.saving") : ui("save")}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {accessTab === 'owner' && (
-            <TenantAccessManager
-              apartmentId={apartmentId}
-              apartmentLabel={apartmentLabel}
-              compact={false}
-              ownerData={ownerData}
-            />
-          )}
-        </div>
+        <TenantAccessManager
+          apartmentId={apartmentId}
+          apartmentLabel={apartmentLabel}
+          compact={false}
+          ownerData={ownerData}
+        />
       </ModalShell>
 
       <ModalShell

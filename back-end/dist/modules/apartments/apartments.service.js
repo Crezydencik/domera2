@@ -103,6 +103,43 @@ let ApartmentsService = class ApartmentsService {
             }, { merge: true });
         }
     }
+    async getApprovedBuildingOrThrow(buildingId, companyId) {
+        const snap = await this.firebaseAdminService.firestore.collection('buildings').doc(buildingId).get();
+        if (!snap.exists) {
+            throw new common_1.ForbiddenException('Apartments can be added only after the building request is approved');
+        }
+        const data = snap.data();
+        const buildingCompanyId = (typeof data.companyId === 'string' ? data.companyId.trim() : '') ||
+            data.managedBy?.companyId?.trim() ||
+            '';
+        if (!buildingCompanyId || buildingCompanyId !== companyId) {
+            throw new common_1.ForbiddenException('Access denied for building/company ownership');
+        }
+        if (data.editLocked === true) {
+            throw new common_1.ForbiddenException('This building is locked by the platform administrator');
+        }
+        return data;
+    }
+    async assertApartmentBuildingEditableForStaff(user, apartment) {
+        if (!this.isStaff(user))
+            return;
+        const buildingId = this.firstString(apartment.buildingId, apartment.houseId);
+        if (!buildingId)
+            return;
+        const buildingSnap = await this.firebaseAdminService.firestore.collection('buildings').doc(buildingId).get();
+        if (!buildingSnap.exists)
+            return;
+        const building = buildingSnap.data();
+        const buildingCompanyId = (typeof building.companyId === 'string' ? building.companyId.trim() : '') ||
+            building.managedBy?.companyId?.trim() ||
+            '';
+        if (user.companyId && buildingCompanyId && user.companyId !== buildingCompanyId) {
+            return;
+        }
+        if (building.editLocked === true) {
+            throw new common_1.ForbiddenException('This building is locked by the platform administrator');
+        }
+    }
     assertAuthenticated(user) {
         if (!user?.uid || !user.role) {
             throw new common_1.UnauthorizedException('Authentication required');
@@ -434,6 +471,47 @@ let ApartmentsService = class ApartmentsService {
         catch (error) {
             console.error('Failed to create tenant invitation notification:', error);
         }
+    }
+    async getPlatformAdminDocs() {
+        const db = this.firebaseAdminService.firestore;
+        const [byRole, byAccountType] = await Promise.all([
+            db.collection('users').where('role', '==', 'PlatformAdmin').get(),
+            db.collection('users').where('accountType', '==', 'PlatformAdmin').get(),
+        ]);
+        const admins = new Map();
+        for (const doc of [...byRole.docs, ...byAccountType.docs]) {
+            admins.set(doc.id, doc);
+        }
+        return Array.from(admins.values());
+    }
+    async emailPlatformAdminsAboutApartmentRequest(params) {
+        const admins = await this.getPlatformAdminDocs();
+        if (admins.length === 0)
+            return;
+        const targetEmails = Array.from(new Set(admins
+            .map((admin) => this.firstString(admin.data().email).toLowerCase())
+            .filter(Boolean)));
+        if (targetEmails.length === 0)
+            return;
+        const roleLabel = params.inviteType === 'owner' ? 'owner' : 'tenant';
+        const apartmentLabel = [params.apartmentNumber, params.buildingName].filter(Boolean).join(', ') || params.apartmentId;
+        const actionLink = `${this.resolveFrontendUrl(params.request)}/apartments/${encodeURIComponent(params.apartmentId)}`;
+        const message = [
+            `A new apartment ${roleLabel} request was created.`,
+            `Apartment: ${apartmentLabel}.`,
+            params.companyName ? `Company: ${params.companyName}.` : '',
+            `Invitee email: ${params.inviteeEmail}.`,
+            params.inviterEmail ? `Created by: ${params.inviterEmail}.` : '',
+        ].filter(Boolean).join('<br />');
+        await Promise.all(targetEmails.map((email) => this.emailService.sendNotification({
+            to: email,
+            title: 'New apartment request',
+            message,
+            actionLabel: 'Open apartment',
+            actionLink,
+            footer: 'This email was sent because an apartment access request exists in Domera.',
+            language: 'en',
+        })));
     }
     buildApartmentNumberCode(apartmentNumber) {
         const normalized = String(apartmentNumber ?? '')
@@ -1013,6 +1091,9 @@ let ApartmentsService = class ApartmentsService {
         if (!importBuildingCompanyId || importBuildingCompanyId !== companyId) {
             throw new common_1.ForbiddenException('Access denied for building/company ownership');
         }
+        if (importBuildingData.editLocked === true) {
+            throw new common_1.ForbiddenException('This building is locked by the platform administrator');
+        }
         const fileSize = file.size ?? file.buffer?.length ?? 0;
         if (!file.buffer || fileSize <= 0) {
             throw new common_1.BadRequestException('File is required');
@@ -1346,8 +1427,7 @@ let ApartmentsService = class ApartmentsService {
         const readingConfigOverride = this.normalizeReadingConfigOverride(payload);
         const readableId = await this.generateApartmentReadableId(companyId, buildingId, number);
         const ref = db.collection('apartments').doc(readableId);
-        const buildingSnap = await db.collection('buildings').doc(buildingId).get();
-        const building = buildingSnap.exists ? buildingSnap.data() : {};
+        const building = await this.getApprovedBuildingOrThrow(buildingId, companyId);
         const waterReadings = this.buildEmptyWaterReadings(readableId, buildingId, building, readingConfigOverride);
         const data = {
             ...payload,
@@ -1387,10 +1467,13 @@ let ApartmentsService = class ApartmentsService {
         if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
+        await this.assertApartmentBuildingEditableForStaff(user, current);
         const readingConfigOverride = this.normalizeReadingConfigOverride(payload);
-        const updatedCompanyId = typeof payload.companyId === 'string' ? payload.companyId : companyId;
+        const updatedCompanyId = typeof payload.companyId === 'string'
+            ? payload.companyId.trim()
+            : companyId ?? user.companyId ?? companyIds[0];
         const updatedBuildingId = typeof payload.buildingId === 'string'
-            ? payload.buildingId
+            ? payload.buildingId.trim()
             : (typeof current.buildingId === 'string' ? current.buildingId : undefined);
         const updatedNumber = typeof payload.number === 'string'
             ? payload.number
@@ -1398,6 +1481,9 @@ let ApartmentsService = class ApartmentsService {
         const shouldRegenerateReadableId = Boolean((payload.companyId && updatedCompanyId !== companyId) ||
             (payload.buildingId && updatedBuildingId !== current.buildingId) ||
             (payload.number && updatedNumber !== current.number));
+        if (updatedCompanyId && updatedBuildingId) {
+            await this.getApprovedBuildingOrThrow(updatedBuildingId, updatedCompanyId);
+        }
         const readableId = shouldRegenerateReadableId && updatedCompanyId && updatedBuildingId && updatedNumber
             ? await this.generateApartmentReadableId(updatedCompanyId, updatedBuildingId, updatedNumber)
             : current.readableId;
@@ -1450,6 +1536,14 @@ let ApartmentsService = class ApartmentsService {
         if (!snap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const data = snap.data();
+        const companyIds = Array.isArray(data.companyIds)
+            ? data.companyIds.filter((x) => typeof x === 'string')
+            : [];
+        const companyId = typeof data.companyId === 'string' ? data.companyId : undefined;
+        if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
+        await this.assertApartmentBuildingEditableForStaff(user, data);
         if (this.hasApartmentOccupant(data)) {
             throw new common_1.BadRequestException('Нельзя удалить квартиру: сначала отвяжите жильцов');
         }
@@ -1476,6 +1570,10 @@ let ApartmentsService = class ApartmentsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
+        if (!this.canManageTenants(user, apartmentId, apartment)) {
+            throw new common_1.ForbiddenException('Insufficient permissions');
+        }
+        await this.assertApartmentBuildingEditableForStaff(user, apartment);
         const userIdsToDetach = new Set();
         const addUserId = (value) => {
             if (typeof value === 'string' && value.trim()) {
@@ -1534,6 +1632,7 @@ let ApartmentsService = class ApartmentsService {
         if (!this.canManageTenants(user, apartmentId, apartment)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
+        await this.assertApartmentBuildingEditableForStaff(user, apartment);
         const firstName = typeof ownerData?.firstName === 'string' ? ownerData.firstName.trim() : '';
         const lastName = typeof ownerData?.lastName === 'string' ? ownerData.lastName.trim() : '';
         const contractNumber = typeof ownerData?.contractNumber === 'string' ? ownerData.contractNumber.trim() : '';
@@ -1596,6 +1695,8 @@ let ApartmentsService = class ApartmentsService {
         try {
             await this.emailService.sendOwnerInvitation({
                 to: email,
+                ownerName: fullName,
+                ownerEmail: email,
                 companyName: ownerInvitationContext.companyName,
                 buildingName: ownerInvitationContext.buildingName,
                 apartmentNumber: ownerInvitationContext.apartmentNumber,
@@ -1606,7 +1707,22 @@ let ApartmentsService = class ApartmentsService {
         catch (error) {
             console.error('Failed to send owner invitation email:', error);
         }
-        this.auditLogService.write({
+        try {
+            await this.emailPlatformAdminsAboutApartmentRequest({
+                request,
+                inviteType: 'owner',
+                inviteeEmail: email,
+                inviterEmail: user.email,
+                apartmentId,
+                apartmentNumber: ownerInvitationContext.apartmentNumber,
+                buildingName: ownerInvitationContext.buildingName,
+                companyName: ownerInvitationContext.companyName,
+            });
+        }
+        catch (error) {
+            console.error('Failed to send apartment request email to platform admins:', error);
+        }
+        void this.auditLogService.write({
             action: 'updateOwner',
             apartmentId,
             actorUid: user.uid,
@@ -1631,6 +1747,7 @@ let ApartmentsService = class ApartmentsService {
         if (!this.canManageTenants(user, apartmentId, apartment)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
+        await this.assertApartmentBuildingEditableForStaff(user, apartment);
         const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId.trim() : '';
         const ownerEmail = typeof apartment.ownerEmail === 'string' ? apartment.ownerEmail.trim().toLowerCase() : '';
         if (!ownerId && !ownerEmail) {
@@ -1658,7 +1775,7 @@ let ApartmentsService = class ApartmentsService {
                 console.error(`Failed to detach apartment from owner ${ownerId}:`, error);
             });
         }
-        this.auditLogService.write({
+        void this.auditLogService.write({
             action: 'removeOwner',
             apartmentId,
             actorUid: user.uid,
@@ -1683,6 +1800,7 @@ let ApartmentsService = class ApartmentsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
+        await this.assertApartmentBuildingEditableForStaff(user, apartment);
         if (!this.canManageTenants(user, apartmentId, apartment)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
@@ -1759,6 +1877,8 @@ let ApartmentsService = class ApartmentsService {
         await apartmentRef.set({ tenants: nextTenants, updatedAt: new Date() }, { merge: true });
         let invitationLink = '';
         let invitationId = '';
+        const invitationContext = await this.resolveOwnerInvitationContext(apartment);
+        const senderName = typeof user.email === 'string' ? user.email : 'Manager';
         try {
             const result = await this.createApartmentInvitation({
                 apartmentId,
@@ -1774,34 +1894,18 @@ let ApartmentsService = class ApartmentsService {
             });
             invitationLink = result.invitationLink;
             invitationId = result.invitationId;
-            const companyName = typeof apartment.managementCompanyName === 'string'
-                ? apartment.managementCompanyName
-                : typeof apartment.companyName === 'string'
-                    ? apartment.companyName
-                    : 'Property Management';
-            const buildingName = typeof apartment.building === 'string'
-                ? apartment.building
-                : typeof apartment.buildingName === 'string'
-                    ? apartment.buildingName
-                    : 'Building';
-            const apartmentNumber = typeof apartment.number === 'string'
-                ? apartment.number
-                : typeof apartment.apartmentNumber === 'string'
-                    ? apartment.apartmentNumber
-                    : 'Apartment';
-            const senderName = typeof user.email === 'string' ? user.email : 'Manager';
             await this.createTenantInvitationNotification({
                 tenantId: authUserId,
                 invitationLink,
-                companyName,
-                buildingName,
-                apartmentNumber,
+                companyName: invitationContext.companyName,
+                buildingName: invitationContext.buildingName,
+                apartmentNumber: invitationContext.apartmentNumber,
             });
             await this.emailService.sendTenantInvitation({
                 to: email,
-                companyName,
-                buildingName,
-                apartmentNumber,
+                companyName: invitationContext.companyName,
+                buildingName: invitationContext.buildingName,
+                apartmentNumber: invitationContext.apartmentNumber,
                 invitationLink,
                 senderName,
                 language: 'lv',
@@ -1809,6 +1913,21 @@ let ApartmentsService = class ApartmentsService {
         }
         catch (error) {
             console.error('Failed to send tenant invitation email:', error);
+        }
+        try {
+            await this.emailPlatformAdminsAboutApartmentRequest({
+                request,
+                inviteType: 'tenant',
+                inviteeEmail: email,
+                inviterEmail: user.email,
+                apartmentId,
+                apartmentNumber: invitationContext.apartmentNumber,
+                buildingName: invitationContext.buildingName,
+                companyName: invitationContext.companyName,
+            });
+        }
+        catch (error) {
+            console.error('Failed to send apartment request email to platform admins:', error);
         }
         return { success: true, invitationLink, invitationId };
     }
@@ -1824,6 +1943,7 @@ let ApartmentsService = class ApartmentsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
+        await this.assertApartmentBuildingEditableForStaff(user, apartment);
         if (!this.canManageTenants(user, apartmentId, apartment)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
@@ -1902,6 +2022,7 @@ let ApartmentsService = class ApartmentsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
+        await this.assertApartmentBuildingEditableForStaff(user, apartment);
         if (!this.canManageTenants(user, apartmentId, apartment)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
@@ -1988,6 +2109,7 @@ let ApartmentsService = class ApartmentsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
+        await this.assertApartmentBuildingEditableForStaff(user, apartment);
         if (!this.canManageTenants(user, apartmentId, apartment)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
@@ -2014,6 +2136,7 @@ let ApartmentsService = class ApartmentsService {
             ownerId = undefined;
         }
         const ownerInvitationContext = await this.resolveOwnerInvitationContext(apartment);
+        const ownerName = this.firstString(apartment.owner, apartment.ownerName, [this.firstString(apartment.ownerFirstName), this.firstString(apartment.ownerLastName)].filter(Boolean).join(' '), ownerEmail);
         await this.createOwnerInvitationNotification({
             ownerId,
             invitationLink,
@@ -2024,6 +2147,8 @@ let ApartmentsService = class ApartmentsService {
         try {
             await this.emailService.sendOwnerInvitation({
                 to: ownerEmail,
+                ownerName,
+                ownerEmail,
                 companyName: ownerInvitationContext.companyName,
                 buildingName: ownerInvitationContext.buildingName,
                 apartmentNumber: ownerInvitationContext.apartmentNumber,
@@ -2034,12 +2159,27 @@ let ApartmentsService = class ApartmentsService {
         catch (error) {
             console.error('Failed to send owner invitation email:', error);
         }
+        try {
+            await this.emailPlatformAdminsAboutApartmentRequest({
+                request,
+                inviteType: 'owner',
+                inviteeEmail: ownerEmail.toLowerCase(),
+                inviterEmail: user.email,
+                apartmentId,
+                apartmentNumber: ownerInvitationContext.apartmentNumber,
+                buildingName: ownerInvitationContext.buildingName,
+                companyName: ownerInvitationContext.companyName,
+            });
+        }
+        catch (error) {
+            console.error('Failed to send apartment request email to platform admins:', error);
+        }
         await apartmentRef.set({
             ownerInvitedAt: new Date(),
             ownerInvitationId: invitationId,
             updatedAt: new Date(),
         }, { merge: true });
-        this.auditLogService.write({
+        void this.auditLogService.write({
             action: 'resendOwnerInvitation',
             apartmentId,
             actorUid: user.uid,
@@ -2062,6 +2202,7 @@ let ApartmentsService = class ApartmentsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
+        await this.assertApartmentBuildingEditableForStaff(user, apartment);
         if (!this.canManageTenants(user, apartmentId, apartment)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
@@ -2072,8 +2213,10 @@ let ApartmentsService = class ApartmentsService {
         if (!tenant) {
             throw new common_1.NotFoundException('Tenant not found in this apartment');
         }
+        const invitationContext = await this.resolveOwnerInvitationContext(apartment);
+        const senderName = typeof user.email === 'string' ? user.email : 'Manager';
         try {
-            const { invitationLink, invitationId } = await this.createApartmentInvitation({
+            const { invitationLink } = await this.createApartmentInvitation({
                 apartmentId,
                 apartment,
                 email: tenantEmail,
@@ -2085,19 +2228,11 @@ let ApartmentsService = class ApartmentsService {
                 firstName: typeof tenant.firstName === 'string' ? tenant.firstName : undefined,
                 lastName: typeof tenant.lastName === 'string' ? tenant.lastName : undefined,
             });
-            const companyName = typeof apartment.managementCompanyName === 'string'
-                ? apartment.managementCompanyName
-                : typeof apartment.companyName === 'string'
-                    ? apartment.companyName
-                    : 'Property Management';
-            const buildingName = typeof apartment.buildingName === 'string' ? apartment.buildingName : 'Building';
-            const apartmentNumber = typeof apartment.number === 'string' ? apartment.number : typeof apartment.apartmentNumber === 'string' ? apartment.apartmentNumber : 'Apartment';
-            const senderName = typeof user.email === 'string' ? user.email : 'Manager';
             await this.emailService.sendTenantInvitation({
                 to: tenantEmail,
-                companyName,
-                buildingName,
-                apartmentNumber,
+                companyName: invitationContext.companyName,
+                buildingName: invitationContext.buildingName,
+                apartmentNumber: invitationContext.apartmentNumber,
                 invitationLink,
                 senderName,
                 language: 'lv',
@@ -2106,11 +2241,26 @@ let ApartmentsService = class ApartmentsService {
         catch (error) {
             console.error('Failed to send tenant invitation email:', error);
         }
+        try {
+            await this.emailPlatformAdminsAboutApartmentRequest({
+                request,
+                inviteType: 'tenant',
+                inviteeEmail: tenantEmail.toLowerCase(),
+                inviterEmail: user.email,
+                apartmentId,
+                apartmentNumber: invitationContext.apartmentNumber,
+                buildingName: invitationContext.buildingName,
+                companyName: invitationContext.companyName,
+            });
+        }
+        catch (error) {
+            console.error('Failed to send apartment request email to platform admins:', error);
+        }
         const updatedTenants = tenants.map((t) => typeof t.email === 'string' && t.email.toLowerCase() === tenantEmail.toLowerCase()
             ? { ...t, invitedAt: new Date() }
             : t);
         await apartmentRef.set({ tenants: updatedTenants, updatedAt: new Date() }, { merge: true });
-        this.auditLogService.write({
+        void this.auditLogService.write({
             action: 'resendTenantInvitation',
             apartmentId,
             actorUid: user.uid,

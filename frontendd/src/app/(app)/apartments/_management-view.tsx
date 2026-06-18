@@ -49,6 +49,11 @@ function compareApartmentOrder(a: Record<string, unknown>, b: Record<string, unk
 
 type ApartmentOccupancyStatus = "occupied" | "pending" | "vacant";
 
+function isApprovedBuilding(building: { status?: string }) {
+  const status = String(building.status ?? "").trim().toLowerCase();
+  return status !== "pending" && status !== "rejected" && status !== "cancelled" && status !== "canceled";
+}
+
 function getApartmentOccupancyStatus(apartment: Record<string, unknown>): ApartmentOccupancyStatus {
   const tenants = Array.isArray(apartment.tenants) ? apartment.tenants.length : 0;
   const ownerActivated = apartment.ownerActivated === true || apartment.ownerActivated === "true";
@@ -83,30 +88,35 @@ export function ApartmentsManagementView({
 }) {
   const t = useTranslations("apartments");
   const [selectedBuildingId, setSelectedBuildingId] = useState<string | undefined>(undefined);
-  const hasBuildings = data.buildings.length > 0;
+  const approvedBuildings = useMemo(() => data.buildings.filter(isApprovedBuilding), [data.buildings]);
+  const hasBuildings = approvedBuildings.length > 0;
+  const lockedBuildingIds = useMemo(
+    () => new Set(approvedBuildings.filter((building) => building.editLocked === true).map((building) => building.id)),
+    [approvedBuildings],
+  );
 
   const residentById = useMemo(
     () => new Map(data.residents.map((resident) => [resident.id, resident])),
     [data.residents],
   );
   const buildingOptions: RegistryBuildingOption[] = useMemo(
-    () => [...data.buildings]
+    () => [...approvedBuildings]
       .map((building) => ({
         id: building.id,
         label: building.address !== "—" ? building.address : building.name,
       }))
       .sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: "base", numeric: true })),
-    [data.buildings],
+    [approvedBuildings],
   );
   const menuBuildingOptions: ManagementActionBuildingOption[] = useMemo(
-    () => [...data.buildings]
+    () => [...approvedBuildings]
       .map((building) => ({
         id: building.id,
         label: building.address !== "—" ? building.address : building.name,
         readingConfig: building.readingConfig,
       }))
       .sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: "base", numeric: true })),
-    [data.buildings],
+    [approvedBuildings],
   );
   const normalizedBuildingId = typeof selectedBuildingId === "string" && selectedBuildingId.trim()
     ? selectedBuildingId.trim()
@@ -115,6 +125,7 @@ export function ApartmentsManagementView({
     () => buildingOptions.find((building) => building.id === normalizedBuildingId)?.label,
     [buildingOptions, normalizedBuildingId],
   );
+  const selectedBuildingLocked = Boolean(normalizedBuildingId && lockedBuildingIds.has(normalizedBuildingId));
   const residentOptions: ApartmentResidentOption[] = useMemo(
     () => Array.from(
       new Map(
@@ -167,8 +178,9 @@ export function ApartmentsManagementView({
       residentId,
       isOccupied: occupancyStatus === "occupied",
       isVacant: occupancyStatus === "vacant",
+      isLocked: hasReadableText(item.buildingId) && lockedBuildingIds.has(String(item.buildingId).trim()),
     };
-  }), [filteredApartments, residentById, t]);
+  }), [filteredApartments, lockedBuildingIds, residentById, t]);
 
   const rows = useMemo(() => [...filteredApartments].sort((a, b) => compareApartmentOrder(a, b)).map((item) => {
     const id = String(item.id ?? item.apartmentId ?? item.number ?? "—");
@@ -189,6 +201,7 @@ export function ApartmentsManagementView({
         ? String(item.ownerEmail)
         : resolvedOwnerFromResident?.fullName || "";
     const owner = rawOwner && !looksLikeOpaqueId(rawOwner) ? rawOwner : t("common.notSpecified");
+    const buildingLocked = hasReadableText(item.buildingId) && lockedBuildingIds.has(String(item.buildingId).trim());
 
     return [
       id !== "—" ? (
@@ -223,20 +236,26 @@ export function ApartmentsManagementView({
           currentResidentName={residentName}
           isOccupied={occupancyStatus === "occupied"}
           residentOptions={residentOptions}
+          readOnly={buildingLocked}
         />
       ) : (
         <span key={`${id}-empty`} className="text-xs text-slate-400">—</span>
       ),
     ];
-  }), [filteredApartments, residentById, residentOptions, t]);
+  }), [filteredApartments, lockedBuildingIds, residentById, residentOptions, t]);
 
   return (
     <div className="space-y-6">
       <SectionCard
         title={t("management.registryTitle")}
         titleMeta={selectedBuildingLabel ? (
-          <span className="inline-flex max-w-full items-center rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700">
+          <span className={`inline-flex max-w-full items-center rounded-full border px-3 py-1 text-sm font-medium ${
+            selectedBuildingLocked
+              ? "border-rose-200 bg-rose-50 text-rose-700"
+              : "border-blue-100 bg-blue-50 text-blue-700"
+          }`}>
             <span className="truncate">{selectedBuildingLabel}</span>
+            {selectedBuildingLocked ? <span className="ml-2 shrink-0 text-xs font-semibold">Locked</span> : null}
           </span>
         ) : null}
         description={t("management.registryDescription")}
@@ -257,6 +276,7 @@ export function ApartmentsManagementView({
             selectedBuildingId={normalizedBuildingId}
             apartments={managementMenuApartments}
             apartmentRecords={filteredApartments}
+            lockedBuildingIds={lockedBuildingIds}
           />
         }
       >

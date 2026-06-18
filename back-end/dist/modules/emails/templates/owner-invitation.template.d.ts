@@ -1,6 +1,8 @@
 import { EmailTemplate, EmailLanguage } from '../email.types';
 export interface OwnerInvitationParams {
     companyName: string;
+    ownerName?: string;
+    ownerEmail?: string;
     invitationLink: string;
     buildingName?: string;
     apartmentNumber?: string;

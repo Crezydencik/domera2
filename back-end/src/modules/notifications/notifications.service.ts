@@ -47,7 +47,15 @@ export class NotificationsService {
     return 0;
   }
 
-  private async findNotificationDocument(notificationId: string): Promise<FirebaseFirestore.DocumentSnapshot | null> {
+  private async findNotificationDocument(
+    notificationId: string,
+    fallbackUserId?: string,
+  ): Promise<FirebaseFirestore.DocumentSnapshot | null> {
+    if (fallbackUserId) {
+      const directNestedSnap = await this.userNotificationsCollection(fallbackUserId).doc(notificationId).get();
+      if (directNestedSnap.exists) return directNestedSnap;
+    }
+
     const nestedSnap = await this.firebaseAdminService.firestore
       .collectionGroup('notifications')
       .where('notificationId', '==', notificationId)
@@ -57,6 +65,15 @@ export class NotificationsService {
 
     const legacySnap = await this.firebaseAdminService.firestore.collection('notifications').doc(notificationId).get();
     return legacySnap.exists ? legacySnap : null;
+  }
+
+  private notificationOwnerId(snap: FirebaseFirestore.DocumentSnapshot, currentUser: RequestUser) {
+    const data = snap.data() as Record<string, unknown>;
+    const ownerFromData = typeof data.userId === 'string' ? data.userId : '';
+    if (ownerFromData) return ownerFromData;
+
+    const ownNotificationPath = `users/${currentUser.uid}/notifications/`;
+    return snap.ref.path.startsWith(ownNotificationPath) ? currentUser.uid : '';
   }
 
   private assertAuth(user: RequestUser | undefined): asserts user is RequestUser {
@@ -168,8 +185,8 @@ export class NotificationsService {
     [...nestedSnap.docs, ...legacySnap.docs].forEach((doc) => {
       const data = doc.data() as Record<string, unknown>;
       itemsById.set(doc.id, {
-        id: doc.id,
         ...data,
+        id: doc.id,
       });
     });
 
@@ -220,11 +237,10 @@ export class NotificationsService {
 
     await this.enforceRateLimit(request, 'notifications:read', `${user.uid}:${notificationId}`, 80);
 
-    const snap = await this.findNotificationDocument(notificationId);
+    const snap = await this.findNotificationDocument(notificationId, user.uid);
     if (!snap?.exists) throw new NotFoundException('Notification not found');
 
-    const data = snap.data() as Record<string, unknown>;
-    const targetUserId = typeof data.userId === 'string' ? data.userId : '';
+    const targetUserId = this.notificationOwnerId(snap, user);
     if (!targetUserId) throw new ForbiddenException('Invalid notification owner');
 
     this.ensureUserAccess(user, targetUserId);
@@ -268,11 +284,10 @@ export class NotificationsService {
 
     await this.enforceRateLimit(request, 'notifications:delete', `${user.uid}:${notificationId}`, 40);
 
-    const snap = await this.findNotificationDocument(notificationId);
+    const snap = await this.findNotificationDocument(notificationId, user.uid);
     if (!snap?.exists) throw new NotFoundException('Notification not found');
 
-    const data = snap.data() as Record<string, unknown>;
-    const targetUserId = typeof data.userId === 'string' ? data.userId : '';
+    const targetUserId = this.notificationOwnerId(snap, user);
     if (!targetUserId) throw new ForbiddenException('Invalid notification owner');
 
     this.ensureUserAccess(user, targetUserId);

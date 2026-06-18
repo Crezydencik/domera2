@@ -5,6 +5,7 @@ export type DocumentScope =
   | "apartmentResidents"
   | "apartmentPrivate"
   | "privateApartment"
+  | "platformPrivate"
   | "managementArchive";
 
 export type DocumentRecord = {

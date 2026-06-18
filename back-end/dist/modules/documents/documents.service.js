@@ -20,6 +20,7 @@ const DOCUMENT_SCOPES = new Set([
     'apartmentResidents',
     'apartmentPrivate',
     'privateApartment',
+    'platformPrivate',
     'managementArchive',
 ]);
 const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
@@ -117,6 +118,48 @@ let DocumentsService = DocumentsService_1 = class DocumentsService {
     }
     omitUndefined(input) {
         return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
+    }
+    isApartmentScopedDocument(scope) {
+        return ['apartmentResidents', 'apartmentPrivate', 'privateApartment'].includes(this.firstString(scope));
+    }
+    documentMetadataRef(record) {
+        const db = this.firebaseAdminService.firestore;
+        const scope = this.firstString(record.scope);
+        const apartmentId = this.firstString(record.apartmentId);
+        const companyId = this.firstString(record.companyId);
+        const ownerUserId = this.firstString(record.ownerUserId);
+        const documentId = this.firstString(record.id);
+        if (!documentId) {
+            throw new common_1.BadRequestException('documentId is required');
+        }
+        if (this.isApartmentScopedDocument(scope) && apartmentId) {
+            return db.collection('apartments').doc(apartmentId).collection('documents').doc(documentId);
+        }
+        if (companyId) {
+            return db.collection('companies').doc(companyId).collection('documents').doc(documentId);
+        }
+        if (ownerUserId) {
+            return db.collection('users').doc(ownerUserId).collection('documents').doc(documentId);
+        }
+        return db.collection('documents').doc(documentId);
+    }
+    async findDocument(documentId) {
+        const normalizedDocumentId = this.firstString(documentId);
+        if (!normalizedDocumentId)
+            return null;
+        const db = this.firebaseAdminService.firestore;
+        const snap = await db
+            .collectionGroup('documents')
+            .where('id', '==', normalizedDocumentId)
+            .limit(10)
+            .get();
+        if (!snap.empty) {
+            const doc = snap.docs[0];
+            return { ref: doc.ref, snap: doc };
+        }
+        const legacyRef = db.collection('documents').doc(normalizedDocumentId);
+        const legacySnap = await legacyRef.get();
+        return legacySnap.exists ? { ref: legacyRef, snap: legacySnap } : null;
     }
     validateFile(file) {
         const size = file.size ?? file.buffer?.length ?? 0;
@@ -237,6 +280,10 @@ let DocumentsService = DocumentsService_1 = class DocumentsService {
         const scope = this.firstString(document.scope);
         if (this.firstString(document.ownerUserId) === user.uid)
             return true;
+        if (scope === 'platformPrivate')
+            return false;
+        if ((0, role_constants_1.isPlatformAdminRole)(user.role))
+            return true;
         if (scope === 'privateApartment') {
             return this.firstString(document.ownerUserId) === user.uid;
         }
@@ -286,14 +333,25 @@ let DocumentsService = DocumentsService_1 = class DocumentsService {
     }
     async list(user, filters) {
         this.assertAuthenticated(user);
-        const snap = await this.firebaseAdminService.firestore
-            .collection('documents')
-            .orderBy('createdAt', 'desc')
-            .limit(200)
-            .get();
+        const db = this.firebaseAdminService.firestore;
+        const [snap, legacySnap] = await Promise.all([
+            db.collectionGroup('documents')
+                .orderBy('createdAt', 'desc')
+                .limit(200)
+                .get(),
+            db.collection('documents')
+                .orderBy('createdAt', 'desc')
+                .limit(200)
+                .get(),
+        ]);
         const items = [];
+        const seenDocumentPaths = new Set();
         const apartmentIdFilter = this.firstString(filters?.apartmentId);
-        for (const doc of snap.docs) {
+        for (const doc of [...snap.docs, ...legacySnap.docs]) {
+            if (seenDocumentPaths.has(doc.ref.path)) {
+                continue;
+            }
+            seenDocumentPaths.add(doc.ref.path);
             const data = doc.data();
             if (apartmentIdFilter && this.firstString(data.apartmentId) !== apartmentIdFilter) {
                 continue;
@@ -318,8 +376,22 @@ let DocumentsService = DocumentsService_1 = class DocumentsService {
         let buildingName = '';
         let apartmentId = '';
         let apartmentLabel = '';
+        if (scope === 'platformPrivate') {
+            if (!(0, role_constants_1.isPlatformAdminRole)(user.role)) {
+                throw new common_1.ForbiddenException('Only platform administrators can create private platform documents');
+            }
+            companyId = '';
+        }
         if (scope === 'managementArchive') {
-            if ((0, role_constants_1.isStaffRole)(user.role)) {
+            if ((0, role_constants_1.isPlatformAdminRole)(user.role)) {
+                buildingId = this.firstString(body.buildingId);
+                if (!buildingId)
+                    throw new common_1.BadRequestException('buildingId is required');
+                const building = await this.getBuilding(buildingId);
+                companyId = this.resolveCompanyId(building, companyId);
+                buildingName = this.firstString(building.name, building.address, buildingId);
+            }
+            else if ((0, role_constants_1.isStaffRole)(user.role)) {
                 if (!companyId)
                     throw new common_1.BadRequestException('companyId is required');
             }
@@ -369,9 +441,11 @@ let DocumentsService = DocumentsService_1 = class DocumentsService {
             companyId = apartmentCompanyId;
             apartmentLabel = this.firstString(apartment.number, apartment.apartmentNumber, apartmentId);
         }
+        const storagePathBase = companyId
+            ? ['companies', this.sanitizePathSegment(companyId), 'documents']
+            : ['users', this.sanitizePathSegment(user.uid), 'documents'];
         const storagePath = [
-            'documents',
-            this.sanitizePathSegment(companyId || 'personal'),
+            ...storagePathBase,
             this.sanitizePathSegment(scope),
             documentId,
             this.sanitizePathSegment(fileName),
@@ -412,7 +486,7 @@ let DocumentsService = DocumentsService_1 = class DocumentsService {
         };
         const firestoreRecord = this.omitUndefined(record);
         try {
-            await this.firebaseAdminService.firestore.collection('documents').doc(documentId).set(firestoreRecord);
+            await this.documentMetadataRef(firestoreRecord).set(firestoreRecord);
         }
         catch (error) {
             await bucket.file(storagePath).delete({ ignoreNotFound: true }).catch(() => null);
@@ -424,26 +498,34 @@ let DocumentsService = DocumentsService_1 = class DocumentsService {
     }
     async updateAccess(user, documentId, body) {
         this.assertAuthenticated(user);
-        const ref = this.firebaseAdminService.firestore.collection('documents').doc(documentId);
-        const snap = await ref.get();
-        if (!snap.exists)
+        const foundDocument = await this.findDocument(documentId);
+        if (!foundDocument)
             throw new common_1.NotFoundException('Document not found');
+        const { ref, snap } = foundDocument;
         const current = snap.data();
         const currentScope = this.firstString(current.scope);
         const ownsDocument = this.firstString(current.ownerUserId) === user.uid;
+        const canPlatformAdminManage = currentScope !== 'privateApartment' &&
+            currentScope !== 'apartmentPrivate' &&
+            currentScope !== 'platformPrivate' &&
+            (0, role_constants_1.isPlatformAdminRole)(user.role);
         const canStaffManage = currentScope !== 'privateApartment' &&
             currentScope !== 'apartmentPrivate' &&
+            currentScope !== 'platformPrivate' &&
             (0, role_constants_1.isStaffRole)(user.role) &&
             (!user.companyId || this.firstString(current.companyId) === user.companyId);
-        if (!ownsDocument && !canStaffManage) {
+        if (!ownsDocument && !canPlatformAdminManage && !canStaffManage) {
             throw new common_1.ForbiddenException('Access denied for document');
         }
         const nextScope = this.normalizeScope(body.scope);
-        if (nextScope === 'buildingResidents' && !(0, role_constants_1.isStaffRole)(user.role)) {
+        if (nextScope === 'buildingResidents' && !(0, role_constants_1.isStaffRole)(user.role) && !(0, role_constants_1.isPlatformAdminRole)(user.role)) {
             throw new common_1.ForbiddenException('Only management company can publish documents to all building residents');
         }
-        if ((nextScope === 'apartmentPrivate' || nextScope === 'privateApartment') && (0, role_constants_1.isStaffRole)(user.role)) {
+        if ((nextScope === 'apartmentPrivate' || nextScope === 'privateApartment') && ((0, role_constants_1.isStaffRole)(user.role) || (0, role_constants_1.isPlatformAdminRole)(user.role))) {
             throw new common_1.ForbiddenException('Management company cannot create private apartment documents');
+        }
+        if (nextScope === 'platformPrivate' && !(0, role_constants_1.isPlatformAdminRole)(user.role)) {
+            throw new common_1.ForbiddenException('Only platform administrators can create private platform documents');
         }
         let companyId = this.firstString(current.companyId, user.companyId);
         let buildingId = '';
@@ -468,7 +550,15 @@ let DocumentsService = DocumentsService_1 = class DocumentsService {
             }
         }
         if (nextScope === 'managementArchive') {
-            if ((0, role_constants_1.isStaffRole)(user.role)) {
+            if ((0, role_constants_1.isPlatformAdminRole)(user.role)) {
+                buildingId = this.firstString(body.buildingId, current.buildingId);
+                if (!buildingId)
+                    throw new common_1.BadRequestException('buildingId is required');
+                const building = await this.getBuilding(buildingId);
+                companyId = this.resolveCompanyId(building, companyId);
+                buildingName = this.firstString(building.name, building.address, buildingId);
+            }
+            else if ((0, role_constants_1.isStaffRole)(user.role)) {
                 if (!companyId && user.companyId)
                     companyId = user.companyId;
             }
@@ -525,16 +615,28 @@ let DocumentsService = DocumentsService_1 = class DocumentsService {
             nextRecord.buildingId = buildingId || undefined;
             nextRecord.buildingName = buildingName || undefined;
         }
+        if (nextScope === 'platformPrivate') {
+            delete nextRecord.companyId;
+        }
         const cleanRecord = this.omitUndefined(nextRecord);
-        await ref.set(cleanRecord);
+        const nextRef = this.documentMetadataRef(cleanRecord);
+        if (nextRef.path === ref.path) {
+            await ref.set(cleanRecord);
+        }
+        else {
+            const batch = this.firebaseAdminService.firestore.batch();
+            batch.set(nextRef, cleanRecord);
+            batch.delete(ref);
+            await batch.commit();
+        }
         return { item: this.serializeDocument(documentId, cleanRecord) };
     }
     async download(user, documentId) {
         this.assertAuthenticated(user);
-        const snap = await this.firebaseAdminService.firestore.collection('documents').doc(documentId).get();
-        if (!snap.exists)
+        const foundDocument = await this.findDocument(documentId);
+        if (!foundDocument)
             throw new common_1.NotFoundException('Document not found');
-        const data = snap.data();
+        const data = foundDocument.snap.data();
         if (!(await this.canAccessDocument(user, data))) {
             throw new common_1.ForbiddenException('Access denied for document');
         }
@@ -554,18 +656,23 @@ let DocumentsService = DocumentsService_1 = class DocumentsService {
     }
     async remove(user, documentId) {
         this.assertAuthenticated(user);
-        const ref = this.firebaseAdminService.firestore.collection('documents').doc(documentId);
-        const snap = await ref.get();
-        if (!snap.exists)
+        const foundDocument = await this.findDocument(documentId);
+        if (!foundDocument)
             throw new common_1.NotFoundException('Document not found');
+        const { ref, snap } = foundDocument;
         const data = snap.data();
         const scope = this.firstString(data.scope);
         const ownsDocument = this.firstString(data.ownerUserId) === user.uid;
+        const canPlatformAdminManage = scope !== 'privateApartment' &&
+            scope !== 'apartmentPrivate' &&
+            scope !== 'platformPrivate' &&
+            (0, role_constants_1.isPlatformAdminRole)(user.role);
         const canManage = scope !== 'privateApartment' &&
             scope !== 'apartmentPrivate' &&
+            scope !== 'platformPrivate' &&
             (0, role_constants_1.isStaffRole)(user.role) &&
             (!user.companyId || this.firstString(data.companyId) === user.companyId);
-        if (!ownsDocument && !canManage)
+        if (!ownsDocument && !canPlatformAdminManage && !canManage)
             throw new common_1.ForbiddenException('Access denied for document');
         const storagePath = this.firstString(data.storagePath);
         const storageBucket = this.firstString(data.storageBucket);

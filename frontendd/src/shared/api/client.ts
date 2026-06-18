@@ -42,17 +42,22 @@ export class DomeraApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+type ApiFetchInit = RequestInit & {
+  redirectOnAuthError?: boolean;
+};
+
+export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
   const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const url = `${appConfig.apiBaseUrl}${path}`;
+  const { redirectOnAuthError = true, ...fetchInit } = init ?? {};
 
   let response: Response;
   try {
     response = await fetch(url, {
-      ...init,
+      ...fetchInit,
       headers: {
         ...(isFormData ? {} : { "Content-Type": "application/json" }),
-        ...(init?.headers ?? {}),
+        ...(fetchInit.headers ?? {}),
       },
       credentials: "include",
       cache: "no-store",
@@ -74,7 +79,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       ? errorPayload.message.join(", ")
       : errorPayload.message || errorPayload.error || `Request failed for ${path}`;
 
-    if ((response.status === 401 || response.status === 403) && !isPublicAuthPath(path)) {
+    if (redirectOnAuthError && (response.status === 401 || response.status === 403) && !isPublicAuthPath(path)) {
       redirectToLogin();
     }
 

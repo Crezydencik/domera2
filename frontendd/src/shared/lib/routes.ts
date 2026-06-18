@@ -19,6 +19,9 @@ export const ROUTES = {
   // ── App (requires authentication) ───────────────────────
   dashboard: "/dashboard",
   platformUsers: "/platform-users",
+  approvals: "/approvals",
+  adminBuildings: "/admin-buildings",
+  platformBilling: "/platform-billing",
   buildings: "/buildings",
   apartments: "/apartments",
   residents: "/residents",

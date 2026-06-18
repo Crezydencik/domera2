@@ -449,25 +449,36 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+            <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
               <input
+                id="legal-consent"
                 type="checkbox"
                 checked={hasAcceptedLegal}
                 onChange={(event) => setHasAcceptedLegal(event.target.checked)}
                 className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
               />
               <span>
-                {t("registerLegalConsentPrefix")}{" "}
-                <Link href={ROUTES.privacyPolicy} target="_blank" className="font-medium text-blue-600 hover:underline">
+                <label htmlFor="legal-consent">{t("registerLegalConsentPrefix")}</label>{" "}
+                <a
+                  href={ROUTES.privacyPolicy}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-blue-600 hover:underline"
+                >
                   {t("privacyPolicyTitle")}
-                </Link>{" "}
+                </a>{" "}
                 {t("registerLegalConsentAnd")}{" "}
-                <Link href={ROUTES.termsOfUse} target="_blank" className="font-medium text-blue-600 hover:underline">
+                <a
+                  href={ROUTES.termsOfUse}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-blue-600 hover:underline"
+                >
                   {t("termsOfUseTitle")}
-                </Link>
+                </a>
                 .
               </span>
-            </label>
+            </div>
 
             {!hasAcceptedLegal && (
               <p className="text-xs text-slate-500">{t("registerLegalConsentHint")}</p>

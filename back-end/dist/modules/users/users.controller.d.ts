@@ -22,10 +22,12 @@ export declare class UsersController {
         id: string;
     }>;
     setBuildingCreationAccess(request: Request, user: RequestUser, userId: string, body: Record<string, unknown>): Promise<{
-        success: boolean;
         userId: string;
-        companyId: string | undefined;
-        canCreateBuildings: boolean;
+        success: boolean;
+        status: string;
+        requestId: string;
+        buildingId: string;
+        billingInvoiceId: string | undefined;
     }>;
     byId(request: Request, user: RequestUser, userId: string): Promise<{
         id: string;

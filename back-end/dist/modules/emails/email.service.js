@@ -8,15 +8,17 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var EmailService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const resend_1 = require("resend");
 const templates = require("./templates");
-let EmailService = class EmailService {
+let EmailService = EmailService_1 = class EmailService {
     constructor(configService) {
         this.configService = configService;
+        this.logger = new common_1.Logger(EmailService_1.name);
         this.apiKey = this.configService.get('RESEND_API_KEY') || '';
         this.from = this.configService.get('RESEND_FROM') || '';
         if (this.apiKey && this.from) {
@@ -39,6 +41,7 @@ let EmailService = class EmailService {
                     contentType: attachment.contentType,
                 })),
             });
+            console.log('RESEND RESPONSE', response);
             if (response.error) {
                 throw new Error(`Resend error: ${response.error.message}`);
             }
@@ -71,10 +74,13 @@ let EmailService = class EmailService {
         const language = this.normalizeLanguage(dto.language);
         const template = templates.ownerInvitationTemplates[language]({
             companyName: dto.companyName,
+            ownerName: dto.ownerName,
+            ownerEmail: dto.ownerEmail || dto.to,
             invitationLink: dto.invitationLink,
             buildingName: dto.buildingName,
             apartmentNumber: dto.apartmentNumber,
         });
+        this.logger.log(`Sending owner invitation to ${dto.to}`);
         return this.send({
             to: dto.to,
             subject: template.subject,
@@ -170,7 +176,7 @@ let EmailService = class EmailService {
     }
 };
 exports.EmailService = EmailService;
-exports.EmailService = EmailService = __decorate([
+exports.EmailService = EmailService = EmailService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [config_1.ConfigService])
 ], EmailService);

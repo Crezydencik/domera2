@@ -18,12 +18,14 @@ import {
 } from '../../common/auth/role.constants';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
+import { BuildingsService } from '../buildings/buildings.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly firebaseAdminService: FirebaseAdminService,
     private readonly rateLimitService: RateLimitService,
+    private readonly buildingsService: BuildingsService,
   ) {}
 
   private assertAuth(user: RequestUser | undefined): asserts user is RequestUser {
@@ -458,9 +460,59 @@ export class UsersService {
 
     await this.enforceRateLimit(request, 'users:list-all', user.uid, 30);
 
-    const snap = await this.firebaseAdminService.firestore.collection('users').limit(500).get();
+    const db = this.firebaseAdminService.firestore;
+    const [snap, pendingBuildingsSnap] = await Promise.all([
+      db.collection('users').limit(500).get(),
+      db.collection('buildings').where('status', '==', 'Pending').limit(200).get(),
+    ]);
+
+    const requestsByUser = new Map<string, Record<string, unknown>[]>();
+    for (const doc of pendingBuildingsSnap.docs) {
+      const data = doc.data() as Record<string, unknown>;
+      const requestedBy = this.toOptionalString(data.requestedBy);
+      if (!requestedBy) continue;
+
+      const current = requestsByUser.get(requestedBy) ?? [];
+      current.push({
+        id: doc.id,
+        requestId: doc.id,
+        buildingId: doc.id,
+        buildingName: this.toOptionalString(data.buildingName) ?? this.toOptionalString(data.name),
+        buildingAddress: this.toOptionalString(data.buildingAddress) ?? this.toOptionalString(data.address),
+        companyId: this.toOptionalString(data.companyId),
+        companyName: this.toOptionalString(data.companyName),
+        comment: this.toOptionalString(data.comment),
+        apartmentsCount: data.apartmentsCount,
+        apartments: data.apartments,
+        subscriptionTermYears: data.subscriptionTermYears,
+        subscriptionTermMonths: data.subscriptionTermMonths,
+        requestedAt: data.requestedAt,
+        status: 'pending',
+        building: data,
+      });
+      requestsByUser.set(requestedBy, current);
+    }
+
     return {
-      items: snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) })),
+      items: snap.docs.map((doc) => {
+        const data = doc.data() as Record<string, unknown>;
+        const buildingCreationRequests = requestsByUser.get(doc.id) ?? [];
+        const latestRequest = buildingCreationRequests[0];
+
+        return {
+          id: doc.id,
+          ...data,
+          buildingCreationRequests,
+          ...(latestRequest
+            ? {
+                buildingCreationRequestStatus: 'pending',
+                buildingCreationRequestId: this.toOptionalString(latestRequest.requestId),
+                buildingCreationRequestBuildingName: this.toOptionalString(latestRequest.buildingName),
+                buildingCreationRequestBuildingAddress: this.toOptionalString(latestRequest.buildingAddress),
+              }
+            : {}),
+        };
+      }),
     };
   }
 
@@ -489,28 +541,41 @@ export class UsersService {
       throw new BadRequestException('Building creation access can be granted only to management company users');
     }
 
-    const canCreateBuildings = payload.canCreateBuildings === true;
-    const companyId =
-      this.toOptionalString(payload.companyId) ??
-      this.toOptionalString(target.companyId) ??
-      (targetAccountType === 'ManagementCompany' ? userId : undefined);
+    const approved = payload.canCreateBuildings === true || payload.approved === true;
+    const explicitRequestId = this.toOptionalString(payload.requestId);
+    let requestId = explicitRequestId ?? this.toOptionalString(target.buildingCreationRequestId);
 
-    const updatedAt = new Date();
-    await ref.set({ canCreateBuildings, buildingCreationAccessUpdatedAt: updatedAt, updatedAt }, { merge: true });
+    if (!requestId) {
+      const companyId =
+        this.toOptionalString(payload.companyId) ??
+        this.toOptionalString(target.companyId) ??
+        (targetAccountType === 'ManagementCompany' ? userId : undefined);
 
-    if (companyId) {
-      await this.firebaseAdminService.firestore.collection('companies').doc(companyId).set(
-        {
-          canCreateBuildings,
-          buildingCreationAccessUpdatedAt: updatedAt,
-          buildingCreationAccessUpdatedBy: user.uid,
-          updatedAt,
-        },
-        { merge: true },
-      );
+      if (companyId) {
+        const pendingBuildingsSnap = await this.firebaseAdminService.firestore
+          .collection('buildings')
+          .where('status', '==', 'Pending')
+          .limit(200)
+          .get();
+        requestId = pendingBuildingsSnap.docs.find((doc) => {
+          const data = doc.data() as Record<string, unknown>;
+          return this.toOptionalString(data.companyId) === companyId;
+        })?.id;
+      }
     }
 
-    return { success: true, userId, companyId, canCreateBuildings };
+    if (!requestId) {
+      throw new BadRequestException('Pending building creation request not found');
+    }
+
+    const result = await this.buildingsService.reviewCreationRequest(request, user, requestId, approved, {
+      subscriptionPricePerApartment: payload.subscriptionPricePerApartment,
+      reviewComment:
+        this.toOptionalString(payload.reviewComment) ??
+        this.toOptionalString(payload.rejectionComment) ??
+        this.toOptionalString(payload.comment),
+    });
+    return { ...result, userId };
   }
 
   async upsert(

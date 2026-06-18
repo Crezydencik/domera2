@@ -27,12 +27,13 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const result = await signInWithEmailPassword(email, password);
+      const result = await signInWithEmailPassword(email, password, rememberMe);
 
       await establishUserSession({
         idToken: result.idToken,
         userId: result.userId,
         email: result.email,
+        role: result.role,
         accountType: result.accountType,
         rememberMe,
       });

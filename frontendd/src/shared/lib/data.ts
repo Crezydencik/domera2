@@ -17,13 +17,22 @@ export interface Building {
   id: string;
   name: string;
   address: string;
+  comment?: string;
   apartments: number;
   occupancy: string;
   status: string;
+  reviewComment?: string;
+  rejectionComment?: string;
+  rejectedReason?: string;
+  buildingCreationAccessReviewComment?: string;
+  reviewedAt?: unknown;
   readingConfig?: BuildingReadingConfig;
+  subscriptionTermYears?: number;
+  subscriptionTermMonths?: number;
   companyId?: string;
   companyName?: string;
   managedBy?: Record<string, unknown>;
+  editLocked?: boolean;
 }
 
 export interface Resident {
@@ -100,6 +109,9 @@ export interface NotificationItem {
   type?: string;
   apartmentNumber?: string;
   buildingName?: string;
+  buildingAddress?: string;
+  companyName?: string;
+  requesterEmail?: string;
 }
 
 export interface DashboardStat {

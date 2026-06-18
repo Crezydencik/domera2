@@ -13,6 +13,7 @@ export type BrowserAuthSession = {
 
 const authCookieNames = [
   "__session",
+  "domera_session",
   "domera_role",
   "domera_accountType",
   "domera_companyId",
@@ -52,13 +53,14 @@ export function readBrowserAuthSession(): BrowserAuthSession {
   }
 
   const cookies = parseCookieString(document.cookie);
-  const sessionToken = cookies.__session?.trim();
+  const sessionMarker = cookies.domera_session?.trim();
   const userId = cookies.userId?.trim();
+  const email = cookies.userEmail?.trim();
 
   return {
-    isAuthenticated: Boolean(sessionToken),
+    isAuthenticated: Boolean(sessionMarker || userId || email),
     userId: userId || undefined,
-    email: cookies.userEmail?.trim() || undefined,
+    email: email || undefined,
     name: cookies.userName?.trim() || undefined,
     accountType: cookies.domera_accountType?.trim() || cookies.domera_role?.trim() || undefined,
     role: cookies.domera_role?.trim() || cookies.domera_accountType?.trim() || "managementCompany",

@@ -9,11 +9,29 @@ export type NotificationSettings = {
 
 export function getNotifications(userId?: string) {
   const query = userId ? `?userId=${encodeURIComponent(userId)}` : "";
-  return apiFetch<{ items?: Record<string, unknown>[] }>(`/notifications${query}`);
+  return apiFetch<{ items?: Record<string, unknown>[] }>(`/notifications${query}`, {
+    redirectOnAuthError: false,
+  });
 }
 
 export function getNotificationSettings() {
-  return apiFetch<{ settings: NotificationSettings }>("/notifications/settings");
+  return apiFetch<{ settings: NotificationSettings }>("/notifications/settings", {
+    redirectOnAuthError: false,
+  });
+}
+
+export function markNotificationRead(notificationId: string) {
+  return apiFetch<{ success?: boolean }>(`/notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: "PATCH",
+    redirectOnAuthError: false,
+  });
+}
+
+export function removeNotification(notificationId: string) {
+  return apiFetch<{ success?: boolean }>(`/notifications/${encodeURIComponent(notificationId)}`, {
+    method: "DELETE",
+    redirectOnAuthError: false,
+  });
 }
 
 export function updateNotificationSettings(payload: Partial<NotificationSettings>) {

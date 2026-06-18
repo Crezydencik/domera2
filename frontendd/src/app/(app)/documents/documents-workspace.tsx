@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import {
   FiCheck,
   FiDownload,
@@ -26,6 +26,7 @@ import {
   type DocumentRecord,
   type DocumentScope,
 } from "@/shared/api/documents";
+import { useAuthSession } from "@/shared/hooks/use-auth";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import type { Building, DocumentItem } from "@/shared/lib/data";
 import type { DashboardRole } from "@/shared/role-ui";
@@ -83,6 +84,14 @@ function formatBytes(size: number) {
   return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
+function formatStableDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value || "-";
+
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${pad(date.getUTCDate())}.${pad(date.getUTCMonth() + 1)}.${date.getUTCFullYear()}`;
+}
+
 function toApartmentOption(item: RawRecord, fallbackLabel: string, shortPrefix: string): ApartmentOption {
   const id = firstString(item.id, item.apartmentId);
   const apartmentNumber = firstString(item.number, item.apartmentNumber, item.apartmentNo, item.flatNumber);
@@ -98,7 +107,18 @@ function toApartmentOption(item: RawRecord, fallbackLabel: string, shortPrefix: 
   };
 }
 
-function canSeeDocument(document: StoredDocument, role: DashboardRole, userId?: string) {
+function canSeeDocument(document: StoredDocument, role: DashboardRole, userId?: string, managementCompanyVisibilityOnly = false) {
+  if (managementCompanyVisibilityOnly) {
+    return (
+      document.ownerUserId === userId &&
+      (document.scope === "managementArchive" || document.scope === "platformPrivate")
+    );
+  }
+
+  if (document.scope === "platformPrivate") {
+    return document.ownerUserId === userId;
+  }
+
   if (document.scope === "apartmentPrivate") {
     return role !== "managementCompany";
   }
@@ -115,6 +135,7 @@ function canSeeDocument(document: StoredDocument, role: DashboardRole, userId?: 
 }
 
 function getScopeIcon(scope: DocumentScope) {
+  if (scope === "platformPrivate") return <FiLock className="h-4 w-4" />;
   if (scope === "privateApartment") return <FiLock className="h-4 w-4" />;
   if (scope === "apartmentPrivate") return <FiHome className="h-4 w-4" />;
   if (scope === "managementArchive") return <FiShield className="h-4 w-4" />;
@@ -183,17 +204,20 @@ export function DocumentsWorkspace({
   buildings,
   apartments,
   serverDocuments,
+  managementCompanyVisibilityOnly = false,
 }: {
   role: DashboardRole;
   userId?: string;
   buildings: Building[];
   apartments: RawRecord[];
   serverDocuments: DocumentItem[];
+  managementCompanyVisibilityOnly?: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useTranslations("documents");
-  const locale = useLocale();
   const notifications = useNotifications();
+  const session = useAuthSession();
+  const effectiveUserId = userId || session.userId;
   const [documents, setDocuments] = useState<StoredDocument[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -203,9 +227,13 @@ export function DocumentsWorkspace({
   const [archiveApartmentId, setArchiveApartmentId] = useState("");
   const [updatingAccessId, setUpdatingAccessId] = useState<string | null>(null);
   const [editingAccessDocument, setEditingAccessDocument] = useState<StoredDocument | null>(null);
-  const [accessDraftScope, setAccessDraftScope] = useState<DocumentScope>("apartmentResidents");
+  const [accessDraftScope, setAccessDraftScope] = useState<DocumentScope>(
+    managementCompanyVisibilityOnly ? "platformPrivate" : "apartmentResidents",
+  );
   const [accessDraftApartmentId, setAccessDraftApartmentId] = useState("");
-  const [scope, setScope] = useState<DocumentScope>(role === "managementCompany" ? "buildingResidents" : "apartmentPrivate");
+  const [scope, setScope] = useState<DocumentScope>(
+    managementCompanyVisibilityOnly ? "platformPrivate" : role === "managementCompany" ? "buildingResidents" : "apartmentPrivate",
+  );
   const [buildingId, setBuildingId] = useState("");
   const [apartmentId, setApartmentId] = useState("");
   const [title, setTitle] = useState("");
@@ -224,6 +252,7 @@ export function DocumentsWorkspace({
     apartmentResidents: t("scopes.apartmentResidents.label"),
     apartmentPrivate: t("scopes.apartmentPrivate.label"),
     privateApartment: t("scopes.privateApartment.label"),
+    platformPrivate: t("scopes.platformPrivate.label"),
     managementArchive: t("scopes.managementArchive.label"),
   }), [t]);
   const translatedScopeDescriptions = useMemo<Record<DocumentScope, string>>(() => ({
@@ -231,6 +260,7 @@ export function DocumentsWorkspace({
     apartmentResidents: t("scopes.apartmentResidents.description"),
     apartmentPrivate: t("scopes.apartmentPrivate.description"),
     privateApartment: t("scopes.privateApartment.description"),
+    platformPrivate: t("scopes.platformPrivate.description"),
     managementArchive: t("scopes.managementArchive.description"),
   }), [t]);
   const shareWithManagementLabel = t("scopes.managementArchive.shareLabel");
@@ -249,10 +279,10 @@ export function DocumentsWorkspace({
     [apartmentOptions, archiveApartmentId],
   );
 
-  const canUseBuildingResidents = role === "managementCompany";
-  const canShareWithManagement = role !== "managementCompany";
-  const canUseManagementArchive = role === "managementCompany";
-  const canUsePrivateApartment = role !== "managementCompany";
+  const canUseBuildingResidents = !managementCompanyVisibilityOnly && role === "managementCompany";
+  const canShareWithManagement = managementCompanyVisibilityOnly || role !== "managementCompany";
+  const canUseManagementArchive = !managementCompanyVisibilityOnly && role === "managementCompany";
+  const canUsePrivateApartment = !managementCompanyVisibilityOnly && role !== "managementCompany";
 
   const isManagementDocument = useCallback((item: StoredDocument) => {
     return (
@@ -264,9 +294,10 @@ export function DocumentsWorkspace({
   }, []);
 
   const isPersonalDocument = useCallback((item: StoredDocument) => {
+    if (item.scope === "platformPrivate") return item.ownerUserId === effectiveUserId;
     if (item.scope === "apartmentPrivate") return true;
-    return item.scope === "privateApartment" && (!item.ownerUserId || item.ownerUserId === userId);
-  }, [userId]);
+    return item.scope === "privateApartment" && (!item.ownerUserId || item.ownerUserId === effectiveUserId);
+  }, [effectiveUserId]);
 
   const isSharedWithBuildingDocument = useCallback((item: StoredDocument) => {
     return item.scope === "buildingResidents";
@@ -280,23 +311,27 @@ export function DocumentsWorkspace({
   }, []);
 
   const isOpenManagementAccessDocument = useCallback((item: StoredDocument) => {
-    return item.scope === "managementArchive" && item.ownerUserId === userId;
-  }, [userId]);
+    return item.scope === "managementArchive" && item.ownerUserId === effectiveUserId;
+  }, [effectiveUserId]);
 
   const canDeleteDocument = useCallback((item: StoredDocument) => {
-    if (item.ownerUserId === userId) return true;
+    if (managementCompanyVisibilityOnly && role === "platformAdmin" && item.scope === "platformPrivate" && item.ownerUserId === effectiveUserId) return true;
+    if (managementCompanyVisibilityOnly && role === "platformAdmin" && item.scope === "managementArchive" && item.ownerUserId === effectiveUserId) return true;
+    if (item.ownerUserId === effectiveUserId) return true;
     return role === "managementCompany" && item.scope !== "apartmentPrivate" && item.scope !== "privateApartment";
-  }, [role, userId]);
+  }, [effectiveUserId, managementCompanyVisibilityOnly, role]);
 
   const canEditDocumentAccess = useCallback((item: StoredDocument) => {
-    if (item.ownerUserId === userId) return true;
+    if (managementCompanyVisibilityOnly && role === "platformAdmin" && item.scope === "platformPrivate" && item.ownerUserId === effectiveUserId) return true;
+    if (managementCompanyVisibilityOnly && role === "platformAdmin" && item.scope === "managementArchive" && item.ownerUserId === effectiveUserId) return true;
+    if (item.ownerUserId === effectiveUserId) return true;
     return role === "managementCompany" && item.scope !== "apartmentPrivate" && item.scope !== "privateApartment";
-  }, [role, userId]);
+  }, [effectiveUserId, managementCompanyVisibilityOnly, role]);
 
   useEffect(() => {
     let mounted = true;
 
-    const loadPromise = role === "managementCompany"
+    const loadPromise = role === "managementCompany" || managementCompanyVisibilityOnly
       ? getDocuments()
       : Promise.all(apartmentOptions.map((apartment) => getDocuments({ apartmentId: apartment.id }))).then((responses) => ({
           items: Array.from(
@@ -324,7 +359,7 @@ export function DocumentsWorkspace({
     return () => {
       mounted = false;
     };
-  }, [apartmentOptions, role, t]);
+  }, [apartmentOptions, managementCompanyVisibilityOnly, role, t]);
 
   useEffect(() => {
     if (buildingId || !buildingOptions[0]) return;
@@ -364,8 +399,10 @@ export function DocumentsWorkspace({
     const merged = [...documents, ...liveDocuments];
     const unique = new Map(merged.map((item) => [item.id, item]));
 
-    return Array.from(unique.values()).filter((item) => canSeeDocument(item, role, userId));
-  }, [documents, role, serverDocuments, userId]);
+    return Array.from(unique.values()).filter((item) =>
+      canSeeDocument(item, role, effectiveUserId, managementCompanyVisibilityOnly),
+    );
+  }, [documents, effectiveUserId, managementCompanyVisibilityOnly, role, serverDocuments]);
 
   const filteredDocuments = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -430,7 +467,13 @@ export function DocumentsWorkspace({
   const sharedCount = scopedArchiveDocuments.filter((item) => isSharedWithBuildingDocument(item)).length;
   const internalArchiveCount = scopedArchiveDocuments.filter((item) => isInternalManagementArchiveDocument(item)).length;
   const openAccessCount = scopedArchiveDocuments.filter((item) => isOpenManagementAccessDocument(item)).length;
-  const archiveTabs = role === "managementCompany"
+  const archiveTabs = managementCompanyVisibilityOnly
+    ? [
+      { id: "all" as const, label: t("tabs.all"), count: scopedArchiveDocuments.length },
+      { id: "openAccess" as const, label: t("tabs.openAccess"), count: openAccessCount },
+      { id: "personal" as const, label: t("tabs.personal"), count: personalCount },
+    ]
+    : role === "managementCompany"
     ? [
       { id: "all" as const, label: t("tabs.all"), count: scopedArchiveDocuments.length },
       { id: "apartments" as const, label: t("tabs.apartments"), count: null },
@@ -444,18 +487,22 @@ export function DocumentsWorkspace({
       { id: "personal" as const, label: t("tabs.personal"), count: personalCount },
     ];
   const accessScopeOptions = useMemo<DocumentScope[]>(() => {
+    if (managementCompanyVisibilityOnly) {
+      return ["platformPrivate", "managementArchive"];
+    }
+
     if (role === "managementCompany") {
       return ["buildingResidents", "apartmentResidents", "managementArchive"];
     }
 
     return ["managementArchive", "apartmentPrivate", "privateApartment"];
-  }, [role]);
+  }, [managementCompanyVisibilityOnly, role]);
 
   function resetCreateForm() {
     setError("");
     setTitle("");
     setSelectedFile(null);
-    setScope(role === "managementCompany" ? "buildingResidents" : "apartmentPrivate");
+    setScope(managementCompanyVisibilityOnly ? "platformPrivate" : role === "managementCompany" ? "buildingResidents" : "apartmentPrivate");
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -627,6 +674,22 @@ export function DocumentsWorkspace({
                     <span>
                       <span className="block text-sm font-semibold leading-5 text-slate-900">{translatedScopeLabels.apartmentResidents}</span>
                       <span className="block text-xs leading-4 text-slate-500">{translatedScopeDescriptions.apartmentResidents}</span>
+                    </span>
+                  </button>
+                ) : null}
+
+                {managementCompanyVisibilityOnly ? (
+                  <button
+                    type="button"
+                    onClick={() => setScope("platformPrivate")}
+                    className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-left transition ${
+                      scope === "platformPrivate" ? "border-emerald-500 bg-emerald-50" : "border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <FiLock className="mt-0.5 h-4 w-4 text-emerald-600" />
+                    <span>
+                      <span className="block text-sm font-semibold leading-5 text-slate-900">{translatedScopeLabels.platformPrivate}</span>
+                      <span className="block text-xs leading-4 text-slate-500">{translatedScopeDescriptions.platformPrivate}</span>
                     </span>
                   </button>
                 ) : null}
@@ -884,7 +947,7 @@ export function DocumentsWorkspace({
                         </p>
                       </div>
                       <span className="shrink-0 text-xs text-slate-500">
-                        {new Date(item.uploadedAt).toLocaleDateString(locale)}
+                        {formatStableDate(item.uploadedAt)}
                       </span>
                     </div>
 
@@ -1000,7 +1063,7 @@ export function DocumentsWorkspace({
                           </div>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
-                          {new Date(item.uploadedAt).toLocaleDateString(locale)}
+                          {formatStableDate(item.uploadedAt)}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-2">

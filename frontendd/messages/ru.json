@@ -144,6 +144,10 @@
         "label": "Личный документ квартиры",
         "description": "Виден только владельцу записи. УК этот файл не увидит."
       },
+      "platformPrivate": {
+        "label": "Сохранить лично себе",
+        "description": "Виден только вам."
+      },
       "managementArchive": {
         "label": "Архив управляющей компании",
         "shareLabel": "Поделиться с УК",
@@ -327,11 +331,18 @@
     "colActions": "Действия",
     "healthy": "В порядке",
     "needsReview": "Требует проверки",
+    "pending": "Ожидание",
+    "cancelled": "Отменено",
+    "repeatRequest": "Повторить запрос",
     "emptyTitle": "Пока нет зданий",
     "emptyDescription": "Добавьте первое здание в портфель компании кнопкой выше.",
     "fields": {
       "name": "Название здания",
+      "comment": "Комментарий",
       "apartmentsCount": "Количество квартир",
+      "subscriptionTerm": "Срок",
+      "subscriptionTermMonths": "Срок (месяцы)",
+      "subscriptionCustomTermYears": "Срок (годы)",
       "occupiedApartments": "Заселено квартир",
       "status": "Статус",
       "hotWaterMetersPerResident": "Счётчиков горячей воды в квартире",
@@ -340,6 +351,12 @@
     "tabs": {
       "general": "Основное",
       "readings": "Показания"
+    },
+    "terms": {
+      "oneYear": "1 год",
+      "twoYears": "2 года",
+      "fiveYears": "5 лет",
+      "custom": "Другое"
     },
     "readings": {
       "water": {
@@ -377,7 +394,9 @@
     "feedback": {
       "created": "Здание {building} создано.",
       "updated": "Информация о здании {building} обновлена.",
-      "deleted": "Здание {building} удалено."
+      "deleted": "Здание {building} удалено.",
+      "requestCancelled": "Запрос на дом {building} отменён.",
+      "requestRepeated": "Запрос на дом {building} отправлен повторно."
     },
     "errors": {
       "companyMissing": "Не найден companyId для работы со зданиями.",
@@ -386,18 +405,29 @@
       "nameRequired": "Укажите название здания.",
       "addressRequired": "Укажите адрес здания.",
       "apartmentsCountInvalid": "Количество квартир должно быть 0 или больше.",
+      "subscriptionTermYearsInvalid": "Срок должен быть не меньше 1 года.",
+      "subscriptionTermMonthsInvalid": "Срок должен быть не меньше 1 месяца.",
       "hotWaterMetersInvalid": "Количество счётчиков горячей воды должно быть 0 или больше.",
       "coldWaterMetersInvalid": "Количество счётчиков холодной воды должно быть 0 или больше.",
       "occupiedApartmentsInvalid": "Количество заселённых квартир должно быть 0 или больше.",
       "occupiedExceedsTotal": "Заселённых квартир не может быть больше, чем всего квартир.",
       "createFailed": "Не удалось создать здание.",
       "updateFailed": "Не удалось обновить информацию о здании.",
-      "deleteFailed": "Не удалось удалить здание."
+      "deleteFailed": "Не удалось удалить здание.",
+      "deleteHasApartments": "Нельзя удалить дом, пока в нём есть квартиры.",
+      "requestCancelFailed": "Не удалось отменить запрос на дом.",
+      "requestRepeatFailed": "Не удалось повторить запрос на дом."
     },
     "gating": {
       "title": "Добавление здания временно ограничено",
-      "defaultMessage": "Сейчас компания может добавлять здания без подписки, но мы уже подготовили отдельную проверку доступа.",
-      "futureHint": "В будущем перед добавлением здания можно будет потребовать активную подписку или код доступа без переделки интерфейса."
+      "defaultMessage": "Для добавления дома нужно разрешение администратора платформы.",
+      "requestHint": "Отправьте запрос, и администратор увидит его в уведомлениях и списке пользователей.",
+      "requestButton": "Отправить запрос",
+      "requesting": "Отправляем...",
+      "requestSent": "Запрос на добавление дома отправлен администратору.",
+      "requestAlreadyPending": "Запрос уже отправлен и ожидает решения администратора.",
+      "requestAlreadyAllowed": "Администратор уже разрешил добавление домов.",
+      "requestFailed": "Не удалось отправить запрос администратору."
     }
   },
   "residents": {

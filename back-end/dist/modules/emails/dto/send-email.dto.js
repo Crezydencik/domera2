@@ -70,6 +70,16 @@ __decorate([
     __metadata("design:type", String)
 ], SendOwnerInvitationEmailDto.prototype, "to", void 0);
 __decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendOwnerInvitationEmailDto.prototype, "ownerName", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEmail)(),
+    __metadata("design:type", String)
+], SendOwnerInvitationEmailDto.prototype, "ownerEmail", void 0);
+__decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], SendOwnerInvitationEmailDto.prototype, "companyName", void 0);

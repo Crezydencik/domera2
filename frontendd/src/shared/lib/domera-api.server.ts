@@ -87,6 +87,16 @@ function firstString(...values: unknown[]): string {
   return "—";
 }
 
+function firstOptionalString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
 function firstDisplayString(...values: unknown[]): string {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) {
@@ -225,10 +235,25 @@ function toBuilding(item: UnknownRecord): Building {
     apartments: apartmentCount,
     occupancy: apartmentCount > 0 ? `${Math.max(0, occupied)} / ${apartmentCount}` : "—",
     status: String(item.status ?? "Healthy"),
+    reviewComment: firstOptionalString(
+      item.reviewComment,
+      item.rejectionComment,
+      item.rejectedReason,
+      item.buildingCreationAccessReviewComment,
+    ),
+    rejectionComment: firstOptionalString(item.rejectionComment, item.reviewComment, item.rejectedReason),
+    rejectedReason: firstOptionalString(item.rejectedReason, item.rejectionComment, item.reviewComment),
+    buildingCreationAccessReviewComment: firstOptionalString(
+      item.buildingCreationAccessReviewComment,
+      item.reviewComment,
+      item.rejectionComment,
+    ),
+    reviewedAt: item.reviewedAt,
     readingConfig,
     companyId: typeof item.companyId === "string" ? item.companyId : undefined,
     companyName: typeof item.companyName === "string" ? item.companyName : undefined,
     managedBy: item.managedBy && typeof item.managedBy === "object" ? (item.managedBy as Record<string, unknown>) : undefined,
+    editLocked: item.editLocked === true,
   };
 }
 
@@ -556,10 +581,10 @@ async function getAuthenticatedContext(roleHint?: string) {
     const resolvedUserId = firstString(profile?.uid, profile?.id, userId);
     const role = normalizeDashboardRole(
       firstString(
-        profile?.accountType,
         profile?.role,
-        store.get("domera_accountType")?.value,
+        profile?.accountType,
         store.get("domera_role")?.value,
+        store.get("domera_accountType")?.value,
         roleHint,
       ),
     );

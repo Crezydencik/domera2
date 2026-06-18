@@ -10,6 +10,30 @@ export declare class BuildingsController {
         requiresCode: boolean;
         message: string | null;
     }>;
+    requestCreationAccess(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<{
+        success: boolean;
+        alreadyPending: boolean;
+        status: string;
+        requestId: string;
+        notifiedAdmins?: undefined;
+    } | {
+        success: boolean;
+        alreadyPending: boolean;
+        status: string;
+        requestId?: undefined;
+        notifiedAdmins?: undefined;
+    } | {
+        success: boolean;
+        status: string;
+        notifiedAdmins: number;
+        alreadyPending?: undefined;
+        requestId?: undefined;
+    }>;
+    cancelCreationAccessRequest(request: Request, user: RequestUser, requestId: string): Promise<{
+        success: boolean;
+        status: string;
+        requestId: string;
+    }>;
     list(request: Request, user: RequestUser, companyId: string): Promise<{
         items: {
             apartmentsCount: number;
@@ -17,47 +41,38 @@ export declare class BuildingsController {
             id: string;
         }[];
     }>;
+    listAllForAdmin(request: Request, user: RequestUser): Promise<{
+        items: {
+            apartmentsCount: number;
+            occupiedApartments: number;
+            id: string;
+        }[];
+    }>;
+    listPlatformBillingInvoices(request: Request, user: RequestUser): Promise<{
+        items: Record<string, unknown>[];
+    }>;
+    setEditLock(request: Request, user: RequestUser, buildingId: string, body: Record<string, unknown>): Promise<{
+        success: boolean;
+        buildingId: string;
+        editLocked: boolean;
+    }>;
     byId(request: Request, user: RequestUser, buildingId: string): Promise<{
         apartmentsCount: number;
         occupiedApartments: number;
         id: string;
     }>;
-    create(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<{
-        createdAt: Date;
-        updatedAt: Date;
-        name: string;
-        title: string;
-        address: string;
-        street: string;
-        location: string;
-        companyId: string;
-        managedBy: {
-            companyId: string;
-            companyName: string;
-            companyEmail?: string;
-            companyPhone?: string;
-        };
-        apartmentsCount: number;
-        apartmentIds: string[];
-        status: string;
-        readingConfig: {
-            waterEnabled: boolean;
-            electricityEnabled: boolean;
-            heatingEnabled: boolean;
-            hotWaterMetersPerResident: number;
-            coldWaterMetersPerResident: number;
-            submissionPeriod: {
-                startDate: string;
-                endDate: string;
-                monthly: boolean;
-            } | null;
-        };
-        id: string;
-    }>;
+    create(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<void>;
     update(request: Request, user: RequestUser, buildingId: string, body: Record<string, unknown>): Promise<{
         success: boolean;
     }>;
     remove(request: Request, user: RequestUser, buildingId: string): Promise<{
         success: boolean;
+        backup: {
+            backupStoragePath: string;
+            backupStoragePrefix: string;
+            retainedStoragePrefix: string;
+            retentionExpiresAt: Date;
+            copiedStorageFilesCount: number;
+        };
     }>;
 }

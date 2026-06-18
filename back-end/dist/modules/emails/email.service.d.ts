@@ -5,6 +5,7 @@ export declare class EmailService {
     private resend;
     private readonly from;
     private readonly apiKey;
+    private readonly logger;
     constructor(configService: ConfigService);
     send(payload: SendEmailDto): Promise<{
         id: string;

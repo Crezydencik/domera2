@@ -10,9 +10,11 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { apiFetch } from "@/shared/api/client";
 import { establishUserSession } from "@/shared/lib/auth-client";
 import { clearBrowserAuthCookies } from "@/shared/lib/auth-session";
+import { getPlatformUsers, type PlatformUser } from "@/shared/api/users";
 import { useAuthSession } from "@/shared/hooks/use-auth";
 import { useAppNotifications } from "@/shared/hooks/use-app-notifications";
 import { useNotifications as useToastNotifications } from "@/shared/hooks/use-notifications";
+import { BUILDING_CREATION_REQUESTS_CHANGED_EVENT } from "@/shared/lib/building-creation-requests-events";
 import { ROUTES } from "@/shared/lib/routes";
 import { type DashboardRole, normalizeDashboardRole } from "@/shared/role-ui";
 import type { NotificationItem } from "@/shared/lib/data";
@@ -29,6 +31,7 @@ type NavItem = {
   href: string;
   label: string;
   icon: string;
+  showIndicator?: boolean;
 };
 
 type UserProfileSummary = {
@@ -86,6 +89,19 @@ function resolveProfileName(profile: UserProfileSummary | null, sessionName: str
     profile?.userName,
   ) ?? fallbackName;
 }
+
+function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
+  return users.some((user) => {
+    if (user.buildingCreationRequestStatus?.trim().toLowerCase() === "pending") {
+      return true;
+    }
+
+    return (user.buildingCreationRequests ?? []).some((request) => {
+      const status = request.status?.trim().toLowerCase();
+      return !status || status === "pending";
+    });
+  });
+}
   
   export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAwareSidebarProps) {
     const tm = useTranslations("appShell.header.pageTitles");
@@ -93,6 +109,9 @@ function resolveProfileName(profile: UserProfileSummary | null, sessionName: str
     platformAdmin: [
       { href: ROUTES.dashboard, label: tm("dashboard"), icon: "A" },
       { href: ROUTES.platformUsers, label: "Platform users", icon: "U" },
+      { href: ROUTES.approvals, label: "Approvals", icon: "✓" },
+      { href: ROUTES.adminBuildings, label: "Buildings", icon: "B" },
+      { href: ROUTES.platformBilling, label: "Invoices / Documents", icon: "I" },
       { href: ROUTES.settings, label: tm("settings"), icon: "S" },
     ],
     
@@ -130,7 +149,16 @@ function resolveProfileName(profile: UserProfileSummary | null, sessionName: str
   const rawPathname = usePathname();
   const pathname = rawPathname ?? ROUTES.dashboard;
   const role = normalizeDashboardRole(defaultRole);
-  const navItems = navByRole[role];
+  const [hasPendingBuildingRequests, setHasPendingBuildingRequests] = useState(false);
+  const navItems = role === "platformAdmin"
+    ? navByRole[role]
+        .filter((item) => item.href !== ROUTES.approvals)
+        .map((item) =>
+          item.href === ROUTES.adminBuildings
+            ? { ...item, showIndicator: hasPendingBuildingRequests }
+            : item,
+        )
+    : navByRole[role];
   const [profileOpen, setProfileOpen] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -174,6 +202,9 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
     const routeTitleMap: Array<{ href: string; key: string; exact?: boolean }> = [
       { href: ROUTES.dashboard, key: "dashboard", exact: true },
       { href: ROUTES.platformUsers, key: "platformUsers" },
+      { href: ROUTES.approvals, key: "approvals" },
+      { href: ROUTES.adminBuildings, key: "adminBuildings" },
+      { href: ROUTES.platformBilling, key: "platformBilling" },
       { href: ROUTES.buildings, key: "buildings" },
       { href: ROUTES.apartments, key: "apartments" },
       { href: ROUTES.residents, key: "residents" },
@@ -191,6 +222,18 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
 
     if (matchedRoute?.key === "platformUsers") {
       return "Platform users";
+    }
+
+    if (matchedRoute?.key === "approvals") {
+      return "Approvals";
+    }
+
+    if (matchedRoute?.key === "adminBuildings") {
+      return "Buildings";
+    }
+
+    if (matchedRoute?.key === "platformBilling") {
+      return "Invoices / Documents";
     }
 
     return matchedRoute ? t(`pageTitles.${matchedRoute.key}`) : title;
@@ -216,6 +259,28 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
   }
 
   function getNotificationDisplay(item: NotificationItem) {
+    const isBuildingCreationRequest =
+      item.type === "building-creation-request" || item.title.trim().toLowerCase() === "building creation request";
+
+    if (isBuildingCreationRequest) {
+      const buildingLabel = [item.buildingName, item.buildingAddress].filter(Boolean).join(", ");
+      const companyLabel = item.companyName || item.requesterEmail || "";
+      const fallbackDescription = item.description === "Admin requested access to add buildings."
+        ? "Open building approvals to review pending requests."
+        : item.description;
+
+      return {
+        title: item.title,
+        description: companyLabel
+          ? buildingLabel
+            ? `${companyLabel} requested approval to create ${buildingLabel}.`
+            : `${companyLabel} requested access to add buildings.`
+          : fallbackDescription,
+        channel: item.channel,
+        actionLabel: item.actionLabel || "Review request",
+      };
+    }
+
     if (item.type !== "owner-invitation" && item.type !== "tenant-invitation") {
       return {
         title: item.title,
@@ -282,6 +347,37 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
     };
   }, [session.isAuthenticated, session.userId]);
 
+  useEffect(() => {
+    if (role !== "platformAdmin" || !session.isAuthenticated) {
+      setHasPendingBuildingRequests(false);
+      return;
+    }
+
+    let active = true;
+
+    const refreshPendingBuildingRequests = () => {
+      getPlatformUsers()
+        .then((response) => {
+          if (active) setHasPendingBuildingRequests(hasPendingBuildingCreationRequests(response.items ?? []));
+        })
+        .catch(() => {
+          if (active) setHasPendingBuildingRequests(false);
+        });
+    };
+
+    refreshPendingBuildingRequests();
+
+    const handleFocus = () => refreshPendingBuildingRequests();
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener(BUILDING_CREATION_REQUESTS_CHANGED_EVENT, refreshPendingBuildingRequests);
+
+    return () => {
+      active = false;
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener(BUILDING_CREATION_REQUESTS_CHANGED_EVENT, refreshPendingBuildingRequests);
+    };
+  }, [role, session.isAuthenticated]);
+
   async function handleLogout() {
     setLogoutLoading(true);
 
@@ -320,10 +416,16 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
   }
 
   async function handleNotificationAction(item: NotificationItem) {
-    const token = getInvitationToken(item.actionHref);
+    const isBuildingCreationRequest =
+      item.type === "building-creation-request" || item.title.trim().toLowerCase() === "building creation request";
+    const actionHref = isBuildingCreationRequest ? ROUTES.adminBuildings : item.actionHref;
+    const token = getInvitationToken(actionHref);
 
     if (!token) {
-      if (item.actionHref) router.push(item.actionHref);
+      if (actionHref) {
+        await notifications.dismiss(item.id);
+        router.push(actionHref);
+      }
       notifications.close();
       return;
     }
@@ -348,10 +450,7 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
         }),
       });
 
-      await apiFetch(`/notifications/${encodeURIComponent(item.id)}/read`, {
-        method: "PATCH",
-      }).catch(() => null);
-      notifications.dismiss(item.id);
+      await notifications.dismiss(item.id);
 
       if (session.userId && session.email) {
         await establishUserSession({
@@ -421,14 +520,22 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
                   key={item.href}
                   href={item.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                  className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                     isActive(item.href)
                       ? "bg-sky-600 text-white"
                       : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   }`}
                 >
-                  <span className="w-4 text-center text-base leading-none opacity-80">{item.icon}</span>
-                  <span>{item.label}</span>
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="w-4 shrink-0 text-center text-base leading-none opacity-80">{item.icon}</span>
+                    <span className="truncate">{item.label}</span>
+                  </span>
+                  {item.showIndicator ? (
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full bg-red-500 ring-2 ring-white"
+                      aria-label="Pending building request"
+                    />
+                  ) : null}
                 </Link>
               ))}
             </nav>
@@ -514,7 +621,7 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
                                   </div>
                                   <button
                                     type="button"
-                                    onClick={() => notifications.dismiss(item.id)}
+                                    onClick={() => void notifications.dismiss(item.id)}
                                     className="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-white/60 hover:text-slate-700"
                                     aria-label={t("notifications.dismissAria")}
                                   >

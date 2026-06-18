@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { apiFetch } from "@/shared/api/client";
-import { getNotificationSettings, getNotifications, type NotificationSettings } from "@/shared/api/notifications";
+import { getNotificationSettings, getNotifications, markNotificationRead, removeNotification, type NotificationSettings } from "@/shared/api/notifications";
 import { useAuthSession } from "@/shared/hooks/use-auth";
 import type { NotificationItem } from "@/shared/lib/data";
 import { ROUTES } from "@/shared/lib/routes";
@@ -38,7 +38,72 @@ function toNotificationItem(item: UnknownRecord): NotificationItem {
     type: firstString(item.type),
     apartmentNumber: firstString(item.apartmentNumber),
     buildingName: firstString(item.buildingName),
+    buildingAddress: firstString(item.buildingAddress),
+    companyName: firstString(item.companyName),
+    requesterEmail: firstString(item.requesterEmail),
   };
+}
+
+function normalizedKeyPart(value?: string) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function isBuildingCreationNotification(item: NotificationItem) {
+  return item.type === "building-creation-request" || normalizedKeyPart(item.title) === "building creation request";
+}
+
+function notificationDedupeKey(item: NotificationItem) {
+  if (item.type === "owner-invitation") {
+    return `owner-invitation:${normalizedKeyPart(item.apartmentNumber)}:${normalizedKeyPart(item.buildingName)}`;
+  }
+
+  if (isBuildingCreationNotification(item)) {
+    const specificKey = [
+      item.companyName,
+      item.buildingName,
+      item.buildingAddress,
+      item.requesterEmail,
+    ]
+      .map(normalizedKeyPart)
+      .filter(Boolean)
+      .join(":");
+
+    if (specificKey) {
+      return `building-creation-request:${specificKey}`;
+    }
+
+    return [
+      "building-creation-request",
+      normalizedKeyPart(item.title),
+      normalizedKeyPart(item.description),
+      normalizedKeyPart(item.channel),
+      normalizedKeyPart(item.actionHref),
+    ].join(":");
+  }
+
+  return item.id;
+}
+
+function dedupeNotifications(items: NotificationItem[]) {
+  const visibleItems: NotificationItem[] = [];
+  const itemsByKey = new Map<string, NotificationItem>();
+  const idsByVisibleId = new Map<string, string[]>();
+
+  for (const item of items) {
+    const key = notificationDedupeKey(item);
+    const visibleItem = itemsByKey.get(key);
+
+    if (visibleItem) {
+      idsByVisibleId.set(visibleItem.id, [...(idsByVisibleId.get(visibleItem.id) ?? [visibleItem.id]), item.id]);
+      continue;
+    }
+
+    itemsByKey.set(key, item);
+    visibleItems.push(item);
+    idsByVisibleId.set(item.id, [item.id]);
+  }
+
+  return { visibleItems, idsByVisibleId };
 }
 
 function currentMonthKey() {
@@ -74,7 +139,9 @@ function readingMonthKey(reading: UnknownRecord) {
 
 async function loadOwnerMissingReadingStatus() {
   const month = currentMonthKey();
-  const response = await apiFetch<{ apartments?: UnknownRecord[] }>("/resident/apartments");
+  const response = await apiFetch<{ apartments?: UnknownRecord[] }>("/resident/apartments", {
+    redirectOnAuthError: false,
+  });
   const apartments = Array.isArray(response.apartments) ? response.apartments : [];
   const missingApartmentLabels: string[] = [];
 
@@ -88,6 +155,7 @@ async function loadOwnerMissingReadingStatus() {
 
       const readingsResponse = await apiFetch<{ items?: UnknownRecord[] }>(
         `/meter-readings?apartmentId=${encodeURIComponent(apartmentId)}`,
+        { redirectOnAuthError: false },
       ).catch(() => ({ items: [] }));
       const submittedKeys = new Set(
         (readingsResponse.items ?? [])
@@ -131,6 +199,8 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   const [ownerMissingReadings, setOwnerMissingReadings] = useState(0);
   const [ownerMissingApartmentLabels, setOwnerMissingApartmentLabels] = useState<string[]>([]);
   const [ownerStatusLoaded, setOwnerStatusLoaded] = useState(false);
+  const [dismissedLocalNotificationIds, setDismissedLocalNotificationIds] = useState<Set<string>>(() => new Set());
+  const [duplicateNotificationIdsById, setDuplicateNotificationIdsById] = useState<Map<string, string[]>>(() => new Map());
   const [hasLoaded, setHasLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -162,6 +232,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   const refresh = useCallback(async () => {
     if (!userId) {
       setItems([]);
+      setDuplicateNotificationIdsById(new Map());
       setError(null);
       setOwnerMissingReadings(0);
       setOwnerMissingApartmentLabels([]);
@@ -186,20 +257,10 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
         ? response.items.map((item) => toNotificationItem(item as UnknownRecord))
         : [];
 
-      // Deduplicate owner invitations (keep only one per apartment+building)
-      const seenInvitations = new Set<string>();
-      const nextItems = allItems.filter((item) => {
-        if (item.type === "owner-invitation") {
-          const key = `${item.apartmentNumber}-${item.buildingName}`;
-          if (seenInvitations.has(key)) {
-            return false;
-          }
-          seenInvitations.add(key);
-        }
-        return true;
-      });
+      const { visibleItems, idsByVisibleId } = dedupeNotifications(allItems);
 
-      setItems(nextItems);
+      setDuplicateNotificationIdsById(idsByVisibleId);
+      setItems(visibleItems);
       if (canLoadOwnerStatus(nextSettings)) {
         setOwnerStatusLoaded(false);
       } else {
@@ -277,6 +338,8 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
 
   const computedOwnerNotification = useMemo<NotificationItem | null>(() => {
     if (!settings.general || !settings.meterReminder || dashboardRole === "managementCompany" || ownerMissingReadings <= 0) return null;
+    const notificationId = `owner-meter-readings-local-${currentMonthKey()}`;
+    if (dismissedLocalNotificationIds.has(notificationId)) return null;
 
     const visibleLabels = ownerMissingApartmentLabels.slice(0, 3);
     const apartmentText = ownerMissingReadings === 1
@@ -288,14 +351,14 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
         });
 
     return {
-      id: `owner-meter-readings-local-${currentMonthKey()}`,
+      id: notificationId,
       title: t("missingReadingsTitle"),
       description: t("missingReadingsDescription", { apartmentText }),
       channel: t("readingsChannel"),
       actionHref: ROUTES.meterReadings,
       actionLabel: t("submitReadings"),
     };
-  }, [dashboardRole, ownerMissingApartmentLabels, ownerMissingReadings, settings.general, settings.meterReminder, t]);
+  }, [dashboardRole, dismissedLocalNotificationIds, ownerMissingApartmentLabels, ownerMissingReadings, settings.general, settings.meterReminder, t]);
 
   const allItems = useMemo(
     () => (computedOwnerNotification ? [computedOwnerNotification, ...items] : items),
@@ -306,9 +369,34 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
   const toggle = useCallback(() => setIsOpen((value) => !value), []);
-  const dismiss = useCallback((notificationId: string) => {
-    setItems((current) => current.filter((item) => item.id !== notificationId));
-  }, []);
+  const dismiss = useCallback(async (notificationId: string) => {
+    if (notificationId.startsWith("owner-meter-readings-local-")) {
+      setDismissedLocalNotificationIds((current) => new Set(current).add(notificationId));
+      return;
+    }
+
+    const notificationIds = duplicateNotificationIdsById.get(notificationId) ?? [notificationId];
+    const notificationIdsSet = new Set(notificationIds);
+
+    setItems((current) => current.filter((item) => !notificationIdsSet.has(item.id) && item.id !== notificationId));
+    setDuplicateNotificationIdsById((current) => {
+      const next = new Map(current);
+      next.delete(notificationId);
+      return next;
+    });
+
+    try {
+      await Promise.all(notificationIds.map(async (id) => {
+        try {
+          await markNotificationRead(id);
+        } catch {
+          await removeNotification(id);
+        }
+      }));
+    } catch {
+      await refresh();
+    }
+  }, [duplicateNotificationIdsById, refresh]);
 
   return {
     items: allItems,

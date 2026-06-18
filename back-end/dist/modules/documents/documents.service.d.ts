@@ -27,6 +27,9 @@ export declare class DocumentsService {
     private formatDate;
     private parseOptionalDate;
     private omitUndefined;
+    private isApartmentScopedDocument;
+    private documentMetadataRef;
+    private findDocument;
     private validateFile;
     private isApartmentMember;
     private memberAccessForApartment;

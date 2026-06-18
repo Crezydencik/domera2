@@ -427,7 +427,10 @@ function formatHistoryDate(value: unknown) {
   const raw = firstString(value);
   if (!raw) return "-";
   const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? raw : date.toLocaleString();
+  if (Number.isNaN(date.getTime())) return raw;
+
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
 }
 
 function pendingApprovalPdfHref(id: string) {

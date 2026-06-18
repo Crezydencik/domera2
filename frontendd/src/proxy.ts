@@ -4,6 +4,7 @@ import { isAllowedPath, isAuthRoute, isProtectedPath, resolveDashboardRole, role
 
 const authCookieNames = [
   "__session",
+  "domera_session",
   "domera_role",
   "domera_accountType",
   "domera_companyId",
@@ -39,7 +40,7 @@ function clearAuthCookies(response: NextResponse) {
 export default function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get("__session")?.value?.trim();
-  const cookieRole = request.cookies.get("domera_accountType")?.value ?? request.cookies.get("domera_role")?.value;
+  const cookieRole = request.cookies.get("domera_role")?.value ?? request.cookies.get("domera_accountType")?.value;
   const resolvedRole = resolveDashboardRole(cookieRole);
   const requestHeaders = new Headers(request.headers);
 
@@ -75,6 +76,7 @@ export default function proxy(request: NextRequest) {
 
     response.cookies.set("domera_accountType", cookieValue, cookieOptions);
     response.cookies.set("domera_role", cookieValue, cookieOptions);
+    response.cookies.set("domera_session", "1", cookieOptions);
   }
 
   return response;

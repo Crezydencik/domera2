@@ -2,10 +2,12 @@ import { Request } from 'express';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
+import { BuildingsService } from '../buildings/buildings.service';
 export declare class UsersService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
-    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService);
+    private readonly buildingsService;
+    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, buildingsService: BuildingsService);
     private assertAuth;
     private isStaff;
     private isPlatformAdmin;
@@ -48,14 +50,21 @@ export declare class UsersService {
     }>;
     listAll(request: Request, user: RequestUser): Promise<{
         items: {
+            buildingCreationRequestStatus?: string | undefined;
+            buildingCreationRequestId?: string | undefined;
+            buildingCreationRequestBuildingName?: string | undefined;
+            buildingCreationRequestBuildingAddress?: string | undefined;
+            buildingCreationRequests: Record<string, unknown>[];
             id: string;
         }[];
     }>;
     setBuildingCreationAccess(request: Request, user: RequestUser, userId: string, payload: Record<string, unknown>): Promise<{
-        success: boolean;
         userId: string;
-        companyId: string | undefined;
-        canCreateBuildings: boolean;
+        success: boolean;
+        status: string;
+        requestId: string;
+        buildingId: string;
+        billingInvoiceId: string | undefined;
     }>;
     upsert(request: Request, user: RequestUser, userId: string, payload: Record<string, unknown>): Promise<{
         success: boolean;

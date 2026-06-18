@@ -13,8 +13,8 @@ export async function Sidebar({ children }: SidebarProps) {
   const headerStore = await headers();
   const defaultRole = normalizeDashboardRole(
     headerStore.get("x-domera-role") ??
-      cookieStore.get("domera_accountType")?.value ??
-      cookieStore.get("domera_role")?.value,
+      cookieStore.get("domera_role")?.value ??
+      cookieStore.get("domera_accountType")?.value,
   );
 
   return (

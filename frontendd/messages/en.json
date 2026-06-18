@@ -146,6 +146,10 @@
         "label": "Private apartment document",
         "description": "Visible only to the record owner. The management company will not see this file."
       },
+      "platformPrivate": {
+        "label": "Save privately",
+        "description": "Visible only to you."
+      },
       "managementArchive": {
         "label": "Management company archive",
         "shareLabel": "Share with company",
@@ -333,11 +337,18 @@
     "colActions": "Actions",
     "healthy": "Healthy",
     "needsReview": "Needs review",
+    "pending": "Pending",
+    "cancelled": "Cancelled",
+    "repeatRequest": "Repeat request",
     "emptyTitle": "No buildings yet",
     "emptyDescription": "Add the first building to the company portfolio using the button above.",
     "fields": {
       "name": "Building name",
+      "comment": "Comment",
       "apartmentsCount": "Apartment count",
+      "subscriptionTerm": "Term",
+      "subscriptionTermMonths": "Term (months)",
+      "subscriptionCustomTermYears": "Term (years)",
       "occupiedApartments": "Occupied apartments",
       "status": "Status",
       "hotWaterMetersPerResident": "Hot water meters in the apartment",
@@ -346,6 +357,12 @@
     "tabs": {
       "general": "General",
       "readings": "Readings"
+    },
+    "terms": {
+      "oneYear": "1 year",
+      "twoYears": "2 years",
+      "fiveYears": "5 years",
+      "custom": "Other"
     },
     "readings": {
       "water": {
@@ -383,7 +400,9 @@
     "feedback": {
       "created": "Building {building} was created.",
       "updated": "Building {building} was updated.",
-      "deleted": "Building {building} was deleted."
+      "deleted": "Building {building} was deleted.",
+      "requestCancelled": "Building request for {building} was cancelled.",
+      "requestRepeated": "Building request for {building} was sent again."
     },
     "errors": {
       "companyMissing": "companyId is missing for building management.",
@@ -392,18 +411,29 @@
       "nameRequired": "Please enter the building name.",
       "addressRequired": "Please enter the building address.",
       "apartmentsCountInvalid": "Apartment count must be 0 or greater.",
+      "subscriptionTermYearsInvalid": "Term must be at least 1 year.",
+      "subscriptionTermMonthsInvalid": "Term must be at least 1 month.",
       "hotWaterMetersInvalid": "Hot water meter count must be 0 or greater.",
       "coldWaterMetersInvalid": "Cold water meter count must be 0 or greater.",
       "occupiedApartmentsInvalid": "Occupied apartment count must be 0 or greater.",
       "occupiedExceedsTotal": "Occupied apartments cannot exceed the total apartment count.",
       "createFailed": "Failed to create the building.",
       "updateFailed": "Failed to update the building information.",
-      "deleteFailed": "Failed to delete the building."
+      "deleteFailed": "Failed to delete the building.",
+      "deleteHasApartments": "You cannot delete a building while apartments are linked to it.",
+      "requestCancelFailed": "Failed to cancel the building request.",
+      "requestRepeatFailed": "Failed to repeat the building request."
     },
     "gating": {
       "title": "Building creation is temporarily restricted",
-      "defaultMessage": "The company can currently add buildings without a subscription, but a dedicated access check is already in place.",
-      "futureHint": "Later, adding a building can require an active subscription or an access code without redesigning the interface."
+      "defaultMessage": "Adding a building requires approval from a platform administrator.",
+      "requestHint": "Send a request, and the administrator will see it in notifications and the user list.",
+      "requestButton": "Send request",
+      "requesting": "Sending...",
+      "requestSent": "The building creation request was sent to the administrator.",
+      "requestAlreadyPending": "The request has already been sent and is waiting for administrator review.",
+      "requestAlreadyAllowed": "The administrator has already allowed building creation.",
+      "requestFailed": "Could not send the request to the administrator."
     }
   },
   "residents": {

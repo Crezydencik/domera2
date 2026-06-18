@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FiRefreshCw, FiSearch, FiShield, FiToggleLeft, FiToggleRight } from "react-icons/fi";
+import { FiInfo, FiRefreshCw, FiSearch, FiShield } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
-import { getPlatformUsers, setBuildingCreationAccess, type PlatformUser } from "@/shared/api/users";
+import { Modal } from "@/components/ui/modal";
+import { getPlatformUsers, type PlatformUser } from "@/shared/api/users";
 import { useNotifications } from "@/shared/hooks/use-notifications";
+
+type UserTab = "management" | "regular";
 
 function userId(user: PlatformUser) {
   return user.uid || user.id || "";
@@ -15,29 +18,108 @@ function userName(user: PlatformUser) {
   return user.fullName || joined || user.email || userId(user) || "Unknown user";
 }
 
+function userPhone(user: PlatformUser) {
+  return user.companyPhone || user.phone || user.phoneNumber || user.mobile || user.telephone || "";
+}
+
 function isManagementUser(user: PlatformUser) {
   return user.role === "ManagementCompany" || user.role === "Accountant" || user.accountType === "ManagementCompany";
+}
+
+function matchesQuery(user: PlatformUser, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+
+  return [userName(user), user.email, user.role, user.accountType, user.companyName, user.companyId]
+    .filter((value): value is string => typeof value === "string")
+    .some((value) => value.toLowerCase().includes(normalizedQuery));
+}
+
+function InfoRow({ label, value }: { label: string; value?: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-medium text-slate-900">{value || "-"}</dd>
+    </div>
+  );
+}
+
+function UsersTable({
+  users,
+  emptyText,
+  showCompany,
+  onOpenInfo,
+}: {
+  users: PlatformUser[];
+  emptyText: string;
+  showCompany: boolean;
+  onOpenInfo?: (user: PlatformUser) => void;
+}) {
+  const gridColumns = showCompany
+    ? "grid-cols-[minmax(240px,1.2fr)_minmax(150px,.7fr)_minmax(220px,1fr)_64px]"
+    : "grid-cols-[minmax(240px,1.2fr)_minmax(150px,.7fr)]";
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className={`grid ${gridColumns} gap-4 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500`}>
+        <span>User</span>
+        <span>Role</span>
+        {showCompany ? <span>Company</span> : null}
+        {showCompany ? <span className="text-right">Info</span> : null}
+      </div>
+
+      {users.length ? (
+        <div className="divide-y divide-slate-100">
+          {users.map((user) => {
+            const id = userId(user);
+
+            return (
+              <div
+                key={id || user.email}
+                className={`grid ${gridColumns} gap-4 px-4 py-3 text-sm`}
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-slate-950">{userName(user)}</p>
+                  <p className="truncate text-xs text-slate-500">{user.email || id}</p>
+                </div>
+                <div className="text-slate-700">{user.role || user.accountType || "-"}</div>
+                {showCompany ? (
+                  <div className="min-w-0">
+                    <p className="truncate text-slate-700">{user.companyName || "-"}</p>
+                  </div>
+                ) : null}
+                {showCompany ? (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => onOpenInfo?.(user)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-blue-200 text-blue-600 transition hover:bg-blue-50"
+                      title="Company info"
+                    >
+                      <FiInfo className="h-4 w-4" aria-hidden="true" />
+                      <span className="sr-only">Company info</span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="px-4 py-8 text-sm text-slate-500">{emptyText}</div>
+      )}
+    </section>
+  );
 }
 
 export default function PlatformUsersPage() {
   const notifications = useNotifications();
   const notifyError = notifications.error;
-  const notifySuccess = notifications.success;
   const [users, setUsers] = useState<PlatformUser[]>([]);
   const [query, setQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<UserTab>("management");
   const [loading, setLoading] = useState(true);
-  const [savingUserId, setSavingUserId] = useState<string | null>(null);
-
-  const filteredUsers = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return users;
-
-    return users.filter((user) =>
-      [userName(user), user.email, user.role, user.accountType, user.companyName, user.companyId]
-        .filter((value): value is string => typeof value === "string")
-        .some((value) => value.toLowerCase().includes(normalizedQuery)),
-    );
-  }, [query, users]);
+  const [selectedManagementUser, setSelectedManagementUser] = useState<PlatformUser | null>(null);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -51,24 +133,19 @@ export default function PlatformUsersPage() {
     }
   }, [notifyError]);
 
-  async function toggleBuildingAccess(user: PlatformUser) {
-    const id = userId(user);
-    if (!id) return;
-
-    const nextValue = !user.canCreateBuildings;
-    setSavingUserId(id);
-    try {
-      await setBuildingCreationAccess(id, nextValue, user.companyId);
-      setUsers((current) =>
-        current.map((item) => (userId(item) === id ? { ...item, canCreateBuildings: nextValue } : item)),
-      );
-      notifySuccess(nextValue ? "Building creation enabled." : "Building creation disabled.");
-    } catch (error) {
-      notifyError(error instanceof Error ? error.message : "Failed to update access.");
-    } finally {
-      setSavingUserId(null);
-    }
-  }
+  const filteredUsers = useMemo(
+    () => users.filter((user) => matchesQuery(user, query)),
+    [query, users],
+  );
+  const managementUsers = useMemo(
+    () => filteredUsers.filter(isManagementUser),
+    [filteredUsers],
+  );
+  const regularUsers = useMemo(
+    () => filteredUsers.filter((user) => !isManagementUser(user)),
+    [filteredUsers],
+  );
+  const activeUsers = activeTab === "management" ? managementUsers : regularUsers;
 
   useEffect(() => {
     void loadUsers();
@@ -102,61 +179,84 @@ export default function PlatformUsersPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <div className="grid grid-cols-[minmax(220px,1.4fr)_minmax(130px,.7fr)_minmax(160px,1fr)_minmax(150px,.8fr)] gap-4 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          <span>User</span>
-          <span>Role</span>
-          <span>Company</span>
-          <span className="text-right">Create buildings</span>
-        </div>
-
-        {loading ? (
-          <div className="px-4 py-8 text-sm text-slate-500">Loading users...</div>
-        ) : filteredUsers.length ? (
-          <div className="divide-y divide-slate-100">
-            {filteredUsers.map((user) => {
-              const id = userId(user);
-              const canManageCreation = isManagementUser(user);
-              const saving = savingUserId === id;
-
-              return (
-                <div
-                  key={id || user.email}
-                  className="grid grid-cols-[minmax(220px,1.4fr)_minmax(130px,.7fr)_minmax(160px,1fr)_minmax(150px,.8fr)] gap-4 px-4 py-3 text-sm"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-slate-950">{userName(user)}</p>
-                    <p className="truncate text-xs text-slate-500">{user.email || id}</p>
-                  </div>
-                  <div className="text-slate-700">{user.role || user.accountType || "-"}</div>
-                  <div className="min-w-0">
-                    <p className="truncate text-slate-700">{user.companyName || user.companyId || "-"}</p>
-                    {user.companyId ? <p className="truncate text-xs text-slate-400">{user.companyId}</p> : null}
-                  </div>
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      disabled={!canManageCreation || saving}
-                      onClick={() => void toggleBuildingAccess(user)}
-                      className="inline-flex h-9 items-center gap-2 rounded-lg px-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-45"
-                      title={canManageCreation ? "Toggle building creation access" : "Only management company users can receive this access"}
-                    >
-                      {user.canCreateBuildings ? (
-                        <FiToggleRight className="h-6 w-6 text-emerald-600" aria-hidden="true" />
-                      ) : (
-                        <FiToggleLeft className="h-6 w-6 text-slate-400" aria-hidden="true" />
-                      )}
-                      <span>{user.canCreateBuildings ? "Allowed" : "Blocked"}</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+      {loading ? (
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-8 text-sm text-slate-500">Loading users...</div>
+      ) : (
+        <div className="space-y-3">
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab("management")}
+              className={`rounded-md px-4 py-2 text-sm font-semibold transition ${
+                activeTab === "management"
+                  ? "bg-sky-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              Management companies
+              <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
+                activeTab === "management" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+              }`}>
+                {managementUsers.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("regular")}
+              className={`rounded-md px-4 py-2 text-sm font-semibold transition ${
+                activeTab === "regular"
+                  ? "bg-sky-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              Regular users
+              <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
+                activeTab === "regular" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+              }`}>
+                {regularUsers.length}
+              </span>
+            </button>
           </div>
-        ) : (
-          <div className="px-4 py-8 text-sm text-slate-500">No users found.</div>
-        )}
-      </div>
+
+          <UsersTable
+            users={activeUsers}
+            emptyText={activeTab === "management" ? "No management company users found." : "No regular users found."}
+            showCompany={activeTab === "management"}
+            onOpenInfo={setSelectedManagementUser}
+          />
+        </div>
+      )}
+
+      <Modal
+        open={Boolean(selectedManagementUser)}
+        onClose={() => setSelectedManagementUser(null)}
+        title="Management company info"
+        size="lg"
+        footer={
+          <div className="flex justify-end">
+            <Button type="button" variant="secondary" onClick={() => setSelectedManagementUser(null)}>
+              Close
+            </Button>
+          </div>
+        }
+      >
+        {selectedManagementUser ? (
+          <div className="space-y-5">
+            <div>
+              <p className="text-sm text-slate-500">Company</p>
+              <h3 className="mt-1 text-xl font-semibold text-slate-950">{selectedManagementUser.companyName || "-"}</h3>
+            </div>
+
+            <dl className="grid gap-4 sm:grid-cols-2">
+              <InfoRow label="User" value={userName(selectedManagementUser)} />
+              <InfoRow label="Email" value={selectedManagementUser.email} />
+              <InfoRow label="Role" value={selectedManagementUser.role || selectedManagementUser.accountType} />
+              <InfoRow label="Phone" value={userPhone(selectedManagementUser)} />
+              <InfoRow label="Account type" value={selectedManagementUser.accountType} />
+            </dl>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 }

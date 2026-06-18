@@ -15,6 +15,7 @@ export declare class NotificationsService {
     private userNotificationsCollection;
     private notificationCreatedAtMillis;
     private findNotificationDocument;
+    private notificationOwnerId;
     private assertAuth;
     private ensureUserAccess;
     private enforceRateLimit;

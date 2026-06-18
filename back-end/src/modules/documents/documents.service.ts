@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Request } from 'express';
-import { isPropertyMemberRole, isStaffRole } from '../../common/auth/role.constants';
+import { isPlatformAdminRole, isPropertyMemberRole, isStaffRole } from '../../common/auth/role.constants';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 
@@ -19,7 +19,13 @@ type UploadedDocumentFile = {
   size?: number;
 };
 
-type DocumentScope = 'buildingResidents' | 'apartmentResidents' | 'apartmentPrivate' | 'privateApartment' | 'managementArchive';
+type DocumentScope =
+  | 'buildingResidents'
+  | 'apartmentResidents'
+  | 'apartmentPrivate'
+  | 'privateApartment'
+  | 'platformPrivate'
+  | 'managementArchive';
 type UnknownRecord = Record<string, unknown>;
 
 type DocumentRecord = {
@@ -53,6 +59,7 @@ const DOCUMENT_SCOPES = new Set<DocumentScope>([
   'apartmentResidents',
   'apartmentPrivate',
   'privateApartment',
+  'platformPrivate',
   'managementArchive',
 ]);
 const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
@@ -162,6 +169,61 @@ export class DocumentsService {
     return Object.fromEntries(
       Object.entries(input).filter(([, value]) => value !== undefined),
     );
+  }
+
+  private isApartmentScopedDocument(scope: unknown): boolean {
+    return ['apartmentResidents', 'apartmentPrivate', 'privateApartment'].includes(this.firstString(scope));
+  }
+
+  private documentMetadataRef(record: UnknownRecord) {
+    const db = this.firebaseAdminService.firestore;
+    const scope = this.firstString(record.scope);
+    const apartmentId = this.firstString(record.apartmentId);
+    const companyId = this.firstString(record.companyId);
+    const ownerUserId = this.firstString(record.ownerUserId);
+    const documentId = this.firstString(record.id);
+
+    if (!documentId) {
+      throw new BadRequestException('documentId is required');
+    }
+
+    if (this.isApartmentScopedDocument(scope) && apartmentId) {
+      return db.collection('apartments').doc(apartmentId).collection('documents').doc(documentId);
+    }
+
+    if (companyId) {
+      return db.collection('companies').doc(companyId).collection('documents').doc(documentId);
+    }
+
+    if (ownerUserId) {
+      return db.collection('users').doc(ownerUserId).collection('documents').doc(documentId);
+    }
+
+    return db.collection('documents').doc(documentId);
+  }
+
+  private async findDocument(documentId: string): Promise<{
+    ref: FirebaseFirestore.DocumentReference;
+    snap: FirebaseFirestore.DocumentSnapshot;
+  } | null> {
+    const normalizedDocumentId = this.firstString(documentId);
+    if (!normalizedDocumentId) return null;
+
+    const db = this.firebaseAdminService.firestore;
+    const snap = await db
+      .collectionGroup('documents')
+      .where('id', '==', normalizedDocumentId)
+      .limit(10)
+      .get();
+
+    if (!snap.empty) {
+      const doc = snap.docs[0];
+      return { ref: doc.ref, snap: doc };
+    }
+
+    const legacyRef = db.collection('documents').doc(normalizedDocumentId);
+    const legacySnap = await legacyRef.get();
+    return legacySnap.exists ? { ref: legacyRef, snap: legacySnap } : null;
   }
 
   private validateFile(file: UploadedDocumentFile): void {
@@ -293,6 +355,8 @@ export class DocumentsService {
   private async canAccessDocument(user: RequestUser, document: UnknownRecord): Promise<boolean> {
     const scope = this.firstString(document.scope) as DocumentScope;
     if (this.firstString(document.ownerUserId) === user.uid) return true;
+    if (scope === 'platformPrivate') return false;
+    if (isPlatformAdminRole(user.role)) return true;
 
     if (scope === 'privateApartment') {
       return this.firstString(document.ownerUserId) === user.uid;
@@ -352,15 +416,27 @@ export class DocumentsService {
   async list(user: RequestUser, filters?: { apartmentId?: string }) {
     this.assertAuthenticated(user);
 
-    const snap = await this.firebaseAdminService.firestore
-      .collection('documents')
-      .orderBy('createdAt', 'desc')
-      .limit(200)
-      .get();
+    const db = this.firebaseAdminService.firestore;
+    const [snap, legacySnap] = await Promise.all([
+      db.collectionGroup('documents')
+        .orderBy('createdAt', 'desc')
+        .limit(200)
+        .get(),
+      db.collection('documents')
+        .orderBy('createdAt', 'desc')
+        .limit(200)
+        .get(),
+    ]);
 
     const items = [];
+    const seenDocumentPaths = new Set<string>();
     const apartmentIdFilter = this.firstString(filters?.apartmentId);
-    for (const doc of snap.docs) {
+    for (const doc of [...snap.docs, ...legacySnap.docs]) {
+      if (seenDocumentPaths.has(doc.ref.path)) {
+        continue;
+      }
+      seenDocumentPaths.add(doc.ref.path);
+
       const data = doc.data() as UnknownRecord;
       if (apartmentIdFilter && this.firstString(data.apartmentId) !== apartmentIdFilter) {
         continue;
@@ -391,8 +467,21 @@ export class DocumentsService {
     let apartmentId = '';
     let apartmentLabel = '';
 
+    if (scope === 'platformPrivate') {
+      if (!isPlatformAdminRole(user.role)) {
+        throw new ForbiddenException('Only platform administrators can create private platform documents');
+      }
+      companyId = '';
+    }
+
     if (scope === 'managementArchive') {
-      if (isStaffRole(user.role)) {
+      if (isPlatformAdminRole(user.role)) {
+        buildingId = this.firstString(body.buildingId);
+        if (!buildingId) throw new BadRequestException('buildingId is required');
+        const building = await this.getBuilding(buildingId);
+        companyId = this.resolveCompanyId(building, companyId);
+        buildingName = this.firstString(building.name, building.address, buildingId);
+      } else if (isStaffRole(user.role)) {
         if (!companyId) throw new BadRequestException('companyId is required');
       } else {
         buildingId = this.firstString(body.buildingId);
@@ -444,9 +533,11 @@ export class DocumentsService {
       apartmentLabel = this.firstString(apartment.number, apartment.apartmentNumber, apartmentId);
     }
 
+    const storagePathBase = companyId
+      ? ['companies', this.sanitizePathSegment(companyId), 'documents']
+      : ['users', this.sanitizePathSegment(user.uid), 'documents'];
     const storagePath = [
-      'documents',
-      this.sanitizePathSegment(companyId || 'personal'),
+      ...storagePathBase,
       this.sanitizePathSegment(scope),
       documentId,
       this.sanitizePathSegment(fileName),
@@ -490,7 +581,7 @@ export class DocumentsService {
     const firestoreRecord = this.omitUndefined(record as unknown as UnknownRecord);
 
     try {
-      await this.firebaseAdminService.firestore.collection('documents').doc(documentId).set(firestoreRecord);
+      await this.documentMetadataRef(firestoreRecord).set(firestoreRecord);
     } catch (error) {
       await bucket.file(storagePath).delete({ ignoreNotFound: true }).catch(() => null);
       const message = error instanceof Error ? error.message : String(error);
@@ -504,30 +595,40 @@ export class DocumentsService {
   async updateAccess(user: RequestUser, documentId: string, body: UnknownRecord) {
     this.assertAuthenticated(user);
 
-    const ref = this.firebaseAdminService.firestore.collection('documents').doc(documentId);
-    const snap = await ref.get();
-    if (!snap.exists) throw new NotFoundException('Document not found');
+    const foundDocument = await this.findDocument(documentId);
+    if (!foundDocument) throw new NotFoundException('Document not found');
 
+    const { ref, snap } = foundDocument;
     const current = snap.data() as UnknownRecord;
     const currentScope = this.firstString(current.scope) as DocumentScope;
     const ownsDocument = this.firstString(current.ownerUserId) === user.uid;
+    const canPlatformAdminManage =
+      currentScope !== 'privateApartment' &&
+      currentScope !== 'apartmentPrivate' &&
+      currentScope !== 'platformPrivate' &&
+      isPlatformAdminRole(user.role);
     const canStaffManage =
       currentScope !== 'privateApartment' &&
       currentScope !== 'apartmentPrivate' &&
+      currentScope !== 'platformPrivate' &&
       isStaffRole(user.role) &&
       (!user.companyId || this.firstString(current.companyId) === user.companyId);
 
-    if (!ownsDocument && !canStaffManage) {
+    if (!ownsDocument && !canPlatformAdminManage && !canStaffManage) {
       throw new ForbiddenException('Access denied for document');
     }
 
     const nextScope = this.normalizeScope(body.scope);
-    if (nextScope === 'buildingResidents' && !isStaffRole(user.role)) {
+    if (nextScope === 'buildingResidents' && !isStaffRole(user.role) && !isPlatformAdminRole(user.role)) {
       throw new ForbiddenException('Only management company can publish documents to all building residents');
     }
 
-    if ((nextScope === 'apartmentPrivate' || nextScope === 'privateApartment') && isStaffRole(user.role)) {
+    if ((nextScope === 'apartmentPrivate' || nextScope === 'privateApartment') && (isStaffRole(user.role) || isPlatformAdminRole(user.role))) {
       throw new ForbiddenException('Management company cannot create private apartment documents');
+    }
+
+    if (nextScope === 'platformPrivate' && !isPlatformAdminRole(user.role)) {
+      throw new ForbiddenException('Only platform administrators can create private platform documents');
     }
 
     let companyId = this.firstString(current.companyId, user.companyId);
@@ -555,7 +656,13 @@ export class DocumentsService {
     }
 
     if (nextScope === 'managementArchive') {
-      if (isStaffRole(user.role)) {
+      if (isPlatformAdminRole(user.role)) {
+        buildingId = this.firstString(body.buildingId, current.buildingId);
+        if (!buildingId) throw new BadRequestException('buildingId is required');
+        const building = await this.getBuilding(buildingId);
+        companyId = this.resolveCompanyId(building, companyId);
+        buildingName = this.firstString(building.name, building.address, buildingId);
+      } else if (isStaffRole(user.role)) {
         if (!companyId && user.companyId) companyId = user.companyId;
       } else {
         buildingId = this.firstString(body.buildingId, current.buildingId);
@@ -615,8 +722,20 @@ export class DocumentsService {
       nextRecord.buildingName = buildingName || undefined;
     }
 
+    if (nextScope === 'platformPrivate') {
+      delete nextRecord.companyId;
+    }
+
     const cleanRecord = this.omitUndefined(nextRecord);
-    await ref.set(cleanRecord);
+    const nextRef = this.documentMetadataRef(cleanRecord);
+    if (nextRef.path === ref.path) {
+      await ref.set(cleanRecord);
+    } else {
+      const batch = this.firebaseAdminService.firestore.batch();
+      batch.set(nextRef, cleanRecord);
+      batch.delete(ref);
+      await batch.commit();
+    }
 
     return { item: this.serializeDocument(documentId, cleanRecord) };
   }
@@ -624,10 +743,10 @@ export class DocumentsService {
   async download(user: RequestUser, documentId: string): Promise<DocumentFilePayload> {
     this.assertAuthenticated(user);
 
-    const snap = await this.firebaseAdminService.firestore.collection('documents').doc(documentId).get();
-    if (!snap.exists) throw new NotFoundException('Document not found');
+    const foundDocument = await this.findDocument(documentId);
+    if (!foundDocument) throw new NotFoundException('Document not found');
 
-    const data = snap.data() as UnknownRecord;
+    const data = foundDocument.snap.data() as UnknownRecord;
     if (!(await this.canAccessDocument(user, data))) {
       throw new ForbiddenException('Access denied for document');
     }
@@ -651,20 +770,26 @@ export class DocumentsService {
   async remove(user: RequestUser, documentId: string) {
     this.assertAuthenticated(user);
 
-    const ref = this.firebaseAdminService.firestore.collection('documents').doc(documentId);
-    const snap = await ref.get();
-    if (!snap.exists) throw new NotFoundException('Document not found');
+    const foundDocument = await this.findDocument(documentId);
+    if (!foundDocument) throw new NotFoundException('Document not found');
 
+    const { ref, snap } = foundDocument;
     const data = snap.data() as UnknownRecord;
     const scope = this.firstString(data.scope) as DocumentScope;
     const ownsDocument = this.firstString(data.ownerUserId) === user.uid;
+    const canPlatformAdminManage =
+      scope !== 'privateApartment' &&
+      scope !== 'apartmentPrivate' &&
+      scope !== 'platformPrivate' &&
+      isPlatformAdminRole(user.role);
     const canManage =
       scope !== 'privateApartment' &&
       scope !== 'apartmentPrivate' &&
+      scope !== 'platformPrivate' &&
       isStaffRole(user.role) &&
       (!user.companyId || this.firstString(data.companyId) === user.companyId);
 
-    if (!ownsDocument && !canManage) throw new ForbiddenException('Access denied for document');
+    if (!ownsDocument && !canPlatformAdminManage && !canManage) throw new ForbiddenException('Access denied for document');
 
     const storagePath = this.firstString(data.storagePath);
     const storageBucket = this.firstString(data.storageBucket);

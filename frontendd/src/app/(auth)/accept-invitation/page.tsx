@@ -183,6 +183,7 @@ function AcceptInvitationContent() {
         idToken: result.idToken,
         userId: result.userId,
         email: result.email,
+        role: result.role,
         accountType: info.accountType,
       });
 

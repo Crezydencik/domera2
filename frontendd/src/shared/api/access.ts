@@ -25,6 +25,9 @@ export const allowedRoutesByRole: Record<DashboardRole, string[]> = {
   platformAdmin: [
     ROUTES.dashboard,
     ROUTES.platformUsers,
+    ROUTES.approvals,
+    ROUTES.adminBuildings,
+    ROUTES.platformBilling,
     ROUTES.settings,
   ],
   managementCompany: [

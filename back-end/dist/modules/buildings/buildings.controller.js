@@ -27,8 +27,23 @@ let BuildingsController = class BuildingsController {
     creationAccess(request, user, companyId) {
         return this.buildingsService.getCreationAccess(request, user, companyId);
     }
+    requestCreationAccess(request, user, body) {
+        return this.buildingsService.requestCreationAccess(request, user, body);
+    }
+    cancelCreationAccessRequest(request, user, requestId) {
+        return this.buildingsService.cancelCreationAccessRequest(request, user, requestId);
+    }
     list(request, user, companyId) {
         return this.buildingsService.list(request, user, companyId);
+    }
+    listAllForAdmin(request, user) {
+        return this.buildingsService.listAllForAdmin(request, user);
+    }
+    listPlatformBillingInvoices(request, user) {
+        return this.buildingsService.listPlatformBillingInvoices(request, user);
+    }
+    setEditLock(request, user, buildingId, body) {
+        return this.buildingsService.setEditLock(request, user, buildingId, body);
     }
     byId(request, user, buildingId) {
         return this.buildingsService.byId(request, user, buildingId);
@@ -56,6 +71,27 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], BuildingsController.prototype, "creationAccess", null);
 __decorate([
+    (0, common_1.Post)('creation-access/request'),
+    (0, swagger_1.ApiOperation)({ summary: 'Request building creation access from platform administrators' }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, Object]),
+    __metadata("design:returntype", void 0)
+], BuildingsController.prototype, "requestCreationAccess", null);
+__decorate([
+    (0, common_1.Delete)('creation-access/request/:requestId'),
+    (0, swagger_1.ApiOperation)({ summary: 'Cancel a pending building creation request' }),
+    (0, swagger_1.ApiParam)({ name: 'requestId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('requestId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:returntype", void 0)
+], BuildingsController.prototype, "cancelCreationAccessRequest", null);
+__decorate([
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: 'List buildings by company' }),
     (0, swagger_1.ApiQuery)({ name: 'companyId', required: true, type: String }),
@@ -66,6 +102,39 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, String]),
     __metadata("design:returntype", void 0)
 ], BuildingsController.prototype, "list", null);
+__decorate([
+    (0, common_1.Get)('admin/all'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin'),
+    (0, swagger_1.ApiOperation)({ summary: 'List all buildings for platform administrators' }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], BuildingsController.prototype, "listAllForAdmin", null);
+__decorate([
+    (0, common_1.Get)('admin/billing-invoices'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin'),
+    (0, swagger_1.ApiOperation)({ summary: 'List platform billing invoices' }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], BuildingsController.prototype, "listPlatformBillingInvoices", null);
+__decorate([
+    (0, common_1.Patch)('admin/:buildingId/edit-lock'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin'),
+    (0, swagger_1.ApiOperation)({ summary: 'Lock or unlock building editing' }),
+    (0, swagger_1.ApiParam)({ name: 'buildingId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('buildingId')),
+    __param(3, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, Object]),
+    __metadata("design:returntype", void 0)
+], BuildingsController.prototype, "setEditLock", null);
 __decorate([
     (0, common_1.Get)(':buildingId'),
     (0, swagger_1.ApiOperation)({ summary: 'Get building by id' }),

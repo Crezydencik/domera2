@@ -49,6 +49,14 @@ export class SendOwnerInvitationEmailDto {
   @IsEmail()
   to!: string;
 
+  @IsOptional()
+  @IsString()
+  ownerName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  ownerEmail?: string;
+
   @IsString()
   companyName!: string;
 

@@ -17,5 +17,6 @@ exports.BuildingsModule = BuildingsModule = __decorate([
     (0, common_1.Module)({
         controllers: [buildings_controller_1.BuildingsController],
         providers: [buildings_service_1.BuildingsService],
+        exports: [buildings_service_1.BuildingsService],
     })
 ], BuildingsModule);

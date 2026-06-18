@@ -228,6 +228,10 @@
         "label": "Privāts dzīvokļa dokuments",
         "description": "Redzams tikai ieraksta īpašniekam. Pārvaldnieks šo failu neredzēs."
       },
+      "platformPrivate": {
+        "label": "Saglabāt tikai sev",
+        "description": "Redzams tikai jums."
+      },
       "managementArchive": {
         "label": "Pārvaldnieka arhīvs",
         "shareLabel": "Kopīgot ar pārvaldnieku",
@@ -411,11 +415,18 @@
     "colActions": "Darbības",
     "healthy": "Kārtībā",
     "needsReview": "Nepieciešama pārskatīšana",
+    "pending": "Gaida",
+    "cancelled": "Atcelts",
+    "repeatRequest": "Atkārtot pieprasījumu",
     "emptyTitle": "Pagaidām nav ēku",
     "emptyDescription": "Pievienojiet pirmo ēku uzņēmuma portfelim ar pogu augstāk.",
     "fields": {
       "name": "Ēkas nosaukums",
+      "comment": "Komentārs",
       "apartmentsCount": "Dzīvokļu skaits",
+      "subscriptionTerm": "Termiņš",
+      "subscriptionTermMonths": "Termiņš (mēneši)",
+      "subscriptionCustomTermYears": "Termiņš (gadi)",
       "occupiedApartments": "Aizņemtie dzīvokļi",
       "status": "Statuss",
       "hotWaterMetersPerResident": "Karstā ūdens skaitītāji dzīvoklī",
@@ -424,6 +435,12 @@
     "tabs": {
       "general": "Pamata",
       "readings": "Rādījumi"
+    },
+    "terms": {
+      "oneYear": "1 gads",
+      "twoYears": "2 gadi",
+      "fiveYears": "5 gadi",
+      "custom": "Cits"
     },
     "readings": {
       "water": {
@@ -461,7 +478,9 @@
     "feedback": {
       "created": "Ēka {building} ir izveidota.",
       "updated": "Ēkas {building} informācija ir atjaunināta.",
-      "deleted": "Ēka {building} ir dzēsta."
+      "deleted": "Ēka {building} ir dzēsta.",
+      "requestCancelled": "Ēkas {building} pieprasījums ir atcelts.",
+      "requestRepeated": "Ēkas {building} pieprasījums ir nosūtīts atkārtoti."
     },
     "errors": {
       "companyMissing": "Ēku pārvaldībai trūkst companyId.",
@@ -470,18 +489,29 @@
       "nameRequired": "Lūdzu, ievadiet ēkas nosaukumu.",
       "addressRequired": "Lūdzu, ievadiet ēkas adresi.",
       "apartmentsCountInvalid": "Dzīvokļu skaitam jābūt 0 vai lielākam.",
+      "subscriptionTermYearsInvalid": "Termiņam jābūt vismaz 1 gadam.",
+      "subscriptionTermMonthsInvalid": "Termiņam jābūt vismaz 1 mēnesim.",
       "hotWaterMetersInvalid": "Karstā ūdens skaitītāju skaitam jābūt 0 vai lielākam.",
       "coldWaterMetersInvalid": "Aukstā ūdens skaitītāju skaitam jābūt 0 vai lielākam.",
       "occupiedApartmentsInvalid": "Aizņemto dzīvokļu skaitam jābūt 0 vai lielākam.",
       "occupiedExceedsTotal": "Aizņemto dzīvokļu skaits nevar pārsniegt kopējo dzīvokļu skaitu.",
       "createFailed": "Neizdevās izveidot ēku.",
       "updateFailed": "Neizdevās atjaunināt ēkas informāciju.",
-      "deleteFailed": "Neizdevās dzēst ēku."
+      "deleteFailed": "Neizdevās dzēst ēku.",
+      "deleteHasApartments": "Ēku nevar dzēst, kamēr tai ir piesaistīti dzīvokļi.",
+      "requestCancelFailed": "Neizdevās atcelt ēkas pieprasījumu.",
+      "requestRepeatFailed": "Neizdevās atkārtot ēkas pieprasījumu."
     },
     "gating": {
       "title": "Ēkas pievienošana īslaicīgi ierobežota",
-      "defaultMessage": "Pašlaik uzņēmums var pievienot ēkas bez abonementa, bet atsevišķa piekļuves pārbaude jau ir sagatavota.",
-      "futureHint": "Nākotnē pirms ēkas pievienošanas varēs prasīt aktīvu abonementu vai piekļuves kodu bez interfeisa pārbūves."
+      "defaultMessage": "Lai pievienotu ēku, nepieciešama platformas administratora atļauja.",
+      "requestHint": "Nosūtiet pieprasījumu, un administrators to redzēs paziņojumos un lietotāju sarakstā.",
+      "requestButton": "Nosūtīt pieprasījumu",
+      "requesting": "Sūta...",
+      "requestSent": "Pieprasījums pievienot ēku nosūtīts administratoram.",
+      "requestAlreadyPending": "Pieprasījums jau ir nosūtīts un gaida administratora lēmumu.",
+      "requestAlreadyAllowed": "Administrators jau ir atļāvis ēku pievienošanu.",
+      "requestFailed": "Neizdevās nosūtīt pieprasījumu administratoram."
     }
   },
   "residents": {
@@ -596,6 +626,7 @@
       "vacant": "Brīvs",
       "actions": {
         "info": "Informācija",
+        "manageAccess": "Pārvaldīt piekļuvi",
         "assignResident": "Piesaistīt iedzīvotāju",
         "delete": "Dzēst dzīvokli"
       },
@@ -616,6 +647,10 @@
           "description": "Vai tiešām dzēst dzīvokli {apartment}? Šo darbību nevar atsaukt.",
           "occupiedHint": "Šim dzīvoklim joprojām ir piesaistīts iedzīvotājs. Vispirms noņemiet piesaisti.",
           "deleting": "Dzēš..."
+        },
+        "tenantAccess": {
+          "title": "Pārvaldīt piekļuvi",
+          "description": "Pārvaldiet dzīvokļa {apartment} īpašnieku un iemītniekus."
         },
         "apartmentInfo": {
           "title": "Dzīvoklis № {apartment}",
@@ -946,7 +981,9 @@
         "saving": "Saglabā...",
         "cancel": "Atcelt",
         "delete": "Dzēst",
-        "resend": "Nosūtīt vēlreiz"
+        "resend": "Nosūtīt vēlreiz",
+        "edit": "Rediģēt"
+
       },
       "ownerTable": {
         "title": "Pašreizējais īpašnieks",

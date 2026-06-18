@@ -20,6 +20,8 @@ const rate_limit_service_1 = require("../../common/services/rate-limit.service")
 const firebase_admin_service_1 = require("../../common/infrastructure/firebase/firebase-admin.service");
 const role_constants_1 = require("../../common/auth/role.constants");
 const users_service_1 = require("../users/users.service");
+const templates_1 = require("../emails/templates");
+const email_layout_template_1 = require("../emails/templates/email-layout.template");
 const CODE_TTL_MS = 60 * 60 * 1000;
 const TOKEN_TTL_MS = 60 * 60 * 1000;
 const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
@@ -132,69 +134,10 @@ let AuthService = class AuthService {
         return { apiKey, from };
     }
     getRegisterCodeTemplate(locale, code) {
-        if (locale === 'ru') {
-            return {
-                subject: 'Код подтверждения регистрации Domera',
-                html: `
-          <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a;">
-            <h2 style="margin:0 0 12px;">Подтверждение регистрации</h2>
-            <p style="margin:0 0 12px;">Введите этот код на странице регистрации:</p>
-            <div style="font-size:34px;font-weight:700;letter-spacing:6px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:14px 18px;display:inline-block;">${code}</div>
-            <p style="margin:14px 0 0;color:#334155;">Код действителен в течение 1 часа.</p>
-          </div>
-        `,
-            };
-        }
-        if (locale === 'lv') {
-            return {
-                subject: 'Domera reģistrācijas apstiprināšanas kods',
-                html: `
-          <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a;">
-            <h2 style="margin:0 0 12px;">Reģistrācijas apstiprināšana</h2>
-            <p style="margin:0 0 12px;">Ievadiet šo kodu reģistrācijas lapā:</p>
-            <div style="font-size:34px;font-weight:700;letter-spacing:6px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:14px 18px;display:inline-block;">${code}</div>
-            <p style="margin:14px 0 0;color:#334155;">Kods ir derīgs 1 stundu.</p>
-          </div>
-        `,
-            };
-        }
-        return {
-            subject: 'Domera registration verification code',
-            html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a;">
-          <h2 style="margin:0 0 12px;">Confirm your registration</h2>
-          <p style="margin:0 0 12px;">Enter this code on the registration page:</p>
-          <div style="font-size:34px;font-weight:700;letter-spacing:6px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:14px 18px;display:inline-block;">${code}</div>
-          <p style="margin:14px 0 0;color:#334155;">This code is valid for 1 hour.</p>
-        </div>
-      `,
-        };
+        return templates_1.registrationCodeTemplates[locale](code);
     }
     getResetPasswordTemplate(lang, resetLink) {
-        if (lang === 'ru') {
-            return {
-                subject: 'Сброс пароля Domera',
-                html: `
-          <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a;">
-            <h2 style="margin:0 0 12px;">Сброс пароля</h2>
-            <p style="margin:0 0 12px;">Нажмите кнопку ниже, чтобы создать новый пароль:</p>
-            <a href="${resetLink}" style="display:inline-block;padding:12px 18px;background:#4f46e5;color:#ffffff;text-decoration:none;border-radius:8px;">Сбросить пароль</a>
-            <p style="margin:14px 0 0;color:#64748b;font-size:13px;">Если вы не запрашивали сброс, просто игнорируйте это письмо.</p>
-          </div>
-        `,
-            };
-        }
-        return {
-            subject: 'Domera paroles atiestatīšana',
-            html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a;">
-          <h2 style="margin:0 0 12px;">Paroles atiestatīšana</h2>
-          <p style="margin:0 0 12px;">Nospiediet pogu zemāk, lai izveidotu jaunu paroli:</p>
-          <a href="${resetLink}" style="display:inline-block;padding:12px 18px;background:#4f46e5;color:#ffffff;text-decoration:none;border-radius:8px;">Atiestatīt paroli</a>
-          <p style="margin:14px 0 0;color:#64748b;font-size:13px;">Ja neesat pieprasījis atiestatīšanu, ignorējiet šo e-pastu.</p>
-        </div>
-      `,
-        };
+        return templates_1.passwordResetTemplates[lang](resetLink);
     }
     buildCustomResetLink(origin, firebaseResetLink, email) {
         const parsed = new URL(firebaseResetLink);
@@ -248,14 +191,16 @@ let AuthService = class AuthService {
     getEmailChangeTemplate(link) {
         return {
             subject: 'Domera e-pasta maiņas apstiprināšana',
-            html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a;">
-          <h2 style="margin:0 0 12px;">Apstipriniet e-pasta maiņu</h2>
-          <p style="margin:0 0 12px;">Lai mainītu savu Domera konta e-pastu, nospiediet pogu zemāk:</p>
-          <a href="${link}" style="display:inline-block;padding:12px 18px;background:#111827;color:#ffffff;text-decoration:none;border-radius:999px;font-weight:700;">Apstiprināt e-pastu</a>
-          <p style="margin:14px 0 0;color:#64748b;font-size:13px;">Saite ir derīga 1 stundu. Ja neesat pieprasījis e-pasta maiņu, ignorējiet šo ziņojumu.</p>
-        </div>
-      `,
+            html: (0, email_layout_template_1.renderEmailLayout)({
+                language: 'lv',
+                title: 'Apstipriniet e-pasta maiņu',
+                badge: 'Drošība',
+                children: `
+          ${(0, email_layout_template_1.paragraph)('Lai mainītu savu Domera konta e-pastu, nospiediet pogu zemāk.')}
+          ${(0, email_layout_template_1.button)('Apstiprināt e-pastu', link)}
+          ${(0, email_layout_template_1.note)('Saite ir derīga 1 stundu. Ja neesat pieprasījis e-pasta maiņu, varat droši ignorēt šo ziņojumu.')}
+        `,
+            }),
         };
     }
     getFirebaseWebApiKey() {
@@ -500,8 +445,10 @@ let AuthService = class AuthService {
                 updatedAt: new Date(),
             }, { merge: true });
         }
-        const ttlMinutes = Number(this.configService.get('FIREBASE_SESSION_TTL_MINUTES') ?? '30');
-        const ttlMs = Math.min(Math.max(ttlMinutes, 5), 24 * 60) * 60 * 1000;
+        const standardTtlMinutes = Number(this.configService.get('FIREBASE_SESSION_TTL_MINUTES') ?? '30');
+        const rememberMeTtlMinutes = Number(this.configService.get('FIREBASE_REMEMBER_ME_SESSION_TTL_MINUTES') ?? String(14 * 24 * 60));
+        const ttlMinutes = input.rememberMe ? rememberMeTtlMinutes : standardTtlMinutes;
+        const ttlMs = Math.min(Math.max(ttlMinutes, 5), 14 * 24 * 60) * 60 * 1000;
         let sessionCookie;
         try {
             sessionCookie = await this.firebaseAdminService.auth.createSessionCookie(input.idToken, {
@@ -660,6 +607,7 @@ let AuthService = class AuthService {
             idToken: authResult.idToken,
             userId: authResult.localId,
             email: authResult.email ?? email,
+            rememberMe: input.rememberMe,
         });
         void this.auditLogService.write({
             request,

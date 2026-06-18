@@ -29,6 +29,8 @@ export declare class ApartmentsService {
     private getApartmentStorageFolderPath;
     private resolveApartmentStorageContext;
     private markStorageFolders;
+    private getApprovedBuildingOrThrow;
+    private assertApartmentBuildingEditableForStaff;
     private assertAuthenticated;
     private isStaff;
     private getAccessibleApartmentIds;
@@ -48,6 +50,8 @@ export declare class ApartmentsService {
     private resolveOwnerInvitationContext;
     private createOwnerInvitationNotification;
     private createTenantInvitationNotification;
+    private getPlatformAdminDocs;
+    private emailPlatformAdminsAboutApartmentRequest;
     private buildApartmentNumberCode;
     private generateApartmentReadableId;
     private getCellStringByHeader;

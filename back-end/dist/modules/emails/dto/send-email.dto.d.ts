@@ -22,6 +22,8 @@ export declare class SendPasswordResetEmailDto {
 }
 export declare class SendOwnerInvitationEmailDto {
     to: string;
+    ownerName?: string;
+    ownerEmail?: string;
     companyName: string;
     invitationLink: string;
     buildingName?: string;
