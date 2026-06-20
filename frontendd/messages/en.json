@@ -863,6 +863,8 @@
         "actions": "ACTIONS"
       },
       "mobile": {
+        "apartmentAbbr": "APT.",
+        "responsiblePersonAbbr": "RESP.",
         "details": "More details"
       }
     },
@@ -1201,6 +1203,11 @@
     "send": "Submit readings",
     "submit": "Submit",
     "export": "Export",
+    "exportModalTitle": "Data export",
+    "exportFormatLabel": "Format",
+    "exportReadingMonthLabel": "Reading month",
+    "exportInvoiceMonthLabel": "Invoice month",
+    "exportDownload": "Download {format}",
     "testEmail": "Test Email",
     "sendingTestEmail": "Sending...",
     "retry": "Retry",
@@ -1266,6 +1273,8 @@
     "notifyPeriodSaveError": "Failed to save period",
     "notifyPeriodDeleted": "Submission period deleted",
     "notifyPeriodDeleteError": "Failed to delete period",
+    "notifyExportSuccess": "Export completed",
+    "notifyNothingToExport": "There is no data to export",
     "confirmDeleteMonth": "Delete all readings for {monthKey}?",
     "deleteReadingsTitle": "Delete all readings for {monthKey}"
   },

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 // import { useAuthSession } from "@/shared/hooks/use-auth";
 import { SectionCard } from "@/components/section-card";
@@ -50,6 +50,7 @@ interface ManagedBuildingOption {
 }
 
 type UnknownRecord = Record<string, unknown>;
+type ExportFormat = "csv" | "excel" | "xml";
 
 function text(...values: unknown[]) {
   for (const value of values) {
@@ -181,8 +182,43 @@ function previousReadingValue(reading: MeterReadingRecord | null | undefined) {
   return reading.currentValue || reading.previousValue || "—";
 }
 
+function csvCell(value: unknown) {
+  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+}
+
+function xmlCell(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function downloadText(fileName: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function toCsv(rows: string[][]) {
+  return `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\n")}`;
+}
+
+function toExcelHtml(rows: string[][]) {
+  const tableRows = rows
+    .map((row) => `<tr>${row.map((cell) => `<td>${xmlCell(cell)}</td>`).join("")}</tr>`)
+    .join("");
+  return `\uFEFF<html><head><meta charset="utf-8" /></head><body><table>${tableRows}</table></body></html>`;
+}
+
 export default function ManagementCompanyPage() {
   const t = useTranslations("meterread");
+  const locale = useLocale();
   const notify = useNotifications();
   const [apartments, setApartments] = useState<ApartmentMeterData[]>([]); 
   const [managedBuildings, setManagedBuildings] = useState<ManagedBuildingOption[]>([]);
@@ -201,6 +237,16 @@ export default function ManagementCompanyPage() {
   const [periodValue, setPeriodValue] = useState<SubmissionPeriodValue | null>(null);
   const [periodSaving, setPeriodSaving] = useState(false);
   const [periodDeleting, setPeriodDeleting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
+  const [exportReadingMonth, setExportReadingMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [exportInvoiceMonth, setExportInvoiceMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
 
   // Submission modal state
   const [selectAptOpen, setSelectAptOpen] = useState(false);
@@ -213,7 +259,31 @@ export default function ManagementCompanyPage() {
   const [submitCold, setSubmitCold] = useState("");
   const [submitHot, setSubmitHot] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [sendingTestReminder, setSendingTestReminder] = useState(false);
+  const submitMonthParts = React.useMemo(() => {
+    const [rawYear, rawMonth] = submitMonth.split("-");
+    const now = new Date();
+    return {
+      year: /^\d{4}$/.test(rawYear) ? rawYear : String(now.getFullYear()),
+      month: /^(0[1-9]|1[0-2])$/.test(rawMonth) ? rawMonth : String(now.getMonth() + 1).padStart(2, "0"),
+    };
+  }, [submitMonth]);
+  const submitMonthOptions = React.useMemo(() => {
+    const formatter = new Intl.DateTimeFormat(locale, { month: "long" });
+    return Array.from({ length: 12 }, (_, index) => {
+      const label = formatter.format(new Date(2026, index, 1));
+      return {
+        value: String(index + 1).padStart(2, "0"),
+        label: label.charAt(0).toLocaleUpperCase(locale) + label.slice(1),
+      };
+    });
+  }, [locale]);
+  const submitYearOptions = React.useMemo(() => {
+    const selectedYear = Number(submitMonthParts.year);
+    const currentYear = new Date().getFullYear();
+    const start = Math.min(currentYear - 6, Number.isFinite(selectedYear) ? selectedYear : currentYear);
+    const end = Math.max(currentYear + 3, Number.isFinite(selectedYear) ? selectedYear : currentYear);
+    return Array.from({ length: end - start + 1 }, (_, index) => String(start + index));
+  }, [submitMonthParts.year]);
 
   // Period-aware status: 'submitted' (зелёный, сдано в текущем периоде),
   // 'pending' (жёлтый, период открыт, ещё не сдано), 'overdue' (красный,
@@ -401,19 +471,6 @@ export default function ManagementCompanyPage() {
       notify.error(t("notifyDeleteError"));
     } finally {
       setDeletingMonthKey(null);
-    }
-  };
-
-  const sendTestReminder = async () => {
-    try {
-      setSendingTestReminder(true);
-      await apiFetch("/meter-readings/test-reminder", { method: "POST" });
-      notify.success(t("notifyTestEmailSent"));
-    } catch (e) {
-      console.error(e);
-      notify.error(t("notifyEmailError"));
-    } finally {
-      setSendingTestReminder(false);
     }
   };
 
@@ -935,6 +992,123 @@ export default function ManagementCompanyPage() {
     return true;
   });
 
+  const handleExportReadings = () => {
+    const exportRows = filteredApartments.flatMap((apt) =>
+      apt.meters.flatMap((meter) => {
+        const readings = meter.readings.length > 0
+          ? meter.readings
+          : meter.latestReading
+            ? [meter.latestReading]
+            : [];
+
+        return readings
+          .filter((reading) => readingMonthKey(reading) === exportReadingMonth)
+          .map((reading) => ({
+            building: apt.buildingLabel || buildingLabels.get(apt.building) || apt.building,
+            apartmentId: apt.apartmentId,
+            apartment: apt.apartment,
+            meterType: meter.meterType,
+            serialNumber: meter.serialNumber || "",
+            period: readingMonthLabel(reading) ?? "",
+            submittedAt: reading.submittedAt || "",
+            previousValue: reading.previousValue || "",
+            currentValue: reading.currentValue || "",
+            consumption: readingConsumption(reading),
+            status: reading.status || "",
+          }));
+      }),
+    );
+
+    if (exportRows.length === 0) {
+      notify.info(t("notifyNothingToExport"));
+      return;
+    }
+
+    exportRows.sort((left, right) => {
+      const apartmentSort = left.apartment.localeCompare(right.apartment, undefined, { numeric: true, sensitivity: "base" });
+      if (apartmentSort !== 0) return apartmentSort;
+      return left.meterType.localeCompare(right.meterType);
+    });
+
+    const tableRows = [
+      [
+        t("selectBuilding"),
+        t("colApartment"),
+        t("colMeter"),
+        t("meterNumber"),
+        t("monthLabel"),
+        t("colDate"),
+        t("colPrevious"),
+        t("colCurrent"),
+        t("colConsumption"),
+        t("colStatus"),
+      ],
+      ...exportRows.map((row) => [
+        row.building,
+        row.apartment,
+        row.meterType,
+        row.serialNumber,
+        row.period,
+        row.submittedAt,
+        row.previousValue,
+        row.currentValue,
+        row.consumption,
+        row.status,
+      ]),
+    ];
+
+    const fileBase = `domera-meter-readings-${exportReadingMonth}`;
+    if (exportFormat === "xml") {
+      const [invoiceYear, invoiceMonth] = exportInvoiceMonth.split("-");
+      const buildingName = buildingLabels.get(effectiveBuilding) || exportRows[0]?.building || "";
+      const xmlRows = exportRows
+        .map((row) => `    <R>
+      <DzNumurs>${xmlCell(row.apartment)}</DzNumurs>
+      <DzForeignKey>${xmlCell(row.apartmentId)}</DzForeignKey>
+      <SkdNrM>${xmlCell(row.serialNumber)}</SkdNrM>
+      <BeigMNor>${xmlCell(row.currentValue)}</BeigMNor>
+      <Tips>${xmlCell(row.meterType)}</Tips>
+      <RadijumaMenesis>${xmlCell(exportReadingMonth)}</RadijumaMenesis>
+    </R>`)
+        .join("\n");
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<UdSkRd xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Gads>${xmlCell(invoiceYear)}</Gads>
+  <Menesis>${xmlCell(Number(invoiceMonth))}</Menesis>
+  <Nosaukums>${xmlCell(buildingName)}</Nosaukums>
+  <Tab>
+${xmlRows}
+  </Tab>
+</UdSkRd>`;
+      downloadText(`${fileBase}.xml`, xml, "application/xml;charset=utf-8;");
+    } else if (exportFormat === "excel") {
+      downloadText(`${fileBase}.xls`, toExcelHtml(tableRows), "application/vnd.ms-excel;charset=utf-8;");
+    } else {
+      downloadText(`${fileBase}.csv`, toCsv(tableRows), "text/csv;charset=utf-8;");
+    }
+
+    setExportOpen(false);
+    notify.success(t("notifyExportSuccess"));
+  };
+
+  const renderMonthControl = (
+    label: string,
+    value: string,
+    onChange: (value: string) => void,
+  ) => {
+    return (
+      <div>
+        <label className="mb-1.5 block text-sm font-semibold text-slate-700">{label}</label>
+        <input
+          type="month"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+        />
+      </div>
+    );
+  };
+
   const toggleExpanded = (id: string) => {
     const newExpanded = new Set(expandedApartments);
     if (newExpanded.has(id)) {
@@ -981,15 +1155,15 @@ export default function ManagementCompanyPage() {
         title={t("submitModalTitle")}
         size="md"
         footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="primary" onClick={() => setSubmitOpen(false)}>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+            <Button variant="primary" onClick={() => setSubmitOpen(false)} className="min-h-12 rounded-xl px-3 text-sm sm:px-5">
               {t("close")}
             </Button>
             <Button
               variant="primary"
               onClick={submitReadings}
               disabled={submitting}
-              className="bg-emerald-600 hover:bg-emerald-700"
+              className="min-h-12 rounded-xl bg-emerald-600 px-3 text-sm hover:bg-emerald-700 sm:px-5"
             >
               {submitting ? t("sending") : t("send")}
             </Button>
@@ -1007,12 +1181,30 @@ export default function ManagementCompanyPage() {
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">{t("monthLabel")}</label>
-              <input
-                type="month"
-                value={submitMonth}
-                onChange={(e) => setSubmitMonth(e.target.value)}
-                className="h-11 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
-              />
+              <div className="grid grid-cols-[minmax(0,1fr)_5.75rem] gap-2">
+                <select
+                  value={submitMonthParts.month}
+                  onChange={(e) => setSubmitMonth(`${submitMonthParts.year}-${e.target.value}`)}
+                  className="h-11 min-w-0 rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+                >
+                  {submitMonthOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={submitMonthParts.year}
+                  onChange={(e) => setSubmitMonth(`${e.target.value}-${submitMonthParts.month}`)}
+                  className="h-11 min-w-0 rounded-xl border border-slate-300 bg-slate-50 px-2 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+                >
+                  {submitYearOptions.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             </div>
 
@@ -1026,7 +1218,7 @@ export default function ManagementCompanyPage() {
               return (
                 <div className="space-y-4">
                   {cold && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4">
                     <MeterReadingInput
                       variant="cold"
                       label={t("coldWater")}
@@ -1042,7 +1234,7 @@ export default function ManagementCompanyPage() {
                     </div>
                   )}
                   {hot && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4">
                     <MeterReadingInput
                       variant="hot"
                       label={t("hotWater")}
@@ -1156,6 +1348,50 @@ export default function ManagementCompanyPage() {
         </div>
       </Modal>
 
+      <Modal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={t("exportModalTitle")}
+        size="sm"
+      >
+        <div className="space-y-5">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">{t("exportFormatLabel")}</label>
+            <select
+              value={exportFormat}
+              onChange={(event) => setExportFormat(event.target.value as ExportFormat)}
+              className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+            >
+              <option value="csv">CSV</option>
+              <option value="excel">Excel (XLS)</option>
+              <option value="xml">XML</option>
+            </select>
+          </div>
+
+          {renderMonthControl(t("exportReadingMonthLabel"), exportReadingMonth, setExportReadingMonth)}
+          {exportFormat === "xml" ? renderMonthControl(t("exportInvoiceMonthLabel"), exportInvoiceMonth, setExportInvoiceMonth) : null}
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Button
+              type="button"
+              variant="primary"
+              onClick={handleExportReadings}
+              className="rounded-xl bg-emerald-600 px-5 hover:bg-emerald-700"
+            >
+              {t("exportDownload", { format: exportFormat === "excel" ? "XLS" : exportFormat.toUpperCase() })}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setExportOpen(false)}
+              className="rounded-xl"
+            >
+              {t("cancel")}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       <SectionCard> 
         {buildings.length > 0 && (
           <div className="mb-5 max-w-md">
@@ -1210,7 +1446,7 @@ export default function ManagementCompanyPage() {
                   type="button"
                   onClick={() => setPeriodOpen(true)}
                   disabled={!effectiveBuilding}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                   title={periodValue?.monthly ? t("periodMonthly") : t("periodModalTitle")}
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1229,24 +1465,19 @@ export default function ManagementCompanyPage() {
                   type="button"
                   onClick={() => setSelectAptOpen(true)}
                   disabled={filteredApartments.length === 0}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1"
+                  className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                   {t("submit")}
                 </button>
-                <button className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-1 focus:ring-slate-400">
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                  {t("export")}
-                </button>
                 <button
                   type="button"
-                  onClick={sendTestReminder}
-                  disabled={sendingTestReminder}
-                  title="Send test meter reading reminder email"
-                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  onClick={() => setExportOpen(true)}
+                  disabled={filteredApartments.length === 0}
+                  className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-slate-400"
                 >
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                  {sendingTestReminder ? t("sendingTestEmail") : t("testEmail")}
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                  {t("export")}
                 </button>
               </>
             }
@@ -1293,24 +1524,20 @@ export default function ManagementCompanyPage() {
                 <div key={apt.id} className="rounded-md border border-slate-200 bg-white">
                   <button
                     onClick={() => toggleExpanded(apt.id)}
-                    className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+                    className="grid w-full grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 px-3 py-3 text-left"
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base font-semibold text-slate-900 tabular-nums">{apt.apartment} </span>
-                      </div>
-                      <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500 tabular-nums">
-                        <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium ${cfg.bg} ${cfg.border} ${cfg.text}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
-                          {cfg.label}
-                        </span>
-                        <span className="text-slate-300">·</span>
-                        <span>{latestDate}</span>  
-                      </div>
-                    </div>
                     <svg className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    <span className="text-base font-semibold text-slate-900 tabular-nums">{apt.apartment}</span>
+                    <span className="ml-auto flex min-w-0 flex-col items-end gap-1 rounded-xl bg-slate-50 px-2.5 py-1.5">
+                      <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${cfg.bg} ${cfg.border} ${cfg.text}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+                        {cfg.label}
+                      </span>
+                      <span className="max-w-[6.5rem] truncate text-[11px] text-slate-500 tabular-nums">{latestDate}</span>
+                    </span>
                   </button>
 
+                  {isExpanded && (
                   <div className="border-t border-slate-100 px-3 py-3 space-y-2">
                     {apt.meters.map((meter, idx) => {
                       const isHot = meter.meterType.toLowerCase().includes("hot");
@@ -1348,16 +1575,25 @@ export default function ManagementCompanyPage() {
                     })}
 
                     <div className="flex gap-2 pt-1">
-                      <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                      <button
+                        type="button"
+                        onClick={() => openViewModal(apt)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                         {t("view")}
                       </button>
-                      <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                      <button
+                        type="button"
+                        onClick={() => openSubmitModal(apt)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
                         {t("edit")}
                       </button>
                     </div>
                   </div>
+                  )}
 
                   {isExpanded && (
                     <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-3">
@@ -1431,8 +1667,6 @@ export default function ManagementCompanyPage() {
                 <tr>
                   <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 w-10"></th>
                   <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("colApartment")}</th>
-                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("colMeter")}</th>
-                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("colReading")}</th>
                   <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("colStatus")}</th>
                   <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("colActions")}</th>
                 </tr>
@@ -1453,47 +1687,6 @@ export default function ManagementCompanyPage() {
                         <td className="px-3 py-3 align-top">
                           <div className="font-semibold text-slate-900 tabular-nums">{apt.apartment}</div>
                         </td>
-                        <td className="px-3 py-3 align-top">
-                          <div className="flex gap-1.5">
-                            {apt.meters.map((meter, idx) => {
-                              const isHot = meter.meterType.toLowerCase().includes("hot");
-                              const dotColor = isHot ? "bg-red-500" : "bg-blue-500";
-                              return (
-                                <div key={idx} className="flex items-center gap-2 text-xs">
-                                  <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
-                                  <span className="font-mono text-slate-500 tabular-nums">{meter.serialNumber ? `#${meter.serialNumber}` : "—"}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <div className="flex gap-1.5">
-                            {apt.meters.map((meter, idx) => {
-                              const currPeriod = readingMonthKey(meter.latestReading);
-                              const currLabel = readingMonthLabel(meter.latestReading) ?? "";
-                              const previousReading = currPeriod ? previousReadingForMonth(meter, currPeriod) : null;
-                              const prevLabel = readingMonthLabel(previousReading) ?? "";
-                              const isHot = meter.meterType.toLowerCase().includes("hot");
-                              const consumptionColor = isHot ? "text-red-600" : "text-blue-600";
-                              return (
-                                <div key={idx} className="flex items-center justify-center gap-2.5 text-sm tabular-nums">
-                                  <div className="flex flex-col items-end leading-tight">
-                                    {prevLabel && <span className="text-[10px] uppercase tracking-wide text-slate-400">{prevLabel}</span>}
-                                    <span className="text-slate-500">{previousReadingValue(previousReading)}</span>
-                                  </div>
-                                  <svg className="h-3 w-3 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-                                  <div className="flex flex-col items-end leading-tight">
-                                    {currLabel && <span className="text-[10px] uppercase tracking-wide text-slate-400">{currLabel}</span>}
-                                    <span className="font-semibold text-slate-900">{meter.latestReading?.currentValue ?? "—"}</span>
-                                  </div>
-                                  <span className="text-slate-300">=</span>
-                                  <span className={`font-semibold ${consumptionColor}`}>+{readingConsumption(meter.latestReading)} m³</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </td>
                         <td className="px-3 py-3 text-center align-middle">
                           {(() => {
                             const dates = apt.meters
@@ -1502,10 +1695,15 @@ export default function ManagementCompanyPage() {
                             const latestDate = dates.length > 0 ? dates.sort().reverse()[0] : undefined;
                             const cfg = STATUS_CFG[getPeriodStatus(latestDate)];
                             return (
-                              <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ${cfg.bg} ${cfg.border} ${cfg.text}`}>
-                                <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
-                                {cfg.label}
-                              </span>
+                              <div className="inline-flex flex-col items-center gap-1 rounded-xl bg-slate-50 px-2.5 py-1.5">
+                                <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ${cfg.bg} ${cfg.border} ${cfg.text}`}>
+                                  <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+                                  {cfg.label}
+                                </span>
+                                <span className="max-w-[7rem] truncate text-[11px] text-slate-500 tabular-nums">
+                                  {latestDate ?? "—"}
+                                </span>
+                              </div>
                             );
                           })()}
                         </td>
@@ -1533,8 +1731,45 @@ export default function ManagementCompanyPage() {
                       {/* Expanded History */}
                       {isExpanded && (
                         <tr className="bg-slate-50/60">
-                          <td colSpan={9} className="p-0">
+                          <td colSpan={4} className="p-0">
                             <div className="px-4 py-4">
+                              <div className="mb-4 grid gap-2 lg:grid-cols-2">
+                                {apt.meters.map((meter, idx) => {
+                                  const currPeriod = readingMonthKey(meter.latestReading);
+                                  const currLabel = readingMonthLabel(meter.latestReading) ?? "";
+                                  const previousReading = currPeriod ? previousReadingForMonth(meter, currPeriod) : null;
+                                  const prevLabel = readingMonthLabel(previousReading) ?? "";
+                                  const isHot = meter.meterType.toLowerCase().includes("hot");
+                                  const dotColor = isHot ? "bg-red-500" : "bg-blue-500";
+                                  const consumptionColor = isHot ? "text-red-600" : "text-blue-600";
+                                  return (
+                                    <div key={idx} className="rounded-md border border-slate-200 bg-white px-3 py-2.5">
+                                      <div className="mb-2 flex items-center justify-between gap-3">
+                                        <span className="inline-flex min-w-0 items-center gap-2 text-xs font-medium text-slate-700">
+                                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
+                                          <span className="truncate">{meter.meterType}</span>
+                                        </span>
+                                        <span className="truncate font-mono text-[11px] text-slate-500 tabular-nums">
+                                          {meter.serialNumber ? `#${meter.serialNumber}` : "—"}
+                                        </span>
+                                      </div>
+                                      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_auto] items-end gap-2 text-sm tabular-nums">
+                                        <div className="min-w-0 text-right leading-tight">
+                                          <div className="truncate text-[10px] uppercase tracking-wide text-slate-400">{prevLabel || t("prevShort")}</div>
+                                          <div className="truncate text-slate-500">{previousReadingValue(previousReading)}</div>
+                                        </div>
+                                        <svg className="h-3 w-3 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                                        <div className="min-w-0 text-right leading-tight">
+                                          <div className="truncate text-[10px] uppercase tracking-wide text-slate-400">{currLabel || t("currShort")}</div>
+                                          <div className="truncate font-semibold text-slate-900">{meter.latestReading?.currentValue ?? "—"}</div>
+                                        </div>
+                                        <span className="text-slate-300">=</span>
+                                        <span className={`whitespace-nowrap font-semibold ${consumptionColor}`}>+{readingConsumption(meter.latestReading)} m³</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                               <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-3">{t("readingHistory")}</h4>
                               <div className="space-y-2">
                                 {(() => {

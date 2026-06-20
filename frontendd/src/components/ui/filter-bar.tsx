@@ -57,7 +57,7 @@ export function FilterBar({ fields, values, onChange, actions, footer }: FilterB
 
   return (
     <div className="mb-6 space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap">
           {visibleFields.map((field) => {
             const value = values[field.name] ?? "";
@@ -104,7 +104,7 @@ export function FilterBar({ fields, values, onChange, actions, footer }: FilterB
           })}
         </div>
 
-        {actions && <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">{actions}</div>}
+        {actions && <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:flex xl:flex-wrap xl:justify-end">{actions}</div>}
       </div>
 
       {footer && <div className="text-xs uppercase tracking-wide text-slate-500">{footer}</div>}

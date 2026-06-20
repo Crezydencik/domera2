@@ -941,6 +941,8 @@
         "actions": "DARBĪBAS"
       },
       "mobile": {
+        "apartmentAbbr": "DZĪV.",
+        "responsiblePersonAbbr": "ATB. PERS.",
         "details": "Papildus info"
       }
     },
@@ -1195,6 +1197,11 @@
     "send": "Iesniegt rādījumus",
     "submit": "Iesniegt",
     "export": "Eksportēt",
+    "exportModalTitle": "Datu eksports",
+    "exportFormatLabel": "Formāts",
+    "exportReadingMonthLabel": "Rādījumu mēnesis",
+    "exportInvoiceMonthLabel": "Rēķina mēnesis",
+    "exportDownload": "Lejupielādēt {format}",
     "testEmail": "Testa e-pasts",
     "sendingTestEmail": "Sūta...",
     "retry": "Mēģināt vēlreiz",
@@ -1260,6 +1267,8 @@
     "notifyPeriodSaveError": "Neizdevās saglabāt periodu",
     "notifyPeriodDeleted": "Iesniegšanas periods dzēsts",
     "notifyPeriodDeleteError": "Neizdevās dzēst periodu",
+    "notifyExportSuccess": "Eksports pabeigts",
+    "notifyNothingToExport": "Nav datu eksportam",
     "confirmDeleteMonth": "Dzēst visus rādījumus par {monthKey}?",
     "deleteReadingsTitle": "Dzēst visus rādījumus par {monthKey}"
   },

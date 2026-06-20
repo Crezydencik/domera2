@@ -50,10 +50,12 @@ export default function LoginPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900">{t("loginTitle")}</h1>
-      <p className="mt-1.5 text-sm text-slate-500">{t("loginSubtitle")}</p>
+      <h1 className="text-[1.65rem] font-bold leading-tight text-slate-900 sm:text-2xl">
+        {t("loginTitle")}
+      </h1>
+      <p className="mt-1.5 text-sm leading-6 text-slate-500">{t("loginSubtitle")}</p>
 
-      <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-5">
+      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4 sm:mt-8 sm:gap-5">
         {error && (
           <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
             {error}
@@ -80,7 +82,7 @@ export default function LoginPage() {
             required
             autoComplete="current-password"
           />
-          <div className="mt-3 flex items-center justify-between">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
             <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-slate-600">
               <input
                 type="checkbox"
@@ -103,14 +105,14 @@ export default function LoginPage() {
           type="submit"
           variant="primary"
           size="lg"
-          className="w-full"
+          className="min-h-12 w-full rounded-xl sm:rounded-2xl"
           disabled={loading}
         >
           {loading ? s("button.loggingIn") : s("button.login")}
         </Button>
       </form>
 
-      <div className="my-6 flex items-center gap-3">
+      <div className="my-5 flex items-center gap-3 sm:my-6">
         <div className="h-px flex-1 bg-slate-200" />
         <span className="text-xs text-slate-400">{t("or")}</span>
         <div className="h-px flex-1 bg-slate-200" />

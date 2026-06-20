@@ -47,10 +47,10 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
       onClick={(e) => {
         if (e.target === dialogRef.current) onClose();
       }}
-      className={`m-auto max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] overflow-hidden ${sizeClass[size]} rounded-3xl border border-slate-200 bg-white p-0 shadow-2xl shadow-slate-900/20 backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm`}
+      className={`m-auto max-h-[calc(100dvh-1rem)] w-[calc(100vw-0.75rem)] overflow-hidden ${sizeClass[size]} rounded-3xl border border-slate-200 bg-white p-0 shadow-2xl shadow-slate-900/20 backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)]`}
     >
-      <div className="flex max-h-[calc(100dvh-2rem)] flex-col">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-4">
+      <div className="flex max-h-[calc(100dvh-1rem)] flex-col sm:max-h-[calc(100dvh-2rem)]">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-4 py-4 sm:px-6">
           <div className="min-w-0 flex-1 text-base font-semibold text-slate-900">{title}</div>
           <button
             type="button"
@@ -63,8 +63,8 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
             </svg>
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
-        {footer && <div className="shrink-0 border-t border-slate-100 px-6 py-4">{footer}</div>}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
+        {footer && <div className="shrink-0 border-t border-slate-100 px-4 py-3 sm:px-6 sm:py-4">{footer}</div>}
       </div>
     </dialog>
   );

@@ -201,6 +201,45 @@ export function ApartmentsManagementView({
         ? String(item.ownerEmail)
         : resolvedOwnerFromResident?.fullName || "";
     const owner = rawOwner && !looksLikeOpaqueId(rawOwner) ? rawOwner : t("common.notSpecified");
+    const tenantNames = Array.isArray(item.tenants)
+      ? item.tenants
+          .map((tenant) => {
+            if (!tenant || typeof tenant !== "object") return "";
+            const record = tenant as Record<string, unknown>;
+            const firstName = hasReadableText(record.firstName) ? record.firstName.trim() : "";
+            const lastName = hasReadableText(record.lastName) ? record.lastName.trim() : "";
+            const fullName = [firstName, lastName].filter(Boolean).join(" ");
+            return hasReadableText(record.fullName)
+              ? record.fullName.trim()
+              : hasReadableText(record.name)
+                ? record.name.trim()
+                : fullName || (hasReadableText(record.email) ? record.email.trim() : "");
+          })
+          .filter((value) => value && !looksLikeOpaqueId(value))
+      : [];
+    const responsiblePerson = tenantNames.length > 0
+      ? owner !== t("common.notSpecified")
+        ? `${owner} / ${tenantNames.join(", ")}`
+        : tenantNames.join(", ")
+      : owner;
+    const tenantPhones = Array.isArray(item.tenants)
+      ? item.tenants
+          .map((tenant) => {
+            if (!tenant || typeof tenant !== "object") return "";
+            const record = tenant as Record<string, unknown>;
+            return hasReadableText(record.phone) ? record.phone.trim() : "";
+          })
+          .filter(Boolean)
+      : [];
+    const phoneValues = [
+      item.ownerPhone,
+      item.residentPhone,
+      item.phone,
+      item.phoneNumber,
+      resolvedOwnerFromResident?.phone,
+      ...tenantPhones,
+    ].filter(hasReadableText);
+    const phoneLabel = Array.from(new Set(phoneValues.map((value) => value.trim()))).join(" / ");
     const buildingLocked = hasReadableText(item.buildingId) && lockedBuildingIds.has(String(item.buildingId).trim());
 
     return [
@@ -217,7 +256,7 @@ export function ApartmentsManagementView({
           {String(item.number ?? item.id ?? "—")}
         </span>
       ),
-      owner,
+      responsiblePerson,
       area,
       declaredResidents,
       floor,
@@ -241,6 +280,11 @@ export function ApartmentsManagementView({
       ) : (
         <span key={`${id}-empty`} className="text-xs text-slate-400">—</span>
       ),
+      phoneLabel ? (
+        <span key={`${id}-phone`} className="font-medium text-slate-800">
+          {phoneLabel}
+        </span>
+      ) : null,
     ];
   }), [filteredApartments, lockedBuildingIds, residentById, residentOptions, t]);
 
@@ -290,9 +334,21 @@ export function ApartmentsManagementView({
               t("management.columns.floor"),
               t("management.columns.status"),
               t("management.columns.actions"),
+              t("tenantAccess.fields.phone"),
             ]}
             rows={rows}
-            mobileCollapsibleColumns={[2, 3, 4, 5]}
+            desktopHiddenColumns={[7]}
+            mobileColumnLabels={{
+              0: t("management.mobile.apartmentAbbr"),
+              1: t("management.mobile.responsiblePersonAbbr"),
+            }}
+            mobileCompactSummary={{
+              primaryColumn: 0,
+              secondaryColumn: 1,
+              statusColumn: 5,
+            }}
+            mobileCollapsibleColumns={[7, 2, 3, 4, 6]}
+            mobileCollapsibleIconOnly
             mobileCollapsibleLabel={t("management.mobile.details")}
           />
         ) : (

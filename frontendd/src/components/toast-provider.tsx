@@ -23,6 +23,9 @@ export function ToastProvider() {
 
   return (
     <ToastContainer
+      className="domera-toast-container"
+      toastClassName="domera-toast"
+      progressClassName="domera-toast-progress"
       position="bottom-right"
       autoClose={4000}
       hideProgressBar={false}

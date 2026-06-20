@@ -197,11 +197,11 @@ export function MeterReadingInput({
   const isCompact = size === "compact";
 
   const cellClass =
-    `shrink-0 rounded-[6px] border text-center font-bold tabular-nums outline-none transition focus:ring-2 ` +
+    `rounded-[6px] border text-center font-bold tabular-nums outline-none transition focus:ring-2 ` +
     `${styles.cell} ` +
     (isCompact
-      ? `h-8 w-8 text-sm sm:h-9 sm:w-9 sm:text-base `
-      : `h-[clamp(3.5rem,9vw,5.25rem)] w-[clamp(3.1rem,8vw,4.625rem)] text-2xl sm:text-3xl `) +
+      ? `h-8 min-w-0 w-full text-sm min-[360px]:h-9 sm:text-base `
+      : `h-[clamp(3.5rem,9vw,5.25rem)] w-[clamp(3.1rem,8vw,4.625rem)] shrink-0 text-2xl sm:text-3xl `) +
     `disabled:cursor-not-allowed disabled:opacity-60`;
 
   return (
@@ -216,55 +216,99 @@ export function MeterReadingInput({
         {currentPeriod ? <span className="text-slate-400"> &gt; {currentPeriod}</span> : null}
       </div>
 
-      <div
-        className={
-          isCompact
-            ? "mt-1.5 flex max-w-full items-center overflow-x-auto rounded-md bg-transparent py-0.5"
-            : "mt-5 flex w-full min-w-0 items-center overflow-x-auto rounded-2xl bg-white px-2 py-2 shadow-[0_2px_14px_rgba(15,23,42,0.08)]"
-        }
-        style={{ WebkitOverflowScrolling: "touch" }}
-      >
-        <div className={`${isCompact ? "mr-2 h-6 w-1" : "mx-1 mr-5 h-11 w-1.5"} shrink-0 rounded-full ${styles.bar}`} aria-hidden />
-        <div className="flex min-w-max flex-nowrap items-center gap-1">
-          {ints.map((digit, i) => (
-            <input
-              key={`int-${i}`}
-              ref={(el) => {
-                cellRefs.current[i] = el;
-              }}
-              type="text"
-              inputMode="numeric"
-              maxLength={1}
-              disabled={disabled}
-              value={digit}
-              onChange={(e) => handleChange(i, e)}
-              onKeyDown={(e) => handleKey(i, e)}
-              onFocus={(e) => e.target.select()}
-              className={cellClass}
-              aria-label={`integer digit ${i + 1}`}
-            />
-          ))}
-          <span className={`${isCompact ? "mx-1 text-lg" : "mx-3 text-3xl sm:text-4xl"} shrink-0 font-bold leading-none ${styles.separator}`}>,</span>
-          {decs.map((digit, i) => (
-            <input
-              key={`dec-${i}`}
-              ref={(el) => {
-                cellRefs.current[intDigits + i] = el;
-              }}
-              type="text"
-              inputMode="numeric"
-              maxLength={1}
-              disabled={disabled}
-              value={digit}
-              onChange={(e) => handleChange(intDigits + i, e)}
-              onKeyDown={(e) => handleKey(intDigits + i, e)}
-              onFocus={(e) => e.target.select()}
-              className={cellClass}
-              aria-label={`decimal digit ${i + 1}`}
-            />
-          ))}
+      {isCompact ? (
+        <div className="mt-1.5 grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-1 rounded-md bg-transparent py-0.5 min-[360px]:gap-2">
+          <div className={`h-7 w-1 shrink-0 rounded-full ${styles.bar}`} aria-hidden />
+          <div
+            className="grid min-w-0 items-center gap-0.5 min-[360px]:gap-1"
+            style={{ gridTemplateColumns: `repeat(${intDigits}, minmax(0, 1fr)) auto repeat(${decDigits}, minmax(0, 1fr))` }}
+          >
+            {ints.map((digit, i) => (
+              <input
+                key={`int-${i}`}
+                ref={(el) => {
+                  cellRefs.current[i] = el;
+                }}
+                type="text"
+                inputMode="numeric"
+                maxLength={1}
+                disabled={disabled}
+                value={digit}
+                onChange={(e) => handleChange(i, e)}
+                onKeyDown={(e) => handleKey(i, e)}
+                onFocus={(e) => e.target.select()}
+                className={cellClass}
+                aria-label={`integer digit ${i + 1}`}
+              />
+            ))}
+            <span className={`px-0.5 text-center text-lg font-bold leading-none ${styles.separator}`}>,</span>
+            {decs.map((digit, i) => (
+              <input
+                key={`dec-${i}`}
+                ref={(el) => {
+                  cellRefs.current[intDigits + i] = el;
+                }}
+                type="text"
+                inputMode="numeric"
+                maxLength={1}
+                disabled={disabled}
+                value={digit}
+                onChange={(e) => handleChange(intDigits + i, e)}
+                onKeyDown={(e) => handleKey(intDigits + i, e)}
+                onFocus={(e) => e.target.select()}
+                className={cellClass}
+                aria-label={`decimal digit ${i + 1}`}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div
+          className="mt-5 flex w-full min-w-0 items-center overflow-x-auto rounded-2xl bg-white px-2 py-2 shadow-[0_2px_14px_rgba(15,23,42,0.08)]"
+          style={{ WebkitOverflowScrolling: "touch" }}
+        >
+          <div className={`mx-1 mr-5 h-11 w-1.5 shrink-0 rounded-full ${styles.bar}`} aria-hidden />
+          <div className="flex min-w-max flex-nowrap items-center gap-px min-[360px]:gap-1">
+            {ints.map((digit, i) => (
+              <input
+                key={`int-${i}`}
+                ref={(el) => {
+                  cellRefs.current[i] = el;
+                }}
+                type="text"
+                inputMode="numeric"
+                maxLength={1}
+                disabled={disabled}
+                value={digit}
+                onChange={(e) => handleChange(i, e)}
+                onKeyDown={(e) => handleKey(i, e)}
+                onFocus={(e) => e.target.select()}
+                className={cellClass}
+                aria-label={`integer digit ${i + 1}`}
+              />
+            ))}
+            <span className={`mx-3 shrink-0 text-3xl font-bold leading-none sm:text-4xl ${styles.separator}`}>,</span>
+            {decs.map((digit, i) => (
+              <input
+                key={`dec-${i}`}
+                ref={(el) => {
+                  cellRefs.current[intDigits + i] = el;
+                }}
+                type="text"
+                inputMode="numeric"
+                maxLength={1}
+                disabled={disabled}
+                value={digit}
+                onChange={(e) => handleChange(intDigits + i, e)}
+                onKeyDown={(e) => handleKey(intDigits + i, e)}
+                onFocus={(e) => e.target.select()}
+                className={cellClass}
+                aria-label={`decimal digit ${i + 1}`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {(label || serialNumber) && (
         <div className={isCompact ? "ml-1 mt-1.5 text-sm font-normal leading-snug text-slate-800" : "ml-2 mt-4 text-[22px] font-normal leading-tight text-slate-800 sm:text-[28px]"}>

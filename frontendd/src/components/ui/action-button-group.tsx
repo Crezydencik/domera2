@@ -56,7 +56,7 @@ function ActionIcon({ icon }: { icon: ActionButtonIcon }) {
 }
 
 function ActionButton({ action }: { action: ActionButtonItem }) {
-  const className = `inline-flex h-10 w-10 items-center justify-center rounded-xl border bg-white transition ${toneStyles[action.tone]} ${
+  const className = `inline-flex h-9 w-9 items-center justify-center rounded-xl border bg-white transition md:h-10 md:w-10 ${toneStyles[action.tone]} ${
     action.disabled ? "cursor-not-allowed opacity-45 hover:bg-white" : ""
   }`;
 
@@ -84,7 +84,7 @@ function ActionButton({ action }: { action: ActionButtonItem }) {
 
 export function ActionButtonGroup({ actions }: ActionButtonGroupProps) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5 md:gap-2">
       {actions.map((action) => (
         <ActionButton key={action.key} action={action} />
       ))}

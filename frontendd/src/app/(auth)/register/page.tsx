@@ -80,7 +80,7 @@ const EMPTY_FORM: FormData = {
 
 function StepBar({ current, total, labels }: { current: number; total: number; labels: string[] }) {
   return (
-    <div className="mb-7">
+    <div className="mb-6 sm:mb-7">
       <div className="flex gap-1.5">
         {Array.from({ length: total }).map((_, i) => (
           <div
@@ -89,7 +89,7 @@ function StepBar({ current, total, labels }: { current: number; total: number; l
           />
         ))}
       </div>
-      <p className="mt-2 text-xs text-slate-400">
+      <p className="mt-2 text-xs leading-5 text-slate-400">
         {current + 1} / {total} — {labels[current]}
       </p>
     </div>
@@ -242,10 +242,12 @@ export default function RegisterPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900">{t("registerTitle")}</h1>
-      <p className="mt-1.5 text-sm text-slate-500">{t("registerSubtitle")}</p>
+      <h1 className="text-[1.65rem] font-bold leading-tight text-slate-900 sm:text-2xl">
+        {t("registerTitle")}
+      </h1>
+      <p className="mt-1.5 text-sm leading-6 text-slate-500">{t("registerSubtitle")}</p>
 
-      <div className="mt-7">
+      <div className="mt-6 sm:mt-7">
         <StepBar current={step} total={steps.length} labels={steps} />
       </div>
 
@@ -258,7 +260,7 @@ export default function RegisterPage() {
 
         {/* ── STEP: Account type ── */}
         {currentKey === "accountType" && (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3.5 sm:gap-4">
             {availableAccountTypes.map((type) => (
               <button
                 key={type}
@@ -267,14 +269,14 @@ export default function RegisterPage() {
                   update("accountType", type);
                   setErrors({});
                 }}
-                className={`flex items-start gap-4 rounded-2xl border-2 p-5 text-left transition ${
+                className={`flex items-start gap-3.5 rounded-xl border-2 p-4 text-left transition sm:gap-4 sm:rounded-2xl sm:p-5 ${
                   form.accountType === type
                     ? "border-blue-500 bg-blue-50"
                     : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
                 }`}
               >
                 <span
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl ${
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg sm:h-11 sm:w-11 sm:text-xl ${
                     form.accountType === type ? "bg-blue-100" : "bg-slate-100"
                   }`}
                 >
@@ -298,7 +300,7 @@ export default function RegisterPage() {
 
         {/* ── STEP: Company info ── */}
         {currentKey === "companyInfo" && (
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4 sm:gap-5">
             <Input
               label={s("form.companyName")}
               placeholder={s("placeholder.companyName")}
@@ -329,8 +331,8 @@ export default function RegisterPage() {
 
         {/* ── STEP: Personal info ── */}
         {currentKey === "personalInfo" && (
-          <div className="flex flex-col gap-5">
-            <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-4 sm:gap-5">
+            <div className="grid gap-4 sm:grid-cols-2 sm:gap-3">
               <Input
                 label={s("form.firstName")}
                 placeholder={s("placeholder.firstName")}
@@ -376,7 +378,7 @@ export default function RegisterPage() {
             />
 
             {!!form.password && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:rounded-2xl">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-medium text-slate-800">{t("passwordStrength")}</p>
                   <span
@@ -433,7 +435,7 @@ export default function RegisterPage() {
         {/* ── STEP: Confirmation ── */}
         {currentKey === "confirmation" && (
           <div className="space-y-5">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 sm:rounded-2xl sm:p-5">
               <div className="divide-y divide-slate-100">
                 <ConfirmRow label={s("form.firstName")} value={form.firstName} />
                 <ConfirmRow label={s("form.lastName")} value={form.lastName} />
@@ -449,7 +451,7 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+            <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-600 sm:rounded-2xl">
               <input
                 id="legal-consent"
                 type="checkbox"
@@ -487,9 +489,9 @@ export default function RegisterPage() {
         )}
 
         {/* ── Navigation ── */}
-        <div className={`mt-8 flex gap-3 ${step > 0 ? "justify-between" : "justify-end"}`}>
+        <div className={`mt-7 flex gap-3 sm:mt-8 ${step > 0 ? "justify-between" : "justify-end"}`}>
           {step > 0 && (
-            <Button type="button" variant="secondary" onClick={handleBack}>
+            <Button type="button" variant="secondary" onClick={handleBack} className="rounded-xl">
               {s("button.back")}
             </Button>
           )}
@@ -498,7 +500,7 @@ export default function RegisterPage() {
               type="button"
               variant="primary"
               onClick={handleNext}
-              className="flex-1 sm:flex-none sm:min-w-35"
+              className="min-h-12 flex-1 rounded-xl sm:min-w-35 sm:flex-none sm:rounded-2xl"
             >
               {s("button.next")}
             </Button>
@@ -506,7 +508,7 @@ export default function RegisterPage() {
             <Button
               type="submit"
               variant="primary"
-              className="flex-1 sm:flex-none sm:min-w-35"
+              className="min-h-12 flex-1 rounded-xl sm:min-w-35 sm:flex-none sm:rounded-2xl"
               disabled={loading || !hasAcceptedLegal}
             >
               {loading ? s("button.registering") : s("button.register")}
@@ -515,7 +517,7 @@ export default function RegisterPage() {
         </div>
       </form>
 
-      <p className="mt-8 text-center text-sm text-slate-500">
+      <p className="mt-7 text-center text-sm text-slate-500 sm:mt-8">
         {t("haveAccount")}{" "}
         <Link href={ROUTES.login} className="font-medium text-blue-600 hover:underline">
           {s("button.login")}

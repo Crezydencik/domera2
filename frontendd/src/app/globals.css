@@ -44,3 +44,49 @@ a {
 .animate-pulse-glow {
   animation: pulse-glow 2s infinite;
 }
+
+@media (max-width: 640px) {
+  .domera-toast-container.Toastify__toast-container {
+    bottom: 0.75rem !important;
+    left: auto !important;
+    right: 0.75rem !important;
+    width: auto !important;
+    max-width: min(18rem, calc(100vw - 5.5rem)) !important;
+    padding: 0 !important;
+  }
+
+  .domera-toast.Toastify__toast {
+    min-height: 2.75rem !important;
+    margin-bottom: 0.5rem !important;
+    border-radius: 0.875rem !important;
+    padding: 0.5rem 2rem 0.5rem 0.625rem !important;
+    font-size: 0.8125rem !important;
+    line-height: 1.25 !important;
+    box-shadow: 0 0.75rem 1.75rem rgba(15, 23, 42, 0.16) !important;
+  }
+
+  .domera-toast .Toastify__toast-body {
+    align-items: center !important;
+    gap: 0.375rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .domera-toast .Toastify__toast-icon {
+    width: 1rem !important;
+    min-width: 1rem !important;
+    margin-inline-end: 0.375rem !important;
+  }
+
+  .domera-toast .Toastify__close-button {
+    top: 0.5rem !important;
+    right: 0.5rem !important;
+    width: 1rem !important;
+    height: 1rem !important;
+    opacity: 0.55 !important;
+  }
+
+  .domera-toast .domera-toast-progress {
+    height: 0.1875rem !important;
+  }
+}
