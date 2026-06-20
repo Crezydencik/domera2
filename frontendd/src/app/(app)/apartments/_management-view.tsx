@@ -292,6 +292,8 @@ export function ApartmentsManagementView({
               t("management.columns.actions"),
             ]}
             rows={rows}
+            mobileCollapsibleColumns={[2, 3, 4, 5]}
+            mobileCollapsibleLabel={t("management.mobile.details")}
           />
         ) : (
           <div className="flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">

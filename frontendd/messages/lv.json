@@ -939,6 +939,9 @@
         "responsiblePerson": "ATBILDĪGĀ PERSONA",
         "status": "STATUSS",
         "actions": "DARBĪBAS"
+      },
+      "mobile": {
+        "details": "Papildus info"
       }
     },
     "tenantAccess": {

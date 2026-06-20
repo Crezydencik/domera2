@@ -861,6 +861,9 @@
         "responsiblePerson": "RESPONSIBLE PERSON",
         "status": "STATUS",
         "actions": "ACTIONS"
+      },
+      "mobile": {
+        "details": "More details"
       }
     },
     "tenantAccess": {

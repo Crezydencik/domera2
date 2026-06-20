@@ -855,6 +855,9 @@
         "responsiblePerson": "ОТВЕТСТВЕННЫЙ",
         "status": "СТАТУС",
         "actions": "ДЕЙСТВИЯ"
+      },
+      "mobile": {
+        "details": "Подробнее"
       }
     },
     "tenantAccess": {

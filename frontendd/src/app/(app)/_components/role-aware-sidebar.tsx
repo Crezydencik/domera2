@@ -587,7 +587,7 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
                   </button>
 
                   {notifications.isOpen && (
-                    <div className="absolute right-0 z-20 mt-3 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-900/12">
+                    <div className="fixed inset-x-4 top-16 z-20 w-auto max-w-none overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-900/12 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-3 sm:w-96 sm:max-w-[calc(100vw-2rem)]">
                       <div className="border-b border-slate-100 px-4 py-3">
                         <div className="flex items-center justify-between gap-3">
                           <div>

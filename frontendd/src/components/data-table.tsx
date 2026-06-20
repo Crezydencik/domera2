@@ -8,13 +8,23 @@ interface DataTableProps {
   rows: ReactNode[][];
   pageSize?: number;
   mobileHiddenColumns?: number[];
+  mobileCollapsibleColumns?: number[];
+  mobileCollapsibleLabel?: string;
 }
 
-export function DataTable({ columns, rows, pageSize = 50, mobileHiddenColumns = [] }: DataTableProps) {
+export function DataTable({
+  columns,
+  rows,
+  pageSize = 50,
+  mobileHiddenColumns = [],
+  mobileCollapsibleColumns = [],
+  mobileCollapsibleLabel = "Details",
+}: DataTableProps) {
   const [page, setPage] = useState(0);
   const totalPages = Math.ceil(rows.length / pageSize);
   const visibleRows = rows.slice(page * pageSize, (page + 1) * pageSize);
   const mobileHiddenColumnSet = new Set(mobileHiddenColumns);
+  const mobileCollapsibleColumnSet = new Set(mobileCollapsibleColumns);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200">
@@ -22,19 +32,43 @@ export function DataTable({ columns, rows, pageSize = 50, mobileHiddenColumns = 
         {visibleRows.map((row, rowIndex) => (
           <article key={page * pageSize + rowIndex} className="grid gap-3 p-4">
             {row.map((cell, cellIndex) => {
-              if (mobileHiddenColumnSet.has(cellIndex)) return null;
+              if (mobileHiddenColumnSet.has(cellIndex) || mobileCollapsibleColumnSet.has(cellIndex)) return null;
 
               return (
-                <div key={cellIndex} className="grid grid-cols-[minmax(88px,0.38fr)_minmax(0,1fr)] gap-3 text-sm">
-                  <span className="break-words text-xs font-semibold uppercase leading-5 text-slate-500">
+                <div key={cellIndex} className="grid gap-1.5 text-sm">
+                  <span className="text-xs font-semibold uppercase leading-5 text-slate-500">
                     {columns[cellIndex] ?? ""}
                   </span>
-                  <span className="min-w-0 break-words text-right leading-5 text-slate-800">
+                  <span className="min-w-0 break-words leading-5 text-slate-800">
                     {cell}
                   </span>
                 </div>
               );
             })}
+            {mobileCollapsibleColumns.length > 0 ? (
+              <details className="group rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold uppercase leading-5 text-slate-500">
+                  <span>{mobileCollapsibleLabel}</span>
+                  <span className="text-base leading-none text-slate-400 transition-transform group-open:rotate-180">v</span>
+                </summary>
+                <div className="mt-3 grid gap-3 border-t border-slate-200 pt-3">
+                  {row.map((cell, cellIndex) => {
+                    if (!mobileCollapsibleColumnSet.has(cellIndex) || mobileHiddenColumnSet.has(cellIndex)) return null;
+
+                    return (
+                      <div key={cellIndex} className="grid gap-1.5 text-sm">
+                        <span className="text-xs font-semibold uppercase leading-5 text-slate-500">
+                          {columns[cellIndex] ?? ""}
+                        </span>
+                        <span className="min-w-0 break-words leading-5 text-slate-800">
+                          {cell}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            ) : null}
           </article>
         ))}
       </div>
