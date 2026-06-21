@@ -91,12 +91,11 @@ export async function ManagementCompanyDashboard({ data, selectedBuildingId }: {
     }
   });
 
-  const totalApartmentCount = data.apartments.length || data.buildings.reduce((total, item) => total + Number(item.apartments || 0), 0);
+  const totalApartmentCount = data.apartments.length;
   const selectedBuildingApartments = effectiveBuildingId
     ? data.apartments.filter((apartment) => getApartmentBuildingId(apartment) === effectiveBuildingId)
     : data.apartments;
-  const selectedBuildingApartmentCount = Number(selectedBuilding?.apartments || 0);
-  const selectedApartmentCount = selectedBuildingApartmentCount > 0 ? selectedBuildingApartmentCount : selectedBuildingApartments.length;
+  const selectedApartmentCount = selectedBuildingApartments.length;
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();

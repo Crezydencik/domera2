@@ -402,6 +402,15 @@
       "submitReadings": "Iesniegt rādījumus",
       "submittedTitle": "Rādījumi iesniegti",
       "submittedDescription": "Rādījumi par {month} jau ir iesniegti."
+    },
+    "resident": {
+      "myReadings": "Mani rādījumi",
+      "submitted": "Iesniegts",
+      "notSubmitted": "Nav iesniegts",
+      "coldWater": "Aukstais ūdens",
+      "hotWater": "Karstais ūdens",
+      "managementCompany": "Apsaimniekotājs",
+      "contactsMissing": "Kontaktinformācija nav norādīta"
     }
   },
   "buildings": {

@@ -33,7 +33,6 @@ type SettingsTab = "user" | "company" | "apiKey" | "notifications" | "contacts" 
 type UserSettings = {
   userId: string;
   userName: string;
-  clientNumber: string;
   email: string;
   username: string;
   phone: string;
@@ -2366,9 +2365,6 @@ export function SettingsTabs({ user, notificationSettings, company }: SettingsTa
             </div>
             <div className="min-w-0">
               <p className="text-xl font-bold leading-7 text-black">{headerName}</p>
-              <p className="mt-1 text-sm leading-5 text-slate-600">
-                {t("clientNumber")} {user.clientNumber}
-              </p>
             </div>
           </div>
 

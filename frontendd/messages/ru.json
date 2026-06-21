@@ -318,6 +318,15 @@
       "submitReadings": "Сдать показания",
       "submittedTitle": "Показания сданы",
       "submittedDescription": "Показания за {month} уже переданы."
+    },
+    "resident": {
+      "myReadings": "Мои показания",
+      "submitted": "Сдано",
+      "notSubmitted": "Не сдано",
+      "coldWater": "Холодная вода",
+      "hotWater": "Горячая вода",
+      "managementCompany": "Управляющая компания",
+      "contactsMissing": "Контакты не указаны"
     }
   },
   "buildings": {

@@ -400,8 +400,17 @@ export function ResidentOwnerMeterReadings() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openHistoryMonth, setOpenHistoryMonth] = useState<string | null | undefined>(undefined);
   const period = currentMonth();
   const monthGroups = groupReadingsByMonth(readings.filter((reading) => reading.historyVisible));
+  const firstHistoryMonth = monthGroups[0]?.key;
+
+  useEffect(() => {
+    if (openHistoryMonth === undefined && firstHistoryMonth) {
+      setOpenHistoryMonth(firstHistoryMonth);
+    }
+  }, [firstHistoryMonth, openHistoryMonth]);
+
   const visibleApartments = selectedApartmentId
     ? apartments.filter((apartment) => apartment.id === selectedApartmentId)
     : apartments.slice(0, 1);
@@ -621,23 +630,62 @@ export function ResidentOwnerMeterReadings() {
 
         {!loading && !error ? (
           <div className="mt-8 space-y-4">
-            <h3 className="text-2xl font-bold text-slate-950">{t("historyTitle")}</h3>
+            <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500 sm:text-2xl sm:normal-case sm:tracking-normal sm:text-slate-950">
+              {t("historyTitle")}
+            </h3>
             {monthGroups.length > 0 ? (
               <div className="space-y-3">
                 {monthGroups.map((monthGroup) => (
                   <details
                     key={monthGroup.key}
-                    className="group overflow-hidden rounded-2xl border border-slate-200 bg-white"
+                    open={openHistoryMonth === monthGroup.key}
+                    className="group overflow-hidden rounded-lg border border-slate-200 bg-white sm:rounded-2xl"
                   >
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4 bg-slate-50 px-4 py-3 transition hover:bg-slate-100">
-                      <div>
-                        <p className="font-semibold text-slate-900">{monthGroup.label}</p>
-                        <p className="text-sm text-slate-500">{t("readingsCount", { count: monthGroup.count })}</p>
+                    <summary
+                      className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 transition hover:bg-slate-50 sm:bg-slate-50 sm:hover:bg-slate-100"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setOpenHistoryMonth((current) => current === monthGroup.key ? null : monthGroup.key);
+                      }}
+                    >
+                      <div className="flex min-w-0 items-baseline gap-2 sm:block">
+                        <p className="font-mono text-sm font-bold text-slate-800 sm:hidden">{monthGroup.key}</p>
+                        <p className="hidden font-semibold text-slate-900 sm:block">{monthGroup.label}</p>
+                        <p className="hidden whitespace-nowrap text-sm text-slate-500 sm:block">
+                          {t("readingsCount", { count: monthGroup.count })}
+                        </p>
                       </div>
                       <span className="text-xl leading-none text-slate-400 transition group-open:rotate-180">⌄</span>
                     </summary>
 
-                    <div className="space-y-3 p-3">
+                    <div className="space-y-2 border-t border-slate-100 bg-slate-50/40 p-2.5 sm:hidden">
+                      {monthGroup.periods.flatMap((periodGroup) => periodGroup.items).map((reading) => {
+                        const isHotWater = reading.meterKey === "hotmeterwater";
+
+                        return (
+                          <div key={reading.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2.5">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span
+                                aria-hidden="true"
+                                className={`h-2 w-2 shrink-0 rounded-full ${isHotWater ? "bg-rose-500" : "bg-blue-500"}`}
+                              />
+                              <span className="truncate text-sm font-medium text-slate-800">{reading.meterLabel}</span>
+                            </div>
+                            <div className="shrink-0 text-right text-sm leading-tight">
+                              <p className="whitespace-nowrap tabular-nums text-slate-500">
+                                {reading.previousValue} <span aria-hidden="true">→</span>{" "}
+                                <span className="font-bold text-slate-900">{reading.currentValue}</span>
+                              </p>
+                              <p className={`mt-0.5 whitespace-nowrap tabular-nums font-bold ${isHotWater ? "text-rose-600" : "text-blue-600"}`}>
+                                +{readingConsumption(reading)} m³
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="hidden space-y-3 p-3 sm:block">
                       {monthGroup.periods.map((group) => (
                         <div key={group.key} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                           <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50/70 px-4 py-2.5">
@@ -650,7 +698,7 @@ export function ResidentOwnerMeterReadings() {
                               <p className="text-sm font-semibold text-slate-900">{group.apartment}</p>
                             </div>
                           </div>
-                          <div className="overflow-x-auto">
+                          <div className="hidden overflow-x-auto sm:block">
                             <table className="w-full min-w-[560px] text-sm">
                               <thead className="text-left text-slate-500">
                                 <tr>

@@ -324,6 +324,15 @@
       "submitReadings": "Submit readings",
       "submittedTitle": "Readings submitted",
       "submittedDescription": "Readings for {month} have already been submitted."
+    },
+    "resident": {
+      "myReadings": "My readings",
+      "submitted": "Submitted",
+      "notSubmitted": "Not submitted",
+      "coldWater": "Cold water",
+      "hotWater": "Hot water",
+      "managementCompany": "Management company",
+      "contactsMissing": "Contact details are not provided"
     }
   },
   "buildings": {

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getLocale, getTranslations } from "next-intl/server";
 import { FiExternalLink } from "react-icons/fi";
 import type { RoleDataBundle } from "@/shared/lib/domera-api.server";
 import type { MeterReading } from "@/shared/lib/data";
@@ -102,14 +103,18 @@ function buildMeterStatuses(data: RoleDataBundle, month: number, year: number): 
   });
 }
 
-function formatConsumption(value: number) {
-  return `${value.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} м³`;
+function formatConsumption(value: number, locale: string) {
+  return `${value.toLocaleString(locale, { maximumFractionDigits: 3 })} m³`;
 }
 
-function buildConsumptionRows(meters: MeterStatus[]) {
+function buildConsumptionRows(
+  meters: MeterStatus[],
+  labels: Record<MeterKind, string>,
+  locale: string,
+) {
   const rows = [
-    { key: "coldmeterwater" as const, label: "Холодная вода" },
-    { key: "hotmeterwater" as const, label: "Горячая вода" },
+    { key: "coldmeterwater" as const, label: labels.coldmeterwater },
+    { key: "hotmeterwater" as const, label: labels.hotmeterwater },
   ];
 
   return rows
@@ -119,7 +124,7 @@ function buildConsumptionRows(meters: MeterStatus[]) {
         return Number.isFinite(consumption) ? sum + consumption : sum;
       }, 0);
 
-      return total > 0 ? { ...row, value: formatConsumption(total) } : null;
+      return total > 0 ? { ...row, value: formatConsumption(total, locale) } : null;
     })
     .filter((row): row is { key: MeterKind; label: string; value: string } => Boolean(row));
 }
@@ -166,15 +171,23 @@ function buildCompanyContactRows(managementCompany: ReturnType<typeof resolveMan
   return companyContactRows;
 }
 
-export function ResidentDashboard({ data }: { data: RoleDataBundle }) {
+export async function ResidentDashboard({ data }: { data: RoleDataBundle }) {
+  const locale = await getLocale();
+  const t = await getTranslations("dashboard.resident");
   const now = new Date();
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
-  const monthLabel = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" }).format(now);
+  const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(now);
   const meters = buildMeterStatuses(data, month, year);
   const submittedCount = meters.filter((meter) => meter.reading).length;
   const allSubmitted = meters.length > 0 && submittedCount === meters.length;
-  const consumptionRows = allSubmitted && hasAnyConsumption(meters) ? buildConsumptionRows(meters) : [];
+  const consumptionRows = allSubmitted && hasAnyConsumption(meters)
+    ? buildConsumptionRows(
+        meters,
+        { coldmeterwater: t("coldWater"), hotmeterwater: t("hotWater") },
+        locale,
+      )
+    : [];
   const managementCompany = resolveManagementCompany(data);
   const companyContactRows = buildCompanyContactRows(managementCompany);
   const hasCompanyContacts = companyContactRows.some((contact) => contact.fullName || contact.email || contact.phone);
@@ -191,11 +204,11 @@ export function ResidentDashboard({ data }: { data: RoleDataBundle }) {
     <div className="grid w-full max-w-3xl items-start gap-4 md:grid-cols-2">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3">
-          <p className="text-sm font-medium text-slate-500">Мои показания</p>
+          <p className="text-sm font-medium text-slate-500">{t("myReadings")}</p>
           <Link
             href={ROUTES.meterReadings}
-            aria-label="Мои показания"
-            title="Мои показания"
+            aria-label={t("myReadings")}
+            title={t("myReadings")}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-700 transition hover:bg-slate-100 hover:text-slate-950"
           >
             <FiExternalLink className="h-4 w-4" aria-hidden="true" />
@@ -208,7 +221,7 @@ export function ResidentDashboard({ data }: { data: RoleDataBundle }) {
               allSubmitted ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
             }`}
           >
-            {allSubmitted ? "Сдано" : "Не сдано"}
+            {allSubmitted ? t("submitted") : t("notSubmitted")}
           </span>
         </div>
         {consumptionRows.length ? (
@@ -223,7 +236,7 @@ export function ResidentDashboard({ data }: { data: RoleDataBundle }) {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="text-sm font-medium text-slate-500">Управляющая компания</p>
+        <p className="text-sm font-medium text-slate-500">{t("managementCompany")}</p>
         {hasCompanyContacts ? (
           <div className="mt-3 space-y-3 text-sm text-slate-600">
             {companyContactRows.map((contact, index) => (
@@ -248,7 +261,7 @@ export function ResidentDashboard({ data }: { data: RoleDataBundle }) {
             ))}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-slate-600">Контакты не указаны</p>
+          <p className="mt-3 text-sm text-slate-600">{t("contactsMissing")}</p>
         )}
       </section>
     </div>

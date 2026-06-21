@@ -97,7 +97,6 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const email = firstString(profile?.email, cookieStore.get("userEmail")?.value, "kargini@inbox.lv");
   const fullName = firstString(joinNameParts(profile), email.split("@")[0], "DENISS KARGINS");
   const userName = fullName.toUpperCase();
-  const clientNumber = firstString(profile?.clientNumber, profile?.customerNumber, userId, "13475715");
   const username = fullName;
   const phone = firstString(profile?.phone, profile?.phoneNumber, profile?.mobile, profile?.telephone, "");
   const personalCode = maskPersonalCode(firstString(profile?.personalCode, profile?.identityCode));
@@ -128,7 +127,6 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         user={{
           userName,
           userId,
-          clientNumber,
           email,
           username,
           phone,
