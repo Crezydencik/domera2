@@ -4,13 +4,16 @@ Deploy the frontend as a Vercel Next.js project.
 
 ## Project settings
 
-- Root Directory: `domera2`
+- Root Directory: `frontendd`
 - Framework Preset: `Next.js`
-- Install Command: `npm --prefix frontendd ci`
-- Build Command: `npm --prefix frontendd run build`
-- Output Directory: `frontendd/.next`
+- Install Command: `npm ci`
+- Build Command: `npm run build`
+- Output Directory: `.next`
 
-The project includes `vercel.json` for this setup. If you prefer to set Root Directory to `domera2/frontendd`, the frontend folder also has its own `vercel.json` with plain `npm ci` and `npm run build`.
+The frontend folder includes its own `vercel.json` for this setup. Setting the
+Root Directory is important: the repository-level `package.json` is only a
+development wrapper and does not declare Next.js. If Vercel uses the repository
+root, framework detection fails with `No Next.js version detected`.
 
 ## Environment variables
 
