@@ -26,6 +26,12 @@ export declare class AuthController {
             isAssignableOnRegistration: boolean;
         }[];
     };
+    docsLoginForm(request: Request, response: Response): void;
+    docsLogin(request: Request, body: {
+        email?: string;
+        password?: string;
+        next?: string;
+    }, response: Response): Promise<void>;
     setCookies(dto: SetSessionDto, response: Response): Promise<{
         success: boolean;
         role: string | undefined;

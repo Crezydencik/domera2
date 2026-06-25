@@ -39,7 +39,7 @@ import { ChangeEmailDto } from './dto/change-email.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfirmEmailChangeDto } from './dto/confirm-email-change.dto';
 import { AuthService } from './auth.service';
-import { PUBLIC_REGISTRATION_ROLES, ROLE_CATALOG } from '../../common/auth/role.constants';
+import { isPlatformAdminRole, PUBLIC_REGISTRATION_ROLES, ROLE_CATALOG } from '../../common/auth/role.constants';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
 import { RequestUser } from '../../common/auth/request-user.type';
@@ -49,6 +49,63 @@ const ROLE_COOKIE_NAME = 'domera_role';
 const ACCOUNT_TYPE_COOKIE_NAME = 'domera_accountType';
 const COMPANY_COOKIE_NAME = 'domera_companyId';
 const APARTMENT_COOKIE_NAME = 'domera_apartmentId';
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeDocsNext(value: unknown): string {
+  const next = typeof value === 'string' ? value.trim() : '';
+  return next.startsWith('/api/docs') ? next : '/api/docs';
+}
+
+function renderDocsLoginPage(params: { next: string; error?: string }):
+  string {
+  const error = params.error
+    ? `<p class="error" role="alert">${escapeHtml(params.error)}</p>`
+    : '';
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Domera Swagger Login</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f8fb; color: #172033; }
+    main { width: min(420px, calc(100vw - 32px)); background: white; border: 1px solid #dbe3ee; border-radius: 8px; padding: 28px; box-shadow: 0 18px 50px rgba(20, 30, 50, .08); }
+    h1 { margin: 0 0 8px; font-size: 24px; line-height: 1.2; }
+    p { margin: 0 0 22px; color: #5d6b82; line-height: 1.5; }
+    label { display: block; margin: 16px 0 6px; font-size: 14px; font-weight: 700; }
+    input { box-sizing: border-box; width: 100%; height: 42px; border: 1px solid #c8d2df; border-radius: 6px; padding: 0 12px; font-size: 15px; }
+    button { width: 100%; height: 44px; margin-top: 22px; border: 0; border-radius: 6px; background: #0f62fe; color: white; font-size: 15px; font-weight: 700; cursor: pointer; }
+    button:hover { background: #004bd6; }
+    .error { margin: 0 0 16px; padding: 10px 12px; border-radius: 6px; background: #fff1f1; color: #b42318; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Swagger access</h1>
+    <p>Sign in with a platform administrator account.</p>
+    ${error}
+    <form method="post" action="/api/auth/docs-login">
+      <input type="hidden" name="next" value="${escapeHtml(params.next)}">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="username" required autofocus>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Open Swagger</button>
+    </form>
+  </main>
+</body>
+</html>`;
+}
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -158,6 +215,49 @@ export class AuthController {
       accountTypes: PUBLIC_REGISTRATION_ROLES,
       roles: ROLE_CATALOG,
     };
+  }
+
+  @Get('docs-login')
+  docsLoginForm(@Req() request: Request, @Res() response: Response) {
+    const next = safeDocsNext(request.query.next);
+    response.type('html').send(renderDocsLoginPage({ next }));
+  }
+
+  @Post('docs-login')
+  async docsLogin(
+    @Req() request: Request,
+    @Body() body: { email?: string; password?: string; next?: string },
+    @Res() response: Response,
+  ) {
+    const next = safeDocsNext(body.next);
+    try {
+      const result = await this.authService.loginWithEmailPassword(request, {
+        email: body.email ?? '',
+        password: body.password ?? '',
+        rememberMe: true,
+      });
+
+      if (!isPlatformAdminRole(result.session.role)) {
+        this.clearCookies(response);
+        response.status(HttpStatus.FORBIDDEN).type('html').send(
+          renderDocsLoginPage({
+            next,
+            error: 'Platform administrator access required.',
+          }),
+        );
+        return;
+      }
+
+      this.applySessionCookies(response, result.session);
+      response.redirect(next);
+    } catch {
+      response.status(HttpStatus.UNAUTHORIZED).type('html').send(
+        renderDocsLoginPage({
+          next,
+          error: 'Invalid email or password.',
+        }),
+      );
+    }
   }
 
   @Post('set-cookies')

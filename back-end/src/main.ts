@@ -48,10 +48,24 @@ function extractSwaggerToken(request: Request): { source: 'session' | 'bearer'; 
   return null;
 }
 
+function isSwaggerHtmlRequest(request: Request): boolean {
+  const path = request.originalUrl.split('?')[0] ?? '';
+  return path === '/api/docs' || path === '/api/docs/';
+}
+
+function redirectToSwaggerLogin(request: Request, response: Response) {
+  response.redirect(`/api/auth/docs-login?next=${encodeURIComponent(request.originalUrl || '/api/docs')}`);
+}
+
 function createSwaggerAdminAuth(firebaseAdminService: FirebaseAdminService) {
   return async function swaggerAdminAuth(request: Request, response: Response, next: NextFunction) {
     const token = extractSwaggerToken(request);
     if (!token) {
+      if (isSwaggerHtmlRequest(request)) {
+        redirectToSwaggerLogin(request, response);
+        return;
+      }
+
       response.status(401).send('Authentication required');
       return;
     }
@@ -83,6 +97,11 @@ function createSwaggerAdminAuth(firebaseAdminService: FirebaseAdminService) {
 
       next();
     } catch {
+      if (isSwaggerHtmlRequest(request)) {
+        redirectToSwaggerLogin(request, response);
+        return;
+      }
+
       response.status(401).send('Invalid authentication token');
     }
   };

@@ -37,6 +37,58 @@ const ROLE_COOKIE_NAME = 'domera_role';
 const ACCOUNT_TYPE_COOKIE_NAME = 'domera_accountType';
 const COMPANY_COOKIE_NAME = 'domera_companyId';
 const APARTMENT_COOKIE_NAME = 'domera_apartmentId';
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+function safeDocsNext(value) {
+    const next = typeof value === 'string' ? value.trim() : '';
+    return next.startsWith('/api/docs') ? next : '/api/docs';
+}
+function renderDocsLoginPage(params) {
+    const error = params.error
+        ? `<p class="error" role="alert">${escapeHtml(params.error)}</p>`
+        : '';
+    return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Domera Swagger Login</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f8fb; color: #172033; }
+    main { width: min(420px, calc(100vw - 32px)); background: white; border: 1px solid #dbe3ee; border-radius: 8px; padding: 28px; box-shadow: 0 18px 50px rgba(20, 30, 50, .08); }
+    h1 { margin: 0 0 8px; font-size: 24px; line-height: 1.2; }
+    p { margin: 0 0 22px; color: #5d6b82; line-height: 1.5; }
+    label { display: block; margin: 16px 0 6px; font-size: 14px; font-weight: 700; }
+    input { box-sizing: border-box; width: 100%; height: 42px; border: 1px solid #c8d2df; border-radius: 6px; padding: 0 12px; font-size: 15px; }
+    button { width: 100%; height: 44px; margin-top: 22px; border: 0; border-radius: 6px; background: #0f62fe; color: white; font-size: 15px; font-weight: 700; cursor: pointer; }
+    button:hover { background: #004bd6; }
+    .error { margin: 0 0 16px; padding: 10px 12px; border-radius: 6px; background: #fff1f1; color: #b42318; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Swagger access</h1>
+    <p>Sign in with a platform administrator account.</p>
+    ${error}
+    <form method="post" action="/api/auth/docs-login">
+      <input type="hidden" name="next" value="${escapeHtml(params.next)}">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="username" required autofocus>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Open Swagger</button>
+    </form>
+  </main>
+</body>
+</html>`;
+}
 let AuthController = class AuthController {
     constructor(authService) {
         this.authService = authService;
@@ -117,6 +169,36 @@ let AuthController = class AuthController {
             accountTypes: role_constants_1.PUBLIC_REGISTRATION_ROLES,
             roles: role_constants_1.ROLE_CATALOG,
         };
+    }
+    docsLoginForm(request, response) {
+        const next = safeDocsNext(request.query.next);
+        response.type('html').send(renderDocsLoginPage({ next }));
+    }
+    async docsLogin(request, body, response) {
+        const next = safeDocsNext(body.next);
+        try {
+            const result = await this.authService.loginWithEmailPassword(request, {
+                email: body.email ?? '',
+                password: body.password ?? '',
+                rememberMe: true,
+            });
+            if (!(0, role_constants_1.isPlatformAdminRole)(result.session.role)) {
+                this.clearCookies(response);
+                response.status(common_1.HttpStatus.FORBIDDEN).type('html').send(renderDocsLoginPage({
+                    next,
+                    error: 'Platform administrator access required.',
+                }));
+                return;
+            }
+            this.applySessionCookies(response, result.session);
+            response.redirect(next);
+        }
+        catch {
+            response.status(common_1.HttpStatus.UNAUTHORIZED).type('html').send(renderDocsLoginPage({
+                next,
+                error: 'Invalid email or password.',
+            }));
+        }
     }
     async setCookies(dto, response) {
         const session = await this.authService.createSessionCookie(dto);
@@ -286,6 +368,23 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "getAccountCatalog", null);
+__decorate([
+    (0, common_1.Get)('docs-login'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "docsLoginForm", null);
+__decorate([
+    (0, common_1.Post)('docs-login'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "docsLogin", null);
 __decorate([
     (0, common_1.Post)('set-cookies'),
     (0, swagger_1.ApiOperation)({ summary: 'Create secure Firebase session cookie from ID token' }),
