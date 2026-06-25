@@ -12,11 +12,15 @@ import { AppModule } from './app.module';
 const SESSION_COOKIE_NAME = '__session';
 const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED === 'true';
 
+function normalizeOrigin(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
 function parseAllowedOrigins(value: string | undefined): Set<string> {
   const origins = new Set(
     (value ?? '')
       .split(',')
-      .map((origin) => origin.trim())
+      .map((origin) => normalizeOrigin(origin))
       .filter(Boolean),
   );
   if (process.env.NODE_ENV !== 'production' && origins.size === 0) {
@@ -29,12 +33,13 @@ function parseAllowedOrigins(value: string | undefined): Set<string> {
 
 function isAllowedRequestOrigin(origin: string | undefined, allowedOrigins: Set<string>) {
   if (!origin) return true;
-  if (allowedOrigins.has(origin)) return true;
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (allowedOrigins.has(normalizedOrigin)) return true;
 
   const backendUrl = process.env.BACKEND_URL ?? process.env.VERCEL_PROJECT_PRODUCTION_URL;
   if (backendUrl) {
     const normalizedBackendUrl = backendUrl.startsWith('http') ? backendUrl : `https://${backendUrl}`;
-    if (origin === normalizedBackendUrl.replace(/\/+$/, '')) return true;
+    if (normalizedOrigin === normalizeOrigin(normalizedBackendUrl)) return true;
   }
 
   return false;

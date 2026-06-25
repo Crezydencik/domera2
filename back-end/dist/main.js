@@ -12,10 +12,13 @@ const role_constants_1 = require("./common/auth/role.constants");
 const app_module_1 = require("./app.module");
 const SESSION_COOKIE_NAME = '__session';
 const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED === 'true';
+function normalizeOrigin(value) {
+    return value.trim().replace(/\/+$/, '');
+}
 function parseAllowedOrigins(value) {
     const origins = new Set((value ?? '')
         .split(',')
-        .map((origin) => origin.trim())
+        .map((origin) => normalizeOrigin(origin))
         .filter(Boolean));
     if (process.env.NODE_ENV !== 'production' && origins.size === 0) {
         origins.add('http://localhost:3000');
@@ -26,12 +29,13 @@ function parseAllowedOrigins(value) {
 function isAllowedRequestOrigin(origin, allowedOrigins) {
     if (!origin)
         return true;
-    if (allowedOrigins.has(origin))
+    const normalizedOrigin = normalizeOrigin(origin);
+    if (allowedOrigins.has(normalizedOrigin))
         return true;
     const backendUrl = process.env.BACKEND_URL ?? process.env.VERCEL_PROJECT_PRODUCTION_URL;
     if (backendUrl) {
         const normalizedBackendUrl = backendUrl.startsWith('http') ? backendUrl : `https://${backendUrl}`;
-        if (origin === normalizedBackendUrl.replace(/\/+$/, ''))
+        if (normalizedOrigin === normalizeOrigin(normalizedBackendUrl))
             return true;
     }
     return false;
