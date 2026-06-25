@@ -66,9 +66,7 @@ function safeDocsNext(value: unknown): string {
 
 function renderDocsLoginPage(params: { next: string; error?: string }):
   string {
-  const error = params.error
-    ? `<p class="error" role="alert">${escapeHtml(params.error)}</p>`
-    : '';
+  const error = `<p class="error" role="alert"${params.error ? '' : ' hidden'}>${escapeHtml(params.error)}</p>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -94,7 +92,7 @@ function renderDocsLoginPage(params: { next: string; error?: string }):
     <h1>Swagger access</h1>
     <p>Sign in with a platform administrator account.</p>
     ${error}
-    <form method="post" action="/api/auth/docs-login">
+    <form id="docs-login-form" method="post" action="/api/auth/login">
       <input type="hidden" name="next" value="${escapeHtml(params.next)}">
       <label for="email">Email</label>
       <input id="email" name="email" type="email" autocomplete="username" required autofocus>
@@ -103,6 +101,36 @@ function renderDocsLoginPage(params: { next: string; error?: string }):
       <button type="submit">Open Swagger</button>
     </form>
   </main>
+  <script>
+    const form = document.getElementById('docs-login-form');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: String(formData.get('email') || ''),
+          password: String(formData.get('password') || ''),
+          rememberMe: true
+        })
+      });
+
+      if (response.ok) {
+        window.location.assign(String(formData.get('next') || '/api/docs'));
+        return;
+      }
+
+      const payload = await response.json().catch(() => null);
+      const message = payload && payload.message ? payload.message : 'Invalid email or password.';
+      const errorBox = document.querySelector('.error');
+      if (errorBox) {
+        errorBox.hidden = false;
+        errorBox.textContent = Array.isArray(message) ? message.join(', ') : String(message);
+      }
+    });
+  </script>
 </body>
 </html>`;
 }
