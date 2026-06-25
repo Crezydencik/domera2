@@ -1,7 +1,7 @@
 {
   "framework": "nextjs",
-  "installCommand": "npm --prefix frontendd ci",
-  "buildCommand": "npm --prefix frontendd run build",
-  "devCommand": "npm --prefix frontendd run dev",
+  "installCommand": "if [ -f frontendd/package-lock.json ]; then npm --prefix frontendd ci; else npm ci; fi",
+  "buildCommand": "if [ -f frontendd/package.json ]; then npm --prefix frontendd run build; else npm run build; fi",
+  "devCommand": "if [ -f frontendd/package.json ]; then npm --prefix frontendd run dev; else npm run dev; fi",
   "outputDirectory": "frontendd/.next"
 }
