@@ -23,6 +23,19 @@ function parseAllowedOrigins(value) {
     }
     return origins;
 }
+function isAllowedRequestOrigin(origin, allowedOrigins) {
+    if (!origin)
+        return true;
+    if (allowedOrigins.has(origin))
+        return true;
+    const backendUrl = process.env.BACKEND_URL ?? process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    if (backendUrl) {
+        const normalizedBackendUrl = backendUrl.startsWith('http') ? backendUrl : `https://${backendUrl}`;
+        if (origin === normalizedBackendUrl.replace(/\/+$/, ''))
+            return true;
+    }
+    return false;
+}
 function extractSwaggerToken(request) {
     const authHeader = request.get('authorization');
     if (authHeader) {
@@ -96,7 +109,7 @@ async function createApp() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule, {
         cors: {
             origin(origin, callback) {
-                if (!origin || allowedOrigins.has(origin)) {
+                if (isAllowedRequestOrigin(origin, allowedOrigins)) {
                     callback(null, true);
                     return;
                 }

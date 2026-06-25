@@ -27,6 +27,19 @@ function parseAllowedOrigins(value: string | undefined): Set<string> {
   return origins;
 }
 
+function isAllowedRequestOrigin(origin: string | undefined, allowedOrigins: Set<string>) {
+  if (!origin) return true;
+  if (allowedOrigins.has(origin)) return true;
+
+  const backendUrl = process.env.BACKEND_URL ?? process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  if (backendUrl) {
+    const normalizedBackendUrl = backendUrl.startsWith('http') ? backendUrl : `https://${backendUrl}`;
+    if (origin === normalizedBackendUrl.replace(/\/+$/, '')) return true;
+  }
+
+  return false;
+}
+
 function extractSwaggerToken(request: Request): { source: 'session' | 'bearer'; value: string } | null {
   const authHeader = request.get('authorization');
   if (authHeader) {
@@ -112,7 +125,7 @@ export async function createApp() {
   const app = await NestFactory.create(AppModule, {
     cors: {
       origin(origin, callback) {
-        if (!origin || allowedOrigins.has(origin)) {
+        if (isAllowedRequestOrigin(origin, allowedOrigins)) {
           callback(null, true);
           return;
         }
