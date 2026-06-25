@@ -20,7 +20,7 @@ function parseAllowedOrigins(value: string | undefined): Set<string> {
   return origins;
 }
 
-async function bootstrap() {
+export async function createApp() {
   const allowedOrigins = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS ?? process.env.FRONTEND_URL);
   const app = await NestFactory.create(AppModule, {
     cors: {
@@ -72,6 +72,11 @@ async function bootstrap() {
     });
   }
 
+  return app;
+}
+
+async function bootstrap() {
+  const app = await createApp();
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port);
 }
