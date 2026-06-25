@@ -81,4 +81,6 @@ async function bootstrap() {
   await app.listen(port);
 }
 
-void bootstrap();
+if (require.main === module) {
+  void bootstrap();
+}
