@@ -70,6 +70,40 @@ function redirectToSwaggerLogin(request: Request, response: Response) {
   response.redirect(`/api/auth/docs-login?next=${encodeURIComponent(request.originalUrl || '/api/docs')}`);
 }
 
+function renderSwaggerUiPage(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Domera Backend API Docs</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+  <style>
+    body { margin: 0; background: #fff; }
+    .swagger-ui .topbar { display: none; }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    window.addEventListener('load', () => {
+      window.ui = SwaggerUIBundle({
+        url: '/api/docs-json',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        persistAuthorization: true,
+        requestInterceptor: (request) => {
+          request.credentials = 'include';
+          return request;
+        }
+      });
+    });
+  </script>
+</body>
+</html>`;
+}
+
 function createSwaggerAdminAuth(firebaseAdminService: FirebaseAdminService) {
   return async function swaggerAdminAuth(request: Request, response: Response, next: NextFunction) {
     const token = extractSwaggerToken(request);
@@ -167,6 +201,13 @@ export async function createApp() {
       .build();
 
     const document = SwaggerModule.createDocument(app, config);
+    const express = app.getHttpAdapter().getInstance() as {
+      get: (path: string, handler: (_request: Request, response: Response) => void) => void;
+    };
+    express.get('/api/docs', (_request, response) => {
+      response.type('html').send(renderSwaggerUiPage());
+    });
+
     SwaggerModule.setup('api/docs', app, document, {
       swaggerOptions: {
         persistAuthorization: process.env.SWAGGER_PERSIST_AUTHORIZATION === 'true',
