@@ -3,7 +3,14 @@ import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import type { NextFunction, Request, Response } from 'express';
+import { parse as parseCookie } from 'cookie';
+import { FirebaseAdminService } from './common/infrastructure/firebase/firebase-admin.service';
+import { isPlatformAdminRole, resolveAccountType, resolveUserRole } from './common/auth/role.constants';
 import { AppModule } from './app.module';
+
+const SESSION_COOKIE_NAME = '__session';
+const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED === 'true';
 
 function parseAllowedOrigins(value: string | undefined): Set<string> {
   const origins = new Set(
@@ -18,6 +25,67 @@ function parseAllowedOrigins(value: string | undefined): Set<string> {
   }
 
   return origins;
+}
+
+function extractSwaggerToken(request: Request): { source: 'session' | 'bearer'; value: string } | null {
+  const authHeader = request.get('authorization');
+  if (authHeader) {
+    const [scheme, token] = authHeader.split(' ');
+    if (scheme?.toLowerCase() === 'bearer' && token?.trim()) {
+      return { source: 'bearer', value: token.trim() };
+    }
+  }
+
+  const cookieHeader = request.get('cookie');
+  if (cookieHeader) {
+    const cookies = parseCookie(cookieHeader);
+    const session = cookies[SESSION_COOKIE_NAME];
+    if (session?.trim()) {
+      return { source: 'session', value: session.trim() };
+    }
+  }
+
+  return null;
+}
+
+function createSwaggerAdminAuth(firebaseAdminService: FirebaseAdminService) {
+  return async function swaggerAdminAuth(request: Request, response: Response, next: NextFunction) {
+    const token = extractSwaggerToken(request);
+    if (!token) {
+      response.status(401).send('Authentication required');
+      return;
+    }
+
+    try {
+      const decoded = token.source === 'session'
+        ? await firebaseAdminService.auth.verifySessionCookie(token.value, CHECK_REVOKED_TOKENS)
+        : await firebaseAdminService.auth.verifyIdToken(token.value, CHECK_REVOKED_TOKENS);
+
+      let role = resolveUserRole({ role: decoded.role });
+      let accountType = resolveAccountType({ role, accountType: decoded.accountType });
+
+      if (!role || !accountType) {
+        const userDoc = await firebaseAdminService.firestore.collection('users').doc(decoded.uid).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data() as Record<string, unknown>;
+          role = role ?? resolveUserRole({ role: userData.role, accountType: userData.accountType });
+          accountType = accountType ?? resolveAccountType({
+            role: userData.role,
+            accountType: userData.accountType,
+          });
+        }
+      }
+
+      if (!isPlatformAdminRole(role)) {
+        response.status(403).send('Platform administrator access required');
+        return;
+      }
+
+      next();
+    } catch {
+      response.status(401).send('Invalid authentication token');
+    }
+  };
 }
 
 export async function createApp() {
@@ -50,6 +118,11 @@ export async function createApp() {
     process.env.SWAGGER_ENABLED === 'true' ||
     (process.env.NODE_ENV !== 'production' && process.env.SWAGGER_ENABLED !== 'false');
   if (swaggerEnabled) {
+    app.use(
+      ['/api/docs', '/api/docs-json', '/api/docs-yaml'],
+      createSwaggerAdminAuth(app.get(FirebaseAdminService)),
+    );
+
     const config = new DocumentBuilder()
       .setTitle('Domera Backend API')
       .setDescription('OpenAPI specification for Domera NestJS backend')
