@@ -40,17 +40,19 @@ function clearAuthCookies(response: NextResponse) {
 export default function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get("__session")?.value?.trim();
+  const sessionMarker = request.cookies.get("domera_session")?.value?.trim();
+  const isAuthenticated = Boolean(sessionCookie || sessionMarker);
   const cookieRole = request.cookies.get("domera_role")?.value ?? request.cookies.get("domera_accountType")?.value;
   const resolvedRole = resolveDashboardRole(cookieRole);
   const requestHeaders = new Headers(request.headers);
 
   requestHeaders.set("x-domera-role", resolvedRole);
 
-  if (isProtectedPath(pathname) && !sessionCookie) {
+  if (isProtectedPath(pathname) && !isAuthenticated) {
     return redirectToLogin(request, pathname);
   }
 
-  if (isAuthRoute(pathname) && sessionCookie) {
+  if (isAuthRoute(pathname) && isAuthenticated) {
     const dashboardUrl = new URL(ROUTES.dashboard, request.url);
     return NextResponse.redirect(dashboardUrl);
   }
@@ -66,7 +68,7 @@ export default function proxy(request: NextRequest) {
     },
   });
 
-  if (sessionCookie) {
+  if (isAuthenticated) {
     const cookieValue = roleCookieValues[resolvedRole];
     const cookieOptions = {
       path: "/",
