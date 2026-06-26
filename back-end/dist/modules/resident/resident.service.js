@@ -66,9 +66,10 @@ let ResidentService = class ResidentService {
             }
         }
         const apartmentRefs = Array.from(apartmentIds).map((id) => db.collection('apartments').doc(id));
-        const [individualSnaps, residentApartmentsSnap, ownerApartmentsSnap] = await Promise.all([
+        const [individualSnaps, residentApartmentsSnap, ownerIdApartmentsSnap, ownerEmailApartmentsSnap] = await Promise.all([
             apartmentRefs.length > 0 ? db.getAll(...apartmentRefs) : Promise.resolve([]),
             db.collection('apartments').where('residentId', '==', user.uid).get(),
+            db.collection('apartments').where('ownerId', '==', user.uid).get(),
             normalizedEmail
                 ? db.collection('apartments').where('ownerEmail', '==', normalizedEmail).get()
                 : Promise.resolve(null),
@@ -87,38 +88,13 @@ let ResidentService = class ResidentService {
                 ...doc.data(),
             });
         }
-        if (ownerApartmentsSnap) {
-            for (const doc of ownerApartmentsSnap.docs) {
+        for (const snap of [ownerIdApartmentsSnap, ownerEmailApartmentsSnap]) {
+            if (!snap)
+                continue;
+            for (const doc of snap.docs) {
                 const apartment = doc.data();
                 if (apartment.ownerActivated !== true)
                     continue;
-                mergedApartments.set(doc.id, {
-                    id: doc.id,
-                    ...apartment,
-                });
-            }
-        }
-        const tenantApartmentsSnap = await db.collection('apartments').get();
-        for (const doc of tenantApartmentsSnap.docs) {
-            const apartment = doc.data();
-            const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
-            const isTenant = tenants.some((tenant) => {
-                if (!tenant || typeof tenant !== 'object')
-                    return false;
-                const t = tenant;
-                if (typeof t.userId === 'string' && t.userId === user.uid) {
-                    const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
-                    const until = typeof t.until === 'string' ? new Date(t.until) : null;
-                    const now = new Date();
-                    if (fromDate && now < fromDate)
-                        return false;
-                    if (until && now > until)
-                        return false;
-                    return true;
-                }
-                return false;
-            });
-            if (isTenant) {
                 mergedApartments.set(doc.id, {
                     id: doc.id,
                     ...apartment,

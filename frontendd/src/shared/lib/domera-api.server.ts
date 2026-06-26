@@ -30,6 +30,8 @@ const appConfig = {
   demoApartmentId: process.env.NEXT_PUBLIC_DEMO_APARTMENT_ID ?? "demo-apartment",
 };
 
+const SERVER_API_TIMEOUT_MS = Number(process.env.SERVER_API_TIMEOUT_MS ?? 15000);
+
 type UnknownRecord = Record<string, unknown>;
 type ApiListResponse = { items?: UnknownRecord[] };
 type ResidentHomeResponse = { apartments?: UnknownRecord[]; buildings?: UnknownRecord[]; managementCompanies?: UnknownRecord[] };
@@ -545,6 +547,10 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const url = `${appConfig.apiBaseUrl}${path}`;
   const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const headers = new Headers(init?.headers);
+  const controller = init?.signal ? null : new AbortController();
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), Math.max(1000, SERVER_API_TIMEOUT_MS))
+    : null;
 
   if (!isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -563,11 +569,16 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     response = await fetch(url, {
       ...init,
       headers,
+      signal: init?.signal ?? controller?.signal,
       cache: "no-store",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new DomeraApiError(`Fetch failed for ${path} (${url}): ${message}`, 500);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
   }
 
   if (!response.ok) {
@@ -740,7 +751,11 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
       ? apiFetchSafe<ApiListResponse>(`/notifications?userId=${encodeURIComponent(userId)}`)
       : Promise.resolve(null),
   ]);
-  const liveApartments = Array.isArray(residentHome?.apartments) ? residentHome.apartments : [];
+  const liveApartments = Array.isArray(residentHome?.apartments) && residentHome.apartments.length
+    ? residentHome.apartments
+    : apartmentId && apartmentId !== "вЂ”"
+      ? [{ id: apartmentId, apartmentId }]
+      : [];
   const liveBuildings = Array.isArray(residentHome?.buildings) ? residentHome.buildings.map(toBuilding) : [];
   const residentHomeCompanies = Array.isArray(residentHome?.managementCompanies) ? residentHome.managementCompanies : [];
   const apartmentIds = liveApartments

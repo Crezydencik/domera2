@@ -71,10 +71,10 @@ export class ResidentService {
       db.collection('apartments').doc(id),
     );
 
-    // Fire all three queries concurrently.
-    const [individualSnaps, residentApartmentsSnap, ownerApartmentsSnap] = await Promise.all([
+    const [individualSnaps, residentApartmentsSnap, ownerIdApartmentsSnap, ownerEmailApartmentsSnap] = await Promise.all([
       apartmentRefs.length > 0 ? db.getAll(...apartmentRefs) : Promise.resolve([]),
       db.collection('apartments').where('residentId', '==', user.uid).get(),
+      db.collection('apartments').where('ownerId', '==', user.uid).get(),
       normalizedEmail
         ? db.collection('apartments').where('ownerEmail', '==', normalizedEmail).get()
         : Promise.resolve(null),
@@ -97,38 +97,13 @@ export class ResidentService {
       });
     }
 
-    if (ownerApartmentsSnap) {
-      for (const doc of ownerApartmentsSnap.docs) {
+    for (const snap of [ownerIdApartmentsSnap, ownerEmailApartmentsSnap]) {
+      if (!snap) continue;
+
+      for (const doc of snap.docs) {
         const apartment = doc.data() as Record<string, unknown>;
         if (apartment.ownerActivated !== true) continue;
 
-        mergedApartments.set(doc.id, {
-          id: doc.id,
-          ...apartment,
-        });
-      }
-    }
-
-    const tenantApartmentsSnap = await db.collection('apartments').get();
-    for (const doc of tenantApartmentsSnap.docs) {
-      const apartment = doc.data() as Record<string, unknown>;
-      const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
-      const isTenant = tenants.some((tenant) => {
-        if (!tenant || typeof tenant !== 'object') return false;
-        const t = tenant as Record<string, unknown>;
-        if (typeof t.userId === 'string' && t.userId === user.uid) {
-          // Check tenant lease dates
-          const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
-          const until = typeof t.until === 'string' ? new Date(t.until) : null;
-          const now = new Date();
-          if (fromDate && now < fromDate) return false; // Lease hasn't started
-          if (until && now > until) return false; // Lease has ended
-          return true; // Within lease period
-        }
-        return false;
-      });
-
-      if (isTenant) {
         mergedApartments.set(doc.id, {
           id: doc.id,
           ...apartment,
