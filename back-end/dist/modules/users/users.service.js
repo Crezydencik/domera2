@@ -82,9 +82,48 @@ let UsersService = class UsersService {
                 propertyRoles: [],
             };
         }
-        const snap = await this.firebaseAdminService.firestore.collection('apartments').get();
-        for (const doc of snap.docs) {
-            const apartment = doc.data();
+        const db = this.firebaseAdminService.firestore;
+        const apartmentMap = new Map();
+        const userSnap = normalizedUserId ? await db.collection('users').doc(normalizedUserId).get() : null;
+        const userData = userSnap?.exists ? userSnap.data() : {};
+        const apartmentIds = new Set();
+        const addApartmentId = (value) => {
+            const apartmentId = this.toOptionalString(value);
+            if (apartmentId)
+                apartmentIds.add(apartmentId);
+        };
+        addApartmentId(userData.apartmentId);
+        if (Array.isArray(userData.apartmentIds)) {
+            userData.apartmentIds.forEach(addApartmentId);
+        }
+        const directRefs = Array.from(apartmentIds).map((id) => db.collection('apartments').doc(id));
+        const [directSnaps, residentSnap, ownerIdSnap, ownerEmailSnap, residentEmailSnap] = await Promise.all([
+            directRefs.length ? db.getAll(...directRefs) : Promise.resolve([]),
+            normalizedUserId
+                ? db.collection('apartments').where('residentId', '==', normalizedUserId).get()
+                : Promise.resolve(null),
+            normalizedUserId
+                ? db.collection('apartments').where('ownerId', '==', normalizedUserId).get()
+                : Promise.resolve(null),
+            normalizedEmail
+                ? db.collection('apartments').where('ownerEmail', '==', normalizedEmail).get()
+                : Promise.resolve(null),
+            normalizedEmail
+                ? db.collection('apartments').where('residentEmail', '==', normalizedEmail).get()
+                : Promise.resolve(null),
+        ]);
+        for (const snap of directSnaps) {
+            if (snap.exists)
+                apartmentMap.set(snap.id, snap.data());
+        }
+        for (const snap of [residentSnap, ownerIdSnap, ownerEmailSnap, residentEmailSnap]) {
+            if (!snap)
+                continue;
+            for (const doc of snap.docs) {
+                apartmentMap.set(doc.id, doc.data());
+            }
+        }
+        for (const apartment of apartmentMap.values()) {
             const ownerId = this.toOptionalString(apartment.ownerId);
             const ownerEmail = this.normalizedEmail(apartment.ownerEmail);
             if (apartment.ownerActivated === true &&
@@ -130,37 +169,38 @@ let UsersService = class UsersService {
         const emailCandidates = Array.from(new Set([previousEmail, nextEmail].filter(Boolean)));
         const { firstName, lastName, fullName } = this.resolveProfileNames(nextData);
         const phone = this.toOptionalString(nextData.phone) ?? this.toOptionalString(nextData.phoneNumber) ?? '';
+        const linkedApartmentIds = new Set();
+        const addApartmentId = (value) => {
+            const apartmentId = this.toOptionalString(value);
+            if (apartmentId)
+                linkedApartmentIds.add(apartmentId);
+        };
+        addApartmentId(previousData.apartmentId);
+        addApartmentId(nextData.apartmentId);
+        if (Array.isArray(previousData.apartmentIds)) {
+            previousData.apartmentIds.forEach(addApartmentId);
+        }
+        if (Array.isArray(nextData.apartmentIds)) {
+            nextData.apartmentIds.forEach(addApartmentId);
+        }
+        const linkedApartmentRefs = Array.from(linkedApartmentIds).map((id) => db.collection('apartments').doc(id));
         const [residentSnap, ownerIdSnap, ...ownerEmailSnaps] = await Promise.all([
             db.collection('apartments').where('residentId', '==', normalizedUserId).get(),
             db.collection('apartments').where('ownerId', '==', normalizedUserId).get(),
             ...emailCandidates.map((email) => db.collection('apartments').where('ownerEmail', '==', email).get()),
         ]);
+        const linkedApartmentSnaps = linkedApartmentRefs.length ? await db.getAll(...linkedApartmentRefs) : [];
         const apartmentDocs = new Map();
         const addDocs = (docs) => {
             for (const doc of docs) {
                 apartmentDocs.set(doc.id, doc);
             }
         };
+        addDocs(linkedApartmentSnaps.filter((snap) => snap.exists));
         addDocs(residentSnap.docs);
         addDocs(ownerIdSnap.docs);
         for (const snap of ownerEmailSnaps) {
             addDocs(snap.docs);
-        }
-        const allApartmentsSnap = await db.collection('apartments').get();
-        for (const doc of allApartmentsSnap.docs) {
-            const apartment = doc.data();
-            const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
-            const hasLinkedTenant = tenants.some((tenant) => {
-                if (!tenant || typeof tenant !== 'object')
-                    return false;
-                const item = tenant;
-                const tenantUserId = this.toOptionalString(item.userId);
-                const tenantEmail = this.normalizedEmail(item.email);
-                return tenantUserId === normalizedUserId || Boolean(tenantEmail && emailCandidates.includes(tenantEmail));
-            });
-            if (hasLinkedTenant) {
-                apartmentDocs.set(doc.id, doc);
-            }
         }
         await Promise.all(Array.from(apartmentDocs.values()).map(async (doc) => {
             const apartment = doc.data();

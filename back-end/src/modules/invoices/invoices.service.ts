@@ -3270,8 +3270,9 @@ export class InvoicesService {
     );
 
     if (normalizedEmail) {
-      const [residentSnap, ownerSnap] = await Promise.all([
+      const [residentSnap, ownerIdSnap, ownerEmailSnap] = await Promise.all([
         this.firebaseAdminService.firestore.collection('apartments').where('residentId', '==', user.uid).get(),
+        this.firebaseAdminService.firestore.collection('apartments').where('ownerId', '==', user.uid).get(),
         this.firebaseAdminService.firestore.collection('apartments').where('ownerEmail', '==', normalizedEmail).get(),
       ]);
 
@@ -3279,35 +3280,13 @@ export class InvoicesService {
         apartmentIds.add(doc.id);
       }
 
-      for (const doc of ownerSnap.docs) {
-        const apartment = doc.data() as Record<string, unknown>;
-        if (apartment.ownerActivated === true) {
-          apartmentIds.add(doc.id);
+      for (const snap of [ownerIdSnap, ownerEmailSnap]) {
+        for (const doc of snap.docs) {
+          const apartment = doc.data() as Record<string, unknown>;
+          if (apartment.ownerActivated === true) {
+            apartmentIds.add(doc.id);
+          }
         }
-      }
-    }
-
-    const tenantSnap = await this.firebaseAdminService.firestore.collection('apartments').get();
-    for (const doc of tenantSnap.docs) {
-      const apartment = doc.data() as Record<string, unknown>;
-      const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
-      const isTenant = tenants.some((tenant) => {
-        if (!tenant || typeof tenant !== 'object') return false;
-        const t = tenant as Record<string, unknown>;
-        if (typeof t.userId === 'string' && t.userId === user.uid) {
-          // Check tenant lease dates
-          const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
-          const until = typeof t.until === 'string' ? new Date(t.until) : null;
-          const now = new Date();
-          if (fromDate && now < fromDate) return false; // Lease hasn't started
-          if (until && now > until) return false; // Lease has ended
-          return true; // Within lease period
-        }
-        return false;
-      });
-
-      if (isTenant) {
-        apartmentIds.add(doc.id);
       }
     }
 

@@ -27,6 +27,7 @@ type DocumentScope =
   | 'platformPrivate'
   | 'managementArchive';
 type UnknownRecord = Record<string, unknown>;
+type MemberApartment = { id: string; data: UnknownRecord };
 
 type DocumentRecord = {
   id: string;
@@ -328,14 +329,35 @@ export class DocumentsService {
     return this.firstString(data.companyId, companyIds[0], fallback);
   }
 
-  private async resolveMemberApartments(user: RequestUser) {
+  private async resolveMemberApartments(user: RequestUser): Promise<MemberApartment[]> {
     const db = this.firebaseAdminService.firestore;
     const apartmentMap = new Map<string, UnknownRecord>();
     const userEmail = this.firstString(user.email).toLowerCase();
+    const userSnap = await db.collection('users').doc(user.uid).get();
+    const userData = userSnap.exists ? (userSnap.data() as UnknownRecord) : {};
+    const apartmentIds = new Set<string>();
+
+    const addApartmentId = (value: unknown) => {
+      const apartmentId = this.firstString(value);
+      if (apartmentId) apartmentIds.add(apartmentId);
+    };
+
+    addApartmentId(user.apartmentId);
+    addApartmentId(userData.apartmentId);
+
+    if (Array.isArray(userData.apartmentIds)) {
+      userData.apartmentIds.forEach(addApartmentId);
+    }
 
     const addSnap = (snap: FirebaseFirestore.QuerySnapshot) => {
       for (const doc of snap.docs) apartmentMap.set(doc.id, doc.data() as UnknownRecord);
     };
+
+    const apartmentRefs = Array.from(apartmentIds).map((id) => db.collection('apartments').doc(id));
+    const directSnaps = apartmentRefs.length > 0 ? await db.getAll(...apartmentRefs) : [];
+    for (const snap of directSnaps) {
+      if (snap.exists) apartmentMap.set(snap.id, snap.data() as UnknownRecord);
+    }
 
     await Promise.all([
       db.collection('apartments').where('residentId', '==', user.uid).get().then(addSnap),
@@ -343,16 +365,14 @@ export class DocumentsService {
       userEmail ? db.collection('apartments').where('ownerEmail', '==', userEmail).get().then(addSnap) : Promise.resolve(),
     ]);
 
-    const allSnap = await db.collection('apartments').get();
-    for (const doc of allSnap.docs) {
-      const apartment = doc.data() as UnknownRecord;
-      if (this.isApartmentMember(apartment, user)) apartmentMap.set(doc.id, apartment);
-    }
-
     return Array.from(apartmentMap.entries()).map(([id, data]) => ({ id, data }));
   }
 
-  private async canAccessDocument(user: RequestUser, document: UnknownRecord): Promise<boolean> {
+  private async canAccessDocument(
+    user: RequestUser,
+    document: UnknownRecord,
+    memberApartments?: MemberApartment[],
+  ): Promise<boolean> {
     const scope = this.firstString(document.scope) as DocumentScope;
     if (this.firstString(document.ownerUserId) === user.uid) return true;
     if (scope === 'platformPrivate') return false;
@@ -366,7 +386,7 @@ export class DocumentsService {
       if (isStaffRole(user.role) || !isPropertyMemberRole(user.role)) return false;
 
       const apartmentId = this.firstString(document.apartmentId);
-      const apartments = await this.resolveMemberApartments(user);
+      const apartments = memberApartments ?? await this.resolveMemberApartments(user);
       return apartments.some((apartment) => apartment.id === apartmentId && this.documentVisibleForApartmentAccess(user, apartment, document));
     }
 
@@ -378,7 +398,7 @@ export class DocumentsService {
     if (!isPropertyMemberRole(user.role)) return false;
     if (scope === 'managementArchive') return false;
 
-    const apartments = await this.resolveMemberApartments(user);
+    const apartments = memberApartments ?? await this.resolveMemberApartments(user);
     if (scope === 'apartmentResidents') {
       const apartmentId = this.firstString(document.apartmentId);
       return apartments.some((apartment) => apartment.id === apartmentId && this.documentVisibleForApartmentAccess(user, apartment, document));
@@ -417,20 +437,38 @@ export class DocumentsService {
     this.assertAuthenticated(user);
 
     const db = this.firebaseAdminService.firestore;
-    const [snap, legacySnap] = await Promise.all([
-      db.collectionGroup('documents')
-        .orderBy('createdAt', 'desc')
-        .limit(200)
-        .get(),
-      db.collection('documents')
-        .orderBy('createdAt', 'desc')
-        .limit(200)
-        .get(),
-    ]);
+    const apartmentIdFilter = this.firstString(filters?.apartmentId);
+
+    const [snap, legacySnap] = apartmentIdFilter
+      ? await Promise.all([
+          db.collection('apartments')
+            .doc(apartmentIdFilter)
+            .collection('documents')
+            .orderBy('createdAt', 'desc')
+            .limit(200)
+            .get(),
+          db.collection('documents')
+            .where('apartmentId', '==', apartmentIdFilter)
+            .limit(200)
+            .get(),
+        ])
+      : await Promise.all([
+          db.collectionGroup('documents')
+            .orderBy('createdAt', 'desc')
+            .limit(200)
+            .get(),
+          db.collection('documents')
+            .orderBy('createdAt', 'desc')
+            .limit(200)
+            .get(),
+        ]);
 
     const items = [];
     const seenDocumentPaths = new Set<string>();
-    const apartmentIdFilter = this.firstString(filters?.apartmentId);
+    const memberApartments = isPropertyMemberRole(user.role)
+      ? await this.resolveMemberApartments(user)
+      : undefined;
+
     for (const doc of [...snap.docs, ...legacySnap.docs]) {
       if (seenDocumentPaths.has(doc.ref.path)) {
         continue;
@@ -442,7 +480,7 @@ export class DocumentsService {
         continue;
       }
 
-      if (await this.canAccessDocument(user, data)) {
+      if (await this.canAccessDocument(user, data, memberApartments)) {
         items.push(this.serializeDocument(doc.id, data));
       }
     }

@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.InvitationsService = void 0;
 const node_crypto_1 = require("node:crypto");
 const common_1 = require("@nestjs/common");
+const firestore_1 = require("firebase-admin/firestore");
 const firebase_admin_service_1 = require("../../common/infrastructure/firebase/firebase-admin.service");
 const password_policy_1 = require("../../common/auth/password-policy");
 const role_constants_1 = require("../../common/auth/role.constants");
@@ -315,7 +316,7 @@ let InvitationsService = class InvitationsService {
                 ...(isCompanyMemberInvitation ? { showContactToResidents } : {}),
                 role: invitationRole,
                 accountType: invitationAccountType,
-                ...(apartmentId ? { apartmentId, apartmentIds: [apartmentId] } : {}),
+                ...(apartmentId ? { apartmentId, apartmentIds: firestore_1.FieldValue.arrayUnion(apartmentId) } : {}),
                 updatedAt: new Date().toISOString(),
             }, { merge: true });
             if (isCompanyMemberInvitation) {

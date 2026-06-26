@@ -244,8 +244,9 @@ export class ApartmentsService {
     );
 
     if (normalizedEmail) {
-      const [residentSnap, ownerSnap] = await Promise.all([
+      const [residentSnap, ownerIdSnap, ownerEmailSnap] = await Promise.all([
         this.firebaseAdminService.firestore.collection('apartments').where('residentId', '==', user.uid).get(),
+        this.firebaseAdminService.firestore.collection('apartments').where('ownerId', '==', user.uid).get(),
         this.firebaseAdminService.firestore.collection('apartments').where('ownerEmail', '==', normalizedEmail).get(),
       ]);
 
@@ -253,26 +254,13 @@ export class ApartmentsService {
         apartmentIds.add(doc.id);
       }
 
-      for (const doc of ownerSnap.docs) {
-        const apartment = doc.data() as Record<string, unknown>;
-        if (apartment.ownerActivated === true) {
-          apartmentIds.add(doc.id);
+      for (const snap of [ownerIdSnap, ownerEmailSnap]) {
+        for (const doc of snap.docs) {
+          const apartment = doc.data() as Record<string, unknown>;
+          if (apartment.ownerActivated === true) {
+            apartmentIds.add(doc.id);
+          }
         }
-      }
-    }
-
-    const tenantSnap = await this.firebaseAdminService.firestore.collection('apartments').get();
-    for (const doc of tenantSnap.docs) {
-      const apartment = doc.data() as Record<string, unknown>;
-      const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
-      const isTenant = tenants.some((tenant) => {
-        if (!tenant || typeof tenant !== 'object') return false;
-        return typeof (tenant as Record<string, unknown>).userId === 'string'
-          && (tenant as Record<string, unknown>).userId === user.uid;
-      });
-
-      if (isTenant) {
-        apartmentIds.add(doc.id);
       }
     }
 
@@ -2343,6 +2331,17 @@ export class ApartmentsService {
     if (contractNumber) tenantRecord.contractNumber = contractNumber;
     if (fromDate) tenantRecord.fromDate = fromDate;
     if (until) tenantRecord.until = until;
+
+    await db.collection('users').doc(authUserId).set(
+      {
+        uid: authUserId,
+        email,
+        apartmentId,
+        apartmentIds: FieldValue.arrayUnion(apartmentId),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
 
     const nextTenants = [
       ...tenants.filter((tenant) => {

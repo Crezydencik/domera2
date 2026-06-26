@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { FieldValue } from 'firebase-admin/firestore';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { PASSWORD_COMPLEXITY_MESSAGE, PASSWORD_COMPLEXITY_REGEX } from '../../common/auth/password-policy';
@@ -385,7 +386,7 @@ export class InvitationsService {
           ...(isCompanyMemberInvitation ? { showContactToResidents } : {}),
           role: invitationRole,
           accountType: invitationAccountType,
-          ...(apartmentId ? { apartmentId, apartmentIds: [apartmentId] } : {}),
+          ...(apartmentId ? { apartmentId, apartmentIds: FieldValue.arrayUnion(apartmentId) } : {}),
           updatedAt: new Date().toISOString(),
         },
         { merge: true },

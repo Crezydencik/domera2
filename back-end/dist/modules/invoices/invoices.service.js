@@ -2584,42 +2584,21 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         }
         const normalizedEmail = (0, invitation_token_1.normalizeEmail)((typeof user.email === 'string' ? user.email : typeof userData.email === 'string' ? userData.email : '') ?? '');
         if (normalizedEmail) {
-            const [residentSnap, ownerSnap] = await Promise.all([
+            const [residentSnap, ownerIdSnap, ownerEmailSnap] = await Promise.all([
                 this.firebaseAdminService.firestore.collection('apartments').where('residentId', '==', user.uid).get(),
+                this.firebaseAdminService.firestore.collection('apartments').where('ownerId', '==', user.uid).get(),
                 this.firebaseAdminService.firestore.collection('apartments').where('ownerEmail', '==', normalizedEmail).get(),
             ]);
             for (const doc of residentSnap.docs) {
                 apartmentIds.add(doc.id);
             }
-            for (const doc of ownerSnap.docs) {
-                const apartment = doc.data();
-                if (apartment.ownerActivated === true) {
-                    apartmentIds.add(doc.id);
+            for (const snap of [ownerIdSnap, ownerEmailSnap]) {
+                for (const doc of snap.docs) {
+                    const apartment = doc.data();
+                    if (apartment.ownerActivated === true) {
+                        apartmentIds.add(doc.id);
+                    }
                 }
-            }
-        }
-        const tenantSnap = await this.firebaseAdminService.firestore.collection('apartments').get();
-        for (const doc of tenantSnap.docs) {
-            const apartment = doc.data();
-            const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
-            const isTenant = tenants.some((tenant) => {
-                if (!tenant || typeof tenant !== 'object')
-                    return false;
-                const t = tenant;
-                if (typeof t.userId === 'string' && t.userId === user.uid) {
-                    const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
-                    const until = typeof t.until === 'string' ? new Date(t.until) : null;
-                    const now = new Date();
-                    if (fromDate && now < fromDate)
-                        return false;
-                    if (until && now > until)
-                        return false;
-                    return true;
-                }
-                return false;
-            });
-            if (isTenant) {
-                apartmentIds.add(doc.id);
             }
         }
         const candidateIds = Array.from(apartmentIds);
