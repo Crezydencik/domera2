@@ -495,7 +495,7 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
         >
           {/* Sidebar header */}
           <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-100 px-5">
-            <p className="text-xl font-bold tracking-tight text-orange-500">{brand}</p>
+            <img src="https://firebasestorage.googleapis.com/v0/b/domera-eb224.firebasestorage.app/o/System%2FDomera_loga.png?alt=media&token=53ccefaa-c38f-490b-9138-010da531327e" alt="Domera Logo" className="h-8 w-auto object-contain" /> 
             <div className="flex items-center gap-2">
               {/* Locale switcher — mobile only */}
               <div className="lg:hidden">
