@@ -68,6 +68,7 @@ export declare class AuthService {
     loginWithEmailPassword(request: Request, input: LoginDto): Promise<{
         userId: string;
         email: string;
+        idToken: string;
         session: {
             cookie: string;
             maxAgeSeconds: number;
@@ -80,6 +81,7 @@ export declare class AuthService {
     registerWithEmailPassword(request: Request, input: RegisterDto): Promise<{
         userId: string;
         email: string;
+        idToken: string;
         session: {
             cookie: string;
             maxAgeSeconds: number;

@@ -97,6 +97,16 @@ function firstOptionalString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+function decodeCookieValue(value?: string): string | undefined {
+  if (!value?.trim()) return undefined;
+
+  try {
+    return decodeURIComponent(value.trim());
+  } catch {
+    return value.trim();
+  }
+}
+
 function firstDisplayString(...values: unknown[]): string {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) {
@@ -531,18 +541,28 @@ function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const store = await cookies();
   const cookieHeader = buildCookieHeader(store);
+  const authToken = decodeCookieValue(store.get("authToken")?.value);
   const url = `${appConfig.apiBaseUrl}${path}`;
   const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
+  const headers = new Headers(init?.headers);
+
+  if (!isFormData && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (cookieHeader && !headers.has("Cookie")) {
+    headers.set("Cookie", cookieHeader);
+  }
+
+  if (authToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${authToken}`);
+  }
 
   let response: Response;
   try {
     response = await fetch(url, {
       ...init,
-      headers: {
-        ...(isFormData ? {} : { "Content-Type": "application/json" }),
-        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
-        ...(init?.headers ?? {}),
-      },
+      headers,
       cache: "no-store",
     });
   } catch (error) {
@@ -568,10 +588,43 @@ async function apiFetchSafe<T>(path: string): Promise<T | null> {
 async function getAuthenticatedContext(roleHint?: string) {
   const store = await cookies();
   const sessionCookie = store.get("__session")?.value?.trim();
-  const userId = store.get("userId")?.value?.trim();
+  const sessionMarker = store.get("domera_session")?.value?.trim();
+  const userId = decodeCookieValue(store.get("userId")?.value);
+  const email = decodeCookieValue(store.get("userEmail")?.value);
+  const name = decodeCookieValue(store.get("userName")?.value);
+  const roleCookie = firstOptionalString(
+    store.get("domera_role")?.value,
+    store.get("domera_accountType")?.value,
+    roleHint,
+  );
+  const companyIdCookie = decodeCookieValue(store.get("domera_companyId")?.value);
+  const apartmentIdCookie = decodeCookieValue(store.get("domera_apartmentId")?.value);
+
+  if (!sessionCookie && !sessionMarker && !userId) {
+    redirect(ROUTES.login);
+  }
+
+  const fallbackProfile: UnknownRecord = {
+    uid: userId,
+    id: userId,
+    email,
+    name,
+    role: roleCookie,
+    accountType: store.get("domera_accountType")?.value,
+    companyId: companyIdCookie,
+    apartmentId: apartmentIdCookie,
+  };
+  const fallbackRole = normalizeDashboardRole(roleCookie);
+  const fallbackContext = {
+    userId,
+    profile: fallbackProfile,
+    role: fallbackRole,
+    companyId: firstString(companyIdCookie, userId),
+    apartmentId: firstString(apartmentIdCookie),
+  };
 
   if (!sessionCookie) {
-    redirect(ROUTES.login);
+    return fallbackContext;
   }
 
   try {
@@ -598,6 +651,10 @@ async function getAuthenticatedContext(roleHint?: string) {
     };
   } catch (error) {
     if (error instanceof DomeraApiError && [401, 403, 404].includes(error.status)) {
+      if (sessionMarker || userId) {
+        return fallbackContext;
+      }
+
       redirect(ROUTES.login);
     }
 

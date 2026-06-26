@@ -830,6 +830,7 @@ export class AuthService {
     return {
       userId: authResult.localId,
       email: authResult.email ?? email,
+      idToken: authResult.idToken,
       session,
     };
   }
@@ -925,6 +926,7 @@ export class AuthService {
     return {
       userId: uid,
       email,
+      idToken: authResult.idToken,
       session,
     };
   }
