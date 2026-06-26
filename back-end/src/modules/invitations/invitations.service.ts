@@ -282,7 +282,16 @@ export class InvitationsService {
       invitationId: doc.id,
       targetEmail: email,
       apartmentId: typeof invitation.apartmentId === 'string' ? invitation.apartmentId : undefined,
-      metadata: { existingAccountDetected },
+      metadata: {
+        existingAccountDetected,
+        eventMeaning: 'A visitor opened an invitation link and the backend verified that the invitation exists.',
+        apartmentLabel: display.apartmentLabel,
+        buildingLabel: display.buildingLabel,
+        managerLabel: display.managerLabel,
+        inviteType: typeof invitation.inviteType === 'string' ? invitation.inviteType : 'resident',
+        role: typeof invitation.role === 'string' ? invitation.role : 'Resident',
+        accountType: typeof invitation.accountType === 'string' ? invitation.accountType : 'Resident',
+      },
     });
 
     return {

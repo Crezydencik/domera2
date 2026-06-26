@@ -18,6 +18,8 @@ export declare class AuditLogService {
     private readonly firebaseAdminService;
     private readonly logger;
     constructor(firebaseAdminService: FirebaseAdminService);
+    private toActionLabel;
+    private buildEventDescription;
     private buildLogEntry;
     private generateReadableId;
     write(event: AuditEventInput): Promise<void>;
