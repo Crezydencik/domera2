@@ -11,10 +11,11 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 sm:px-6 sm:py-4">
           <Link href={ROUTES.landing} className="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-            </svg>
-            <span className="text-lg font-bold text-slate-900">Domera</span>
+                <img
+              src="https://firebasestorage.googleapis.com/v0/b/domera-eb224.firebasestorage.app/o/System%2FDomera_loga.png?alt=media&token=53ccefaa-c38f-490b-9138-010da531327e"
+              alt="Domera Logo"
+              className="h-7 min-w-0 max-w-[calc(100%_-_4.5rem)] object-contain sm:h-8 sm:max-w-[11rem]"
+            />
           </Link>
           <LocaleSwitcher />
         </div>

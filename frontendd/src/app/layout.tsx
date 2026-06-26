@@ -31,7 +31,7 @@ export default async function RootLayout({
 
   return (
     <html lang={locale} suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body className="min-h-screen antialiased">
+      <body suppressHydrationWarning className="min-h-screen antialiased">
         <NextIntlClientProvider messages={messages}>
           <ConfirmProvider>
             {children}

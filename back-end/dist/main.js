@@ -20,9 +20,13 @@ function parseAllowedOrigins(value) {
         .split(',')
         .map((origin) => normalizeOrigin(origin))
         .filter(Boolean));
-    if (process.env.NODE_ENV !== 'production' && origins.size === 0) {
+    if (process.env.NODE_ENV !== 'production') {
         origins.add('http://localhost:3000');
+        origins.add('http://localhost:3001');
+        origins.add('http://localhost:3002');
         origins.add('http://127.0.0.1:3000');
+        origins.add('http://127.0.0.1:3001');
+        origins.add('http://127.0.0.1:3002');
     }
     return origins;
 }
