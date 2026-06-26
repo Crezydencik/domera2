@@ -35,6 +35,8 @@ export default function LoginPage() {
         email: result.email,
         role: result.role,
         accountType: result.accountType,
+        companyId: result.companyId,
+        apartmentId: result.apartmentId,
         rememberMe,
       });
 

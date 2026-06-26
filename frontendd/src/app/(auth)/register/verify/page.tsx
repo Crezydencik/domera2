@@ -106,6 +106,8 @@ export default function RegisterVerifyPage() {
         email: result.email,
         role: result.role,
         accountType: pending.accountType,
+        companyId: result.companyId,
+        apartmentId: result.apartmentId,
       });
 
       clearPendingRegistration();

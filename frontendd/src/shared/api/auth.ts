@@ -29,6 +29,8 @@ type FirebaseAuthResult = {
   preview: boolean;
   role: PublicUserRole;
   accountType: PublicAccountType;
+  companyId?: string;
+  apartmentId?: string;
 };
 
 type UserProfileResponse = {
@@ -229,6 +231,8 @@ function mapAuthResponse(data: BackendAuthResponse, fallbackEmail: string, fallb
     preview: false,
     role: normalizeRole(data.role ?? data.accountType ?? fallbackAccountType),
     accountType: normalizeAccountType(data.accountType ?? data.role ?? fallbackAccountType),
+    companyId: data.companyId,
+    apartmentId: data.apartmentId,
   };
 }
 
@@ -303,50 +307,54 @@ export async function establishUserSession(params: {
   email: string;
   role?: PublicUserRole;
   accountType: PublicAccountType;
+  companyId?: string;
+  apartmentId?: string;
   rememberMe?: boolean;
 }) {
-  if (params.idToken?.trim()) {
-    await apiFetch<{ success: boolean }>("/auth/session", {
-      method: "POST",
-      body: JSON.stringify({
-        idToken: params.idToken,
-        userId: params.userId,
-        email: params.email,
-        rememberMe: params.rememberMe,
-      }),
-    });
-  }
-
-  const profile = await apiFetch<UserProfileResponse | null>(`/users/${encodeURIComponent(params.userId)}`).catch((error) => {
-    if (error instanceof DomeraApiError) {
-      return null;
-    }
-
-    throw error;
-  });
-
-  const resolvedRole = normalizeRole(profile?.role ?? params.role ?? profile?.accountType ?? params.accountType);
-  const resolvedAccountType = normalizeAccountType(profile?.accountType ?? resolvedRole ?? params.accountType);
+  const resolvedRole = normalizeRole(params.role ?? params.accountType);
+  const resolvedAccountType = normalizeAccountType(params.accountType ?? resolvedRole);
 
   persistSessionHints({
     idToken: params.idToken,
     role: resolvedRole,
     accountType: resolvedAccountType,
     email: params.email,
-    name: resolveProfileName(profile),
     userId: params.userId,
-    companyId: profile?.companyId,
-    apartmentId: profile?.apartmentId,
+    companyId: params.companyId,
+    apartmentId: params.apartmentId,
     rememberMe: params.rememberMe,
   });
+
+  void apiFetch<UserProfileResponse | null>(`/users/${encodeURIComponent(params.userId)}`, {
+    redirectOnAuthError: false,
+  })
+    .then((profile) => {
+      if (!profile) return;
+
+      const profileRole = normalizeRole(profile.role ?? resolvedRole ?? profile.accountType);
+      const profileAccountType = normalizeAccountType(profile.accountType ?? profileRole ?? resolvedAccountType);
+
+      persistSessionHints({
+        idToken: params.idToken,
+        role: profileRole,
+        accountType: profileAccountType,
+        email: params.email,
+        name: resolveProfileName(profile),
+        userId: params.userId,
+        companyId: profile.companyId ?? params.companyId,
+        apartmentId: profile.apartmentId ?? params.apartmentId,
+        rememberMe: params.rememberMe,
+      });
+    })
+    .catch(() => undefined);
 
   return {
     success: true,
     preview: false,
     role: resolvedRole,
     accountType: resolvedAccountType,
-    companyId: profile?.companyId,
-    apartmentId: profile?.apartmentId,
+    companyId: params.companyId,
+    apartmentId: params.apartmentId,
   };
 }
 

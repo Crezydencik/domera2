@@ -185,6 +185,8 @@ function AcceptInvitationContent() {
         email: result.email,
         role: result.role,
         accountType: info.accountType,
+        companyId: result.companyId,
+        apartmentId: result.apartmentId,
       });
 
       if (info.inviteType !== "company-member") {
