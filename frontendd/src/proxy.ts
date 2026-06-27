@@ -40,7 +40,8 @@ function clearAuthCookies(response: NextResponse) {
 export default function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get("__session")?.value?.trim();
-  const isAuthenticated = Boolean(sessionCookie);
+  const authToken = request.cookies.get("authToken")?.value?.trim();
+  const isAuthenticated = Boolean(sessionCookie || authToken);
   const shouldClearAuth = request.nextUrl.searchParams.get("expired") === "1";
   const cookieRole = request.cookies.get("domera_role")?.value ?? request.cookies.get("domera_accountType")?.value;
   const resolvedRole = resolveDashboardRole(cookieRole);

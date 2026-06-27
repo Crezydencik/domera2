@@ -603,6 +603,7 @@ async function apiFetchSafe<T>(path: string): Promise<T | null> {
 async function getAuthenticatedContext(roleHint?: string) {
   const store = await cookies();
   const sessionCookie = store.get("__session")?.value?.trim();
+  const authToken = decodeCookieValue(store.get("authToken")?.value);
   const userId = decodeCookieValue(store.get("userId")?.value);
   const email = decodeCookieValue(store.get("userEmail")?.value);
   const name = decodeCookieValue(store.get("userName")?.value);
@@ -614,7 +615,7 @@ async function getAuthenticatedContext(roleHint?: string) {
   const companyIdCookie = decodeCookieValue(store.get("domera_companyId")?.value);
   const apartmentIdCookie = decodeCookieValue(store.get("domera_apartmentId")?.value);
 
-  if (!sessionCookie) {
+  if (!sessionCookie && !authToken) {
     redirectToExpiredLogin();
   }
 
