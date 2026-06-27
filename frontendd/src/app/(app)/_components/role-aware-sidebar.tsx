@@ -391,7 +391,7 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
     } finally {
       clearBrowserAuthCookies();
       setProfileOpen(false);
-      router.push(ROUTES.login);
+      router.push(`${ROUTES.login}?expired=1`);
       router.refresh();
       setLogoutLoading(false);
     }

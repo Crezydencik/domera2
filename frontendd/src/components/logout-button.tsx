@@ -24,7 +24,7 @@ export function LogoutButton() {
       // continue with local cleanup even if the backend is unavailable
     } finally {
       clearBrowserAuthCookies();
-      router.push(ROUTES.login);
+      router.push(`${ROUTES.login}?expired=1`);
       router.refresh();
       setLoading(false);
     }

@@ -37,6 +37,7 @@ const ROLE_COOKIE_NAME = 'domera_role';
 const ACCOUNT_TYPE_COOKIE_NAME = 'domera_accountType';
 const COMPANY_COOKIE_NAME = 'domera_companyId';
 const APARTMENT_COOKIE_NAME = 'domera_apartmentId';
+const SESSION_MARKER_COOKIE_NAME = 'domera_session';
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -154,9 +155,11 @@ let AuthController = class AuthController {
         else {
             response.clearCookie(APARTMENT_COOKIE_NAME, { path: '/' });
         }
-        response.clearCookie('authToken');
-        response.clearCookie('userId');
-        response.clearCookie('userEmail');
+        response.clearCookie(SESSION_MARKER_COOKIE_NAME, { path: '/' });
+        response.clearCookie('authToken', { path: '/' });
+        response.clearCookie('userId', { path: '/' });
+        response.clearCookie('userEmail', { path: '/' });
+        response.clearCookie('userName', { path: '/' });
     }
     mapServiceError(error) {
         if (error instanceof common_1.HttpException)
@@ -248,9 +251,11 @@ let AuthController = class AuthController {
         response.clearCookie(ACCOUNT_TYPE_COOKIE_NAME, { path: '/' });
         response.clearCookie(COMPANY_COOKIE_NAME, { path: '/' });
         response.clearCookie(APARTMENT_COOKIE_NAME, { path: '/' });
+        response.clearCookie(SESSION_MARKER_COOKIE_NAME, { path: '/' });
         response.clearCookie('authToken', { path: '/' });
         response.clearCookie('userId', { path: '/' });
         response.clearCookie('userEmail', { path: '/' });
+        response.clearCookie('userName', { path: '/' });
         return { success: true };
     }
     clearSession(response) {

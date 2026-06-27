@@ -40,13 +40,23 @@ function clearAuthCookies(response: NextResponse) {
 export default function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get("__session")?.value?.trim();
-  const sessionMarker = request.cookies.get("domera_session")?.value?.trim();
-  const isAuthenticated = Boolean(sessionCookie || sessionMarker);
+  const isAuthenticated = Boolean(sessionCookie);
+  const shouldClearAuth = request.nextUrl.searchParams.get("expired") === "1";
   const cookieRole = request.cookies.get("domera_role")?.value ?? request.cookies.get("domera_accountType")?.value;
   const resolvedRole = resolveDashboardRole(cookieRole);
   const requestHeaders = new Headers(request.headers);
 
   requestHeaders.set("x-domera-role", resolvedRole);
+
+  if (isAuthRoute(pathname) && shouldClearAuth) {
+    const response = NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
+    clearAuthCookies(response);
+    return response;
+  }
 
   if (isProtectedPath(pathname) && !isAuthenticated) {
     return redirectToLogin(request, pathname);

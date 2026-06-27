@@ -12,6 +12,8 @@ function redirectToLogin() {
   const currentPath = `${window.location.pathname}${window.location.search}`;
   const loginUrl = new URL(ROUTES.login, window.location.origin);
 
+  loginUrl.searchParams.set("expired", "1");
+
   if (currentPath && currentPath !== ROUTES.login) {
     loginUrl.searchParams.set("next", currentPath);
   }

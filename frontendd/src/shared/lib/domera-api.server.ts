@@ -36,6 +36,10 @@ type UnknownRecord = Record<string, unknown>;
 type ApiListResponse = { items?: UnknownRecord[] };
 type ResidentHomeResponse = { apartments?: UnknownRecord[]; buildings?: UnknownRecord[]; managementCompanies?: UnknownRecord[] };
 
+function redirectToExpiredLogin(): never {
+  redirect(`${ROUTES.login}?expired=1`);
+}
+
 export interface RoleDataBundle {
   role: DashboardRole;
   userId?: string;
@@ -599,7 +603,6 @@ async function apiFetchSafe<T>(path: string): Promise<T | null> {
 async function getAuthenticatedContext(roleHint?: string) {
   const store = await cookies();
   const sessionCookie = store.get("__session")?.value?.trim();
-  const sessionMarker = store.get("domera_session")?.value?.trim();
   const userId = decodeCookieValue(store.get("userId")?.value);
   const email = decodeCookieValue(store.get("userEmail")?.value);
   const name = decodeCookieValue(store.get("userName")?.value);
@@ -611,8 +614,8 @@ async function getAuthenticatedContext(roleHint?: string) {
   const companyIdCookie = decodeCookieValue(store.get("domera_companyId")?.value);
   const apartmentIdCookie = decodeCookieValue(store.get("domera_apartmentId")?.value);
 
-  if (!sessionCookie && !sessionMarker && !userId) {
-    redirect(ROUTES.login);
+  if (!sessionCookie) {
+    redirectToExpiredLogin();
   }
 
   const fallbackProfile: UnknownRecord = {
@@ -633,10 +636,6 @@ async function getAuthenticatedContext(roleHint?: string) {
     companyId: firstString(companyIdCookie, userId),
     apartmentId: firstString(apartmentIdCookie),
   };
-
-  if (!sessionCookie) {
-    return fallbackContext;
-  }
 
   try {
     const profile = await apiFetch<UnknownRecord>(
@@ -661,12 +660,12 @@ async function getAuthenticatedContext(roleHint?: string) {
       apartmentId: firstString(profile?.apartmentId, store.get("domera_apartmentId")?.value),
     };
   } catch (error) {
-    if (error instanceof DomeraApiError && [401, 403, 404].includes(error.status)) {
-      if (sessionMarker || userId) {
-        return fallbackContext;
-      }
+    if (error instanceof DomeraApiError && [401, 403].includes(error.status)) {
+      redirectToExpiredLogin();
+    }
 
-      redirect(ROUTES.login);
+    if (error instanceof DomeraApiError && error.status === 404) {
+      return fallbackContext;
     }
 
     throw error;
