@@ -31,6 +31,23 @@ interface InvitationInfo {
   lastName?: string;
 }
 
+function normalizeEmail(value?: string | null): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function readBrowserCookie(name: string): string {
+  if (typeof document === "undefined") return "";
+
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  if (!match?.[1]) return "";
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
 function AcceptInvitationContent() {
   const t = useTranslations("auth");
   const s = useTranslations("system");
@@ -43,9 +60,14 @@ function AcceptInvitationContent() {
   const [confirm, setConfirm] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [currentSessionEmail, setCurrentSessionEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setCurrentSessionEmail(normalizeEmail(readBrowserCookie("userEmail")));
+  }, []);
 
   useEffect(() => {
     const token = params.get("token");
@@ -104,6 +126,14 @@ function AcceptInvitationContent() {
       .finally(() => setResolving(false));
   }, [params]);
 
+  const sessionEmailMismatch = Boolean(
+    info && currentSessionEmail && normalizeEmail(info.email) !== currentSessionEmail,
+  );
+
+  const wrongAccountMessage = info && sessionEmailMismatch
+    ? `This invitation is for ${info.email}. You are currently signed in as ${currentSessionEmail}. Sign out first or open the invitation in a private window.`
+    : "";
+
   const loginHref = useMemo(() => {
     if (!info) return ROUTES.login;
 
@@ -115,6 +145,11 @@ function AcceptInvitationContent() {
 
   useEffect(() => {
     if (!info?.existingAccountDetected || params.get("accept") !== "1" || accepted) return;
+
+    if (sessionEmailMismatch) {
+      setErrors({ general: wrongAccountMessage });
+      return;
+    }
 
     let cancelled = false;
     const invitationToken = info.token;
@@ -150,10 +185,15 @@ function AcceptInvitationContent() {
     return () => {
       cancelled = true;
     };
-  }, [accepted, info, params, router, s]);
+  }, [accepted, info, params, router, s, sessionEmailMismatch, wrongAccountMessage]);
 
   async function handleAccept(e: React.FormEvent) {
     e.preventDefault();
+    if (sessionEmailMismatch) {
+      setErrors({ general: wrongAccountMessage });
+      return;
+    }
+
     const next: Record<string, string> = {};
     if (!hasInvitedFullName && !firstName.trim()) next.firstName = "Required";
     if (!hasInvitedFullName && !lastName.trim()) next.lastName = "Required";
@@ -287,6 +327,12 @@ function AcceptInvitationContent() {
         </div>
       )}
 
+      {sessionEmailMismatch && (
+        <div className="mt-6 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {wrongAccountMessage}
+        </div>
+      )}
+
       {info.existingAccountDetected ? (
         <div className="mt-6">
           {errors.general && (
@@ -295,7 +341,7 @@ function AcceptInvitationContent() {
             </div>
           )}
           <Link href={loginHref}>
-            <Button variant="primary" size="lg" className="w-full" disabled={loading}>
+            <Button variant="primary" size="lg" className="w-full" disabled={loading || sessionEmailMismatch}>
               {loading ? s("button.accepting") : t("invitationSignInToAccept")}
             </Button>
           </Link>
@@ -365,7 +411,7 @@ function AcceptInvitationContent() {
           variant="approve"
           size="lg"
           className="w-full"
-          disabled={loading || info.existingAccountDetected}
+          disabled={loading || info.existingAccountDetected || sessionEmailMismatch}
         >
           {loading ? s("button.accepting") : s("button.acceptInvitation")}
         </Button>

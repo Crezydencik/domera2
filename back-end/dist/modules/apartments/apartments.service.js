@@ -1804,23 +1804,7 @@ let ApartmentsService = class ApartmentsService {
             authUserId = existing.uid;
         }
         catch {
-            const created = await this.firebaseAdminService.auth.createUser({
-                email,
-                password: (0, node_crypto_1.randomBytes)(18).toString('base64url'),
-            });
-            authUserId = created.uid;
-            const tenantUserCompanyId = (Array.isArray(apartment.companyIds)
-                ? apartment.companyIds.find((value) => typeof value === 'string' && value.trim().length > 0)
-                : undefined) ??
-                (typeof apartment.companyId === 'string' ? apartment.companyId : undefined);
-            await db.collection('users').doc(authUserId).set({
-                uid: authUserId,
-                email,
-                role: 'Resident',
-                accountType: 'Resident',
-                ...(tenantUserCompanyId ? { companyId: tenantUserCompanyId } : {}),
-                createdAt: new Date().toISOString(),
-            }, { merge: true });
+            authUserId = '';
         }
         const tenants = Array.isArray(apartment.tenants)
             ? apartment.tenants
@@ -1835,7 +1819,6 @@ let ApartmentsService = class ApartmentsService {
         const permissions = ['submitMeter', ...(canViewDocuments ? ['viewDocuments'] : [])];
         const fullName = [firstName, lastName].filter(Boolean).join(' ') || email;
         const tenantRecord = {
-            userId: authUserId,
             email,
             name: fullName,
             permissions,
@@ -1843,6 +1826,8 @@ let ApartmentsService = class ApartmentsService {
             status: 'Pending',
             invitedAt: new Date(),
         };
+        if (authUserId)
+            tenantRecord.userId = authUserId;
         if (firstName)
             tenantRecord.firstName = firstName;
         if (lastName)
@@ -1855,18 +1840,21 @@ let ApartmentsService = class ApartmentsService {
             tenantRecord.fromDate = fromDate;
         if (until)
             tenantRecord.until = until;
-        await db.collection('users').doc(authUserId).set({
-            uid: authUserId,
-            email,
-            apartmentId,
-            apartmentIds: firestore_1.FieldValue.arrayUnion(apartmentId),
-            updatedAt: new Date().toISOString(),
-        }, { merge: true });
+        if (authUserId) {
+            await db.collection('users').doc(authUserId).set({
+                uid: authUserId,
+                email,
+                apartmentId,
+                apartmentIds: firestore_1.FieldValue.arrayUnion(apartmentId),
+                updatedAt: new Date().toISOString(),
+            }, { merge: true });
+        }
         const nextTenants = [
             ...tenants.filter((tenant) => {
                 const tenantUserId = typeof tenant.userId === 'string' ? tenant.userId.trim() : '';
                 const tenantEmail = typeof tenant.email === 'string' ? tenant.email.trim().toLowerCase() : '';
-                return tenantUserId !== authUserId && tenantEmail !== email;
+                const sameExistingUser = Boolean(authUserId && tenantUserId === authUserId);
+                return !sameExistingUser && tenantEmail !== email;
             }),
             tenantRecord,
         ];
