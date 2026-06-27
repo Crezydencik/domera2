@@ -769,38 +769,26 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
       : [];
 
   const linkedCompanyIds = getLinkedCompanyIds(liveApartments, liveBuildings, [profile?.companyId, companyId]);
-  const [invoiceBatches, meterBatches, documentBatches, companyBatches] = await Promise.all([
+  const knownCompanyIds = new Set(
+    residentHomeCompanies
+      .map((company) => firstDisplayString(company.id, company.companyId, company.companyName))
+      .filter(Boolean),
+  );
+  const companyIdsToLoad = linkedCompanyIds.filter((id) => !knownCompanyIds.has(id));
+  const [invoicesResponse, meterReadingsResponse, documentsResponse, companyBatches] = await Promise.all([
+    apiFetchSafe<ApiListResponse>("/invoices"),
+    apiFetchSafe<ApiListResponse>("/meter-readings"),
+    apiFetchSafe<ApiListResponse>("/documents"),
     Promise.all(
-      targetApartmentIds.map((item) => apiFetchSafe<ApiListResponse>(`/invoices?apartmentId=${encodeURIComponent(item)}`)),
-    ),
-    Promise.all(
-      targetApartmentIds.map((item) => apiFetchSafe<ApiListResponse>(`/meter-readings?apartmentId=${encodeURIComponent(item)}`)),
-    ),
-    Promise.all(
-      targetApartmentIds.map((item) => apiFetchSafe<ApiListResponse>(`/documents?apartmentId=${encodeURIComponent(item)}`)),
-    ),
-    Promise.all(
-      linkedCompanyIds.map((item) => apiFetchSafe<UnknownRecord>(`/company/${encodeURIComponent(item)}`)),
+      companyIdsToLoad.map((item) => apiFetchSafe<UnknownRecord>(`/company/${encodeURIComponent(item)}`)),
     ),
   ]);
 
-  const mergedInvoices = Array.from(
-    new Map(
-      invoiceBatches
-        .flatMap((response) => (Array.isArray(response?.items) ? response.items.map(toInvoice) : []))
-        .map((invoice) => [invoice.id, invoice] as const),
-    ).values(),
-  );
-  const mergedMeterReadings = meterBatches.flatMap((response) =>
-    Array.isArray(response?.items) ? response.items.map(toMeterReading) : [],
-  );
-  const liveDocuments = Array.from(
-    new Map(
-      documentBatches
-        .flatMap((response) => (Array.isArray(response?.items) ? response.items.map(toDocument) : []))
-        .map((document) => [document.id, document] as const),
-    ).values(),
-  );
+  const mergedInvoices = Array.isArray(invoicesResponse?.items) ? invoicesResponse.items.map(toInvoice) : [];
+  const mergedMeterReadings = Array.isArray(meterReadingsResponse?.items)
+    ? meterReadingsResponse.items.map(toMeterReading)
+    : [];
+  const liveDocuments = Array.isArray(documentsResponse?.items) ? documentsResponse.items.map(toDocument) : [];
   const derivedResidents = deriveResidentsFromApartments(liveApartments);
   const liveNotifications = Array.isArray(notificationsResponse?.items)
     ? notificationsResponse.items.map(toNotification)

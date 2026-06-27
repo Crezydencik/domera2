@@ -13,6 +13,7 @@ export declare class MeterReadingsService {
     private assertAuthenticated;
     private hasApartmentAccess;
     private extractApartmentReadings;
+    private getAccessibleApartmentIds;
     list(user: RequestUser, apartmentId?: string, companyId?: string): Promise<{
         items: Record<string, unknown>[];
     }>;

@@ -151,6 +151,48 @@ let MeterReadingsService = class MeterReadingsService {
         }
         return entries;
     }
+    async getAccessibleApartmentIds(user) {
+        const db = this.firebaseAdminService.firestore;
+        const apartmentIds = new Set();
+        const addApartmentId = (value) => {
+            if (typeof value === 'string' && value.trim()) {
+                apartmentIds.add(value.trim());
+            }
+        };
+        addApartmentId(user.apartmentId);
+        const userSnap = await db.collection('users').doc(user.uid).get();
+        const userData = userSnap.exists ? userSnap.data() : {};
+        addApartmentId(userData.apartmentId);
+        if (Array.isArray(userData.apartmentIds)) {
+            userData.apartmentIds.forEach(addApartmentId);
+        }
+        const normalizedEmail = (0, invitation_token_1.normalizeEmail)((typeof user.email === 'string' ? user.email : typeof userData.email === 'string' ? userData.email : '') ?? '');
+        const [residentSnap, ownerIdSnap, ownerEmailSnap] = await Promise.all([
+            db.collection('apartments').where('residentId', '==', user.uid).get(),
+            db.collection('apartments').where('ownerId', '==', user.uid).get(),
+            normalizedEmail
+                ? db.collection('apartments').where('ownerEmail', '==', normalizedEmail).get()
+                : Promise.resolve(null),
+        ]);
+        for (const doc of residentSnap.docs) {
+            apartmentIds.add(doc.id);
+        }
+        for (const snap of [ownerIdSnap, ownerEmailSnap]) {
+            if (!snap)
+                continue;
+            for (const doc of snap.docs) {
+                apartmentIds.add(doc.id);
+            }
+        }
+        const candidateIds = Array.from(apartmentIds);
+        if (!candidateIds.length)
+            return [];
+        const snaps = await db.getAll(...candidateIds.map((id) => db.collection('apartments').doc(id)));
+        return snaps
+            .filter((snap) => snap.exists)
+            .filter((snap) => this.hasApartmentAccess(user, snap.id, snap.data()))
+            .map((snap) => snap.id);
+    }
     async list(user, apartmentId, companyId) {
         this.assertAuthenticated(user);
         const db = this.firebaseAdminService.firestore;
@@ -173,7 +215,23 @@ let MeterReadingsService = class MeterReadingsService {
             return { items: this.extractApartmentReadings(apartmentId, apartment, await this.loadBuildingInfo(apartment), user) };
         }
         if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
-            return { items: [] };
+            const accessibleApartmentIds = await this.getAccessibleApartmentIds(user);
+            if (!accessibleApartmentIds.length) {
+                return { items: [] };
+            }
+            const apartmentSnaps = await db.getAll(...accessibleApartmentIds.map((id) => db.collection('apartments').doc(id)));
+            const buildingIds = Array.from(new Set(apartmentSnaps
+                .map((snap) => (snap.exists ? snap.data().buildingId : undefined))
+                .filter((id) => typeof id === 'string' && id.trim().length > 0)));
+            const buildingMap = await this.loadBuildings(buildingIds);
+            const items = apartmentSnaps.flatMap((snap) => {
+                if (!snap.exists)
+                    return [];
+                const apartment = snap.data();
+                const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : '';
+                return this.extractApartmentReadings(snap.id, apartment, buildingMap.get(buildingId), user);
+            });
+            return { items };
         }
         const effectiveCompanyId = companyId || user.companyId;
         if (!effectiveCompanyId)
