@@ -46,6 +46,250 @@
     "ctaBtn": "Start for free →",
     "footerRights": "© 2026 Domera. All rights reserved."
   },
+  "landing": {
+    "nav": {
+      "features": "Features",
+      "platform": "Platform",
+      "solutions": "Solutions",
+      "pricing": "Pricing",
+      "faq": "FAQ"
+    },
+    "actions": {
+      "login": "Log in",
+      "register": "Register",
+      "registerShort": "Join",
+      "loginRegister": "Log in / Register",
+      "loginRegisterShort": "Log in",
+      "demo": "Request demo",
+      "demoShort": "Demo"
+    },
+    "hero": {
+      "badge": "PropTech SaaS · 2026",
+      "title": "Modern building management",
+      "titleAccent": "without Excel or paperwork",
+      "description": "Domera brings building operations, utility charges, meter readings, payments, documents and resident communication into one cloud platform.",
+      "primaryCta": "Request demo",
+      "secondaryCta": "View features",
+      "benefits": {
+        "cloud": "Cloud platform",
+        "billing": "Automated charges",
+        "payment": "Online payments",
+        "access": "24/7 access",
+        "storage": "Secure storage",
+        "install": "No installation"
+      }
+    },
+    "dashboard": {
+      "paymentReceived": "Payment received",
+      "monthlyCollection": "Monthly collection",
+      "productType": "Property management",
+      "search": "Search buildings, residents, leases...",
+      "sidebar": {
+        "residents": "Residents",
+        "leases": "Leases",
+        "payments": "Payments",
+        "maintenance": "Maintenance",
+        "documents": "Documents"
+      },
+      "upgradeTitle": "Upgrade to Pro",
+      "upgradeText": "Unlock advanced reports.",
+      "overview": "Overview",
+      "overviewText": "Track your entire portfolio.",
+      "period": "May 1 - May 31, 2026",
+      "metrics": {
+        "occupancy": "Occupancy rate",
+        "debts": "Outstanding debts",
+        "leases": "Active leases"
+      },
+      "delta": "{value} vs Apr 1 - Apr 30",
+      "utility": "Utility consumption",
+      "daily": "Daily",
+      "paymentsOverview": "Payments overview",
+      "buildings": "Buildings",
+      "addBuilding": "Add building",
+      "recentTransactions": "Recent transactions",
+      "transactions": {
+        "rent": "Rent payment - Unit 28",
+        "maintenance": "Maintenance - Plumbing",
+        "late": "Late fee - Unit 3C"
+      },
+      "statuses": {
+        "paid": "Paid",
+        "late": "Late"
+      }
+    },
+    "whyDomera": {
+      "eyebrow": "Why Domera",
+      "title": "The platform professionals trust",
+      "description": "Domera is built for management companies that want to work faster, more transparently and without paper routine.",
+      "items": {
+        "automation": {
+          "title": "Automation",
+          "description": "Up to 90% of daily operations run automatically - from charges to notifications."
+        },
+        "cloud": {
+          "title": "Cloud platform",
+          "description": "Work from anywhere through the browser. No local installations or servers."
+        },
+        "transparency": {
+          "title": "Transparency",
+          "description": "User actions are recorded in the log for a complete audit trail."
+        },
+        "security": {
+          "title": "Security",
+          "description": "Data encryption, backups and role-based access control."
+        }
+      }
+    },
+    "features": {
+      "eyebrow": "Features",
+      "title": "Every core building process in one place",
+      "description": "Domera covers the daily operations of a management company: from the property database to invoices, documents and communication.",
+      "items": {
+        "properties": {
+          "title": "Buildings, apartments and residents",
+          "description": "A single registry for properties, units, owners and tenants with role-based access."
+        },
+        "meters": {
+          "title": "Meter readings",
+          "description": "Readings collection, consumption history and reminders without manual spreadsheets."
+        },
+        "payments": {
+          "title": "Charges and payments",
+          "description": "Invoices, payment statuses, debts and a clear financial view for each building."
+        },
+        "documents": {
+          "title": "Documents",
+          "description": "Contracts, acts, invoices and apartment files are available to the right people at the right time."
+        },
+        "communication": {
+          "title": "Communication",
+          "description": "News, notifications and resident requests collected in one workspace."
+        },
+        "security": {
+          "title": "Roles and security",
+          "description": "Separate access for managers, accountants, owners and residents."
+        }
+      }
+    },
+    "platform": {
+      "eyebrow": "Platform",
+      "title": "A work circuit for the management team",
+      "description": "The platform helps teams see facts, complete routine work faster and avoid losing data across chats, files and employees.",
+      "trust": {
+        "cloud": "Cloud architecture",
+        "security": "Protected access",
+        "processes": "Transparent processes"
+      },
+      "stats": {
+        "collection": "monthly collection",
+        "processing": "faster processing",
+        "access": "data access",
+        "installs": "local installations"
+      },
+      "workflowEyebrow": "Workflow",
+      "workflowTitle": "From import to payment control",
+      "workflow": {
+        "import": {
+          "title": "Import your database",
+          "description": "Add buildings, apartments, contracts and residents manually or through prepared import."
+        },
+        "automate": {
+          "title": "Automate routine work",
+          "description": "Domera reminds residents about readings, helps issue invoices and tracks payments."
+        },
+        "control": {
+          "title": "Control the result",
+          "description": "Dashboards show collections, debts, requests and activity for every property."
+        }
+      }
+    },
+    "solutions": {
+      "eyebrow": "Solutions",
+      "title": "One product for the team and residents",
+      "description": "Domera separates interfaces and access so every participant sees only their work and the data they need.",
+      "items": {
+        "companies": {
+          "title": "Management companies",
+          "description": "An operations center for buildings, residents, charges, debts and documents."
+        },
+        "teams": {
+          "title": "Technical teams",
+          "description": "Requests, notifications and work history without losing context between properties."
+        },
+        "residents": {
+          "title": "Residents and owners",
+          "description": "A personal cabinet for readings, invoices, payments and important messages from management."
+        }
+      }
+    },
+    "pricing": {
+      "eyebrow": "Pricing",
+      "title": "Choose scale, not extra complexity",
+      "description": "Start with the core toolkit and expand the platform as your building portfolio and team grow.",
+      "perMonth": "/ mo",
+      "customPrice": "on request",
+      "cta": "Request demo",
+      "plans": {
+        "start": {
+          "name": "Start",
+          "caption": "for a small portfolio",
+          "features": {
+            "houses": "up to 3 buildings",
+            "residents": "residents and apartments",
+            "documents": "invoices and documents"
+          }
+        },
+        "growth": {
+          "name": "Growth",
+          "caption": "for an active management company",
+          "features": {
+            "houses": "up to 20 buildings",
+            "reminders": "automatic reminders",
+            "analytics": "analytics and roles"
+          }
+        },
+        "network": {
+          "name": "Network",
+          "caption": "for larger portfolios",
+          "features": {
+            "unlimited": "unlimited properties",
+            "api": "API and integrations",
+            "support": "priority support"
+          }
+        }
+      }
+    },
+    "faq": {
+      "eyebrow": "FAQ",
+      "title": "Short answers about rollout",
+      "description": "Common questions before moving building management into Domera.",
+      "items": {
+        "install": {
+          "question": "Can we start without installation?",
+          "answer": "Yes. Domera runs in the cloud, so your team only needs a browser and an account."
+        },
+        "multiple": {
+          "question": "Does it work for multiple buildings?",
+          "answer": "Yes. You can separate buildings, apartments, staff roles and resident access."
+        },
+        "documents": {
+          "question": "What happens to documents and invoices?",
+          "answer": "Files are stored against properties and apartments, and access can be limited by role."
+        },
+        "residents": {
+          "question": "Can residents be connected gradually?",
+          "answer": "Yes. You can first use Domera internally and invite residents when the team is ready."
+        }
+      }
+    },
+    "footer": {
+      "description": "A cloud platform for building management, utility charges, payments, documents and resident communication.",
+      "privacy": "Privacy policy",
+      "terms": "Terms of use",
+      "rights": "© 2026 Domera"
+    }
+  },
   "appShell": {
     "header": {
       "currentWorkspace": "Current workspace: {role}",

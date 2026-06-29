@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
-import { PublicHeader } from '../../components/public-heder';
-
+import { LandingHeader } from '../../components/landing/landing-header';
 export const metadata: Metadata = {
   title: 'Privātuma politika | Domera',
   description:
@@ -43,8 +42,7 @@ function BulletList({ items }: { items: React.ReactNode[] }) {
 export default function PrivacyPolicy() {
   return (
     <div className="bg-slate-50">
-      
-            <PublicHeader />
+         <LandingHeader />
       <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 bg-slate-900 px-6 py-10 text-white sm:px-10 sm:py-12">

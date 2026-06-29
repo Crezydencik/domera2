@@ -188,12 +188,27 @@ export default async function ApartmentDetailsPage({
   const data = await getRoleDataBundle();
   const normalizedId = decodeURIComponent(apartmentId);
 
-  const baseApartment = data.apartments.find((item) => {
+  let baseApartment = data.apartments.find((item) => {
     const candidates = [item.id, item.apartmentId, item.number].map((value) => toText(value, ""));
     return candidates.includes(normalizedId);
   });
 
-  const apartmentOptions = data.apartments.map((item) => {
+  if (!baseApartment) {
+    try {
+      baseApartment = await apiFetch<UnknownRecord>(`/apartments/${encodeURIComponent(normalizedId)}`);
+    } catch {
+      baseApartment = undefined;
+    }
+  }
+
+  const apartmentsForSelector = baseApartment && !data.apartments.some((item) => {
+    const candidates = [item.id, item.apartmentId, item.number].map((value) => toText(value, ""));
+    return candidates.includes(normalizedId);
+  })
+    ? [...data.apartments, baseApartment]
+    : data.apartments;
+
+  const apartmentOptions = apartmentsForSelector.map((item) => {
     const id = toText(item.id, toText(item.apartmentId, toText(item.number, "")));
     const label = t("selector.optionLabel", {
       number: toText(item.number, id),

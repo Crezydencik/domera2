@@ -130,6 +130,250 @@
     "deleteProfile": "Dzēst profilu",
     "confirmDeleteProfile": "Apstiprināt profila dzēšanu. Šo darbību nevar atcelt."
   },
+  "landing": {
+    "nav": {
+      "features": "Iespējas",
+      "platform": "Platforma",
+      "solutions": "Risinājumi",
+      "pricing": "Tarifi",
+      "faq": "FAQ"
+    },
+    "actions": {
+      "login": "Ieiet",
+      "register": "Reģistrācija",
+      "registerShort": "Reģ.",
+      "loginRegister": "Ieiet / Reģistrēties",
+      "loginRegisterShort": "Ieiet",
+      "demo": "Pieteikt demo",
+      "demoShort": "Demo"
+    },
+    "hero": {
+      "badge": "PropTech SaaS · 2026",
+      "title": "Mūsdienīga māju pārvaldība",
+      "titleAccent": "bez Excel un papīriem",
+      "description": "Domera apvieno māju pārvaldību, komunālo maksājumu aprēķinus, skaitītāju rādījumus, maksājumus, dokumentus un saziņu ar iedzīvotājiem vienā mākoņplatformā.",
+      "primaryCta": "Pieteikt demo",
+      "secondaryCta": "Skatīt iespējas",
+      "benefits": {
+        "cloud": "Mākoņsistēma",
+        "billing": "Automātiski aprēķini",
+        "payment": "Tiešsaistes maksājumi",
+        "access": "Piekļuve 24/7",
+        "storage": "Droša glabāšana",
+        "install": "Bez instalēšanas"
+      }
+    },
+    "dashboard": {
+      "paymentReceived": "Maksājums saņemts",
+      "monthlyCollection": "Mēneša iekasēšana",
+      "productType": "Īpašumu pārvaldība",
+      "search": "Meklēt ēkas, iedzīvotājus, līgumus...",
+      "sidebar": {
+        "residents": "Iedzīvotāji",
+        "leases": "Līgumi",
+        "payments": "Maksājumi",
+        "maintenance": "Apkope",
+        "documents": "Dokumenti"
+      },
+      "upgradeTitle": "Upgrade to Pro",
+      "upgradeText": "Atveriet paplašinātos pārskatus.",
+      "overview": "Pārskats",
+      "overviewText": "Kontrolējiet visu portfeli.",
+      "period": "2026. gada 1. maijs - 31. maijs",
+      "metrics": {
+        "occupancy": "Aizpildījums",
+        "debts": "Neapmaksātie parādi",
+        "leases": "Aktīvie līgumi"
+      },
+      "delta": "{value} pret 1. apr - 30. apr",
+      "utility": "Resursu patēriņš",
+      "daily": "Dienā",
+      "paymentsOverview": "Maksājumu pārskats",
+      "buildings": "Ēkas",
+      "addBuilding": "Pievienot ēku",
+      "recentTransactions": "Pēdējie darījumi",
+      "transactions": {
+        "rent": "Īres maksājums - dz. 28",
+        "maintenance": "Apkope - santehnika",
+        "late": "Kavējuma maksa - dz. 3C"
+      },
+      "statuses": {
+        "paid": "Apmaksāts",
+        "late": "Kavēts"
+      }
+    },
+    "whyDomera": {
+      "eyebrow": "Kāpēc Domera",
+      "title": "Platforma, kurai uzticas profesionāļi",
+      "description": "Domera ir radīta apsaimniekošanas uzņēmumiem, kas vēlas strādāt ātrāk, caurspīdīgāk un bez papīra rutīnas.",
+      "items": {
+        "automation": {
+          "title": "Automatizācija",
+          "description": "Līdz 90% ikdienas darbību notiek automātiski - no aprēķiniem līdz paziņojumiem."
+        },
+        "cloud": {
+          "title": "Mākoņplatforma",
+          "description": "Strādājiet no jebkuras vietas pārlūkā. Bez lokālām instalācijām un serveriem."
+        },
+        "transparency": {
+          "title": "Caurspīdīgums",
+          "description": "Lietotāju darbības tiek fiksētas žurnālā pilnam audita ceļam."
+        },
+        "security": {
+          "title": "Drošība",
+          "description": "Datu šifrēšana, rezerves kopijas un piekļuves kontrole pēc lomām."
+        }
+      }
+    },
+    "features": {
+      "eyebrow": "Iespējas",
+      "title": "Visi svarīgākie mājas procesi vienuviet",
+      "description": "Domera aptver apsaimniekošanas uzņēmuma ikdienas darbu: no objektu datubāzes līdz rēķiniem, dokumentiem un saziņai.",
+      "items": {
+        "properties": {
+          "title": "Ēkas, dzīvokļi un iedzīvotāji",
+          "description": "Vienots reģistrs objektiem, telpām, īpašniekiem un īrniekiem ar lomu piekļuvi."
+        },
+        "meters": {
+          "title": "Skaitītāju rādījumi",
+          "description": "Rādījumu iesniegšana, patēriņa vēsture un atgādinājumi bez manuālām tabulām."
+        },
+        "payments": {
+          "title": "Aprēķini un maksājumi",
+          "description": "Rēķini, apmaksas statusi, parādi un skaidrs finanšu pārskats katrai ēkai."
+        },
+        "documents": {
+          "title": "Dokumenti",
+          "description": "Līgumi, akti, rēķini un dzīvokļu faili ir pieejami pareizajiem cilvēkiem pareizajā brīdī."
+        },
+        "communication": {
+          "title": "Saziņa",
+          "description": "Ziņas, paziņojumi un iedzīvotāju pieprasījumi vienā darba vidē."
+        },
+        "security": {
+          "title": "Lomas un drošība",
+          "description": "Atsevišķa piekļuve pārvaldniekiem, grāmatvežiem, īpašniekiem un iedzīvotājiem."
+        }
+      }
+    },
+    "platform": {
+      "eyebrow": "Platforma",
+      "title": "Darba vide apsaimniekošanas komandai",
+      "description": "Platforma palīdz redzēt faktus, ātrāk paveikt rutīnas darbus un nezaudēt datus starp čatiem, failiem un darbiniekiem.",
+      "trust": {
+        "cloud": "Mākoņa arhitektūra",
+        "security": "Aizsargāta piekļuve",
+        "processes": "Caurspīdīgi procesi"
+      },
+      "stats": {
+        "collection": "mēneša iekasēšana",
+        "processing": "ātrāka apstrāde",
+        "access": "piekļuve datiem",
+        "installs": "lokālu instalāciju"
+      },
+      "workflowEyebrow": "Workflow",
+      "workflowTitle": "No importa līdz maksājumu kontrolei",
+      "workflow": {
+        "import": {
+          "title": "Importējiet datubāzi",
+          "description": "Pievienojiet ēkas, dzīvokļus, līgumus un iedzīvotājus manuāli vai ar sagatavotu importu."
+        },
+        "automate": {
+          "title": "Automatizējiet rutīnu",
+          "description": "Domera atgādina par rādījumiem, palīdz izrakstīt rēķinus un seko maksājumiem."
+        },
+        "control": {
+          "title": "Kontrolējiet rezultātu",
+          "description": "Paneļi rāda iekasēšanu, parādus, pieteikumus un aktivitāti katram objektam."
+        }
+      }
+    },
+    "solutions": {
+      "eyebrow": "Risinājumi",
+      "title": "Viens produkts komandai un iedzīvotājiem",
+      "description": "Domera atdala saskarnes un piekļuves, lai katrs dalībnieks redzētu tikai savu darbu un vajadzīgos datus.",
+      "items": {
+        "companies": {
+          "title": "Apsaimniekošanas uzņēmumi",
+          "description": "Operāciju centrs ēkām, iedzīvotājiem, aprēķiniem, parādiem un dokumentiem."
+        },
+        "teams": {
+          "title": "Tehniskās komandas",
+          "description": "Pieteikumi, paziņojumi un darbu vēsture, nezaudējot kontekstu starp objektiem."
+        },
+        "residents": {
+          "title": "Iedzīvotāji un īpašnieki",
+          "description": "Personīgais kabinets rādījumiem, rēķiniem, maksājumiem un svarīgiem pārvaldnieka ziņojumiem."
+        }
+      }
+    },
+    "pricing": {
+      "eyebrow": "Tarifi",
+      "title": "Izvēlieties mērogu, nevis lieku sarežģītību",
+      "description": "Sāciet ar pamata rīkiem un paplašiniet platformu, augot ēku portfelim un komandai.",
+      "perMonth": "/ mēn",
+      "customPrice": "pēc pieprasījuma",
+      "cta": "Pieteikt demo",
+      "plans": {
+        "start": {
+          "name": "Starts",
+          "caption": "nelielam portfelim",
+          "features": {
+            "houses": "līdz 3 ēkām",
+            "residents": "iedzīvotāji un dzīvokļi",
+            "documents": "rēķini un dokumenti"
+          }
+        },
+        "growth": {
+          "name": "Izaugsme",
+          "caption": "aktīvam apsaimniekotājam",
+          "features": {
+            "houses": "līdz 20 ēkām",
+            "reminders": "automātiski atgādinājumi",
+            "analytics": "analītika un lomas"
+          }
+        },
+        "network": {
+          "name": "Tīkls",
+          "caption": "lielākiem portfeļiem",
+          "features": {
+            "unlimited": "neierobežoti objekti",
+            "api": "API un integrācijas",
+            "support": "prioritārs atbalsts"
+          }
+        }
+      }
+    },
+    "faq": {
+      "eyebrow": "FAQ",
+      "title": "Īsi par ieviešanu",
+      "description": "Biežākie jautājumi pirms māju pārvaldības pārcelšanas uz Domera.",
+      "items": {
+        "install": {
+          "question": "Vai var sākt bez instalēšanas?",
+          "answer": "Jā. Domera darbojas mākonī, tāpēc komandai vajadzīgs tikai pārlūks un konts."
+        },
+        "multiple": {
+          "question": "Vai platforma der vairākām ēkām?",
+          "answer": "Jā. Sistēmā var nodalīt ēkas, dzīvokļus, darbinieku lomas un iedzīvotāju piekļuvi."
+        },
+        "documents": {
+          "question": "Kas notiek ar dokumentiem un rēķiniem?",
+          "answer": "Faili glabājas pie objektiem un dzīvokļiem, un piekļuvi var ierobežot pēc lomām."
+        },
+        "residents": {
+          "question": "Vai iedzīvotājus var pieslēgt pakāpeniski?",
+          "answer": "Jā. Vispirms varat lietot Domera komandā un pēc tam aicināt iedzīvotājus, kad esat gatavi."
+        }
+      }
+    },
+    "footer": {
+      "description": "Mākoņplatforma māju pārvaldībai, komunālajiem aprēķiniem, maksājumiem, dokumentiem un saziņai ar iedzīvotājiem.",
+      "privacy": "Privātuma politika",
+      "terms": "Lietošanas noteikumi",
+      "rights": "© 2026 Domera"
+    }
+  },
   "appShell": {
     "header": {
       "currentWorkspace": "Pašreizējā darba vide: {role}",
