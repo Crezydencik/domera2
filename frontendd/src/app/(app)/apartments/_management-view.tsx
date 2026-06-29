@@ -10,6 +10,7 @@ import { ApartmentsManagementActionsMenu, type ManagementActionApartment, type M
 import { ApartmentsManagementRowActions, type ApartmentResidentOption } from "./_management-row-actions";
 import { RegistryBuildingFilter, type RegistryBuildingOption } from "./_registry-building-filter";
 import type { RoleDataBundle } from "@/shared/lib/domera-api.server";
+import { isApprovedBuilding } from "@/shared/lib/buildings";
 import { ROUTES } from "@/shared/lib/routes";
 
 function hasReadableText(value: unknown): value is string {
@@ -48,11 +49,6 @@ function compareApartmentOrder(a: Record<string, unknown>, b: Record<string, unk
 }
 
 type ApartmentOccupancyStatus = "occupied" | "pending" | "vacant";
-
-function isApprovedBuilding(building: { status?: string }) {
-  const status = String(building.status ?? "").trim().toLowerCase();
-  return status !== "pending" && status !== "rejected" && status !== "cancelled" && status !== "canceled";
-}
 
 function getApartmentOccupancyStatus(apartment: Record<string, unknown>): ApartmentOccupancyStatus {
   const tenants = Array.isArray(apartment.tenants) ? apartment.tenants.length : 0;
@@ -94,6 +90,10 @@ export function ApartmentsManagementView({
     () => new Set(approvedBuildings.filter((building) => building.editLocked === true).map((building) => building.id)),
     [approvedBuildings],
   );
+  const approvedBuildingIds = useMemo(
+    () => new Set(approvedBuildings.map((building) => building.id)),
+    [approvedBuildings],
+  );
 
   const residentById = useMemo(
     () => new Map(data.residents.map((resident) => [resident.id, resident])),
@@ -113,6 +113,7 @@ export function ApartmentsManagementView({
       .map((building) => ({
         id: building.id,
         label: building.address !== "—" ? building.address : building.name,
+        apartmentLimit: building.apartmentLimit,
         readingConfig: building.readingConfig,
       }))
       .sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: "base", numeric: true })),
@@ -145,14 +146,13 @@ export function ApartmentsManagementView({
   );
 
   const filteredApartments = useMemo(
-    () => normalizedBuildingId
-      ? data.apartments.filter((item) => {
+    () => data.apartments.filter((item) => {
           const buildingIdValue = item.buildingId;
           const buildingId = hasReadableText(buildingIdValue) ? buildingIdValue.trim() : "";
-          return buildingId === normalizedBuildingId;
-        })
-      : data.apartments,
-    [data.apartments, normalizedBuildingId],
+          if (normalizedBuildingId) return buildingId === normalizedBuildingId;
+          return !buildingId || approvedBuildingIds.has(buildingId);
+        }),
+    [approvedBuildingIds, data.apartments, normalizedBuildingId],
   );
 
   const managementMenuApartments: ManagementActionApartment[] = useMemo(() => filteredApartments.map((item) => {

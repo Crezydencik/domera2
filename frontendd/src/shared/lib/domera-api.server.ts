@@ -242,6 +242,7 @@ function toBuilding(item: UnknownRecord): Building {
     : undefined;
 
   const apartmentCount = firstNumber(item.apartmentsCount, apartmentIds.length, item.apartments);
+  const apartmentLimit = firstOptionalNumber(item.apartmentLimit, item.approvedApartmentsCount, item.apartments);
   const occupied = firstNumber(item.occupiedApartments, item.occupied);
 
   return {
@@ -249,6 +250,7 @@ function toBuilding(item: UnknownRecord): Building {
     name: firstString(item.name, item.title, item.address, item.id),
     address: firstString(item.address, item.street, item.location),
     apartments: apartmentCount,
+    apartmentLimit,
     occupancy: apartmentCount > 0 ? `${Math.max(0, occupied)} / ${apartmentCount}` : "—",
     status: String(item.status ?? "Healthy"),
     reviewComment: firstOptionalString(

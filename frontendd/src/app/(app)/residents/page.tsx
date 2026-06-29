@@ -13,8 +13,8 @@ export default async function ResidentsPage({
   const data = await getRoleDataBundle(params.role);
 
   return (
-    <div className="space-y-6">
-      <SectionCard>
+    <div className="space-y-6 max-sm:-mx-2">
+      <SectionCard className="max-sm:!rounded-none max-sm:!border-0 max-sm:!bg-transparent max-sm:!p-0 max-sm:!shadow-none">
         <ResidentsDirectory
           data={data}
           labels={{

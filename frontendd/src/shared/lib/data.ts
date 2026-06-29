@@ -19,6 +19,7 @@ export interface Building {
   address: string;
   comment?: string;
   apartments: number;
+  apartmentLimit?: number;
   occupancy: string;
   status: string;
   reviewComment?: string;

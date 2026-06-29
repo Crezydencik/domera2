@@ -878,6 +878,9 @@
       }
     },
     "tenantAccess": {
+      "compactUnavailable": "Access management is unavailable in compact mode.",
+      "contractTitle": "Rental contract - {tenant}",
+      "contractTitleSearch": "contract",
       "tabs": {
         "owner": "Owner",
         "tenants": "Tenants"
@@ -913,11 +916,16 @@
         "replaceContract": "Attach / replace contract",
         "editTenant": "Edit tenant",
         "editOwner": "Edit owner",
+        "edit": "Edit",
         "save": "Save",
         "saving": "Saving...",
         "cancel": "Cancel",
         "delete": "Delete",
         "resend": "Resend"
+      },
+      "tenantStatus": {
+        "active": "Active",
+        "pending": "Pending"
       },
       "ownerTable": {
         "title": "Current owner",
@@ -937,7 +945,8 @@
         "emailCantBeCompanyEmail": "Tenant email cannot be the same as the management company email.",
         "emailCantBeOwnerEmail": "Tenant email cannot be the same as the apartment owner email.",
         "emailCantBeTenantEmail": "This email is already invited as a tenant.",
-        "inviteFailed": "Failed to add tenant."
+        "inviteFailed": "Failed to add tenant.",
+        "contractUploadFailed": "Could not attach the rental contract."
       },
       "success": {
         "invited": "Tenant {email} was granted access to apartment {apartment}."
@@ -955,6 +964,8 @@
         "resendConfirm": "Send invitation again?",
         "resendSuccess": "Invitation resent successfully",
         "resendError": "Error sending invitation",
+        "updateSuccess": "Updated successfully",
+        "updateError": "Error updating",
         "confirm": "Confirm",
         "cancel": "Cancel"
       }
@@ -1124,6 +1135,7 @@
     "noAccount": "No account?",
     "haveAccount": "Already have an account?",
     "rememberMe": "Remember me?",
+    "invalidEmailOrPassword": "Incorrect email or password",
     "registerTitle": "Create an account",
     "registerSubtitle": "Register to get started with Domera",
     "registerCompanyEmailHint": "Optional: use this if the company email differs from your login email",

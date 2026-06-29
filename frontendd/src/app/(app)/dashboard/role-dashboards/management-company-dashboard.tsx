@@ -3,6 +3,7 @@ import { getLocale, getTranslations } from "next-intl/server";
 import { FiExternalLink } from "react-icons/fi";
 import { BuildingReadingsSelector } from "./building-readings-selector";
 import type { RoleDataBundle } from "@/shared/lib/domera-api.server";
+import { isApprovedBuilding } from "@/shared/lib/buildings";
 import { ROUTES } from "@/shared/lib/routes";
 
 type SubmissionPeriod = NonNullable<RoleDataBundle["buildings"][number]["readingConfig"]>["submissionPeriod"];
@@ -72,15 +73,16 @@ function resolveSubmissionWindow(period: SubmissionPeriod | undefined, fallbackD
 export async function ManagementCompanyDashboard({ data, selectedBuildingId }: { data: RoleDataBundle; selectedBuildingId?: string }) {
   const t = await getTranslations("dashboard.managementCompany");
   const locale = await getLocale();
-  const buildingOptions = data.buildings.map((building) => ({
+  const approvedBuildings = data.buildings.filter(isApprovedBuilding);
+  const buildingOptions = approvedBuildings.map((building) => ({
     id: building.id,
     label: building.address && building.address !== "—" ? building.address : building.name,
   }));
   const effectiveBuildingId =
-    selectedBuildingId && data.buildings.some((building) => building.id === selectedBuildingId)
+    selectedBuildingId && approvedBuildings.some((building) => building.id === selectedBuildingId)
       ? selectedBuildingId
-      : data.buildings[0]?.id;
-  const selectedBuilding = data.buildings.find((building) => building.id === effectiveBuildingId);
+      : approvedBuildings[0]?.id;
+  const selectedBuilding = approvedBuildings.find((building) => building.id === effectiveBuildingId);
   const apartmentIdsByBuilding = new Map<string, string>();
 
   data.apartments.forEach((apartment) => {

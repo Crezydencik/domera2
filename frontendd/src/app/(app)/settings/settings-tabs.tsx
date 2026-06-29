@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { FaEye, FaInfoCircle, FaRegUser } from "react-icons/fa";
 import {
@@ -15,6 +15,7 @@ import {
 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { changeAccountEmail, changeAccountPassword, saveUserProfile } from "@/shared/api/auth";
 import {
   addCompanyMember,
@@ -331,13 +332,13 @@ function PhoneEditRow({
         <label htmlFor="settings-phone" className="text-base font-semibold text-black">
           {label}
         </label>
-        <input
+        <PhoneInput
           id="settings-phone"
-          type="tel"
           value={value}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
+          labelClassName="hidden"
           className="mt-3 h-[46px] w-full max-w-[308px] rounded-lg border border-slate-300 bg-white px-3 text-base text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
         />
         {feedback ? (
@@ -678,14 +679,25 @@ function TextEditRow({
         <label htmlFor={id} className="text-base font-semibold text-black">
           {label}
         </label>
-        <input
-          id={id}
-          type={type}
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-          className="mt-3 h-[46px] w-full max-w-[360px] rounded-lg border border-slate-300 bg-white px-3 text-base text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
-        />
+        {type === "tel" ? (
+          <PhoneInput
+            id={id}
+            value={value}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.value)}
+            labelClassName="hidden"
+            className="mt-3 h-[46px] w-full max-w-[360px] rounded-lg border border-slate-300 bg-white px-3 text-base text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
+          />
+        ) : (
+          <input
+            id={id}
+            type={type}
+            value={value}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.value)}
+            className="mt-3 h-[46px] w-full max-w-[360px] rounded-lg border border-slate-300 bg-white px-3 text-base text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
+          />
+        )}
         {feedback ? (
           <p className={`mt-2 max-w-md text-sm font-medium ${feedbackTone === "success" ? "text-emerald-700" : "text-red-600"}`}>
             {feedback}
@@ -777,6 +789,11 @@ function ApiKeyPanel({
     return t("apiKeys.all");
   };
   const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId) ?? buildings[0] ?? null;
+
+  useEffect(() => {
+    if (selectedBuildingId && buildings.some((building) => building.id === selectedBuildingId)) return;
+    setSelectedBuildingId(buildings[0]?.id ?? "");
+  }, [buildings, selectedBuildingId]);
 
   const usageFields = [
     { name: "file", description: t("apiKeys.usageFields.file") },
@@ -1052,6 +1069,7 @@ function ApiKeyPanel({
 
             <label className="mt-6 block">
               <span className="text-base font-bold text-black">{t("apiKeys.buildingAccess")}</span>
+              {buildings.length > 1 ? (
               <div className="relative mt-3">
                 <select
                   value={selectedBuildingId}
@@ -1072,6 +1090,11 @@ function ApiKeyPanel({
                 </select>
                 <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-600" aria-hidden="true" />
               </div>
+              ) : (
+                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-base font-semibold text-black">
+                  {selectedBuilding ? selectedBuilding.name || selectedBuilding.address || selectedBuilding.id : t("apiKeys.noBuildingsAvailable")}
+                </div>
+              )}
               {selectedBuilding?.address ? (
                 <p className="mt-2 text-sm leading-6 text-slate-500">{selectedBuilding.address}</p>
               ) : null}
@@ -2006,19 +2029,15 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
                 className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
               />
             </label>
-            <label className="block min-w-0">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {t("fields.phone")}
-              </span>
-              <input
-                type="tel"
-                value={memberPhone}
-                disabled={isAddingMember}
-                onChange={(event) => setMemberPhone(event.target.value)}
-                placeholder={t("company.members.phonePlaceholder")}
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition placeholder:text-slate-400 focus:border-black focus:ring-2 focus:ring-black/10"
-              />
-            </label>
+            <PhoneInput
+              label={t("fields.phone")}
+              value={memberPhone}
+              disabled={isAddingMember}
+              onChange={(event) => setMemberPhone(event.target.value)}
+              placeholder={t("company.members.phonePlaceholder")}
+              labelClassName="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+              className="h-11 w-full rounded-lg border-slate-300 px-3 text-sm text-black placeholder:text-slate-400 focus:border-black focus:ring-black/10"
+            />
             {memberCreateAccount ? (
               <label className="block min-w-0">
                 <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">

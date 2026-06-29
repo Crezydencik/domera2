@@ -9,12 +9,14 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { inviteApartmentTenant, removeApartmentOwner, removeApartmentTenant, updateApartmentOwner, resendOwnerInvitation, updateApartmentTenant } from "@/shared/api/apartments";
 import { getDocuments, uploadDocument, type DocumentRecord } from "@/shared/api/documents";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { FiEdit2, FiPaperclip, FiRefreshCw, FiTrash2 } from "react-icons/fi";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
+const EMPTY_CELL = "-";
 
 type OwnerData = {
   email: string;
@@ -73,8 +75,8 @@ function isTenantConfirmed(tenant: Record<string, unknown>) {
 function splitTenantName(value: unknown) {
   const parts = String(value ?? "").trim().split(/\s+/).filter(Boolean);
   return {
-    firstName: parts[0] ?? "â€”",
-    lastName: parts.slice(1).join(" ") || "â€”",
+    firstName: parts[0] ?? EMPTY_CELL,
+    lastName: parts.slice(1).join(" ") || EMPTY_CELL,
   };
 }
 
@@ -95,7 +97,7 @@ export function TenantAccessManager({
   const documentsT = useTranslations("documents");
 
   const formatPossibleDate = (date: unknown): string => {
-    if (!date) return "â€”";
+    if (!date) return EMPTY_CELL;
     if (date instanceof Date) {
       return date.toISOString().slice(0, 10);
     }
@@ -111,10 +113,9 @@ export function TenantAccessManager({
         return new Date(seconds * 1000).toISOString().slice(0, 10);
       }
     }
-    return "â€”";
+    return EMPTY_CELL;
   };
 
-  // Ð”Ð»Ñ Ð´Ð¸Ð½Ð°Ð¼Ð¸Ñ‡ÐµÑÐºÐ¾Ð³Ð¾ Ñ€ÐµÐ½Ð´ÐµÑ€Ð° ÑÑ‚Ñ€Ð¾Ðº Ñ Ð´ÐµÐ¹ÑÑ‚Ð²Ð¸ÑÐ¼Ð¸
   const [tenantsState, setTenantsState] = useState(tenants ?? []);
   const router = useRouter();
   const notifications = useNotifications();
@@ -154,10 +155,14 @@ export function TenantAccessManager({
   const [editLoading, setEditLoading] = useState(false);
 
   const [localOwner, setLocalOwner] = useState(ownerData ?? {
-    email: "â€”",
+    email: EMPTY_CELL,
     activated: false,
-    invitedAt: "â€”",
+    invitedAt: EMPTY_CELL,
   });
+
+  useEffect(() => {
+    setTenantsState(tenants ?? []);
+  }, [tenants]);
 
   useEffect(() => {
     let mounted = true;
@@ -190,9 +195,7 @@ export function TenantAccessManager({
 
   const hasLocalOwner =
     localOwner.email &&
-    localOwner.email !== "â€”" &&
-    !localOwner.email.includes("Ð½Ðµ ÑƒÐºÐ°Ð·Ð°Ð½Ð¾") &&
-    !localOwner.email.includes("ÐÐµ ÑƒÐºÐ°Ð·Ð°Ð½Ð¾") &&
+    localOwner.email !== EMPTY_CELL &&
     localOwner.email.includes("@");
 
   async function handleInvite(event: React.FormEvent<HTMLFormElement>) {
@@ -233,7 +236,7 @@ export function TenantAccessManager({
   }
 
   function openEditOwnerModal() {
-    setEditOwnerEmail(localOwner.email === "â€”" ? "" : String(localOwner.email));
+    setEditOwnerEmail(localOwner.email === EMPTY_CELL ? "" : String(localOwner.email));
     setEditOwnerFirstName("");
     setEditOwnerLastName("");
     setEditOwnerContractNumber("");
@@ -253,7 +256,7 @@ export function TenantAccessManager({
         lastName: editOwnerLastName.trim(),
         contractNumber: editOwnerContractNumber.trim(),
       });
-      notifications.success(t("alerts.updateSuccess") || "ÐžÐ±Ð½Ð¾Ð²Ð»ÐµÐ½Ð¾");
+      notifications.success(t("alerts.updateSuccess"));
       setLocalOwner({
         email: normalizedEmail,
         activated: localOwner.activated,
@@ -262,22 +265,20 @@ export function TenantAccessManager({
       setEditOwnerModal(false);
       router.refresh();
     } catch {
-      notifications.error(t("alerts.updateError") || "ÐžÑˆÐ¸Ð±ÐºÐ° Ð¾Ð±Ð½Ð¾Ð²Ð»ÐµÐ½Ð¸Ñ");
+      notifications.error(t("alerts.updateError"));
     } finally {
       setEditLoading(false);
     }
   }
 
   if (compact) {
-    return <div>Ð£Ð¿Ñ€Ð°Ð²Ð»ÐµÐ½Ð¸Ðµ Ð²Ð»Ð°Ð´ÐµÐ»ÑŒÑ†ÐµÐ¼ Ð½ÐµÐ´Ð¾ÑÑ‚ÑƒÐ¿Ð½Ð¾ Ð² compact-Ñ€ÐµÐ¶Ð¸Ð¼Ðµ</div>;
+    return <div>{t("compactUnavailable")}</div>;
   }
 
-  // Ð”Ð¾Ð±Ð°Ð²Ð»ÑÐµÐ¼ ÑÑ‚Ð¾Ð»Ð±ÐµÑ† "Ð”ÐµÐ¹ÑÑ‚Ð²Ð¸Ñ" ÐµÑÐ»Ð¸ tenantsState ÐµÑÑ‚ÑŒ
-  const columnsWithActions = tenantColumns ? [...tenantColumns, "Ð”ÐµÐ¹ÑÑ‚Ð²Ð¸Ñ"]: undefined;
+  const columnsWithActions = tenantColumns ? [...tenantColumns, t("ownerTable.actions")] : undefined;
   const activeTab = canManageOwner ? tab : "tenants";
   const hasTenants = Array.isArray(tenantsState) && tenantsState.length > 0;
 
-  // Ð¤Ð¾Ñ€Ð¼Ð¸Ñ€ÑƒÐµÐ¼ ÑÑ‚Ñ€Ð¾ÐºÐ¸ Ñ ÐºÐ½Ð¾Ð¿ÐºÐ¾Ð¹ ÑƒÐ´Ð°Ð»ÐµÐ½Ð¸Ñ
   const rowsWithActions = hasTenants
     ? tenantsState.map((tenant: any, idx: number) => {
         const nameFromFullName = splitTenantName(tenant?.name ?? tenant?.email);
@@ -290,19 +291,19 @@ export function TenantAccessManager({
         const baseRow = [
           firstName,
           lastName,
-          tenant?.email || "â€”",
+          tenant?.email || EMPTY_CELL,
           formatPossibleDate(tenant?.fromDate ?? tenant?.invitedAt),
           formatPossibleDate(tenant?.until),
           tenantConfirmed ? (
-            <span key={`${tenantId || idx}-status`} className="text-emerald-700">ÐÐºÑ‚Ð¸Ð²ÐµÐ½</span>
+            <span key={`${tenantId || idx}-status`} className="text-emerald-700">{t("tenantStatus.active")}</span>
           ) : (
-            <span key={`${tenantId || idx}-status`} className="text-amber-600">ÐžÐ¶Ð¸Ð´Ð°ÐµÑ‚</span>
+            <span key={`${tenantId || idx}-status`} className="text-amber-600">{t("tenantStatus.pending")}</span>
           ),
         ];
         const contractDocument = apartmentDocuments.find((document) => {
           if (document.scope !== "apartmentPrivate") return false;
           const title = normalizeSearchText(document.title);
-          return title.includes("Ð´Ð¾Ð³Ð¾Ð²Ð¾Ñ€") && (
+          return title.includes(t("contractTitleSearch").toLowerCase()) && (
             Boolean(tenantEmail && title.includes(tenantEmail)) ||
             Boolean(tenantName && title.includes(tenantName))
           );
@@ -384,7 +385,7 @@ export function TenantAccessManager({
         const tenantName = `${editTenant.firstName.trim()} ${editTenant.lastName.trim()}`.trim() || editTenant.id;
         try {
           await uploadDocument({
-            title: `Ð”Ð¾Ð³Ð¾Ð²Ð¾Ñ€ Ð°Ñ€ÐµÐ½Ð´Ñ‹ - ${tenantName}`,
+            title: t("contractTitle", { tenant: tenantName }),
             scope: "apartmentPrivate",
             apartmentId,
             file: editTenantContractFile,
@@ -395,7 +396,7 @@ export function TenantAccessManager({
         } catch (uploadError) {
           contractUploadError = uploadError instanceof Error
             ? uploadError.message
-            : "ÐÐµ ÑƒÐ´Ð°Ð»Ð¾ÑÑŒ Ð¿Ñ€Ð¸ÐºÑ€ÐµÐ¿Ð¸Ñ‚ÑŒ Ð´Ð¾Ð³Ð¾Ð²Ð¾Ñ€ Ð°Ñ€ÐµÐ½Ð´Ñ‹.";
+            : t("errors.contractUploadFailed");
         }
       }
       setTenantsState((current: any[]) => current.map((tenant) => {
@@ -415,7 +416,7 @@ export function TenantAccessManager({
           ],
         };
       }));
-      notifications.success(t("alerts.updateSuccess") || "ÐžÐ±Ð½Ð¾Ð²Ð»ÐµÐ½Ð¾");
+      notifications.success(t("alerts.updateSuccess"));
       if (contractUploadError) {
         notifications.error(contractUploadError);
       }
@@ -424,7 +425,7 @@ export function TenantAccessManager({
       setEditTenant(null);
       router.refresh();
     } catch (error) {
-      const message = error instanceof Error ? error.message : t("alerts.updateError") || "ÐžÑˆÐ¸Ð±ÐºÐ° Ð¾Ð±Ð½Ð¾Ð²Ð»ÐµÐ½Ð¸Ñ";
+      const message = error instanceof Error ? error.message : t("alerts.updateError");
       notifications.error(message);
     } finally {
       setTenantEditLoading(false);
@@ -551,7 +552,7 @@ export function TenantAccessManager({
                   : localOwner.activated ? <span className="text-emerald-700">{t("owner.activated")}</span> : <span className="text-amber-600">{t("owner.notActivated")}</span>,
                 formatPossibleDate(localOwner.invitedAt),
                 isOwnerDeleted 
-                  ? <span className="text-slate-400">â€”</span>
+                  ? <span className="text-slate-400">{EMPTY_CELL}</span>
                   : <div className="flex items-center gap-2" key="owner-actions">
                       <button
                         title={t("actions.resend")}
@@ -646,7 +647,6 @@ export function TenantAccessManager({
             title={t("actions.addTenant")}
             size="lg"
           >
-          {/* Ð¤Ð¾Ñ€Ð¼Ð° Ð´Ð¾Ð±Ð°Ð²Ð»ÐµÐ½Ð¸Ñ Ð°Ñ€ÐµÐ½Ð´Ð°Ñ‚Ð¾Ñ€Ð° */}
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -656,19 +656,16 @@ export function TenantAccessManager({
                 return;
               }
 
-              // ÐŸÑ€Ð¾Ð²ÐµÑ€ÐºÐ° Ñ‡Ñ‚Ð¾ email Ð½Ðµ ÑÐ¾Ð²Ð¿Ð°Ð´Ð°ÐµÑ‚ Ñ email ÑƒÐ¿Ñ€Ð°Ð²Ð»ÑÑŽÑ‰ÐµÐ¹ ÐºÐ¾Ð¼Ð¿Ð°Ð½Ð¸Ð¸
-              if (companyEmail && companyEmail !== "â€”" && normalizedEmail === companyEmail.toLowerCase()) {
+              if (companyEmail && companyEmail !== EMPTY_CELL && normalizedEmail === companyEmail.toLowerCase()) {
                 notifications.error(t("errors.emailCantBeCompanyEmail"));
                 return;
               }
 
-              // ÐŸÑ€Ð¾Ð²ÐµÑ€ÐºÐ° Ñ‡Ñ‚Ð¾ email Ð½Ðµ ÑÐ¾Ð²Ð¿Ð°Ð´Ð°ÐµÑ‚ Ñ email Ð²Ð»Ð°Ð´ÐµÐ»ÑŒÑ†Ð°
-              if (ownerData && typeof ownerData === 'object' && 'email' in ownerData && ownerData.email && ownerData.email !== "â€”" && normalizedEmail === (ownerData.email as string).toLowerCase()) {
+              if (ownerData && typeof ownerData === 'object' && 'email' in ownerData && ownerData.email && ownerData.email !== EMPTY_CELL && normalizedEmail === (ownerData.email as string).toLowerCase()) {
                 notifications.error(t("errors.emailCantBeOwnerEmail"));
                 return;
               }
 
-              // ÐŸÑ€Ð¾Ð²ÐµÑ€ÐºÐ° Ñ‡Ñ‚Ð¾ email Ð½Ðµ ÑÐ¾Ð²Ð¿Ð°Ð´Ð°ÐµÑ‚ Ð½Ð¸ Ñ Ð¾Ð´Ð½Ð¸Ð¼ Ð°Ñ€ÐµÐ½Ð´Ð°Ñ‚Ð¾Ñ€Ð¾Ð¼
               if (Array.isArray(tenantsState)) {
                 for (const tenant of tenantsState) {
                   if (tenant && typeof tenant === 'object') {
@@ -696,7 +693,7 @@ export function TenantAccessManager({
                   const tenantName = `${firstName.trim()} ${lastName.trim()}`.trim() || normalizedEmail;
                   try {
                     await uploadDocument({
-                      title: `Ð”Ð¾Ð³Ð¾Ð²Ð¾Ñ€ Ð°Ñ€ÐµÐ½Ð´Ñ‹ - ${tenantName}`,
+                      title: t("contractTitle", { tenant: tenantName }),
                       scope: "apartmentPrivate",
                       apartmentId,
                       file: tenantContractFile,
@@ -705,7 +702,7 @@ export function TenantAccessManager({
                   } catch (uploadError) {
                     contractUploadError = uploadError instanceof Error
                       ? uploadError.message
-                      : "ÐÐµ ÑƒÐ´Ð°Ð»Ð¾ÑÑŒ Ð¿Ñ€Ð¸ÐºÑ€ÐµÐ¿Ð¸Ñ‚ÑŒ Ð´Ð¾Ð³Ð¾Ð²Ð¾Ñ€ Ð°Ñ€ÐµÐ½Ð´Ñ‹.";
+                      : t("errors.contractUploadFailed");
                   }
                 }
                 notifications.success(t("success.invited", { email: normalizedEmail, apartment: apartmentLabel }));
@@ -723,7 +720,6 @@ export function TenantAccessManager({
                 setTenantContractFile(null);
                 if (tenantContractInputRef.current) tenantContractInputRef.current.value = "";
                 setTenantModalOpen(false);
-                // ÐžÐ±Ð½Ð¾Ð²Ð»ÑÐµÐ¼ tenantsState
                 setTenantsState((prev: any[]) => [...prev, { 
                   email: normalizedEmail,
                   name: `${firstName} ${lastName}`.trim(),
@@ -768,8 +764,7 @@ export function TenantAccessManager({
                 disabled={loading}
                 className="h-10 rounded-lg px-3 py-2 text-sm"
               />
-              <Input
-                type="tel"
+              <PhoneInput
                 label={t("fields.phone")}
                 placeholder={t("placeholders.phone")}
                 value={phone}
@@ -971,8 +966,7 @@ export function TenantAccessManager({
                 disabled={tenantEditLoading}
                 className="h-9 rounded-lg px-3 py-1.5"
               />
-              <Input
-                type="tel"
+              <PhoneInput
                 label={t("fields.phone")}
                 value={editTenant.phone}
                 onChange={(event) => setEditTenant((current) => current ? { ...current, phone: event.target.value } : current)}

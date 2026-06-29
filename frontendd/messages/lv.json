@@ -956,6 +956,9 @@
       }
     },
     "tenantAccess": {
+      "compactUnavailable": "Piekļuves pārvaldība kompaktajā režīmā nav pieejama.",
+      "contractTitle": "Īres līgums - {tenant}",
+      "contractTitleSearch": "līgums",
       "tabs": {
         "owner": "Īpašnieks",
         "tenants": "Iemītnieki"
@@ -991,13 +994,16 @@
         "replaceContract": "Pievienot / aizstāt līgumu",
         "editTenant": "Rediģēt īrnieku",
         "editOwner": "Rediģēt īpašnieku",
+        "edit": "Rediģēt",
         "save": "Saglabāt",
         "saving": "Saglabā...",
         "cancel": "Atcelt",
         "delete": "Dzēst",
-        "resend": "Nosūtīt vēlreiz",
-        "edit": "Rediģēt"
-
+        "resend": "Nosūtīt vēlreiz"
+      },
+      "tenantStatus": {
+        "active": "Aktīvs",
+        "pending": "Gaida"
       },
       "ownerTable": {
         "title": "Pašreizējais īpašnieks",
@@ -1017,7 +1023,8 @@
         "emailCantBeCompanyEmail": "Īrnieka e-pasts nevar sakrist ar pārvaldības uzņēmuma e-pastu.",
         "emailCantBeOwnerEmail": "Īrnieka e-pasts nevar sakrist ar dzīvokļa īpašnieka e-pastu.",
         "emailCantBeTenantEmail": "Šis e-pasts jau tiek uzaicināts kā īrnieks.",
-        "inviteFailed": "Neizdevās pievienot īrnieku."
+        "inviteFailed": "Neizdevās pievienot īrnieku.",
+        "contractUploadFailed": "Neizdevās pievienot īres līgumu."
       },
       "success": {
         "invited": "Īrniekam {email} piešķirta piekļuve dzīvoklim {apartment}."
@@ -1035,6 +1042,8 @@
         "resendConfirm": "Nosūtīt uzaicinājumu vēlreiz?",
         "resendSuccess": "Uzaicinājums veiksmīgi nosūtīts",
         "resendError": "Kļūda nosūtot uzaicinājumu",
+        "updateSuccess": "Izmaiņas saglabātas",
+        "updateError": "Neizdevās saglabāt izmaiņas",
         "confirm": "Apstiprināt",
         "cancel": "Atcelt"
       }
@@ -1118,6 +1127,7 @@
     "noAccount": "Nav konta?",
     "haveAccount": "Jau ir konts?",
     "rememberMe": "Atcerēties mani?",
+    "invalidEmailOrPassword": "Nepareizs e-pasts vai parole",
     "registerTitle": "Izveidot kontu",
     "registerSubtitle": "Reģistrējieties, lai sāktu darbu ar Domera",
     "registerCompanyEmailHint": "Neobligāti: izmantojiet šo, ja uzņēmuma e-pasts atšķiras no jūsu pieslēgšanās e-pasta",

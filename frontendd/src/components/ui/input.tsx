@@ -6,12 +6,13 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
   label?: string;
   error?: string;
   hint?: string;
+  labelClassName?: string;
   /** Renders a show/hide toggle — use instead of type="password" */
   showToggle?: boolean;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, hint, showToggle, type, className = "", id, ...props }, ref) => {
+  ({ label, error, hint, labelClassName = "", showToggle, type, className = "", id, ...props }, ref) => {
     const [show, setShow] = useState(false);
     const resolvedType = showToggle ? (show ? "text" : "password") : type;
     const inputId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
@@ -26,7 +27,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="flex flex-col gap-1.5">
         {label && (
-          <label htmlFor={inputId} className="text-sm font-medium text-slate-700">
+          <label htmlFor={inputId} className={["text-sm font-medium text-slate-700", labelClassName].join(" ")}>
             {label}
           </label>
         )}

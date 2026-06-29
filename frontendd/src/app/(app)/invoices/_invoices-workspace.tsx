@@ -18,6 +18,7 @@ import {
   uploadInvoiceAction,
 } from "@/shared/actions/billing";
 import { useNotifications } from "@/shared/hooks/use-notifications";
+import { isApprovedBuilding } from "@/shared/lib/buildings";
 import type { Building, Invoice } from "@/shared/lib/data";
 import type { DashboardRole } from "@/shared/role-ui";
 
@@ -510,13 +511,16 @@ export function InvoicesWorkspace({
   const canImport = role === "managementCompany";
 
   const buildingOptions = useMemo(
-    () => buildings.map((building) => ({ id: building.id, label: building.name || building.address || building.id })),
+    () => buildings
+      .filter(isApprovedBuilding)
+      .map((building) => ({ id: building.id, label: building.name || building.address || building.id })),
     [buildings],
   );
   const buildingLabelById = useMemo(
-    () => new Map(buildings.map((building) => [building.id, building.name || building.address || building.id])),
-    [buildings],
+    () => new Map(buildingOptions.map((building) => [building.id, building.label])),
+    [buildingOptions],
   );
+  const hasMultipleBuildingOptions = buildingOptions.length > 1;
 
   const apartmentOptions = useMemo<ApartmentOption[]>(
     () =>
@@ -572,6 +576,9 @@ export function InvoicesWorkspace({
   useEffect(() => {
     if (!selectedBuildingId && buildingOptions[0]?.id) {
       setSelectedBuildingId(buildingOptions[0].id);
+    }
+    if (selectedBuildingId && !buildingOptions.some((building) => building.id === selectedBuildingId)) {
+      setSelectedBuildingId(buildingOptions[0]?.id ?? "");
     }
   }, [buildingOptions, selectedBuildingId]);
 
@@ -1236,6 +1243,7 @@ export function InvoicesWorkspace({
       {canImport ? (
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="grid gap-4 p-5 lg:grid-cols-[minmax(280px,1fr)_220px_auto] lg:items-end">
+            {hasMultipleBuildingOptions ? (
             <label className="flex min-w-0 flex-col gap-1.5 text-sm">
               <span className="font-semibold text-slate-900">{copy.pageBuildingTitle}</span>
               <select
@@ -1249,6 +1257,14 @@ export function InvoicesWorkspace({
                 ))}
               </select>
             </label>
+            ) : (
+              <div className="flex min-w-0 flex-col gap-1.5 text-sm">
+                <span className="font-semibold text-slate-900">{copy.pageBuildingTitle}</span>
+                <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-900">
+                  {selectedBuildingId ? buildingLabelById.get(selectedBuildingId) || selectedBuildingId : copy.chooseBuilding}
+                </div>
+              </div>
+            )}
             <label className="flex min-w-0 flex-col gap-1.5 text-sm">
               <span className="font-semibold text-slate-900">{copy.period}</span>
               <input

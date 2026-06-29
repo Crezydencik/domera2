@@ -36,6 +36,8 @@ export declare class BuildingsController {
     }>;
     list(request: Request, user: RequestUser, companyId: string): Promise<{
         items: {
+            apartmentLimit: number;
+            approvedApartmentsCount: number;
             apartmentsCount: number;
             occupiedApartments: number;
             id: string;
@@ -43,6 +45,8 @@ export declare class BuildingsController {
     }>;
     listAllForAdmin(request: Request, user: RequestUser): Promise<{
         items: {
+            apartmentLimit: number;
+            approvedApartmentsCount: number;
             apartmentsCount: number;
             occupiedApartments: number;
             id: string;
@@ -57,6 +61,8 @@ export declare class BuildingsController {
         editLocked: boolean;
     }>;
     byId(request: Request, user: RequestUser, buildingId: string): Promise<{
+        apartmentLimit: number;
+        approvedApartmentsCount: number;
         apartmentsCount: number;
         occupiedApartments: number;
         id: string;
@@ -64,6 +70,10 @@ export declare class BuildingsController {
     create(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<void>;
     update(request: Request, user: RequestUser, buildingId: string, body: Record<string, unknown>): Promise<{
         success: boolean;
+        deletedRequest: boolean;
+    } | {
+        success: boolean;
+        deletedRequest?: undefined;
     }>;
     remove(request: Request, user: RequestUser, buildingId: string): Promise<{
         success: boolean;

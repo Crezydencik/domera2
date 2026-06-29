@@ -102,6 +102,10 @@ let BuildingsService = class BuildingsService {
         }
         return 'Healthy';
     }
+    isBuildingCreationRequestStatus(value) {
+        const normalized = String(value ?? '').trim().toLowerCase();
+        return normalized === 'pending' || normalized === 'rejected' || normalized === 'cancelled' || normalized === 'canceled';
+    }
     normalizeMeterCount(...values) {
         const count = this.firstNumber(...values);
         return count < 0 ? 0 : Math.floor(count);
@@ -250,11 +254,14 @@ let BuildingsService = class BuildingsService {
         return !byBuildingId.empty || !byLegacyHouseId.empty;
     }
     applyOccupancyStats(id, data, stats) {
-        const apartmentsCount = stats?.apartmentsCount ?? this.firstNumber(data.apartmentsCount, data.apartments);
+        const apartmentLimit = this.firstNumber(data.apartmentsCount, data.apartments);
+        const apartmentsCount = stats?.apartmentsCount ?? apartmentLimit;
         const occupiedApartments = stats?.occupiedApartments ?? 0;
         return {
             id,
             ...data,
+            apartmentLimit,
+            approvedApartmentsCount: apartmentLimit,
             apartmentsCount,
             occupiedApartments,
         };
@@ -1094,6 +1101,31 @@ let BuildingsService = class BuildingsService {
         }
         if (!companyId) {
             throw new common_1.BadRequestException('companyId is missing for building');
+        }
+        if (this.isBuildingCreationRequestStatus(current.status)) {
+            const deletedAt = new Date();
+            const requestedBy = this.firstString(current.requestedBy);
+            const batch = db.batch();
+            batch.delete(ref);
+            batch.set(db.collection('companies').doc(companyId), {
+                ...this.buildCompanyBuildingLinkPatch(buildingId, 'remove', deletedAt),
+                buildingCreationRequestStatus: firestore_1.FieldValue.delete(),
+                buildingCreationRequestId: firestore_1.FieldValue.delete(),
+                buildingCreationRequestBuildingName: firestore_1.FieldValue.delete(),
+                buildingCreationRequestBuildingAddress: firestore_1.FieldValue.delete(),
+            }, { merge: true });
+            if (requestedBy) {
+                batch.set(db.collection('users').doc(requestedBy), {
+                    buildingCreationRequestStatus: firestore_1.FieldValue.delete(),
+                    buildingCreationRequestId: firestore_1.FieldValue.delete(),
+                    buildingCreationRequestBuildingName: firestore_1.FieldValue.delete(),
+                    buildingCreationRequestBuildingAddress: firestore_1.FieldValue.delete(),
+                    updatedAt: deletedAt,
+                }, { merge: true });
+            }
+            await this.markPlatformAdminCreationRequestNotificationsRead(batch, buildingId, deletedAt);
+            await batch.commit();
+            return { success: true, deletedRequest: true };
         }
         if (current.editLocked === true) {
             throw new common_1.ForbiddenException('This building is locked by the platform administrator');

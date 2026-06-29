@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/components/data-table";
+import { isApprovedBuilding } from "@/shared/lib/buildings";
 import type { RoleDataBundle } from "@/shared/lib/domera-api.server";
 
 type UnknownRecord = Record<string, unknown>;
@@ -31,6 +32,18 @@ interface ContactRow {
   building: string;
 }
 
+interface ContactInfo {
+  key: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  role: string;
+}
+
+const EMPTY_CELL = "-";
+const INACTIVE_TENANT_STATUSES = new Set(["cancelled", "canceled", "deleted", "expired", "inactive", "removed", "revoked"]);
+const ACTIVE_TENANT_STATUSES = new Set(["accepted", "active"]);
+
 function hasText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -42,7 +55,17 @@ function firstText(...values: unknown[]) {
     }
   }
 
-  return "-";
+  return EMPTY_CELL;
+}
+
+function optionalText(...values: unknown[]) {
+  for (const value of values) {
+    if (hasText(value)) {
+      return value.trim();
+    }
+  }
+
+  return "";
 }
 
 function joinName(...values: unknown[]) {
@@ -56,6 +79,78 @@ function apartmentLabel(apartment: UnknownRecord) {
 
 function apartmentId(apartment: UnknownRecord) {
   return firstText(apartment.id, apartment.apartmentId, apartment.number, apartment.apartmentNumber);
+}
+
+function parseDateValue(value: unknown) {
+  if (!value) return undefined;
+  if (value instanceof Date) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }
+  if (typeof value === "object") {
+    const record = value as UnknownRecord;
+    const seconds = typeof record.seconds === "number"
+      ? record.seconds
+      : typeof record._seconds === "number"
+        ? record._seconds
+        : undefined;
+    return typeof seconds === "number" ? new Date(seconds * 1000) : undefined;
+  }
+
+  return undefined;
+}
+
+function isCurrentByDates(record: UnknownRecord) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const from = parseDateValue(record.fromDate ?? record.validFrom ?? record.startDate);
+  const until = parseDateValue(record.until ?? record.toDate ?? record.validUntil ?? record.endDate ?? record.expiresAt);
+
+  if (from) {
+    const fromDay = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+    if (fromDay > today) return false;
+  }
+
+  if (until) {
+    const untilDay = new Date(until.getFullYear(), until.getMonth(), until.getDate());
+    if (untilDay < today) return false;
+  }
+
+  return true;
+}
+
+function isCurrentTenant(record: UnknownRecord) {
+  const status = optionalText(record.status).toLowerCase();
+  if (INACTIVE_TENANT_STATUSES.has(status)) return false;
+  if (status && !ACTIVE_TENANT_STATUSES.has(status)) return false;
+
+  return isCurrentByDates(record);
+}
+
+function joinContactField(values: string[]) {
+  const unique = Array.from(new Set(values.map((value) => value.trim()).filter((value) => value && value !== EMPTY_CELL)));
+  return unique.length ? unique.join(" / ") : EMPTY_CELL;
+}
+
+function mergeApartmentContacts(contacts: ContactInfo[]) {
+  const byKey = new Map<string, ContactInfo>();
+
+  for (const contact of contacts) {
+    const key = contact.email !== EMPTY_CELL ? contact.email.toLowerCase() : contact.key;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, { ...contact });
+      continue;
+    }
+
+    existing.fullName = joinContactField([existing.fullName, contact.fullName]);
+    existing.email = joinContactField([existing.email, contact.email]);
+    existing.phone = joinContactField([existing.phone, contact.phone]);
+    existing.role = joinContactField([existing.role, contact.role]);
+  }
+
+  return Array.from(byKey.values());
 }
 
 function compareApartment(left: ContactRow, right: ContactRow) {
@@ -79,10 +174,11 @@ export function ResidentsDirectory({ data, labels }: ResidentsDirectoryProps) {
   );
 
   const buildings = useMemo(
-    () => [...data.buildings]
+    () => data.buildings
+      .filter(isApprovedBuilding)
       .map((building) => ({
         id: building.id,
-        label: building.address !== "-" ? building.address : building.name,
+        label: building.address !== EMPTY_CELL ? building.address : building.name,
       }))
       .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" })),
     [data.buildings],
@@ -98,24 +194,20 @@ export function ResidentsDirectory({ data, labels }: ResidentsDirectoryProps) {
     if (!selectedBuildingId && buildings[0]?.id) {
       setSelectedBuildingId(buildings[0].id);
     }
+    if (selectedBuildingId && !buildings.some((building) => building.id === selectedBuildingId)) {
+      setSelectedBuildingId(buildings[0]?.id ?? "");
+    }
   }, [buildings, selectedBuildingId]);
 
   const contacts = useMemo(() => {
-    const seen = new Set<string>();
     const rows: ContactRow[] = [];
-
-    function pushContact(contact: ContactRow) {
-      const key = `${contact.apartment}:${contact.email}:${contact.fullName}:${contact.key}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      rows.push(contact);
-    }
 
     for (const apartment of data.apartments) {
       const buildingId = firstText(apartment.buildingId, "");
       const building = firstText(apartment.buildingName, apartment.building, apartment.address, buildingById.get(buildingId), buildingId);
       const label = apartmentLabel(apartment);
       const id = apartmentId(apartment);
+      const apartmentContacts: ContactInfo[] = [];
       const ownerEmail = firstText(apartment.ownerEmail);
       const ownerName = firstText(
         joinName(apartment.ownerFirstName, apartment.ownerLastName),
@@ -124,16 +216,13 @@ export function ResidentsDirectory({ data, labels }: ResidentsDirectoryProps) {
         ownerEmail,
       );
 
-      if (ownerEmail !== "-" || ownerName !== "-") {
-        pushContact({
+      if (ownerEmail !== EMPTY_CELL || ownerName !== EMPTY_CELL) {
+        apartmentContacts.push({
           key: firstText(apartment.ownerId, ownerEmail, `${id}-owner`),
-          building,
-          apartment: label,
           fullName: ownerName,
           email: ownerEmail,
           phone: firstText(apartment.ownerPhone),
           role: "Īpašnieks",
-          buildingId,
         });
       }
 
@@ -148,38 +237,48 @@ export function ResidentsDirectory({ data, labels }: ResidentsDirectoryProps) {
         residentId,
       );
 
-      if (residentId || residentEmail !== "-" || residentName !== "-") {
-        pushContact({
+      if (residentId || residentEmail !== EMPTY_CELL || residentName !== EMPTY_CELL) {
+        apartmentContacts.push({
           key: residentId || residentEmail,
-          building,
-          apartment: label,
           fullName: residentName,
           email: residentEmail,
           phone: firstText(apartment.residentPhone, residentProfile?.phone),
           role: "Iedzīvotājs",
-          buildingId,
         });
       }
 
-      if (!Array.isArray(apartment.tenants)) continue;
+      if (Array.isArray(apartment.tenants)) {
+        for (const tenant of apartment.tenants) {
+          if (!tenant || typeof tenant !== "object") continue;
+          const record = tenant as UnknownRecord;
+          if (!isCurrentTenant(record)) continue;
 
-      for (const tenant of apartment.tenants) {
-        if (!tenant || typeof tenant !== "object") continue;
-        const record = tenant as UnknownRecord;
-        const email = firstText(record.email);
-        const fullName = firstText(joinName(record.firstName, record.lastName), record.fullName, record.name, email);
+          const email = firstText(record.email);
+          const fullName = firstText(joinName(record.firstName, record.lastName), record.fullName, record.name, email);
 
-        pushContact({
-          key: firstText(record.userId, email, `${id}-${fullName}`),
-          building,
-          apartment: label,
-          fullName,
-          email,
-          phone: firstText(record.phone),
-          role: "Īrnieks",
-          buildingId,
-        });
+          apartmentContacts.push({
+            key: firstText(record.userId, email, `${id}-${fullName}`),
+            fullName,
+            email,
+            phone: firstText(record.phone),
+            role: "Īrnieks",
+          });
+        }
       }
+
+      const mergedContacts = mergeApartmentContacts(apartmentContacts);
+      if (!mergedContacts.length) continue;
+
+      rows.push({
+        key: id,
+        building,
+        apartment: label,
+        fullName: joinContactField(mergedContacts.map((contact) => contact.fullName)),
+        email: joinContactField(mergedContacts.map((contact) => contact.email)),
+        phone: joinContactField(mergedContacts.map((contact) => contact.phone)),
+        role: joinContactField(mergedContacts.map((contact) => contact.role)),
+        buildingId,
+      });
     }
 
     return rows
@@ -189,7 +288,7 @@ export function ResidentsDirectory({ data, labels }: ResidentsDirectoryProps) {
 
   return (
     <div className="space-y-4">
-      {buildings.length > 0 && (
+      {buildings.length > 1 && (
         <div className="w-full max-w-md">
           <label className="mb-1 block text-xs font-semibold uppercase text-slate-500" htmlFor="residents-building-filter">
             {labels.building}
@@ -212,12 +311,13 @@ export function ResidentsDirectory({ data, labels }: ResidentsDirectoryProps) {
       {contacts.length > 0 ? (
         <DataTable
           columns={[labels.apartment, labels.fullName, labels.role, labels.email, labels.phone]}
+          mobileColumnPairs={[[0, 2]]}
           rows={contacts.map((contact) => [
             <span key={`${contact.key}-apartment`} className="font-medium text-slate-900">{contact.apartment}</span>,
-            contact.fullName,
-            contact.role,
-            contact.email,
-            contact.phone,
+            <span key={`${contact.key}-name`} className="block min-w-0 break-words text-slate-900">{contact.fullName}</span>,
+            <span key={`${contact.key}-role`} className="block min-w-0 break-words">{contact.role}</span>,
+            <span key={`${contact.key}-email`} className="block min-w-0 break-all">{contact.email}</span>,
+            <span key={`${contact.key}-phone`} className="block min-w-0 break-words">{contact.phone}</span>,
           ])}
         />
       ) : (

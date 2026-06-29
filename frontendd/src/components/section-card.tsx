@@ -7,6 +7,7 @@ interface SectionCardProps {
   titleAside?: ReactNode;
   titleAsidePlacement?: "inline" | "below";
   headerAside?: ReactNode;
+  className?: string;
   children: ReactNode;
 }
 
@@ -17,12 +18,13 @@ export function SectionCard({
   titleAside,
   titleAsidePlacement = "inline",
   headerAside,
+  className = "",
   children,
 }: SectionCardProps) {
   const hasHeader = Boolean(title || titleMeta || description || titleAside || headerAside);
 
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className={`rounded-3xl border border-slate-200 bg-white p-5 shadow-sm ${className}`}>
       {hasHeader ? (
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex flex-col gap-1">

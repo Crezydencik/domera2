@@ -21,6 +21,20 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function getLoginErrorMessage(message: string) {
+    const normalized = message.trim().toLowerCase().replace(/\.$/, "");
+
+    if (
+      normalized === "incorrect email or password" ||
+      normalized === "invalid email or password" ||
+      normalized === "user account was not found"
+    ) {
+      return t("invalidEmailOrPassword");
+    }
+
+    return message || s("dbError");
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -44,7 +58,7 @@ export default function LoginPage() {
       router.push(nextPath && nextPath.startsWith("/") ? nextPath : ROUTES.dashboard);
       router.refresh();
     } catch (error) {
-      setError(error instanceof Error ? error.message : s("dbError"));
+      setError(error instanceof Error ? getLoginErrorMessage(error.message) : s("dbError"));
     } finally {
       setLoading(false);
     }

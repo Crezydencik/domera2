@@ -872,6 +872,9 @@
       }
     },
     "tenantAccess": {
+      "compactUnavailable": "Управление доступом недоступно в компактном режиме.",
+      "contractTitle": "Договор аренды - {tenant}",
+      "contractTitleSearch": "договор",
       "tabs": {
         "owner": "Владелец",
         "tenants": "Арендатора"
@@ -907,11 +910,16 @@
         "replaceContract": "Прикрепить / заменить договор",
         "editTenant": "Редактировать арендатора",
         "editOwner": "Редактирование владельца",
+        "edit": "Редактировать",
         "save": "Сохранить",
         "saving": "Сохранение...",
         "cancel": "Отмена",
         "delete": "Удалить",
         "resend": "Повторно отправить"
+      },
+      "tenantStatus": {
+        "active": "Активен",
+        "pending": "Ожидает"
       },
       "ownerTable": {
         "title": "Текущий владелец",
@@ -931,7 +939,8 @@
         "emailCantBeCompanyEmail": "Email арендатора не может совпадать с email управляющей компании.",
         "emailCantBeOwnerEmail": "Email арендатора не может совпадать с email владельца квартиры.",
         "emailCantBeTenantEmail": "Этот email уже приглашен в качестве арендатора.",
-        "inviteFailed": "Не удалось добавить арендатора."
+        "inviteFailed": "Не удалось добавить арендатора.",
+        "contractUploadFailed": "Не удалось прикрепить договор аренды."
       },
       "success": {
         "invited": "Арендатору {email} выдан доступ к квартире {apartment}."
@@ -949,6 +958,8 @@
         "resendConfirm": "Отправить приглашение еще раз?",
         "resendSuccess": "Приглашение повторно отправлено",
         "resendError": "Ошибка при отправке приглашения",
+        "updateSuccess": "Изменения сохранены",
+        "updateError": "Не удалось сохранить изменения",
         "confirm": "Подтвердить",
         "cancel": "Отмена"
       }
@@ -1118,6 +1129,7 @@
     "noAccount": "Нет аккаунта?",
     "haveAccount": "Уже есть аккаунт?",
     "rememberMe": "Запомнить меня?",
+    "invalidEmailOrPassword": "Неверный e-mail или пароль",
     "registerTitle": "Создать аккаунт",
     "registerSubtitle": "Зарегистрируйтесь, чтобы начать работу с Domera",
     "registerCompanyEmailHint": "Необязательно: используйте это поле, если email компании отличается от вашего email для входа",

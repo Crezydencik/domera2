@@ -30,6 +30,9 @@ export declare class ApartmentsService {
     private resolveApartmentStorageContext;
     private markStorageFolders;
     private getApprovedBuildingOrThrow;
+    private getBuildingApartmentLimit;
+    private countBuildingApartments;
+    private assertBuildingApartmentCapacity;
     private assertApartmentBuildingEditableForStaff;
     private assertAuthenticated;
     private isStaff;

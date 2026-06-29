@@ -15,6 +15,7 @@ export declare class BuildingsService {
     private sanitizePathSegment;
     private optionalNonNegativeNumber;
     private normalizeStatus;
+    private isBuildingCreationRequestStatus;
     private normalizeMeterCount;
     private normalizeSubscriptionTermMonths;
     private normalizeSubscriptionTermYears;
@@ -86,6 +87,8 @@ export declare class BuildingsService {
     }>;
     list(request: Request, user: RequestUser, companyId: string): Promise<{
         items: {
+            apartmentLimit: number;
+            approvedApartmentsCount: number;
             apartmentsCount: number;
             occupiedApartments: number;
             id: string;
@@ -93,6 +96,8 @@ export declare class BuildingsService {
     }>;
     listAllForAdmin(request: Request, user: RequestUser): Promise<{
         items: {
+            apartmentLimit: number;
+            approvedApartmentsCount: number;
             apartmentsCount: number;
             occupiedApartments: number;
             id: string;
@@ -107,6 +112,8 @@ export declare class BuildingsService {
         editLocked: boolean;
     }>;
     byId(request: Request, user: RequestUser, buildingId: string): Promise<{
+        apartmentLimit: number;
+        approvedApartmentsCount: number;
         apartmentsCount: number;
         occupiedApartments: number;
         id: string;
@@ -114,6 +121,10 @@ export declare class BuildingsService {
     create(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<void>;
     update(request: Request, user: RequestUser, buildingId: string, payload: Record<string, unknown>): Promise<{
         success: boolean;
+        deletedRequest: boolean;
+    } | {
+        success: boolean;
+        deletedRequest?: undefined;
     }>;
     remove(request: Request, user: RequestUser, buildingId: string): Promise<{
         success: boolean;

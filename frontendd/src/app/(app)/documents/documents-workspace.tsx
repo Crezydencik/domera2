@@ -28,6 +28,7 @@ import {
 } from "@/shared/api/documents";
 import { useAuthSession } from "@/shared/hooks/use-auth";
 import { useNotifications } from "@/shared/hooks/use-notifications";
+import { isApprovedBuilding } from "@/shared/lib/buildings";
 import type { Building, DocumentItem } from "@/shared/lib/data";
 import type { DashboardRole } from "@/shared/role-ui";
 
@@ -242,7 +243,10 @@ export function DocumentsWorkspace({
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<StoredDocument | null>(null);
 
-  const buildingOptions = useMemo(() => buildings.filter((building) => building.id), [buildings]);
+  const buildingOptions = useMemo(
+    () => buildings.filter((building) => building.id && isApprovedBuilding(building)),
+    [buildings],
+  );
   const apartmentOptions = useMemo(
     () => apartments.map((item) => toApartmentOption(item, t("fallbacks.apartment"), t("fallbacks.apartmentShort"))).filter((item) => item.id),
     [apartments, t],
@@ -283,6 +287,7 @@ export function DocumentsWorkspace({
   const canShareWithManagement = managementCompanyVisibilityOnly || role !== "managementCompany";
   const canUseManagementArchive = !managementCompanyVisibilityOnly && role === "managementCompany";
   const canUsePrivateApartment = !managementCompanyVisibilityOnly && role !== "managementCompany";
+  const hasMultipleBuildingOptions = buildingOptions.length > 1;
 
   const isManagementDocument = useCallback((item: StoredDocument) => {
     return (
@@ -370,6 +375,18 @@ export function DocumentsWorkspace({
     if (archiveBuildingId || role !== "managementCompany" || !buildingOptions[0]) return;
     setArchiveBuildingId(buildingOptions[0].id);
   }, [archiveBuildingId, buildingOptions, role]);
+
+  useEffect(() => {
+    if (buildingId && !buildingOptions.some((building) => building.id === buildingId)) {
+      setBuildingId(buildingOptions[0]?.id ?? "");
+    }
+  }, [buildingId, buildingOptions]);
+
+  useEffect(() => {
+    if (archiveBuildingId && !buildingOptions.some((building) => building.id === archiveBuildingId)) {
+      setArchiveBuildingId(buildingOptions[0]?.id ?? "");
+    }
+  }, [archiveBuildingId, buildingOptions]);
 
   useEffect(() => {
     if (apartmentId || !apartmentOptions[0]) return;
@@ -764,7 +781,7 @@ export function DocumentsWorkspace({
               </div>
             </div>
 
-            {scope === "buildingResidents" || (scope === "managementArchive" && role !== "managementCompany") ? (
+            {(scope === "buildingResidents" || (scope === "managementArchive" && role !== "managementCompany")) && hasMultipleBuildingOptions ? (
               <label className="block">
                 <span className="text-xs font-semibold text-slate-500">{t("fields.building")}</span>
                 <select
@@ -835,7 +852,7 @@ export function DocumentsWorkspace({
             <div className="min-w-0">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <h3 className="text-lg font-semibold text-slate-950 sm:text-base">{t("archive.title")}</h3>
-                {role === "managementCompany" ? (
+                {role === "managementCompany" && hasMultipleBuildingOptions ? (
                   <select
                     value={archiveBuildingId}
                     onChange={(event) => setArchiveBuildingId(event.target.value)}

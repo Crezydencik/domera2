@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import type { CompanyApiKeyItem } from "@/shared/api/company";
 import type { NotificationSettings } from "@/shared/api/notifications";
+import { isApprovedBuilding } from "@/shared/lib/buildings";
 import { apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
 import { SettingsTabs } from "./settings-tabs";
 
@@ -141,11 +142,13 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           email: firstString(company?.companyEmail, company?.email, company?.contactEmail, profile?.companyEmail, email),
           phone: firstString(company?.companyPhone, company?.phone, company?.contactPhone, profile?.companyPhone),
           apiKeys,
-          buildings: data.buildings.map((building) => ({
-            id: building.id,
-            name: building.name,
-            address: building.address,
-          })),
+          buildings: data.buildings
+            .filter(isApprovedBuilding)
+            .map((building) => ({
+              id: building.id,
+              name: building.name,
+              address: building.address,
+            })),
           members: data.residents
             .filter((item) => item.role === "ManagementCompany" || item.role === "Accountant")
             .map((item) => ({

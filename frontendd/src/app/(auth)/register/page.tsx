@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
   requestRegistrationCode,
 } from "@/shared/lib/auth-client";
@@ -358,9 +359,8 @@ export default function RegisterPage() {
               error={errors.email}
               autoComplete="email"
             />
-            <Input
+            <PhoneInput
               label={s("form.phone")}
-              type="tel"
               placeholder={s("placeholder.phone")}
               value={form.phone}
               onChange={(e) => update("phone", e.target.value)}

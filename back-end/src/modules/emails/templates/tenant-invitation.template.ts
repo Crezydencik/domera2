@@ -20,7 +20,7 @@ export const tenantInvitationTemplates: Record<
       title: 'You are invited as a tenant',
       badge: 'Tenant access',
       children: `
-        ${paragraph(`${params.senderName ? `${params.senderName} from ` : ''}${params.companyName} has invited you to Domera as a tenant. After accepting the invitation, you will get access to your apartment information and tenant services in one place.`)}
+        ${paragraph(`${params.companyName} has invited you to Domera as a tenant. After accepting the invitation, you will get access to your apartment information and tenant services in one place.`)}
         ${detailRows([
           { label: 'Company', value: params.companyName },
           { label: 'Role', value: 'Tenant' },
@@ -46,7 +46,7 @@ export const tenantInvitationTemplates: Record<
       title: 'Вас пригласили как арендатора',
       badge: 'Доступ арендатора',
       children: `
-        ${paragraph(`${params.senderName ? `${params.senderName} из ` : ''}${params.companyName} приглашает вас в Domera в качестве арендатора. После принятия приглашения вы получите доступ к информации по квартире и сервисам для арендатора.`)}
+        ${paragraph(`${params.companyName} приглашает вас в Domera в качестве арендатора. После принятия приглашения вы получите доступ к информации по квартире и сервисам для арендатора.`)}
         ${detailRows([
           { label: 'Компания', value: params.companyName },
           { label: 'Роль', value: 'Арендатор' },
@@ -72,7 +72,7 @@ export const tenantInvitationTemplates: Record<
       title: 'Jūs esat uzaicināts kā īrnieks',
       badge: 'Īrnieka piekļuve',
       children: `
-        ${paragraph(`${params.senderName ? `${params.senderName} no ` : ''}${params.companyName} aicina jūs pievienoties Domera kā īrnieku. Pēc uzaicinājuma pieņemšanas jums būs piekļuve dzīvokļa informācijai un īrnieka pakalpojumiem vienuviet.`)}
+        ${paragraph(`${params.companyName} aicina jūs pievienoties Domera kā īrnieku. Pēc uzaicinājuma pieņemšanas jums būs piekļuve dzīvokļa informācijai un īrnieka pakalpojumiem vienuviet.`)}
         ${detailRows([
           { label: 'Uzņēmums', value: params.companyName },
           { label: 'Loma', value: 'Īrnieks' },

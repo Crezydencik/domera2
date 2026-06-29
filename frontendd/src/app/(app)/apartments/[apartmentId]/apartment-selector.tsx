@@ -32,7 +32,7 @@ export function ApartmentSelector({
             router.push(`/apartments/${encodeURIComponent(nextId)}`);
           }
         }}
-        className="min-w-[320px] rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm outline-none transition focus:border-slate-500"
+        className="min-w-[291px] rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm outline-none transition focus:border-slate-500"
       >
         {apartments.map((apartment) => (
           <option key={apartment.id} value={apartment.id}>

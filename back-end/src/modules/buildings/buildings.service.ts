@@ -127,6 +127,11 @@ export class BuildingsService {
     return 'Healthy';
   }
 
+  private isBuildingCreationRequestStatus(value: unknown) {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return normalized === 'pending' || normalized === 'rejected' || normalized === 'cancelled' || normalized === 'canceled';
+  }
+
   private normalizeMeterCount(...values: unknown[]) {
     const count = this.firstNumber(...values);
     return count < 0 ? 0 : Math.floor(count);
@@ -321,12 +326,15 @@ export class BuildingsService {
     data: Record<string, unknown>,
     stats?: { apartmentsCount: number; occupiedApartments: number },
   ) {
-    const apartmentsCount = stats?.apartmentsCount ?? this.firstNumber(data.apartmentsCount, data.apartments);
+    const apartmentLimit = this.firstNumber(data.apartmentsCount, data.apartments);
+    const apartmentsCount = stats?.apartmentsCount ?? apartmentLimit;
     const occupiedApartments = stats?.occupiedApartments ?? 0;
 
     return {
       id,
       ...data,
+      apartmentLimit,
+      approvedApartmentsCount: apartmentLimit,
       apartmentsCount,
       occupiedApartments,
     };
@@ -1509,6 +1517,42 @@ export class BuildingsService {
 
     if (!companyId) {
       throw new BadRequestException('companyId is missing for building');
+    }
+
+    if (this.isBuildingCreationRequestStatus(current.status)) {
+      const deletedAt = new Date();
+      const requestedBy = this.firstString(current.requestedBy);
+      const batch = db.batch();
+
+      batch.delete(ref);
+      batch.set(
+        db.collection('companies').doc(companyId),
+        {
+          ...this.buildCompanyBuildingLinkPatch(buildingId, 'remove', deletedAt),
+          buildingCreationRequestStatus: FieldValue.delete(),
+          buildingCreationRequestId: FieldValue.delete(),
+          buildingCreationRequestBuildingName: FieldValue.delete(),
+          buildingCreationRequestBuildingAddress: FieldValue.delete(),
+        },
+        { merge: true },
+      );
+      if (requestedBy) {
+        batch.set(
+          db.collection('users').doc(requestedBy),
+          {
+            buildingCreationRequestStatus: FieldValue.delete(),
+            buildingCreationRequestId: FieldValue.delete(),
+            buildingCreationRequestBuildingName: FieldValue.delete(),
+            buildingCreationRequestBuildingAddress: FieldValue.delete(),
+            updatedAt: deletedAt,
+          },
+          { merge: true },
+        );
+      }
+      await this.markPlatformAdminCreationRequestNotificationsRead(batch, buildingId, deletedAt);
+      await batch.commit();
+
+      return { success: true, deletedRequest: true };
     }
 
     if (current.editLocked === true) {

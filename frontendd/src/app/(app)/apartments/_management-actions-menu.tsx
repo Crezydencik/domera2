@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ModalShell } from "@/components/ui/modal-shell";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { createApartment, deleteApartment, importApartments, updateApartment, updateApartmentOwner } from "@/shared/api/apartments";
 import { apiFetch } from "@/shared/api/client";
 import { revokeInvitation } from "@/shared/api/invitations";
@@ -14,6 +15,7 @@ import type { BuildingReadingConfig } from "@/shared/lib/data";
 export interface ManagementActionBuildingOption {
   id: string;
   label: string;
+  apartmentLimit?: number;
   readingConfig?: BuildingReadingConfig;
 }
 
@@ -314,6 +316,13 @@ export function ApartmentsManagementActionsMenu({
   const importBuildingLabel = importBuilding?.label;
   const importExample = "";
   const buildingReadingConfig = effectiveBuilding?.readingConfig;
+  const apartmentCountForBuilding = (buildingId: string) => apartments.filter((apartment) => apartment.buildingId === buildingId).length;
+  const currentBuildingApartmentCount = effectiveBuildingId ? apartmentCountForBuilding(effectiveBuildingId) : apartments.length;
+  const apartmentLimitReached = typeof effectiveBuilding?.apartmentLimit === "number"
+    && currentBuildingApartmentCount >= effectiveBuilding.apartmentLimit;
+  const importApartmentLimitReached = typeof importBuilding?.apartmentLimit === "number"
+    && apartmentCountForBuilding(importBuilding.id) >= importBuilding.apartmentLimit;
+  const apartmentLimitMessage = "Достигнут лимит квартир для этого дома. Измените дом и дождитесь подтверждения.";
 
   const invitationRows = useMemo<InvitationListRow[]>(() => {
     const pendingInvitationsByApartment = new Map<string, InvitationRecord>();
@@ -396,6 +405,10 @@ export function ApartmentsManagementActionsMenu({
       notifications.warning(t("errors.chooseBuildingFirst"));
       return;
     }
+    if (importApartmentLimitReached) {
+      notifications.warning(apartmentLimitMessage);
+      return;
+    }
     if (lockedBuildings.has(effectiveImportBuildingId)) {
       notifications.warning("This building is locked by the platform administrator.");
       return;
@@ -423,6 +436,11 @@ export function ApartmentsManagementActionsMenu({
   }
 
   function openImportModal() {
+    if (importApartmentLimitReached) {
+      notifications.warning(apartmentLimitMessage);
+      setOpen(false);
+      return;
+    }
     setImportBuildingId(selectedBuildingId?.trim() ?? "");
     setImportResult(null);
     setImportOpen(true);
@@ -436,7 +454,7 @@ export function ApartmentsManagementActionsMenu({
 
   function handleImportDrop(event: React.DragEvent<HTMLLabelElement>) {
     event.preventDefault();
-    if (loadingImport || !effectiveImportBuildingId || lockedBuildings.has(effectiveImportBuildingId)) return;
+    if (loadingImport || !effectiveImportBuildingId || lockedBuildings.has(effectiveImportBuildingId) || importApartmentLimitReached) return;
     void handleImportFile(event.dataTransfer.files?.[0]);
   }
 
@@ -466,6 +484,10 @@ export function ApartmentsManagementActionsMenu({
   }
 
   function openApartmentTab() {
+    if (apartmentLimitReached) {
+      notifications.warning(apartmentLimitMessage);
+      return;
+    }
     setAddTab("apartment");
     prepareApartmentFormDefaults();
   }
@@ -630,6 +652,10 @@ export function ApartmentsManagementActionsMenu({
     }
     if (lockedBuildings.has(effectiveBuildingId)) {
       notifications.warning("This building is locked by the platform administrator.");
+      return;
+    }
+    if (apartmentLimitReached) {
+      notifications.warning(apartmentLimitMessage);
       return;
     }
     if (!apartmentNumber.trim()) {
@@ -850,8 +876,9 @@ export function ApartmentsManagementActionsMenu({
               <button
                 type="button"
                 onClick={openImportModal}
-                disabled={loadingImport || selectedScopeLocked}
+                disabled={loadingImport || selectedScopeLocked || importApartmentLimitReached}
                 className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-violet-700 transition hover:bg-violet-50 disabled:opacity-60"
+                title={importApartmentLimitReached ? apartmentLimitMessage : undefined}
               >
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600 transition group-hover:bg-white"><UploadIcon /></span>
                 <span>{loadingImport ? t("items.importLoading") : t("items.import")}</span>
@@ -894,9 +921,11 @@ export function ApartmentsManagementActionsMenu({
             <button
               type="button"
               onClick={openApartmentTab}
+              disabled={apartmentLimitReached}
               className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                 addTab === "apartment" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800"
-              }`}
+              } disabled:cursor-not-allowed disabled:opacity-50`}
+              title={apartmentLimitReached ? apartmentLimitMessage : undefined}
             >
               <PlusIcon />
               <span>{t("items.addApartment")}</span>
@@ -933,10 +962,12 @@ export function ApartmentsManagementActionsMenu({
                   <span className="font-medium text-slate-700">{t("dialogs.createResident.fields.email")}</span>
                   <input value={residentEmail} onChange={(event) => setResidentEmail(event.target.value)} type="email" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
                 </label>
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-slate-700">{t("dialogs.createResident.fields.phone")}</span>
-                  <input value={residentPhone} onChange={(event) => setResidentPhone(event.target.value)} type="tel" className="rounded-2xl border border-slate-200 px-4 py-2.5 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
-                </label>
+                <PhoneInput
+                  label={t("dialogs.createResident.fields.phone")}
+                  value={residentPhone}
+                  onChange={(event) => setResidentPhone(event.target.value)}
+                  className="rounded-2xl border-slate-200 px-4 py-2.5 focus:border-emerald-400 focus:ring-emerald-100"
+                />
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <Button type="button" variant="secondary" size="sm" onClick={() => setAddOpen(false)} disabled={loadingResidentCreate}>{ui("cancel")}</Button>
@@ -1006,7 +1037,7 @@ export function ApartmentsManagementActionsMenu({
 
               <div className="flex justify-end gap-3 pt-2">
                 <Button type="button" variant="secondary" size="sm" onClick={() => setAddOpen(false)} disabled={loadingCreate}>{ui("cancel")}</Button>
-                <Button type="button" size="sm" onClick={() => void handleCreateApartment()} disabled={loadingCreate}>{loadingCreate ? t("dialogs.createApartment.creating") : t("dialogs.createApartment.submit")}</Button>
+                <Button type="button" size="sm" onClick={() => void handleCreateApartment()} disabled={loadingCreate || apartmentLimitReached}>{loadingCreate ? t("dialogs.createApartment.creating") : t("dialogs.createApartment.submit")}</Button>
               </div>
             </div>
           )}

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -181,7 +182,58 @@ export class ApartmentsService {
       throw new ForbiddenException('This building is locked by the platform administrator');
     }
 
+    const status = this.firstString(data.status).toLowerCase();
+    if (['pending', 'rejected', 'cancelled', 'canceled'].includes(status)) {
+      throw new ForbiddenException('Apartments can be added only after the building request is approved');
+    }
+
     return data;
+  }
+
+  private getBuildingApartmentLimit(building: Record<string, unknown>): number | undefined {
+    for (const value of [building.apartmentsCount, building.apartments]) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.max(0, Math.floor(parsed));
+      }
+    }
+
+    return undefined;
+  }
+
+  private async countBuildingApartments(buildingId: string, excludeApartmentId?: string): Promise<number> {
+    const db = this.firebaseAdminService.firestore;
+    const [byBuildingId, byLegacyHouseId] = await Promise.all([
+      db.collection('apartments').where('buildingId', '==', buildingId).get(),
+      db.collection('apartments').where('houseId', '==', buildingId).get(),
+    ]);
+
+    const ids = new Set<string>();
+    for (const doc of [...byBuildingId.docs, ...byLegacyHouseId.docs]) {
+      if (excludeApartmentId && doc.id === excludeApartmentId) continue;
+      ids.add(doc.id);
+    }
+
+    return ids.size;
+  }
+
+  private async assertBuildingApartmentCapacity(params: {
+    buildingId: string;
+    building: Record<string, unknown>;
+    additionalApartments: number;
+    excludeApartmentId?: string;
+  }): Promise<void> {
+    const limit = this.getBuildingApartmentLimit(params.building);
+    if (limit === undefined || params.additionalApartments <= 0) {
+      return;
+    }
+
+    const existingCount = await this.countBuildingApartments(params.buildingId, params.excludeApartmentId);
+    if (existingCount + params.additionalApartments > limit) {
+      throw new ConflictException(
+        `Apartment limit for this building is ${limit}. Edit the building and wait for approval before adding more apartments.`,
+      );
+    }
   }
 
   private async assertApartmentBuildingEditableForStaff(user: RequestUser, apartment: Record<string, unknown>) {
@@ -647,7 +699,6 @@ export class ApartmentsService {
     request: Request;
     inviteType: 'owner' | 'tenant';
     inviteeEmail: string;
-    inviterEmail?: string;
     apartmentId: string;
     apartmentNumber: string;
     buildingName: string;
@@ -674,7 +725,6 @@ export class ApartmentsService {
       `Apartment: ${apartmentLabel}.`,
       params.companyName ? `Company: ${params.companyName}.` : '',
       `Invitee email: ${params.inviteeEmail}.`,
-      params.inviterEmail ? `Created by: ${params.inviterEmail}.` : '',
     ].filter(Boolean).join('<br />');
 
     await Promise.all(
@@ -1393,18 +1443,7 @@ export class ApartmentsService {
     }
 
     const db = this.firebaseAdminService.firestore;
-    const importBuildingSnap = await db.collection('buildings').doc(buildingId).get();
-    if (!importBuildingSnap.exists) throw new NotFoundException('Building not found');
-    const importBuildingData = importBuildingSnap.data() as Record<string, unknown>;
-    const importBuildingCompanyId =
-      (typeof importBuildingData.companyId === 'string' ? importBuildingData.companyId : undefined) ??
-      ((importBuildingData.managedBy as Record<string, unknown> | undefined)?.companyId as string | undefined);
-    if (!importBuildingCompanyId || importBuildingCompanyId !== companyId) {
-      throw new ForbiddenException('Access denied for building/company ownership');
-    }
-    if (importBuildingData.editLocked === true) {
-      throw new ForbiddenException('This building is locked by the platform administrator');
-    }
+    const importBuildingData = await this.getApprovedBuildingOrThrow(buildingId, companyId);
 
     const fileSize = file.size ?? file.buffer?.length ?? 0;
     if (!file.buffer || fileSize <= 0) {
@@ -1458,6 +1497,30 @@ export class ApartmentsService {
       'Kartsais NR',
       'Aukstais NR',
     ];
+
+    const uniqueNewApartmentNumbers = new Set<string>();
+    for (const row of rows) {
+      const apartmentNumber = this.getCellStringByHeader(row, [
+        'DZ',
+        'Dz',
+        'Dz number',
+        'Dz Number',
+        'dz number',
+        'Apartment number',
+        'Apartment Number',
+      ]);
+      if (!apartmentNumber) continue;
+
+      const normalizedApartmentNumber = this.normalizeApartmentNumber(apartmentNumber);
+      if (existingApartmentNumbers.has(normalizedApartmentNumber)) continue;
+      uniqueNewApartmentNumbers.add(normalizedApartmentNumber);
+    }
+
+    await this.assertBuildingApartmentCapacity({
+      buildingId,
+      building: importBuildingData,
+      additionalApartments: uniqueNewApartmentNumbers.size,
+    });
 
     for (let i = 0; i < rows.length; i++) {
       try {
@@ -1791,6 +1854,11 @@ export class ApartmentsService {
     const readableId = await this.generateApartmentReadableId(companyId, buildingId, number);
     const ref = db.collection('apartments').doc(readableId);
     const building = await this.getApprovedBuildingOrThrow(buildingId, companyId);
+    await this.assertBuildingApartmentCapacity({
+      buildingId,
+      building,
+      additionalApartments: 1,
+    });
     const waterReadings = this.buildEmptyWaterReadings(readableId, buildingId, building, readingConfigOverride);
     const data = {
       ...payload,
@@ -1858,7 +1926,15 @@ export class ApartmentsService {
       (payload.number && updatedNumber !== current.number),
     );
     if (updatedCompanyId && updatedBuildingId) {
-      await this.getApprovedBuildingOrThrow(updatedBuildingId, updatedCompanyId);
+      const targetBuilding = await this.getApprovedBuildingOrThrow(updatedBuildingId, updatedCompanyId);
+      if (updatedBuildingId !== current.buildingId) {
+        await this.assertBuildingApartmentCapacity({
+          buildingId: updatedBuildingId,
+          building: targetBuilding,
+          additionalApartments: 1,
+          excludeApartmentId: apartmentId,
+        });
+      }
     }
     const readableId = shouldRegenerateReadableId && updatedCompanyId && updatedBuildingId && updatedNumber
       ? await this.generateApartmentReadableId(updatedCompanyId, updatedBuildingId, updatedNumber)
@@ -2145,7 +2221,6 @@ export class ApartmentsService {
         request,
         inviteType: 'owner',
         inviteeEmail: email,
-        inviterEmail: user.email,
         apartmentId,
         apartmentNumber: ownerInvitationContext.apartmentNumber,
         buildingName: ownerInvitationContext.buildingName,
@@ -2341,7 +2416,6 @@ export class ApartmentsService {
     let invitationLink = '';
     let invitationId = '';
     const invitationContext = await this.resolveOwnerInvitationContext(apartment);
-    const senderName = typeof user.email === 'string' ? user.email : 'Manager';
 
     try {
       const result = await this.createApartmentInvitation({
@@ -2373,7 +2447,6 @@ export class ApartmentsService {
         buildingName: invitationContext.buildingName,
         apartmentNumber: invitationContext.apartmentNumber,
         invitationLink,
-        senderName,
         language: 'lv',
       });
     } catch (error) {
@@ -2386,7 +2459,6 @@ export class ApartmentsService {
         request,
         inviteType: 'tenant',
         inviteeEmail: email,
-        inviterEmail: user.email,
         apartmentId,
         apartmentNumber: invitationContext.apartmentNumber,
         buildingName: invitationContext.buildingName,
@@ -2651,7 +2723,6 @@ export class ApartmentsService {
       apartment.owner,
       apartment.ownerName,
       [this.firstString(apartment.ownerFirstName), this.firstString(apartment.ownerLastName)].filter(Boolean).join(' '),
-      ownerEmail,
     );
 
     await this.createOwnerInvitationNotification({
@@ -2684,7 +2755,6 @@ export class ApartmentsService {
         request,
         inviteType: 'owner',
         inviteeEmail: ownerEmail.toLowerCase(),
-        inviterEmail: user.email,
         apartmentId,
         apartmentNumber: ownerInvitationContext.apartmentNumber,
         buildingName: ownerInvitationContext.buildingName,
@@ -2746,7 +2816,6 @@ export class ApartmentsService {
     }
 
     const invitationContext = await this.resolveOwnerInvitationContext(apartment);
-    const senderName = typeof user.email === 'string' ? user.email : 'Manager';
 
     // Create and send invitation email with token
     try {
@@ -2769,7 +2838,6 @@ export class ApartmentsService {
         buildingName: invitationContext.buildingName,
         apartmentNumber: invitationContext.apartmentNumber,
         invitationLink,
-        senderName,
         language: 'lv',
       });
     } catch (error) {
@@ -2782,7 +2850,6 @@ export class ApartmentsService {
         request,
         inviteType: 'tenant',
         inviteeEmail: tenantEmail.toLowerCase(),
-        inviterEmail: user.email,
         apartmentId,
         apartmentNumber: invitationContext.apartmentNumber,
         buildingName: invitationContext.buildingName,

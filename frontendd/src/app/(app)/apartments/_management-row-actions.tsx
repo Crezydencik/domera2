@@ -128,6 +128,7 @@ export function ApartmentsManagementRowActions({
     activated: apartmentRecord.ownerActivated === true || apartmentRecord.ownerActivated === "true",
     invitedAt: formatPossibleDate(apartmentRecord.ownerInvitedAt),
   };
+  const tenants = Array.isArray(apartmentRecord.tenants) ? apartmentRecord.tenants : [];
   const deleteBlockedByOccupant = isOccupied || Boolean(currentResidentId);
 
   async function handleDeleteApartment() {
@@ -212,6 +213,16 @@ export function ApartmentsManagementRowActions({
           apartmentLabel={apartmentLabel}
           compact={false}
           ownerData={ownerData}
+          tenants={tenants}
+          tenantColumns={[
+            t("details.columns.firstName"),
+            t("details.columns.lastName"),
+            t("details.columns.email"),
+            t("details.columns.fromDate"),
+            t("details.columns.toDate"),
+            t("details.columns.status"),
+          ]}
+          tenantsTitle={t("details.tenants")}
         />
       </ModalShell>
 

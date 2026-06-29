@@ -11,6 +11,7 @@ import { SubmissionPeriodCard, type SubmissionPeriodValue } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/client";
 import { useNotifications } from "@/shared/hooks/use-notifications";
+import { isApprovedBuilding } from "@/shared/lib/buildings";
 import { ROUTES } from "@/shared/lib/routes";
 import MeterReadingInput from "../../../../components/ui/meter-reading-input";
 
@@ -661,8 +662,18 @@ export default function ManagementCompanyPage() {
         const apartmentItems = Array.isArray((apartmentsResponse as { items?: unknown[] } | null)?.items)
           ? ((apartmentsResponse as { items?: unknown[] }).items ?? [])
           : [];
+        const approvedBuildingItems = buildingItems.filter((item) => isApprovedBuilding(item as { status?: unknown }));
+        const hasBuildingApprovalData = buildingItems.length > 0;
+        const approvedBuildingIds = new Set(
+          approvedBuildingItems
+            .map((item) => {
+              const building = item as UnknownRecord;
+              return text(building.id, building.buildingId);
+            })
+            .filter(Boolean),
+        );
         const buildingDataById = new Map<string, UnknownRecord>();
-        buildingItems.forEach((item) => {
+        approvedBuildingItems.forEach((item) => {
           const building = item as UnknownRecord;
           const id = text(building.id, building.buildingId);
           if (id) buildingDataById.set(id, building);
@@ -670,7 +681,7 @@ export default function ManagementCompanyPage() {
         
         if (isMounted) {
           setManagedBuildings(
-            buildingItems
+            approvedBuildingItems
               .map((item) => {
                 const building = item as UnknownRecord;
                 const id = text(building.id, building.buildingId);
@@ -690,6 +701,7 @@ export default function ManagementCompanyPage() {
             if (!apartmentId) return;
 
             const buildingId = text(apartment.buildingId);
+            if (hasBuildingApprovalData && buildingId && !approvedBuildingIds.has(buildingId)) return;
             const buildingData = buildingDataById.get(buildingId);
             const buildingLabel = text(
               apartment.buildingAddress,
@@ -731,6 +743,7 @@ export default function ManagementCompanyPage() {
                 i.apartmentNumber || i.apartment || apartmentId || "—"
               );
               const buildingId = String(i.buildingId || "");
+              if (hasBuildingApprovalData && buildingId && !approvedBuildingIds.has(buildingId)) return;
               const buildingName = String(i.buildingName || "");
               const buildingAddress = String(i.buildingAddress || "");
               const existingApartment = apartmentMap.get(apartmentId);
@@ -1393,7 +1406,7 @@ ${xmlRows}
       </Modal>
 
       <SectionCard> 
-        {buildings.length > 0 && (
+        {buildings.length > 1 && (
           <div className="mb-5 max-w-md">
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
               {t("selectBuilding")}
