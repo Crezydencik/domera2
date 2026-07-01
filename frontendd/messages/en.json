@@ -1453,7 +1453,11 @@
     "rightPanelDesc": "Sign in to your workspace, track key metrics and maintain clear communication with residents.",
     "rightPanelFeature1": "Real-time buildings, apartments and invoices dashboard",
     "rightPanelFeature2": "Secure role-based access for managers and residents",
-    "rightPanelFeature3": "Automatic reminders and simple payment tracking"
+    "rightPanelFeature3": "Automatic reminders and simple payment tracking",
+    "authBackToHome": "Back home",
+    "rightPanelStatUnits": "units managed",
+    "rightPanelStatUptime": "platform uptime",
+    "rightPanelStatSecurity": "data security"
   },
   "meterread": {
     "periodModalTitle": "Submission period",

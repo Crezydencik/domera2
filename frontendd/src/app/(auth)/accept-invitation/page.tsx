@@ -4,6 +4,17 @@ import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { FiAlertCircle, FiArrowRight, FiCheckCircle, FiLock, FiMail, FiUser, FiUserPlus } from "react-icons/fi";
+import {
+  AuthAlert,
+  AuthCard,
+  AuthFooterText,
+  AuthHeader,
+  AuthInfoBox,
+  AuthResultState,
+  ConfirmRow,
+  PasswordStrengthPanel,
+} from "@/components/auth/auth-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -130,9 +141,10 @@ function AcceptInvitationContent() {
     info && currentSessionEmail && normalizeEmail(info.email) !== currentSessionEmail,
   );
 
-  const wrongAccountMessage = info && sessionEmailMismatch
-    ? `This invitation is for ${info.email}. You are currently signed in as ${currentSessionEmail}. Sign out first or open the invitation in a private window.`
-    : "";
+  const wrongAccountMessage =
+    info && sessionEmailMismatch
+      ? `This invitation is for ${info.email}. You are currently signed in as ${currentSessionEmail}. Sign out first or open the invitation in a private window.`
+      : "";
 
   const loginHref = useMemo(() => {
     if (!info) return ROUTES.login;
@@ -198,8 +210,11 @@ function AcceptInvitationContent() {
     if (!hasInvitedFullName && !firstName.trim()) next.firstName = "Required";
     if (!hasInvitedFullName && !lastName.trim()) next.lastName = "Required";
     if (!isStrongPassword(password)) next.password = s("form.passwordHint");
-    if (password !== confirm) next.confirm = "Passwords do not match";
-    if (Object.keys(next).length) { setErrors(next); return; }
+    if (password !== confirm) next.confirm = t("passwordsDoNotMatch");
+    if (Object.keys(next).length) {
+      setErrors(next);
+      return;
+    }
 
     setLoading(true);
     setErrors({});
@@ -252,178 +267,176 @@ function AcceptInvitationContent() {
   }
 
   if (resolving) {
-    return <div className="text-sm text-slate-500">{s("loading")}</div>;
+    return (
+      <AuthCard>
+        <p className="text-sm text-slate-500">{s("loading")}</p>
+      </AuthCard>
+    );
   }
 
   if (!info) {
     return (
-      <div className="text-center">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50">
-          <svg className="h-8 w-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        </div>
-        <h1 className="mt-5 text-xl font-bold text-slate-900">{t("invitationExpired")}</h1>
-        <div className="mt-6">
-          <Link href={ROUTES.login}>
-            <Button variant="secondary">{s("button.backToLogin")}</Button>
-          </Link>
-        </div>
-      </div>
+      <AuthResultState
+        icon={FiAlertCircle}
+        tone="red"
+        title={t("invitationExpired")}
+        actionHref={ROUTES.login}
+        actionLabel={s("button.backToLogin")}
+      />
     );
   }
 
   if (accepted) {
     return (
-      <div className="text-center">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-green-50">
-          <svg className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-        <h1 className="mt-5 text-2xl font-bold text-slate-900">{t("invitationTitle")}</h1>
-        <p className="mt-2 text-sm text-slate-500">{t("invitationSubtitle")}</p>
-        <div className="mt-8">
-          <Link href={ROUTES.login}>
-            <Button variant="primary" size="lg" className="w-full">
-              {s("button.login")}
-            </Button>
-          </Link>
-        </div>
-      </div>
+      <AuthResultState
+        icon={FiCheckCircle}
+        tone="green"
+        title={t("invitationTitle")}
+        description={t("invitationSubtitle")}
+        actionHref={ROUTES.login}
+        actionLabel={s("button.login")}
+      />
     );
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900">{t("invitationTitle")}</h1>
-      <p className="mt-1.5 text-sm text-slate-500">{t("invitationSubtitle")}</p>
+      <AuthHeader title={t("invitationTitle")} subtitle={t("invitationSubtitle")} icon={FiUserPlus} />
 
-      {/* Invitation card */}
-      <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50 p-5">
-        <div className="flex flex-col gap-2 text-sm">
+      <AuthInfoBox tone="blue" className="mb-6">
+        <div className="divide-y divide-blue-100/80">
           {info.inviteType !== "company-member" && (
             <>
-              <div className="flex justify-between">
-                <span className="text-slate-500">{t("invitationApartment")}</span>
-                <span className="font-semibold text-slate-800">{info.apartment}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">{t("invitationBuilding")}</span>
-                <span className="font-semibold text-slate-800">{info.building}</span>
-              </div>
+              <ConfirmRow label={t("invitationApartment")} value={info.apartment} />
+              <ConfirmRow label={t("invitationBuilding")} value={info.building} />
             </>
           )}
-          <div className="flex justify-between">
-            <span className="text-slate-500">{t("invitationFrom")}</span>
-            <span className="font-semibold text-slate-800">{info.managerName}</span>
-          </div>
+          <ConfirmRow label={t("invitationFrom")} value={info.managerName} />
         </div>
-      </div>
+      </AuthInfoBox>
 
       {info.existingAccountDetected && (
-        <div className="mt-6 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+        <AuthAlert tone="amber" className="mb-5">
           {t("invitationExistingAccount")}
-        </div>
+        </AuthAlert>
       )}
 
       {sessionEmailMismatch && (
-        <div className="mt-6 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+        <AuthAlert className="mb-5">
           {wrongAccountMessage}
-        </div>
+        </AuthAlert>
       )}
 
       {info.existingAccountDetected ? (
-        <div className="mt-6">
-          {errors.general && (
-            <div className="mb-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-              {errors.general}
-            </div>
-          )}
+        <AuthCard>
+          {errors.general && <AuthAlert className="mb-5">{errors.general}</AuthAlert>}
           <Link href={loginHref}>
-            <Button variant="primary" size="lg" className="w-full" disabled={loading || sessionEmailMismatch}>
+            <Button
+              variant="primary"
+              size="lg"
+              className="min-h-12 w-full rounded-xl"
+              disabled={loading || sessionEmailMismatch}
+            >
               {loading ? s("button.accepting") : t("invitationSignInToAccept")}
+              {!loading && <FiArrowRight className="h-4 w-4" aria-hidden />}
             </Button>
           </Link>
-        </div>
+        </AuthCard>
       ) : (
-      <>
-      {/* Registration form */}
-      <form onSubmit={handleAccept} className="mt-6 flex flex-col gap-5">
-        {errors.general && (
-          <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-            {errors.general}
-          </div>
-        )}
+        <>
+          <AuthCard>
+            <form onSubmit={handleAccept} className="flex flex-col gap-5">
+              {errors.general && <AuthAlert>{errors.general}</AuthAlert>}
 
-        {!hasInvitedFullName && (
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label={s("form.firstName")}
-              placeholder={s("placeholder.firstName")}
-              value={firstName}
-              onChange={(e) => { setFirstName(e.target.value); setErrors((p) => ({ ...p, firstName: "" })); }}
-              error={errors.firstName}
-              autoFocus
-            />
-            <Input
-              label={s("form.lastName")}
-              placeholder={s("placeholder.lastName")}
-              value={lastName}
-              onChange={(e) => { setLastName(e.target.value); setErrors((p) => ({ ...p, lastName: "" })); }}
-              error={errors.lastName}
-            />
-          </div>
-        )}
+              {!hasInvitedFullName && (
+                <div className="grid gap-4 sm:grid-cols-2 sm:gap-3">
+                  <Input
+                    label={s("form.firstName")}
+                    placeholder={s("placeholder.firstName")}
+                    value={firstName}
+                    onChange={(e) => {
+                      setFirstName(e.target.value);
+                      setErrors((previous) => ({ ...previous, firstName: "" }));
+                    }}
+                    error={errors.firstName}
+                    autoFocus
+                    leftIcon={<FiUser className="h-4 w-4" aria-hidden />}
+                  />
+                  <Input
+                    label={s("form.lastName")}
+                    placeholder={s("placeholder.lastName")}
+                    value={lastName}
+                    onChange={(e) => {
+                      setLastName(e.target.value);
+                      setErrors((previous) => ({ ...previous, lastName: "" }));
+                    }}
+                    error={errors.lastName}
+                    leftIcon={<FiUser className="h-4 w-4" aria-hidden />}
+                  />
+                </div>
+              )}
 
-        <Input
-          label={s("form.email")}
-          type="email"
-          value={info.email}
-          readOnly
-          hint={s("form.emailFixedByInvite")}
-          className="bg-slate-50 text-slate-500 cursor-not-allowed"
-        />
+              <Input
+                label={s("form.email")}
+                type="email"
+                value={info.email}
+                readOnly
+                hint={s("form.emailFixedByInvite")}
+                className="cursor-not-allowed bg-slate-50 text-slate-500"
+                leftIcon={<FiMail className="h-4 w-4" aria-hidden />}
+              />
 
-        <Input
-          label={s("form.password")}
-          showToggle
-          placeholder="••••••••"
-          value={password}
-          onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: "" })); }}
-          error={errors.password}
-          hint={s("form.passwordHint")}
-          autoComplete="new-password"
-        />
+              <Input
+                label={s("form.password")}
+                showToggle
+                placeholder="********"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setErrors((previous) => ({ ...previous, password: "" }));
+                }}
+                error={errors.password}
+                hint={s("form.passwordHint")}
+                autoComplete="new-password"
+                leftIcon={<FiLock className="h-4 w-4" aria-hidden />}
+              />
 
-        <Input
-          label={s("form.confirmPassword")}
-          showToggle
-          placeholder="••••••••"
-          value={confirm}
-          onChange={(e) => { setConfirm(e.target.value); setErrors((p) => ({ ...p, confirm: "" })); }}
-          error={errors.confirm}
-          autoComplete="new-password"
-        />
+              <PasswordStrengthPanel password={password} translate={t} />
 
-        <Button
-          type="submit"
-          variant="approve"
-          size="lg"
-          className="w-full"
-          disabled={loading || info.existingAccountDetected || sessionEmailMismatch}
-        >
-          {loading ? s("button.accepting") : s("button.acceptInvitation")}
-        </Button>
-      </form>
+              <Input
+                label={s("form.confirmPassword")}
+                showToggle
+                placeholder="********"
+                value={confirm}
+                onChange={(e) => {
+                  setConfirm(e.target.value);
+                  setErrors((previous) => ({ ...previous, confirm: "" }));
+                }}
+                error={errors.confirm}
+                autoComplete="new-password"
+                leftIcon={<FiLock className="h-4 w-4" aria-hidden />}
+              />
 
-      <p className="mt-6 text-center text-sm text-slate-500">
-        {t("haveAccount")}{" "}
-        <Link href={loginHref} className="font-medium text-blue-600 hover:underline">
-          {s("button.login")}
-        </Link>
-      </p>
-      </>
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                className="min-h-12 w-full rounded-xl"
+                disabled={loading || info.existingAccountDetected || sessionEmailMismatch}
+              >
+                {loading ? s("button.accepting") : s("button.acceptInvitation")}
+                {!loading && <FiArrowRight className="h-4 w-4" aria-hidden />}
+              </Button>
+            </form>
+          </AuthCard>
+
+          <AuthFooterText>
+            {t("haveAccount")}{" "}
+            <Link href={loginHref} className="font-medium text-blue-600 hover:underline">
+              {s("button.login")}
+            </Link>
+          </AuthFooterText>
+        </>
       )}
     </div>
   );

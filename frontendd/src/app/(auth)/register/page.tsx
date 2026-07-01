@@ -4,15 +4,36 @@ import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import type { IconType } from "react-icons";
+import {
+  FiArrowLeft,
+  FiArrowRight,
+  FiBriefcase,
+  FiHash,
+  FiHome,
+  FiKey,
+  FiLock,
+  FiMail,
+  FiUser,
+} from "react-icons/fi";
+import {
+  AuthAlert,
+  AuthCard,
+  AuthFooterText,
+  AuthHeader,
+  AuthInfoBox,
+  ConfirmRow,
+  PasswordStrengthPanel,
+  StepBar,
+  cx,
+} from "@/components/auth/auth-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
-import {
-  requestRegistrationCode,
-} from "@/shared/lib/auth-client";
+import { requestRegistrationCode } from "@/shared/lib/auth-client";
 import { apiFetch } from "@/shared/lib/domera-api";
 import { savePendingRegistration } from "@/shared/lib/pending-registration";
-import { getPasswordChecks, getPasswordStrength, isStrongPassword } from "@/shared/lib/password-validation";
+import { isStrongPassword } from "@/shared/lib/password-validation";
 import { ROUTES } from "@/shared/lib/routes";
 
 type AccountType = "ManagementCompany" | "Resident" | "Landlord";
@@ -26,7 +47,7 @@ const DEFAULT_ACCOUNT_TYPES: AccountType[] = ["ManagementCompany", "Resident", "
 const ACCOUNT_TYPE_META: Record<
   AccountType,
   {
-    icon: string;
+    icon: IconType;
     titleKey: "accountTypeManager" | "accountTypeResident" | "accountTypeLandlord";
     descriptionKey:
       | "accountTypeManagerDesc"
@@ -35,17 +56,17 @@ const ACCOUNT_TYPE_META: Record<
   }
 > = {
   ManagementCompany: {
-    icon: "🏢",
+    icon: FiBriefcase,
     titleKey: "accountTypeManager",
     descriptionKey: "accountTypeManagerDesc",
   },
   Resident: {
-    icon: "🏠",
+    icon: FiHome,
     titleKey: "accountTypeResident",
     descriptionKey: "accountTypeResidentDesc",
   },
   Landlord: {
-    icon: "🔑",
+    icon: FiKey,
     titleKey: "accountTypeLandlord",
     descriptionKey: "accountTypeLandlordDesc",
   },
@@ -79,34 +100,6 @@ const EMPTY_FORM: FormData = {
   confirmPassword: "",
 };
 
-function StepBar({ current, total, labels }: { current: number; total: number; labels: string[] }) {
-  return (
-    <div className="mb-6 sm:mb-7">
-      <div className="flex gap-1.5">
-        {Array.from({ length: total }).map((_, i) => (
-          <div
-            key={i}
-            className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${i <= current ? "bg-blue-600" : "bg-slate-200"}`}
-          />
-        ))}
-      </div>
-      <p className="mt-2 text-xs leading-5 text-slate-400">
-        {current + 1} / {total} — {labels[current]}
-      </p>
-    </div>
-  );
-}
-
-function ConfirmRow({ label, value }: { label: string; value: string }) {
-  if (!value) return null;
-  return (
-    <div className="flex items-start justify-between gap-4 py-1.5">
-      <span className="text-sm text-slate-500">{label}</span>
-      <span className="text-right text-sm font-medium text-slate-800">{value}</span>
-    </div>
-  );
-}
-
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
@@ -124,9 +117,6 @@ export default function RegisterPage() {
   const [availableAccountTypes, setAvailableAccountTypes] = useState<AccountType[]>(DEFAULT_ACCOUNT_TYPES);
   const [hasAcceptedLegal, setHasAcceptedLegal] = useState(false);
 
-  const checks = getPasswordChecks(form.password);
-  const strength = getPasswordStrength(form.password);
-
   useEffect(() => {
     let isMounted = true;
 
@@ -141,7 +131,7 @@ export default function RegisterPage() {
         }
       })
       .catch(() => {
-        // fallback to local defaults when backend is unavailable
+        // Fallback to local defaults when backend is unavailable.
       });
 
     return () => {
@@ -150,17 +140,15 @@ export default function RegisterPage() {
   }, []);
 
   function update<K extends keyof FormData>(key: K, value: FormData[K]) {
-    setForm((f) => ({ ...f, [key]: value }));
-    setErrors((e) => ({ ...e, [key]: undefined }));
+    setForm((current) => ({ ...current, [key]: value }));
+    setErrors((current) => ({ ...current, [key]: undefined }));
   }
 
-  // Steps vary by account type
   const steps: string[] =
     form.accountType === "ManagementCompany"
       ? [s("steps.accountType"), s("steps.companyInfo"), s("steps.personalInfo"), s("steps.confirmation")]
       : [s("steps.accountType"), s("steps.personalInfo"), s("steps.confirmation")];
 
-  // Logical content to show at each step
   type StepKey = "accountType" | "companyInfo" | "personalInfo" | "confirmation";
   const stepKeys: StepKey[] =
     form.accountType === "ManagementCompany"
@@ -185,8 +173,7 @@ export default function RegisterPage() {
       if (!form.lastName.trim()) next.lastName = "Required";
       if (!form.email.trim()) next.email = "Required";
       if (!isStrongPassword(form.password)) next.password = s("form.passwordHint");
-      if (form.password !== form.confirmPassword)
-        next.confirmPassword = "Passwords do not match";
+      if (form.password !== form.confirmPassword) next.confirmPassword = t("passwordsDoNotMatch");
     }
 
     setErrors(next);
@@ -199,12 +186,12 @@ export default function RegisterPage() {
     if (stepKeys[nextStep] === "confirmation") {
       setHasAcceptedLegal(false);
     }
-    setStep((n) => n + 1);
+    setStep((current) => current + 1);
   }
 
   function handleBack() {
     setErrors({});
-    setStep((n) => n - 1);
+    setStep((current) => current - 1);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -243,286 +230,244 @@ export default function RegisterPage() {
 
   return (
     <div>
-      <h1 className="text-[1.65rem] font-bold leading-tight text-slate-900 sm:text-2xl">
-        {t("registerTitle")}
-      </h1>
-      <p className="mt-1.5 text-sm leading-6 text-slate-500">{t("registerSubtitle")}</p>
+      <AuthHeader title={t("registerTitle")} subtitle={t("registerSubtitle")} />
 
-      <div className="mt-6 sm:mt-7">
+      <AuthCard>
         <StepBar current={step} total={steps.length} labels={steps} />
-      </div>
 
-      <form onSubmit={handleSubmit}>
-        {errors.general && (
-          <div className="mb-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-            {errors.general}
-          </div>
-        )}
+        <form onSubmit={handleSubmit}>
+          {errors.general && <AuthAlert className="mb-5">{errors.general}</AuthAlert>}
 
-        {/* ── STEP: Account type ── */}
-        {currentKey === "accountType" && (
-          <div className="flex flex-col gap-3.5 sm:gap-4">
-            {availableAccountTypes.map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => {
-                  update("accountType", type);
-                  setErrors({});
-                }}
-                className={`flex items-start gap-3.5 rounded-xl border-2 p-4 text-left transition sm:gap-4 sm:rounded-2xl sm:p-5 ${
-                  form.accountType === type
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                }`}
-              >
-                <span
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg sm:h-11 sm:w-11 sm:text-xl ${
-                    form.accountType === type ? "bg-blue-100" : "bg-slate-100"
-                  }`}
-                >
-                  {ACCOUNT_TYPE_META[type].icon}
-                </span>
-                <div>
-                  <p className="font-semibold text-slate-800">
-                    {t(ACCOUNT_TYPE_META[type].titleKey)}
-                  </p>
-                  <p className="mt-0.5 text-sm text-slate-500">
-                    {t(ACCOUNT_TYPE_META[type].descriptionKey)}
-                  </p>
-                </div>
-              </button>
-            ))}
-            {errors.accountType && (
-              <p className="text-xs text-red-500">{errors.accountType}</p>
-            )}
-          </div>
-        )}
+          {currentKey === "accountType" && (
+            <div className="flex flex-col gap-3">
+              {availableAccountTypes.map((type) => {
+                const meta = ACCOUNT_TYPE_META[type];
+                const Icon = meta.icon;
+                const selected = form.accountType === type;
 
-        {/* ── STEP: Company info ── */}
-        {currentKey === "companyInfo" && (
-          <div className="flex flex-col gap-4 sm:gap-5">
-            <Input
-              label={s("form.companyName")}
-              placeholder={s("placeholder.companyName")}
-              value={form.companyName}
-              onChange={(e) => update("companyName", e.target.value)}
-              error={errors.companyName}
-              autoFocus
-            />
-            <Input
-              label={s("form.companyEmail")}
-              type="email"
-              placeholder={s("placeholder.companyEmail")}
-              value={form.companyEmail}
-              onChange={(e) => update("companyEmail", e.target.value)}
-              error={errors.companyEmail}
-              hint={t("registerCompanyEmailHint")}
-              autoComplete="email"
-            />
-            <Input
-              label={s("form.registrationNumber")}
-              placeholder="LV40000000000"
-              value={form.registrationNumber}
-              onChange={(e) => update("registrationNumber", e.target.value)}
-              error={errors.registrationNumber}
-            />
-          </div>
-        )}
-
-        {/* ── STEP: Personal info ── */}
-        {currentKey === "personalInfo" && (
-          <div className="flex flex-col gap-4 sm:gap-5">
-            <div className="grid gap-4 sm:grid-cols-2 sm:gap-3">
-              <Input
-                label={s("form.firstName")}
-                placeholder={s("placeholder.firstName")}
-                value={form.firstName}
-                onChange={(e) => update("firstName", e.target.value)}
-                error={errors.firstName}
-                autoFocus
-              />
-              <Input
-                label={s("form.lastName")}
-                placeholder={s("placeholder.lastName")}
-                value={form.lastName}
-                onChange={(e) => update("lastName", e.target.value)}
-                error={errors.lastName}
-              />
-            </div>
-            <Input
-              label={s("form.email")}
-              type="email"
-              placeholder={s("placeholder.email")}
-              value={form.email}
-              onChange={(e) => update("email", e.target.value)}
-              error={errors.email}
-              autoComplete="email"
-            />
-            <PhoneInput
-              label={s("form.phone")}
-              placeholder={s("placeholder.phone")}
-              value={form.phone}
-              onChange={(e) => update("phone", e.target.value)}
-              error={errors.phone}
-            />
-            <Input
-              label={s("form.password")}
-              showToggle
-              placeholder="••••••••"
-              value={form.password}
-              onChange={(e) => update("password", e.target.value)}
-              error={errors.password}
-              hint={s("form.passwordHint")}
-              autoComplete="new-password"
-            />
-
-            {!!form.password && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:rounded-2xl">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-slate-800">{t("passwordStrength")}</p>
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      strength.label === "Strong"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : strength.label === "Medium"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-rose-100 text-rose-700"
-                    }`}
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => {
+                      update("accountType", type);
+                      setErrors({});
+                    }}
+                    className={cx(
+                      "flex items-start gap-4 rounded-2xl border p-4 text-left transition",
+                      selected
+                        ? "border-blue-500 bg-blue-50 shadow-sm shadow-blue-100"
+                        : "border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/40",
+                    )}
                   >
-                    {t(`passwordStrength${strength.label}`)}
-                  </span>
-                </div>
-
-                <div className="mt-3 flex gap-2">
-                  {[1, 2, 3, 4, 5].map((item) => (
-                    <div
-                      key={item}
-                      className={`h-2 flex-1 rounded-full ${
-                        strength.score >= item
-                          ? strength.label === "Strong"
-                            ? "bg-emerald-500"
-                            : strength.label === "Medium"
-                              ? "bg-amber-500"
-                              : "bg-rose-500"
-                          : "bg-slate-200"
-                      }`}
-                    />
-                  ))}
-                </div>
-
-                <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
-                  <p className={checks.length ? "text-emerald-600" : "text-slate-500"}>• {t("passwordRuleLength")}</p>
-                  <p className={checks.uppercase ? "text-emerald-600" : "text-slate-500"}>• {t("passwordRuleUppercase")}</p>
-                  <p className={checks.lowercase ? "text-emerald-600" : "text-slate-500"}>• {t("passwordRuleLowercase")}</p>
-                  <p className={checks.number ? "text-emerald-600" : "text-slate-500"}>• {t("passwordRuleNumber")}</p>
-                  <p className={checks.symbol ? "text-emerald-600" : "text-slate-500"}>• {t("passwordRuleSymbol")}</p>
-                </div>
-              </div>
-            )}
-            <Input
-              label={s("form.confirmPassword")}
-              showToggle
-              placeholder="••••••••"
-              value={form.confirmPassword}
-              onChange={(e) => update("confirmPassword", e.target.value)}
-              error={errors.confirmPassword}
-              autoComplete="new-password"
-            />
-          </div>
-        )}
-
-        {/* ── STEP: Confirmation ── */}
-        {currentKey === "confirmation" && (
-          <div className="space-y-5">
-            <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 sm:rounded-2xl sm:p-5">
-              <div className="divide-y divide-slate-100">
-                <ConfirmRow label={s("form.firstName")} value={form.firstName} />
-                <ConfirmRow label={s("form.lastName")} value={form.lastName} />
-                <ConfirmRow label={s("form.email")} value={form.email} />
-                {form.phone && <ConfirmRow label={s("form.phone")} value={form.phone} />}
-                {form.accountType === "ManagementCompany" && (
-                  <>
-                    <ConfirmRow label={s("form.companyName")} value={form.companyName} />
-                    <ConfirmRow label={s("form.companyEmail")} value={form.companyEmail} />
-                    <ConfirmRow label={s("form.registrationNumber")} value={form.registrationNumber} />
-                  </>
-                )}
-              </div>
+                    <span
+                      className={cx(
+                        "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl",
+                        selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500",
+                      )}
+                    >
+                      <Icon className="h-5 w-5" aria-hidden />
+                    </span>
+                    <span>
+                      <span className="block font-semibold text-slate-900">{t(meta.titleKey)}</span>
+                      <span className="mt-1 block text-sm leading-6 text-slate-500">{t(meta.descriptionKey)}</span>
+                    </span>
+                  </button>
+                );
+              })}
+              {errors.accountType && <p className="text-xs text-red-500">{errors.accountType}</p>}
             </div>
+          )}
 
-            <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-600 sm:rounded-2xl">
-              <input
-                id="legal-consent"
-                type="checkbox"
-                checked={hasAcceptedLegal}
-                onChange={(event) => setHasAcceptedLegal(event.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+          {currentKey === "companyInfo" && (
+            <div className="flex flex-col gap-5">
+              <Input
+                label={s("form.companyName")}
+                placeholder={s("placeholder.companyName")}
+                value={form.companyName}
+                onChange={(e) => update("companyName", e.target.value)}
+                error={errors.companyName}
+                autoFocus
+                leftIcon={<FiBriefcase className="h-4 w-4" aria-hidden />}
               />
-              <span>
-                <label htmlFor="legal-consent">{t("registerLegalConsentPrefix")}</label>{" "}
-                <a
-                  href={ROUTES.privacyPolicy}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-blue-600 hover:underline"
-                >
-                  {t("privacyPolicyTitle")}
-                </a>{" "}
-                {t("registerLegalConsentAnd")}{" "}
-                <a
-                  href={ROUTES.termsOfUse}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-blue-600 hover:underline"
-                >
-                  {t("termsOfUseTitle")}
-                </a>
-                .
-              </span>
+              <Input
+                label={s("form.companyEmail")}
+                type="email"
+                placeholder={s("placeholder.companyEmail")}
+                value={form.companyEmail}
+                onChange={(e) => update("companyEmail", e.target.value)}
+                error={errors.companyEmail}
+                hint={t("registerCompanyEmailHint")}
+                autoComplete="email"
+                leftIcon={<FiMail className="h-4 w-4" aria-hidden />}
+              />
+              <Input
+                label={s("form.registrationNumber")}
+                placeholder="LV40000000000"
+                value={form.registrationNumber}
+                onChange={(e) => update("registrationNumber", e.target.value)}
+                error={errors.registrationNumber}
+                leftIcon={<FiHash className="h-4 w-4" aria-hidden />}
+              />
             </div>
+          )}
 
-            {!hasAcceptedLegal && (
-              <p className="text-xs text-slate-500">{t("registerLegalConsentHint")}</p>
+          {currentKey === "personalInfo" && (
+            <div className="flex flex-col gap-5">
+              <div className="grid gap-4 sm:grid-cols-2 sm:gap-3">
+                <Input
+                  label={s("form.firstName")}
+                  placeholder={s("placeholder.firstName")}
+                  value={form.firstName}
+                  onChange={(e) => update("firstName", e.target.value)}
+                  error={errors.firstName}
+                  autoFocus
+                  leftIcon={<FiUser className="h-4 w-4" aria-hidden />}
+                />
+                <Input
+                  label={s("form.lastName")}
+                  placeholder={s("placeholder.lastName")}
+                  value={form.lastName}
+                  onChange={(e) => update("lastName", e.target.value)}
+                  error={errors.lastName}
+                  leftIcon={<FiUser className="h-4 w-4" aria-hidden />}
+                />
+              </div>
+              <Input
+                label={s("form.email")}
+                type="email"
+                placeholder={s("placeholder.email")}
+                value={form.email}
+                onChange={(e) => update("email", e.target.value)}
+                error={errors.email}
+                autoComplete="email"
+                leftIcon={<FiMail className="h-4 w-4" aria-hidden />}
+              />
+              <PhoneInput
+                label={s("form.phone")}
+                placeholder={s("placeholder.phone")}
+                value={form.phone}
+                onChange={(e) => update("phone", e.target.value)}
+                error={errors.phone}
+              />
+              <Input
+                label={s("form.password")}
+                showToggle
+                placeholder="********"
+                value={form.password}
+                onChange={(e) => update("password", e.target.value)}
+                error={errors.password}
+                hint={s("form.passwordHint")}
+                autoComplete="new-password"
+                leftIcon={<FiLock className="h-4 w-4" aria-hidden />}
+              />
+
+              <PasswordStrengthPanel password={form.password} translate={t} />
+
+              <Input
+                label={s("form.confirmPassword")}
+                showToggle
+                placeholder="********"
+                value={form.confirmPassword}
+                onChange={(e) => update("confirmPassword", e.target.value)}
+                error={errors.confirmPassword}
+                autoComplete="new-password"
+                leftIcon={<FiLock className="h-4 w-4" aria-hidden />}
+              />
+            </div>
+          )}
+
+          {currentKey === "confirmation" && (
+            <div className="space-y-5">
+              <AuthInfoBox>
+                <div className="divide-y divide-slate-100">
+                  <ConfirmRow label={s("form.firstName")} value={form.firstName} />
+                  <ConfirmRow label={s("form.lastName")} value={form.lastName} />
+                  <ConfirmRow label={s("form.email")} value={form.email} />
+                  {form.phone && <ConfirmRow label={s("form.phone")} value={form.phone} />}
+                  {form.accountType === "ManagementCompany" && (
+                    <>
+                      <ConfirmRow label={s("form.companyName")} value={form.companyName} />
+                      <ConfirmRow label={s("form.companyEmail")} value={form.companyEmail} />
+                      <ConfirmRow label={s("form.registrationNumber")} value={form.registrationNumber} />
+                    </>
+                  )}
+                </div>
+              </AuthInfoBox>
+
+              <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-600">
+                <input
+                  id="legal-consent"
+                  type="checkbox"
+                  checked={hasAcceptedLegal}
+                  onChange={(event) => setHasAcceptedLegal(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>
+                  {t("registerLegalConsentPrefix")}{" "}
+                  <a
+                    href={ROUTES.privacyPolicy}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-blue-600 hover:underline"
+                  >
+                    {t("privacyPolicyTitle")}
+                  </a>{" "}
+                  {t("registerLegalConsentAnd")}{" "}
+                  <a
+                    href={ROUTES.termsOfUse}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-blue-600 hover:underline"
+                  >
+                    {t("termsOfUseTitle")}
+                  </a>
+                  .
+                </span>
+              </label>
+
+              {!hasAcceptedLegal && <p className="text-xs text-slate-500">{t("registerLegalConsentHint")}</p>}
+            </div>
+          )}
+
+          <div className={cx("mt-8 flex gap-3", step > 0 ? "justify-between" : "justify-end")}>
+            {step > 0 && (
+              <Button type="button" variant="secondary" onClick={handleBack} className="min-h-12 rounded-xl">
+                <FiArrowLeft className="h-4 w-4" aria-hidden />
+                {s("button.back")}
+              </Button>
+            )}
+            {!isLastStep ? (
+              <Button
+                type="button"
+                variant="primary"
+                onClick={handleNext}
+                className="min-h-12 flex-1 rounded-xl sm:min-w-36 sm:flex-none"
+              >
+                {s("button.next")}
+                <FiArrowRight className="h-4 w-4" aria-hidden />
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                variant="primary"
+                className="min-h-12 flex-1 rounded-xl sm:min-w-36 sm:flex-none"
+                disabled={loading || !hasAcceptedLegal}
+              >
+                {loading ? s("button.registering") : s("button.register")}
+                {!loading && <FiArrowRight className="h-4 w-4" aria-hidden />}
+              </Button>
             )}
           </div>
-        )}
+        </form>
+      </AuthCard>
 
-        {/* ── Navigation ── */}
-        <div className={`mt-7 flex gap-3 sm:mt-8 ${step > 0 ? "justify-between" : "justify-end"}`}>
-          {step > 0 && (
-            <Button type="button" variant="secondary" onClick={handleBack} className="rounded-xl">
-              {s("button.back")}
-            </Button>
-          )}
-          {!isLastStep ? (
-            <Button
-              type="button"
-              variant="primary"
-              onClick={handleNext}
-              className="min-h-12 flex-1 rounded-xl sm:min-w-35 sm:flex-none sm:rounded-2xl"
-            >
-              {s("button.next")}
-            </Button>
-          ) : (
-            <Button
-              type="submit"
-              variant="primary"
-              className="min-h-12 flex-1 rounded-xl sm:min-w-35 sm:flex-none sm:rounded-2xl"
-              disabled={loading || !hasAcceptedLegal}
-            >
-              {loading ? s("button.registering") : s("button.register")}
-            </Button>
-          )}
-        </div>
-      </form>
-
-      <p className="mt-7 text-center text-sm text-slate-500 sm:mt-8">
+      <AuthFooterText>
         {t("haveAccount")}{" "}
         <Link href={ROUTES.login} className="font-medium text-blue-600 hover:underline">
           {s("button.login")}
         </Link>
-      </p>
+      </AuthFooterText>
     </div>
   );
 }

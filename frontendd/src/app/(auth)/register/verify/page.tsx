@@ -1,9 +1,18 @@
 "use client";
 
 import { useLocale, useTranslations } from "next-intl";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { FiArrowRight, FiMail, FiRefreshCw } from "react-icons/fi";
+import {
+  AuthAlert,
+  AuthBackLink,
+  AuthCard,
+  AuthHeader,
+  AuthInfoBox,
+  AuthResultState,
+  cx,
+} from "@/components/auth/auth-ui";
 import { Button } from "@/components/ui/button";
 import {
   establishUserSession,
@@ -196,10 +205,7 @@ export default function RegisterVerifyPage() {
     const pasted = event.clipboardData.getData("text").replace(/\D/g, "").slice(0, OTP_LENGTH);
     if (!pasted) return;
 
-    setCodeDigits(() => {
-      const next = Array.from({ length: OTP_LENGTH }, (_, index) => pasted[index] ?? "");
-      return next;
-    });
+    setCodeDigits(() => Array.from({ length: OTP_LENGTH }, (_, index) => pasted[index] ?? ""));
 
     focusInput(Math.min(pasted.length, OTP_LENGTH) - 1);
     setError(null);
@@ -227,17 +233,14 @@ export default function RegisterVerifyPage() {
 
   if (!pending) {
     return (
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">{t("registerVerificationTitle")}</h1>
-        <p className="mt-2 text-sm text-slate-500">{t("registerVerificationMissing")}</p>
-        <div className="mt-8">
-          <Link href={ROUTES.register}>
-            <Button variant="primary" size="lg" className="w-full">
-              {s("button.back")}
-            </Button>
-          </Link>
-        </div>
-      </div>
+      <AuthResultState
+        icon={FiMail}
+        tone="amber"
+        title={t("registerVerificationTitle")}
+        description={t("registerVerificationMissing")}
+        actionHref={ROUTES.register}
+        actionLabel={s("button.back")}
+      />
     );
   }
 
@@ -247,77 +250,67 @@ export default function RegisterVerifyPage() {
 
   return (
     <div>
-      <Link
-        href={ROUTES.register}
-        className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700"
-      >
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-        </svg>
-        {s("button.back")}
-      </Link>
+      <AuthBackLink href={ROUTES.register}>{s("button.back")}</AuthBackLink>
+      <AuthHeader title={t("registerVerificationTitle")} subtitle={t("registerVerificationSubtitle")} icon={FiMail} />
 
-      <h1 className="text-2xl font-bold text-slate-900">{t("registerVerificationTitle")}</h1>
-      <p className="mt-1.5 text-sm text-slate-500">{t("registerVerificationSubtitle")}</p>
+      <AuthInfoBox className="mb-6">{t("registerVerificationSentTo", { email: resolvedEmail })}</AuthInfoBox>
 
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-        {t("registerVerificationSentTo", { email: resolvedEmail })}
-      </div>
+      <AuthCard>
+        <form onSubmit={handleVerify} className="flex flex-col gap-5">
+          {error && <AuthAlert>{error}</AuthAlert>}
+          {info && <AuthAlert tone="green">{info}</AuthAlert>}
 
-      <form onSubmit={handleVerify} className="mt-8 flex flex-col gap-5">
-        {error && (
-          <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-            {error}
-          </div>
-        )}
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold text-slate-700">{t("registerVerificationCodeLabel")}</label>
 
-        {info && (
-          <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {info}
-          </div>
-        )}
+            <div className="flex items-center justify-between gap-2 sm:gap-3">
+              {codeDigits.map((digit, index) => (
+                <input
+                  key={index}
+                  ref={(element) => {
+                    inputRefs.current[index] = element;
+                  }}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete={index === 0 ? "one-time-code" : "off"}
+                  maxLength={1}
+                  value={digit}
+                  onChange={(event) => updateDigit(index, event.target.value)}
+                  onKeyDown={(event) => handleKeyDown(index, event)}
+                  onPaste={handlePaste}
+                  onFocus={(event) => event.target.select()}
+                  aria-label={`${t("registerVerificationCodeLabel")} ${index + 1}`}
+                  className={cx(
+                    "h-14 w-11 rounded-2xl border bg-white text-center text-xl font-semibold text-slate-950 outline-none transition focus:ring-2 sm:h-16 sm:w-14 sm:text-2xl",
+                    error
+                      ? "border-red-400 focus:border-red-400 focus:ring-red-100"
+                      : "border-blue-200 shadow-sm shadow-blue-100/60 focus:border-blue-500 focus:ring-blue-100",
+                  )}
+                />
+              ))}
+            </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">{t("registerVerificationCodeLabel")}</label>
-
-          <div className="flex items-center justify-between gap-2 sm:gap-3">
-            {codeDigits.map((digit, index) => (
-              <input
-                key={index}
-                ref={(element) => {
-                  inputRefs.current[index] = element;
-                }}
-                type="text"
-                inputMode="numeric"
-                autoComplete={index === 0 ? "one-time-code" : "off"}
-                maxLength={1}
-                value={digit}
-                onChange={(event) => updateDigit(index, event.target.value)}
-                onKeyDown={(event) => handleKeyDown(index, event)}
-                onPaste={handlePaste}
-                onFocus={(event) => event.target.select()}
-                aria-label={`${t("registerVerificationCodeLabel")} ${index + 1}`}
-                className={`h-14 w-12 rounded-2xl border bg-white text-center text-xl font-semibold text-slate-900 outline-none transition focus:ring-2 sm:h-16 sm:w-14 sm:text-2xl ${
-                  error
-                    ? "border-red-400 focus:border-red-400 focus:ring-red-100"
-                    : "border-blue-300 shadow-sm shadow-blue-100/60 focus:border-blue-500 focus:ring-blue-100"
-                }`}
-              />
-            ))}
+            {!error && <p className="text-xs text-slate-400">{t("registerVerificationCodeHint")}</p>}
           </div>
 
-          {error && <p className="text-xs text-red-500">{error}</p>}
-          {!error && <p className="text-xs text-slate-400">{t("registerVerificationCodeHint")}</p>}
-        </div>
+          <Button type="submit" variant="primary" size="lg" className="min-h-12 w-full rounded-xl" disabled={loading}>
+            {loading ? t("registerVerificationSubmitting") : t("registerVerificationSubmit")}
+            {!loading && <FiArrowRight className="h-4 w-4" aria-hidden />}
+          </Button>
 
-        <Button type="submit" variant="primary" size="lg" className="w-full" disabled={loading}>
-          {loading ? t("registerVerificationSubmitting") : t("registerVerificationSubmit")}
-        </Button>
-
-        <Button type="button" variant="secondary" size="lg" className="w-full" onClick={handleResend} disabled={resending}>
-          {resending ? s("button.sending") : t("registerVerificationResend")}
-        </Button>
-      </form>
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            className="min-h-12 w-full rounded-xl"
+            onClick={handleResend}
+            disabled={resending}
+          >
+            {!resending && <FiRefreshCw className="h-4 w-4" aria-hidden />}
+            {resending ? s("button.sending") : t("registerVerificationResend")}
+          </Button>
+        </form>
+      </AuthCard>
     </div>
   );
 }

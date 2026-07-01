@@ -28,6 +28,27 @@ a {
   text-decoration: none;
 }
 
+a[href],
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+input[type="button"]:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+input[type="reset"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+label[for],
+select:not(:disabled),
+summary {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"],
+input:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
+
 ::selection {
   background: rgba(56, 189, 248, 0.35);
 }

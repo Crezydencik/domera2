@@ -1,12 +1,13 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import Link from "next/link";
 import { useState } from "react";
+import { FiArrowRight, FiKey, FiMail } from "react-icons/fi";
+import { AuthAlert, AuthBackLink, AuthCard, AuthHeader, AuthResultState } from "@/components/auth/auth-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DomeraApiError, apiFetch } from "@/shared/api/client";
 import { ROUTES } from "@/shared/lib/routes";
-import { apiFetch, DomeraApiError } from "@/shared/api/client";
 
 export default function ForgotPasswordPage() {
   const t = useTranslations("auth");
@@ -48,69 +49,45 @@ export default function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <div className="text-center">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50">
-          <svg
-            className="h-8 w-8 text-blue-600"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={1.8}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
-        </div>
-        <h1 className="mt-5 text-2xl font-bold text-slate-900">{t("checkEmail")}</h1>
-        <p className="mt-2 text-sm text-slate-500">{t("checkEmailDesc")}</p>
-        <p className="mt-1 text-sm font-medium text-slate-700">{email}</p>
-        <div className="mt-8">
-          <Link href={ROUTES.login}>
-            <Button variant="primary" size="lg" className="w-full">
-              {s("button.backToLogin")}
-            </Button>
-          </Link>
-        </div>
-      </div>
+      <AuthResultState
+        icon={FiMail}
+        tone="blue"
+        title={t("checkEmail")}
+        description={t("checkEmailDesc")}
+        detail={email}
+        actionHref={ROUTES.login}
+        actionLabel={s("button.backToLogin")}
+      />
     );
   }
 
   return (
     <div>
-      <Link
-        href={ROUTES.login}
-        className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700"
-      >
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-        </svg>
-        {s("button.backToLogin")}
-      </Link>
+      <AuthBackLink href={ROUTES.login}>{s("button.backToLogin")}</AuthBackLink>
+      <AuthHeader title={t("forgotTitle")} subtitle={t("forgotSubtitle")} icon={FiKey} />
 
-      <h1 className="text-2xl font-bold text-slate-900">{t("forgotTitle")}</h1>
-      <p className="mt-1.5 text-sm text-slate-500">{t("forgotSubtitle")}</p>
+      <AuthCard>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+          {error && <AuthAlert>{error}</AuthAlert>}
 
-      <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-5">
-        {error && (
-          <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-            {error}
-          </div>
-        )}
+          <Input
+            label={s("form.email")}
+            type="email"
+            placeholder={s("placeholder.email")}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoFocus
+            autoComplete="email"
+            leftIcon={<FiMail className="h-4 w-4" aria-hidden />}
+          />
 
-        <Input
-          label={s("form.email")}
-          type="email"
-          placeholder={s("placeholder.email")}
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          autoFocus
-          autoComplete="email"
-        />
-
-        <Button type="submit" variant="primary" size="lg" className="w-full" disabled={loading}>
-          {loading ? s("button.sending") : s("button.sendResetLink")}
-        </Button>
-      </form>
+          <Button type="submit" variant="primary" size="lg" className="min-h-12 w-full rounded-xl" disabled={loading}>
+            {loading ? s("button.sending") : s("button.sendResetLink")}
+            {!loading && <FiArrowRight className="h-4 w-4" aria-hidden />}
+          </Button>
+        </form>
+      </AuthCard>
     </div>
   );
 }

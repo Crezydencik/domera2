@@ -1445,7 +1445,11 @@
     "rightPanelDesc": "Piesakieties savā darba vidē, sekojiet galvenajiem rādītājiem un uzturiet skaidru saziņu ar iedzīvotājiem.",
     "rightPanelFeature1": "Reāllaika ēku, dzīvokļu un rēķinu panelis",
     "rightPanelFeature2": "Droša piekļuve ar lomās balstītiem skatiem pārvaldniekiem un iedzīvotājiem",
-    "rightPanelFeature3": "Automātiski atgādinājumi un vienkārša maksājumu izsekošana"
+    "rightPanelFeature3": "Automātiski atgādinājumi un vienkārša maksājumu izsekošana",
+    "authBackToHome": "Uz sākumu",
+    "rightPanelStatUnits": "pārvaldītas vienības",
+    "rightPanelStatUptime": "platformas darbspēja",
+    "rightPanelStatSecurity": "datu drošība"
   },
   "meterread": {
     "periodModalTitle": "Iesniegšanas periods",

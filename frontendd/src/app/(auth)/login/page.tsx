@@ -4,6 +4,8 @@ import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { FiArrowRight, FiLock, FiMail } from "react-icons/fi";
+import { AuthAlert, AuthCard, AuthFooterText, AuthHeader } from "@/components/auth/auth-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { establishUserSession, signInWithEmailPassword } from "@/shared/lib/auth-client";
@@ -66,80 +68,66 @@ export default function LoginPage() {
 
   return (
     <div>
-      <h1 className="text-[1.65rem] font-bold leading-tight text-slate-900 sm:text-2xl">
-        {t("loginTitle")}
-      </h1>
-      <p className="mt-1.5 text-sm leading-6 text-slate-500">{t("loginSubtitle")}</p>
+      <AuthHeader title={t("loginTitle")} subtitle={t("loginSubtitle")} />
 
-      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4 sm:mt-8 sm:gap-5">
-        {error && (
-          <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-            {error}
-          </div>
-        )}
+      <AuthCard>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+          {error && <AuthAlert>{error}</AuthAlert>}
 
-        <Input
-          label={s("form.email")}
-          type="email"
-          placeholder={s("placeholder.email")}
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          autoComplete="email"
-        />
-
-        <div>
           <Input
-            label={s("form.password")}
-            showToggle
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            label={s("form.email")}
+            type="email"
+            placeholder={s("placeholder.email")}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
-            autoComplete="current-password"
+            autoComplete="email"
+            leftIcon={<FiMail className="h-4 w-4" aria-hidden />}
           />
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-            <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 accent-blue-600"
-              />
-              {t("rememberMe")}
-            </label>
-            <Link
-              href={ROUTES.forgotPassword}
-              className="text-sm font-medium text-blue-600 hover:underline"
-            >
-              {s("button.forgotPassword")}
-            </Link>
+
+          <div>
+            <Input
+              label={s("form.password")}
+              showToggle
+              placeholder="********"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+              leftIcon={<FiLock className="h-4 w-4" aria-hidden />}
+            />
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+              <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+                />
+                {t("rememberMe")}
+              </label>
+              <Link
+                href={ROUTES.forgotPassword}
+                className="text-sm font-medium text-blue-600 transition hover:text-blue-700 hover:underline"
+              >
+                {s("button.forgotPassword")}
+              </Link>
+            </div>
           </div>
-        </div>
 
-        <Button
-          type="submit"
-          variant="primary"
-          size="lg"
-          className="min-h-12 w-full rounded-xl sm:rounded-2xl"
-          disabled={loading}
-        >
-          {loading ? s("button.loggingIn") : s("button.login")}
-        </Button>
-      </form>
+          <Button type="submit" variant="primary" size="lg" className="min-h-12 w-full rounded-xl" disabled={loading}>
+            {loading ? s("button.loggingIn") : s("button.login")}
+            {!loading && <FiArrowRight className="h-4 w-4" aria-hidden />}
+          </Button>
+        </form>
+      </AuthCard>
 
-      <div className="my-5 flex items-center gap-3 sm:my-6">
-        <div className="h-px flex-1 bg-slate-200" />
-        <span className="text-xs text-slate-400">{t("or")}</span>
-        <div className="h-px flex-1 bg-slate-200" />
-      </div>
-
-      <p className="text-center text-sm text-slate-500">
+      <AuthFooterText>
         {t("noAccount")}{" "}
         <Link href={ROUTES.register} className="font-medium text-blue-600 hover:underline">
           {s("button.register")}
         </Link>
-      </p>
+      </AuthFooterText>
     </div>
   );
 }
