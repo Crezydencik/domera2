@@ -13,6 +13,7 @@ export declare class CompanyService {
     private assertAuthenticated;
     private enforceRateLimit;
     private assertCanManageApiKeys;
+    private assertCompanyAccess;
     private hashApiKey;
     private buildApiKey;
     private firstString;

@@ -56,7 +56,6 @@ export declare class AuthController {
         success: boolean;
         userId: string;
         email: string;
-        idToken: string;
         role: string | undefined;
         accountType: string | undefined;
         companyId: string | undefined;
@@ -66,7 +65,6 @@ export declare class AuthController {
         success: boolean;
         userId: string;
         email: string;
-        idToken: string;
         role: string | undefined;
         accountType: string | undefined;
         companyId: string | undefined;

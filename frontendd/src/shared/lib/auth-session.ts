@@ -18,7 +18,6 @@ const authCookieNames = [
   "domera_accountType",
   "domera_companyId",
   "domera_apartmentId",
-  "authToken",
   "userId",
   "userEmail",
   "userName",

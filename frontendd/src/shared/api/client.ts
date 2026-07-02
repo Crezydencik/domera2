@@ -34,19 +34,6 @@ function isPublicAuthPath(path: string) {
   );
 }
 
-function readCookie(name: string): string | undefined {
-  if (typeof document === "undefined") return undefined;
-
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
-  if (!match?.[1]) return undefined;
-
-  try {
-    return decodeURIComponent(match[1]);
-  } catch {
-    return match[1];
-  }
-}
-
 export class DomeraApiError extends Error {
   constructor(
     message: string,
@@ -66,14 +53,9 @@ export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T>
   const url = `${appConfig.apiBaseUrl}${path}`;
   const { redirectOnAuthError = true, ...fetchInit } = init ?? {};
   const headers = new Headers(fetchInit.headers);
-  const authToken = readCookie("authToken");
 
   if (!isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
-  }
-
-  if (authToken && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${authToken}`);
   }
 
   let response: Response;

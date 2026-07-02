@@ -7,6 +7,8 @@ export declare class NewsService {
     private readonly rateLimitService;
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService);
     private assertManagement;
+    private effectiveCompanyId;
+    private assertCompanyScope;
     private enforceRateLimit;
     list(request: Request, user: RequestUser, companyId: string): Promise<{
         items: {

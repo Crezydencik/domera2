@@ -235,7 +235,6 @@ function AcceptInvitationContent() {
       const result = await signInWithEmailPassword(info.email, password);
 
       await establishUserSession({
-        idToken: result.idToken,
         userId: result.userId,
         email: result.email,
         role: result.role,

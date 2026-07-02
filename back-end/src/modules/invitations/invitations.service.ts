@@ -52,10 +52,114 @@ export class InvitationsService {
     }
   }
 
+  private effectiveStaffCompanyId(user: RequestUser): string {
+    if (user.companyId) return user.companyId;
+    if (user.role === 'ManagementCompany') return user.uid;
+    throw new ForbiddenException('Company scope is required');
+  }
+
   private assertHouseholdOrStaff(user: RequestUser | undefined): asserts user is RequestUser {
     if (!user?.uid || !user.role) throw new UnauthorizedException('Authentication required');
     if (!isStaffRole(user.role) && !isPropertyMemberRole(user.role)) {
       throw new ForbiddenException('Insufficient permissions');
+    }
+  }
+
+  private invitationPublicItem(doc: FirebaseFirestore.QueryDocumentSnapshot | FirebaseFirestore.DocumentSnapshot) {
+    const data = doc.data() as Record<string, unknown>;
+    const expiresAtRaw = data.expiresAt as { toDate?: () => Date } | Date | string | undefined;
+    const expiresAt =
+      expiresAtRaw instanceof Date
+        ? expiresAtRaw
+        : typeof expiresAtRaw === 'string'
+          ? new Date(expiresAtRaw)
+          : typeof expiresAtRaw?.toDate === 'function'
+            ? expiresAtRaw.toDate()
+            : undefined;
+
+    return {
+      id: doc.id,
+      companyId: typeof data.companyId === 'string' ? data.companyId : undefined,
+      apartmentId: typeof data.apartmentId === 'string' ? data.apartmentId : '',
+      email: typeof data.email === 'string' ? data.email : '',
+      status: typeof data.status === 'string' ? data.status : 'pending',
+      invitedByUid: typeof data.invitedByUid === 'string' ? data.invitedByUid : undefined,
+      createdAt:
+        data.createdAt && typeof (data.createdAt as { toDate?: () => Date }).toDate === 'function'
+          ? (data.createdAt as { toDate: () => Date }).toDate()
+          : new Date(),
+      expiresAt,
+    };
+  }
+
+  private apartmentCompanyId(apartment: Record<string, unknown>): string {
+    if (typeof apartment.companyId === 'string' && apartment.companyId.trim()) {
+      return apartment.companyId.trim();
+    }
+
+    if (Array.isArray(apartment.companyIds)) {
+      return apartment.companyIds.find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim() ?? '';
+    }
+
+    return '';
+  }
+
+  private isActiveApartmentMember(user: RequestUser, apartment: Record<string, unknown>): boolean {
+    const userEmail = normalizeEmail(user.email ?? '');
+    const residentId = typeof apartment.residentId === 'string' ? apartment.residentId.trim() : '';
+    if (residentId && residentId === user.uid) return true;
+
+    const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId.trim() : '';
+    const ownerEmail = typeof apartment.ownerEmail === 'string' ? normalizeEmail(apartment.ownerEmail) : '';
+    if (
+      apartment.ownerActivated === true &&
+      ((ownerId && ownerId === user.uid) || Boolean(userEmail && ownerEmail === userEmail))
+    ) {
+      return true;
+    }
+
+    const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+    const now = Date.now();
+    return tenants.some((tenant) => {
+      if (!tenant || typeof tenant !== 'object') return false;
+
+      const record = tenant as Record<string, unknown>;
+      const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
+      if (['removed', 'deleted', 'revoked', 'inactive'].includes(status)) return false;
+
+      const tenantUserId = typeof record.userId === 'string' ? record.userId.trim() : '';
+      const tenantEmail = typeof record.email === 'string' ? normalizeEmail(record.email) : '';
+      const matches = tenantUserId === user.uid || Boolean(userEmail && tenantEmail === userEmail);
+      if (!matches) return false;
+
+      const fromTime = typeof record.fromDate === 'string' && record.fromDate.trim()
+        ? new Date(record.fromDate).getTime()
+        : NaN;
+      const untilTime = typeof record.until === 'string' && record.until.trim()
+        ? new Date(record.until).getTime()
+        : NaN;
+      if (Number.isFinite(fromTime) && now < fromTime) return false;
+      if (Number.isFinite(untilTime) && now > untilTime) return false;
+
+      return true;
+    });
+  }
+
+  private assertCanUseApartment(user: RequestUser, apartment: Record<string, unknown>, companyId: string): void {
+    if (isStaffRole(user.role)) {
+      if (!user.companyId) {
+        throw new ForbiddenException('Company scope is required');
+      }
+
+      if (!companyId || user.companyId !== companyId) {
+        throw new ForbiddenException('Access denied for company');
+      }
+
+      return;
+    }
+
+    if (!this.isActiveApartmentMember(user, apartment)) {
+      throw new ForbiddenException('Access denied for apartment');
     }
   }
 
@@ -74,21 +178,8 @@ export class InvitationsService {
   }
 
   private resolveFrontendUrl(request: Request): string {
-    const origin = typeof request.headers.origin === 'string' ? request.headers.origin : '';
-    if (origin) {
-      return origin.replace(/\/+$/, '');
-    }
-
-    const referer = typeof request.headers.referer === 'string' ? request.headers.referer : '';
-    if (referer) {
-      try {
-        return new URL(referer).origin.replace(/\/+$/, '');
-      } catch {
-        // Ignore malformed referrer and use configured fallback below.
-      }
-    }
-
-    return (process.env.FRONTEND_URL || 'https://domera.app').replace(/\/+$/, '');
+    void request;
+    return (process.env.FRONTEND_URL || process.env.APP_URL || 'https://domera.app').replace(/\/+$/, '');
   }
 
   private async resolveInvitationDisplay(invitation: Record<string, unknown>) {
@@ -176,17 +267,13 @@ export class InvitationsService {
     if (!apartmentSnap.exists) throw new NotFoundException('Apartment not found');
 
     const apartment = apartmentSnap.data() as Record<string, unknown>;
-    const companyId = Array.isArray(apartment.companyIds)
-      ? (apartment.companyIds.find((x) => typeof x === 'string') as string | undefined)
-      : undefined;
+    const companyId = this.apartmentCompanyId(apartment);
 
     if (!companyId) {
       throw new BadRequestException('Apartment is missing companyId');
     }
 
-    if (user.companyId && user.companyId !== companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertCanUseApartment(user, apartment, companyId);
 
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = await hashInvitationToken(rawToken);
@@ -512,7 +599,7 @@ export class InvitationsService {
       throw new BadRequestException('companyId is required');
     }
 
-    if (user.companyId && user.companyId !== normalizedCompanyId) {
+    if (this.effectiveStaffCompanyId(user) !== normalizedCompanyId) {
       throw new ForbiddenException('Access denied for company');
     }
 
@@ -523,34 +610,7 @@ export class InvitationsService {
       .where('companyId', '==', normalizedCompanyId)
       .get();
 
-    const items = snapshot.docs.map((doc) => {
-      const data = doc.data() as Record<string, unknown>;
-      const expiresAtRaw = data.expiresAt as { toDate?: () => Date } | Date | string | undefined;
-      const expiresAt =
-        expiresAtRaw instanceof Date
-          ? expiresAtRaw
-          : typeof expiresAtRaw === 'string'
-            ? new Date(expiresAtRaw)
-            : typeof expiresAtRaw?.toDate === 'function'
-              ? expiresAtRaw.toDate()
-              : undefined;
-
-      return {
-        id: doc.id,
-        companyId: typeof data.companyId === 'string' ? data.companyId : undefined,
-        apartmentId: typeof data.apartmentId === 'string' ? data.apartmentId : '',
-        email: typeof data.email === 'string' ? data.email : '',
-        status: typeof data.status === 'string' ? data.status : 'pending',
-        token: typeof data.token === 'string' ? data.token : undefined,
-        tokenHash: typeof data.tokenHash === 'string' ? data.tokenHash : undefined,
-        invitedByUid: typeof data.invitedByUid === 'string' ? data.invitedByUid : undefined,
-        createdAt:
-          data.createdAt && typeof (data.createdAt as { toDate?: () => Date }).toDate === 'function'
-            ? (data.createdAt as { toDate: () => Date }).toDate()
-            : new Date(),
-        expiresAt,
-      };
-    });
+    const items = snapshot.docs.map((doc) => this.invitationPublicItem(doc));
 
     void this.auditLogService.write({
       request,
@@ -585,27 +645,14 @@ export class InvitationsService {
 
     const doc = snapshot.docs[0];
     const data = doc.data() as Record<string, unknown>;
-    const invitation = {
-      id: doc.id,
-      companyId: typeof data.companyId === 'string' ? data.companyId : undefined,
-      apartmentId: typeof data.apartmentId === 'string' ? data.apartmentId : '',
-      email: typeof data.email === 'string' ? data.email : '',
-      status: typeof data.status === 'string' ? data.status : 'pending',
-      token: typeof data.token === 'string' ? data.token : undefined,
-      tokenHash: typeof data.tokenHash === 'string' ? data.tokenHash : undefined,
-      invitedByUid: typeof data.invitedByUid === 'string' ? data.invitedByUid : undefined,
-      createdAt:
-        data.createdAt && typeof (data.createdAt as { toDate?: () => Date }).toDate === 'function'
-          ? (data.createdAt as { toDate: () => Date }).toDate()
-          : new Date(),
-      expiresAt:
-        data.expiresAt && typeof (data.expiresAt as { toDate?: () => Date }).toDate === 'function'
-          ? (data.expiresAt as { toDate: () => Date }).toDate()
-          : undefined,
-    };
+    const invitation = this.invitationPublicItem(doc);
 
-    if (user.companyId && invitation.companyId && user.companyId !== invitation.companyId) {
-      throw new ForbiddenException('Access denied for invitation company');
+    if (isStaffRole(user.role)) {
+      if (!invitation.companyId || this.effectiveStaffCompanyId(user) !== invitation.companyId) {
+        throw new ForbiddenException('Access denied for invitation company');
+      }
+    } else if (normalizeEmail(user.email ?? '') !== normalized) {
+      throw new ForbiddenException('Access denied for invitation email');
     }
 
     return { invitation };
@@ -625,7 +672,7 @@ export class InvitationsService {
 
     const data = snap.data() as Record<string, unknown>;
     const companyId = typeof data.companyId === 'string' ? data.companyId : undefined;
-    if (user.companyId && companyId && user.companyId !== companyId) {
+    if (!companyId || this.effectiveStaffCompanyId(user) !== companyId) {
       throw new ForbiddenException('Access denied for invitation company');
     }
 

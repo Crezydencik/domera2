@@ -48,7 +48,7 @@ export class InvitationsController {
 
   @Get('by-email')
   @UseGuards(FirebaseAuthGuard, RolesGuard)
-  @Roles('ManagementCompany', 'Accountant', 'Resident')
+  @Roles('ManagementCompany', 'Accountant', ...PROPERTY_MEMBER_ROLES)
   @ApiOperation({ summary: 'Find invitation by email' })
   @ApiBearerAuth()
   @ApiCookieAuth('__session')
@@ -63,7 +63,7 @@ export class InvitationsController {
 
   @Post('send')
   @UseGuards(FirebaseAuthGuard, RolesGuard)
-  @Roles('ManagementCompany', 'Accountant', 'Resident')
+  @Roles('ManagementCompany', 'Accountant', ...PROPERTY_MEMBER_ROLES)
   @ApiOperation({ summary: 'Send a resident invitation' })
   @ApiBearerAuth()
   @ApiCookieAuth('__session')

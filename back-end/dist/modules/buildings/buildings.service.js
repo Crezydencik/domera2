@@ -29,6 +29,19 @@ let BuildingsService = class BuildingsService {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
     }
+    effectiveManagementCompanyId(user) {
+        const companyId = this.firstString(user.companyId);
+        if (companyId)
+            return companyId;
+        if (user.role === 'ManagementCompany')
+            return user.uid;
+        throw new common_1.ForbiddenException('Company scope is required');
+    }
+    assertManagementCompanyScope(user, companyId) {
+        if (this.effectiveManagementCompanyId(user) !== companyId) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
+    }
     assertPlatformAdmin(user) {
         if (!user?.uid)
             throw new common_1.UnauthorizedException('Authentication required');
@@ -197,6 +210,9 @@ let BuildingsService = class BuildingsService {
     isApartmentOccupied(apartment) {
         const residentId = typeof apartment.residentId === 'string' ? apartment.residentId.trim() : '';
         if (residentId) {
+            return true;
+        }
+        if (apartment.ownerActivated === true || apartment.ownerActivated === 'true') {
             return true;
         }
         const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
@@ -616,9 +632,7 @@ let BuildingsService = class BuildingsService {
         const normalizedCompanyId = companyId?.trim();
         if (!normalizedCompanyId)
             throw new common_1.BadRequestException('companyId is required');
-        if (user.companyId && user.companyId !== normalizedCompanyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertManagementCompanyScope(user, normalizedCompanyId);
         await this.enforceRateLimit(request, 'buildings:creation-access', `${user.uid}:${normalizedCompanyId}`, 40);
         const access = await this.getCompanyCreationAccess(normalizedCompanyId);
         return {
@@ -632,12 +646,10 @@ let BuildingsService = class BuildingsService {
     }
     async requestCreationAccess(request, user, payload) {
         this.assertManagement(user);
-        const normalizedCompanyId = this.firstString(payload.companyId, user.companyId);
+        const normalizedCompanyId = this.firstString(payload.companyId, this.effectiveManagementCompanyId(user));
         if (!normalizedCompanyId)
             throw new common_1.BadRequestException('companyId is required');
-        if (user.companyId && user.companyId !== normalizedCompanyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertManagementCompanyScope(user, normalizedCompanyId);
         await this.enforceRateLimit(request, 'buildings:creation-access-request', `${user.uid}:${normalizedCompanyId}`, 10);
         const companySummary = await this.getCompanySummary(normalizedCompanyId);
         const rawBuilding = payload.building && typeof payload.building === 'object'
@@ -903,9 +915,7 @@ let BuildingsService = class BuildingsService {
             const companyId = this.firstString(pendingBuildingData.companyId, pendingBuildingData.managedBy?.companyId);
             if (!companyId)
                 throw new common_1.BadRequestException('companyId is missing for request');
-            if (user.companyId && user.companyId !== companyId) {
-                throw new common_1.ForbiddenException('Access denied for company');
-            }
+            this.assertManagementCompanyScope(user, companyId);
             const requestedBy = this.firstString(pendingBuildingData.requestedBy);
             if (requestedBy && requestedBy !== user.uid && user.role !== 'Accountant') {
                 throw new common_1.ForbiddenException('Only the requester can cancel this building creation request');
@@ -950,9 +960,7 @@ let BuildingsService = class BuildingsService {
         const normalizedCompanyId = companyId?.trim();
         if (!normalizedCompanyId)
             throw new common_1.BadRequestException('companyId is required');
-        if (user.companyId && user.companyId !== normalizedCompanyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertManagementCompanyScope(user, normalizedCompanyId);
         await this.enforceRateLimit(request, 'buildings:list', `${user.uid}:${normalizedCompanyId}`, 50);
         const db = this.firebaseAdminService.firestore;
         const [legacySnap, managedBySnap] = await Promise.all([
@@ -1065,9 +1073,8 @@ let BuildingsService = class BuildingsService {
         const companyId = typeof data.companyId === 'string'
             ? data.companyId
             : data.managedBy?.companyId;
-        if (user.companyId && companyId && user.companyId !== companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        if (companyId)
+            this.assertManagementCompanyScope(user, companyId);
         const occupancyStats = companyId ? await this.getBuildingOccupancyStats(companyId) : undefined;
         return this.applyOccupancyStats(snap.id, data, occupancyStats?.get(snap.id));
     }
@@ -1076,9 +1083,7 @@ let BuildingsService = class BuildingsService {
         const companyId = typeof payload.companyId === 'string' ? payload.companyId.trim() : '';
         if (!companyId)
             throw new common_1.BadRequestException('companyId is required');
-        if (user.companyId && user.companyId !== companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertManagementCompanyScope(user, companyId);
         await this.enforceRateLimit(request, 'buildings:create', `${user.uid}:${companyId}`, 20);
         throw new common_1.ForbiddenException('Building creation requires an approved building request');
     }
@@ -1096,9 +1101,8 @@ let BuildingsService = class BuildingsService {
         const companyId = typeof current.companyId === 'string'
             ? current.companyId
             : current.managedBy?.companyId;
-        if (user.companyId && companyId && user.companyId !== companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        if (companyId)
+            this.assertManagementCompanyScope(user, companyId);
         if (!companyId) {
             throw new common_1.BadRequestException('companyId is missing for building');
         }
@@ -1159,9 +1163,8 @@ let BuildingsService = class BuildingsService {
         const companyId = typeof current.companyId === 'string'
             ? current.companyId
             : current.managedBy?.companyId;
-        if (user.companyId && companyId && user.companyId !== companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        if (companyId)
+            this.assertManagementCompanyScope(user, companyId);
         if (!companyId) {
             throw new common_1.BadRequestException('companyId is missing for building');
         }

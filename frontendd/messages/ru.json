@@ -522,7 +522,7 @@
       "apartments": "Квартиры",
       "totalObjects": "Всего домов и квартир",
       "meterReadings": "Показания счётчиков",
-      "submittedThisMonth": "Квартир сдали в этом месяце: {coverage}%",
+      "submittedThisMonth": "Сдали в периоде: {coverage}%",
       "month": "Месяц: {month}",
       "submissionPeriod": "Период сдачи: {period}",
       "openReadings": "Открыть показания"

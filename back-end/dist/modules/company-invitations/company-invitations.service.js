@@ -29,6 +29,18 @@ let CompanyInvitationsService = class CompanyInvitationsService {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
     }
+    effectiveCompanyId(user) {
+        if (user.companyId)
+            return user.companyId;
+        if (user.role === 'ManagementCompany')
+            return user.uid;
+        throw new common_1.ForbiddenException('Company scope is required');
+    }
+    assertCompanyScope(user, companyId) {
+        if (this.effectiveCompanyId(user) !== companyId) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
+    }
     async list(request, user, companyId, buildingId) {
         this.assertManagerOrAccountant(user);
         if (!companyId || !buildingId) {
@@ -38,9 +50,7 @@ let CompanyInvitationsService = class CompanyInvitationsService {
         if (!rl.allowed) {
             throw new common_1.BadRequestException('Too many requests');
         }
-        if (user.companyId && user.companyId !== companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertCompanyScope(user, companyId);
         const db = this.firebaseAdminService.firestore;
         const buildingSnap = await db.collection('buildings').doc(buildingId).get();
         if (!buildingSnap.exists)
@@ -88,9 +98,7 @@ let CompanyInvitationsService = class CompanyInvitationsService {
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'company-invitation:send', user.uid), 10, 60_000);
         if (!rl.allowed)
             throw new common_1.BadRequestException('Too many requests');
-        if (user.companyId && user.companyId !== companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertCompanyScope(user, companyId);
         const db = this.firebaseAdminService.firestore;
         const buildingSnap = await db.collection('buildings').doc(buildingId).get();
         if (!buildingSnap.exists)

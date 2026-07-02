@@ -44,6 +44,13 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
     isStaff(user) {
         return (0, role_constants_1.isStaffRole)(user.role);
     }
+    requireStaffCompanyId(user) {
+        const companyId = this.firstString(user.companyId);
+        if (!companyId) {
+            throw new common_1.ForbiddenException('Company scope is required');
+        }
+        return companyId;
+    }
     firstString(...values) {
         for (const value of values) {
             if (typeof value === 'string' && value.trim()) {
@@ -602,14 +609,15 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         };
     }
     async getPendingApprovalBuildingIds(params) {
-        const requestedCompanyId = this.firstString(params.companyId, params.user.companyId);
+        const staffCompanyId = this.requireStaffCompanyId(params.user);
+        const requestedCompanyId = this.firstString(params.companyId, staffCompanyId);
         const requestedBuildingId = this.firstString(params.buildingId);
-        if (params.user.companyId && requestedCompanyId && requestedCompanyId !== params.user.companyId) {
+        if (requestedCompanyId !== staffCompanyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         if (requestedBuildingId) {
             const buildingCompanyId = await this.getBuildingCompanyId(requestedBuildingId);
-            if (params.user.companyId && buildingCompanyId !== params.user.companyId) {
+            if (buildingCompanyId !== staffCompanyId) {
                 throw new common_1.ForbiddenException('Access denied for building');
             }
             if (requestedCompanyId && buildingCompanyId !== requestedCompanyId) {
@@ -644,7 +652,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const buildingId = this.firstString(snap.ref.parent.parent?.id);
         const data = this.pendingApprovalItemFromDoc(snap, buildingId);
         const companyId = this.firstString(data.companyId);
-        if (user.companyId && companyId && companyId !== user.companyId) {
+        if (!companyId || companyId !== this.requireStaffCompanyId(user)) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         return {
@@ -655,16 +663,20 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
     }
     async getStaffInvoiceApartmentContexts(params) {
         const db = this.firebaseAdminService.firestore;
-        const requestedCompanyId = this.firstString(params.companyId, params.user.companyId);
+        const staffCompanyId = this.requireStaffCompanyId(params.user);
+        const requestedCompanyId = this.firstString(params.companyId, staffCompanyId);
         const requestedApartmentId = this.firstString(params.apartmentId);
         const requestedBuildingId = this.firstString(params.buildingId);
+        if (requestedCompanyId !== staffCompanyId) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
         if (requestedApartmentId) {
             const snap = await db.collection('apartments').doc(requestedApartmentId).get();
             if (!snap.exists) {
                 throw new common_1.NotFoundException('Apartment not found');
             }
             const apartment = snap.data();
-            if (params.user.companyId && !this.apartmentMatchesInvoiceFilters({ apartment, companyId: params.user.companyId })) {
+            if (!this.apartmentMatchesInvoiceFilters({ apartment, companyId: staffCompanyId })) {
                 throw new common_1.ForbiddenException('Access denied for apartment');
             }
             if (!this.apartmentMatchesInvoiceFilters({
@@ -735,15 +747,13 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         return this.invoiceLocationFromDoc(doc);
     }
     resolveTargetCompanyId(params) {
+        const staffCompanyId = this.requireStaffCompanyId(params.user);
         const payloadCompanyId = this.firstString(params.payload.companyId, params.payload.company_id);
-        if (params.user.companyId && payloadCompanyId && payloadCompanyId !== params.user.companyId) {
+        if (payloadCompanyId && payloadCompanyId !== staffCompanyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         const apartmentCompanyIds = this.extractCompanyIds(params.apartment);
-        const companyId = params.user.companyId || payloadCompanyId || params.buildingCompanyId || apartmentCompanyIds[0] || '';
-        if (!companyId) {
-            throw new common_1.ForbiddenException('Company scope is required');
-        }
+        const companyId = staffCompanyId;
         if (params.buildingCompanyId && params.buildingCompanyId !== companyId) {
             throw new common_1.ForbiddenException('Access denied for building/company ownership');
         }
@@ -1995,7 +2005,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const apartment = apartmentSnap.data();
         const companyId = this.firstString(data.companyId);
         const buildingId = this.firstString(data.buildingId, approval.buildingId);
-        if (user.companyId && companyId && companyId !== user.companyId) {
+        if (!companyId || companyId !== this.requireStaffCompanyId(user)) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         if (!this.apartmentMatchesInvoiceFilters({ apartment, companyId, buildingId })) {
@@ -2449,18 +2459,19 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         if (!this.isStaff(user)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
+        const staffCompanyId = this.requireStaffCompanyId(user);
         const requestedCompanyId = this.firstString(query.companyId);
-        if (user.companyId && requestedCompanyId && requestedCompanyId !== user.companyId) {
+        if (requestedCompanyId && requestedCompanyId !== staffCompanyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
-        const companyId = requestedCompanyId || user.companyId || '';
+        const companyId = requestedCompanyId || staffCompanyId;
         const requestedBuildingId = this.firstString(query.buildingId, query.building_id);
         const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50));
         const db = this.firebaseAdminService.firestore;
         let buildingIds = [];
         if (requestedBuildingId) {
             const buildingCompanyId = await this.getBuildingCompanyId(requestedBuildingId);
-            if (user.companyId && buildingCompanyId !== user.companyId) {
+            if (buildingCompanyId !== staffCompanyId) {
                 throw new common_1.ForbiddenException('Access denied for building');
             }
             if (companyId && buildingCompanyId !== companyId) {
@@ -2658,10 +2669,11 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const apartmentData = apartmentSnap.data();
         const apartmentCompanyIds = this.extractCompanyIds(apartmentData);
         const payloadCompanyId = typeof payload.companyId === 'string' ? payload.companyId : undefined;
-        if (user.companyId && payloadCompanyId && payloadCompanyId !== user.companyId) {
+        const staffCompanyId = this.requireStaffCompanyId(user);
+        if (payloadCompanyId && payloadCompanyId !== staffCompanyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
-        const targetCompanyId = payloadCompanyId ?? user.companyId ?? apartmentCompanyIds[0];
+        const targetCompanyId = staffCompanyId;
         if (!targetCompanyId || !apartmentCompanyIds.includes(targetCompanyId)) {
             throw new common_1.ForbiddenException('Access denied for apartment/company ownership');
         }
@@ -2749,7 +2761,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const targetCompanyId = typeof data.companyId === 'string' ? data.companyId : undefined;
         const apartmentId = typeof data.apartmentId === 'string' ? data.apartmentId : undefined;
         if (this.isStaff(user)) {
-            if (user.companyId && targetCompanyId && user.companyId !== targetCompanyId) {
+            if (!targetCompanyId || this.requireStaffCompanyId(user) !== targetCompanyId) {
                 throw new common_1.ForbiddenException('Access denied for company');
             }
         }
@@ -2818,7 +2830,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const invoice = await this.findInvoiceDocument(invoiceId, user);
         const invoiceData = invoice.data;
         const targetCompanyId = typeof invoiceData.companyId === 'string' ? invoiceData.companyId : undefined;
-        if (user.companyId && targetCompanyId && user.companyId !== targetCompanyId) {
+        if (!targetCompanyId || this.requireStaffCompanyId(user) !== targetCompanyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         const apartmentId = this.firstString(invoice.apartmentId, invoiceData.apartmentId);
@@ -2866,7 +2878,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const ref = invoice.ref;
         const current = invoice.data;
         const targetCompanyId = typeof current.companyId === 'string' ? current.companyId : undefined;
-        if (user.companyId && targetCompanyId && user.companyId !== targetCompanyId) {
+        if (!targetCompanyId || this.requireStaffCompanyId(user) !== targetCompanyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         const nextPayload = { ...payload, updatedAt: new Date() };
@@ -2900,7 +2912,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const ref = invoice.ref;
         const current = invoice.data;
         const targetCompanyId = typeof current.companyId === 'string' ? current.companyId : undefined;
-        if (user.companyId && targetCompanyId && user.companyId !== targetCompanyId) {
+        if (!targetCompanyId || this.requireStaffCompanyId(user) !== targetCompanyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         const storagePath = typeof current.storagePath === 'string' ? current.storagePath : '';

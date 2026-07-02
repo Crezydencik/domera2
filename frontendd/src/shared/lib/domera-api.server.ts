@@ -13,6 +13,7 @@ import type {
 } from "./data";
 import { DashboardRole, normalizeDashboardRole } from "../role-ui";
 import { ROUTES } from "./routes";
+import { buildCookieHeaderFromStore } from "./cookie-header.server";
 
 function resolveServerApiBaseUrl() {
   const configured = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -208,13 +209,6 @@ function formatDate(value: unknown): string {
   }
 
   return "—";
-}
-
-function buildCookieHeader(store: Awaited<ReturnType<typeof cookies>>): string {
-  return store
-    .getAll()
-    .map((item) => `${item.name}=${item.value}`)
-    .join("; ");
 }
 
 function toBuilding(item: UnknownRecord): Building {
@@ -548,8 +542,7 @@ function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] 
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const store = await cookies();
-  const cookieHeader = buildCookieHeader(store);
-  const authToken = decodeCookieValue(store.get("authToken")?.value);
+  const cookieHeader = buildCookieHeaderFromStore(store);
   const url = `${appConfig.apiBaseUrl}${path}`;
   const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const headers = new Headers(init?.headers);
@@ -564,10 +557,6 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
   if (cookieHeader && !headers.has("Cookie")) {
     headers.set("Cookie", cookieHeader);
-  }
-
-  if (authToken && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${authToken}`);
   }
 
   let response: Response;
@@ -605,7 +594,6 @@ async function apiFetchSafe<T>(path: string): Promise<T | null> {
 async function getAuthenticatedContext(roleHint?: string) {
   const store = await cookies();
   const sessionCookie = store.get("__session")?.value?.trim();
-  const authToken = decodeCookieValue(store.get("authToken")?.value);
   const userId = decodeCookieValue(store.get("userId")?.value);
   const email = decodeCookieValue(store.get("userEmail")?.value);
   const name = decodeCookieValue(store.get("userName")?.value);
@@ -617,7 +605,7 @@ async function getAuthenticatedContext(roleHint?: string) {
   const companyIdCookie = decodeCookieValue(store.get("domera_companyId")?.value);
   const apartmentIdCookie = decodeCookieValue(store.get("domera_apartmentId")?.value);
 
-  if (!sessionCookie && !authToken) {
+  if (!sessionCookie) {
     redirectToExpiredLogin();
   }
 

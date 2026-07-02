@@ -30,6 +30,19 @@ export class BuildingsService {
     }
   }
 
+  private effectiveManagementCompanyId(user: RequestUser): string {
+    const companyId = this.firstString(user.companyId);
+    if (companyId) return companyId;
+    if (user.role === 'ManagementCompany') return user.uid;
+    throw new ForbiddenException('Company scope is required');
+  }
+
+  private assertManagementCompanyScope(user: RequestUser, companyId: string): void {
+    if (this.effectiveManagementCompanyId(user) !== companyId) {
+      throw new ForbiddenException('Access denied for company');
+    }
+  }
+
   private assertPlatformAdmin(user: RequestUser | undefined): asserts user is RequestUser {
     if (!user?.uid) throw new UnauthorizedException('Authentication required');
     if (!isPlatformAdminRole(user.role)) {
@@ -251,6 +264,10 @@ export class BuildingsService {
   private isApartmentOccupied(apartment: Record<string, unknown>) {
     const residentId = typeof apartment.residentId === 'string' ? apartment.residentId.trim() : '';
     if (residentId) {
+      return true;
+    }
+
+    if (apartment.ownerActivated === true || apartment.ownerActivated === 'true') {
       return true;
     }
 
@@ -856,9 +873,7 @@ export class BuildingsService {
     this.assertManagement(user);
     const normalizedCompanyId = companyId?.trim();
     if (!normalizedCompanyId) throw new BadRequestException('companyId is required');
-    if (user.companyId && user.companyId !== normalizedCompanyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertManagementCompanyScope(user, normalizedCompanyId);
 
     await this.enforceRateLimit(request, 'buildings:creation-access', `${user.uid}:${normalizedCompanyId}`, 40);
     const access = await this.getCompanyCreationAccess(normalizedCompanyId);
@@ -876,11 +891,9 @@ export class BuildingsService {
   async requestCreationAccess(request: Request, user: RequestUser, payload: Record<string, unknown>) {
     this.assertManagement(user);
 
-    const normalizedCompanyId = this.firstString(payload.companyId, user.companyId);
+    const normalizedCompanyId = this.firstString(payload.companyId, this.effectiveManagementCompanyId(user));
     if (!normalizedCompanyId) throw new BadRequestException('companyId is required');
-    if (user.companyId && user.companyId !== normalizedCompanyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertManagementCompanyScope(user, normalizedCompanyId);
 
     await this.enforceRateLimit(request, 'buildings:creation-access-request', `${user.uid}:${normalizedCompanyId}`, 10);
 
@@ -1228,9 +1241,7 @@ export class BuildingsService {
     if (pendingBuildingData && this.firstString(pendingBuildingData.status).toLowerCase() === 'pending') {
       const companyId = this.firstString(pendingBuildingData.companyId, (pendingBuildingData.managedBy as Record<string, unknown> | undefined)?.companyId);
       if (!companyId) throw new BadRequestException('companyId is missing for request');
-      if (user.companyId && user.companyId !== companyId) {
-        throw new ForbiddenException('Access denied for company');
-      }
+      this.assertManagementCompanyScope(user, companyId);
 
       const requestedBy = this.firstString(pendingBuildingData.requestedBy);
       if (requestedBy && requestedBy !== user.uid && user.role !== 'Accountant') {
@@ -1292,9 +1303,7 @@ export class BuildingsService {
     this.assertManagement(user);
     const normalizedCompanyId = companyId?.trim();
     if (!normalizedCompanyId) throw new BadRequestException('companyId is required');
-    if (user.companyId && user.companyId !== normalizedCompanyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertManagementCompanyScope(user, normalizedCompanyId);
 
     await this.enforceRateLimit(request, 'buildings:list', `${user.uid}:${normalizedCompanyId}`, 50);
 
@@ -1473,9 +1482,7 @@ export class BuildingsService {
       ? data.companyId
       : ((data.managedBy as Record<string, unknown> | undefined)?.companyId as string | undefined);
 
-    if (user.companyId && companyId && user.companyId !== companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    if (companyId) this.assertManagementCompanyScope(user, companyId);
 
     const occupancyStats = companyId ? await this.getBuildingOccupancyStats(companyId) : undefined;
 
@@ -1487,9 +1494,7 @@ export class BuildingsService {
 
     const companyId = typeof payload.companyId === 'string' ? payload.companyId.trim() : '';
     if (!companyId) throw new BadRequestException('companyId is required');
-    if (user.companyId && user.companyId !== companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertManagementCompanyScope(user, companyId);
 
     await this.enforceRateLimit(request, 'buildings:create', `${user.uid}:${companyId}`, 20);
     throw new ForbiddenException('Building creation requires an approved building request');
@@ -1511,9 +1516,7 @@ export class BuildingsService {
       ? current.companyId
       : ((current.managedBy as Record<string, unknown> | undefined)?.companyId as string | undefined);
 
-    if (user.companyId && companyId && user.companyId !== companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    if (companyId) this.assertManagementCompanyScope(user, companyId);
 
     if (!companyId) {
       throw new BadRequestException('companyId is missing for building');
@@ -1597,9 +1600,7 @@ export class BuildingsService {
       ? current.companyId
       : ((current.managedBy as Record<string, unknown> | undefined)?.companyId as string | undefined);
 
-    if (user.companyId && companyId && user.companyId !== companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    if (companyId) this.assertManagementCompanyScope(user, companyId);
 
     if (!companyId) {
       throw new BadRequestException('companyId is missing for building');

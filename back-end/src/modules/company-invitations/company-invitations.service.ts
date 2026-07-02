@@ -28,6 +28,18 @@ export class CompanyInvitationsService {
     }
   }
 
+  private effectiveCompanyId(user: RequestUser): string {
+    if (user.companyId) return user.companyId;
+    if (user.role === 'ManagementCompany') return user.uid;
+    throw new ForbiddenException('Company scope is required');
+  }
+
+  private assertCompanyScope(user: RequestUser, companyId: string): void {
+    if (this.effectiveCompanyId(user) !== companyId) {
+      throw new ForbiddenException('Access denied for company');
+    }
+  }
+
   async list(request: Request, user: RequestUser, companyId?: string, buildingId?: string) {
     this.assertManagerOrAccountant(user);
     if (!companyId || !buildingId) {
@@ -43,9 +55,7 @@ export class CompanyInvitationsService {
       throw new BadRequestException('Too many requests');
     }
 
-    if (user.companyId && user.companyId !== companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertCompanyScope(user, companyId);
 
     const db = this.firebaseAdminService.firestore;
     const buildingSnap = await db.collection('buildings').doc(buildingId).get();
@@ -108,9 +118,7 @@ export class CompanyInvitationsService {
     );
     if (!rl.allowed) throw new BadRequestException('Too many requests');
 
-    if (user.companyId && user.companyId !== companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertCompanyScope(user, companyId);
 
     const db = this.firebaseAdminService.firestore;
     const buildingSnap = await db.collection('buildings').doc(buildingId).get();

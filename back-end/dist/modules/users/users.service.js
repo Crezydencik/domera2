@@ -537,11 +537,11 @@ let UsersService = class UsersService {
         if (!snap.exists)
             throw new common_1.BadRequestException('User profile not found');
         const current = snap.data();
+        const targetCompanyId = typeof current.companyId === 'string' ? current.companyId : '';
         if (this.isStaff(user) &&
             !this.isPlatformAdmin(user) &&
-            typeof current.companyId === 'string' &&
-            user.companyId &&
-            current.companyId !== user.companyId) {
+            targetCompanyId &&
+            (!user.companyId || targetCompanyId !== user.companyId)) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         const normalizedPayload = this.normalizeProfilePayload(user, userId, current, payload);

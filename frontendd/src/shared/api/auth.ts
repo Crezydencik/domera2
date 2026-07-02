@@ -23,7 +23,6 @@ export type RegisterInput = {
 };
 
 type FirebaseAuthResult = {
-  idToken: string;
   userId: string;
   email: string;
   preview: boolean;
@@ -54,7 +53,6 @@ type BackendAuthResponse = {
   success?: boolean;
   userId?: string;
   email?: string;
-  idToken?: string;
   role?: string;
   accountType?: string;
   companyId?: string;
@@ -130,7 +128,6 @@ export function accountTypeToDashboardRole(accountType: PublicAccountType): stri
 }
 
 function persistSessionHints(params: {
-  idToken?: string;
   role: PublicUserRole;
   accountType: PublicAccountType;
   email: string;
@@ -151,10 +148,6 @@ function persistSessionHints(params: {
   document.cookie = `domera_accountType=${accountTypeValue}${cookieSuffix}`;
   document.cookie = `domera_role=${roleValue}${cookieSuffix}`;
   document.cookie = `userEmail=${encodeURIComponent(params.email)}${cookieSuffix}`;
-
-  if (params.idToken) {
-    document.cookie = `authToken=${encodeURIComponent(params.idToken)}${cookieSuffix}`;
-  }
 
   if (params.name) {
     document.cookie = `userName=${encodeURIComponent(params.name)}${cookieSuffix}`;
@@ -225,7 +218,6 @@ function mapAuthResponse(data: BackendAuthResponse, fallbackEmail: string, fallb
   }
 
   return {
-    idToken: data.idToken ?? "",
     userId: data.userId,
     email: data.email ?? fallbackEmail,
     preview: false,
@@ -302,7 +294,6 @@ export async function verifyRegistrationCode(email: string, code: string): Promi
 }
 
 export async function establishUserSession(params: {
-  idToken: string;
   userId: string;
   email: string;
   role?: PublicUserRole;
@@ -315,7 +306,6 @@ export async function establishUserSession(params: {
   const resolvedAccountType = normalizeAccountType(params.accountType ?? resolvedRole);
 
   persistSessionHints({
-    idToken: params.idToken,
     role: resolvedRole,
     accountType: resolvedAccountType,
     email: params.email,
@@ -335,7 +325,6 @@ export async function establishUserSession(params: {
       const profileAccountType = normalizeAccountType(profile.accountType ?? profileRole ?? resolvedAccountType);
 
       persistSessionHints({
-        idToken: params.idToken,
         role: profileRole,
         accountType: profileAccountType,
         email: params.email,

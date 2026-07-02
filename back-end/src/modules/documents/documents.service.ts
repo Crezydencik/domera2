@@ -82,6 +82,12 @@ export class DocumentsService {
     if (!user?.uid || !user.role) throw new UnauthorizedException('Authentication required');
   }
 
+  private requireStaffCompanyId(user: RequestUser): string {
+    const companyId = this.firstString(user.companyId);
+    if (!companyId) throw new ForbiddenException('Company scope is required');
+    return companyId;
+  }
+
   private firstString(...values: unknown[]): string {
     for (const value of values) {
       if (typeof value === 'string' && value.trim()) return value.trim();
@@ -392,7 +398,7 @@ export class DocumentsService {
 
     if (isStaffRole(user.role)) {
       const companyId = this.firstString(document.companyId);
-      return !user.companyId || !companyId || user.companyId === companyId;
+      return Boolean(companyId && this.requireStaffCompanyId(user) === companyId);
     }
 
     if (!isPropertyMemberRole(user.role)) return false;
@@ -545,7 +551,7 @@ export class DocumentsService {
       companyId = this.resolveCompanyId(building, companyId);
       buildingName = this.firstString(building.name, building.address, buildingId);
 
-      if (isStaffRole(user.role) && user.companyId && companyId && user.companyId !== companyId) {
+      if (isStaffRole(user.role) && (!companyId || this.requireStaffCompanyId(user) !== companyId)) {
         throw new ForbiddenException('Access denied for building');
       }
 
@@ -562,7 +568,7 @@ export class DocumentsService {
       const apartmentCompanyId = this.resolveCompanyId(apartment, companyId);
       const canStaffAttach = scope === 'apartmentResidents'
         && isStaffRole(user.role)
-        && (!user.companyId || !apartmentCompanyId || user.companyId === apartmentCompanyId);
+        && Boolean(apartmentCompanyId && this.requireStaffCompanyId(user) === apartmentCompanyId);
       const canMemberAttach = this.isApartmentMember(apartment, user);
       if (!canStaffAttach && !canMemberAttach) throw new ForbiddenException('Access denied for apartment');
 
@@ -650,7 +656,7 @@ export class DocumentsService {
       currentScope !== 'apartmentPrivate' &&
       currentScope !== 'platformPrivate' &&
       isStaffRole(user.role) &&
-      (!user.companyId || this.firstString(current.companyId) === user.companyId);
+      this.firstString(current.companyId) === this.requireStaffCompanyId(user);
 
     if (!ownsDocument && !canPlatformAdminManage && !canStaffManage) {
       throw new ForbiddenException('Access denied for document');
@@ -682,7 +688,7 @@ export class DocumentsService {
       companyId = this.resolveCompanyId(building, companyId);
       buildingName = this.firstString(building.name, building.address, buildingId);
 
-      if (user.companyId && companyId && user.companyId !== companyId) {
+      if (isStaffRole(user.role) && (!companyId || this.requireStaffCompanyId(user) !== companyId)) {
         throw new ForbiddenException('Access denied for building');
       }
 
@@ -722,7 +728,7 @@ export class DocumentsService {
       const apartmentCompanyId = this.resolveCompanyId(apartment, companyId);
       const canStaffAttach = nextScope === 'apartmentResidents'
         && isStaffRole(user.role)
-        && (!user.companyId || !apartmentCompanyId || user.companyId === apartmentCompanyId);
+        && Boolean(apartmentCompanyId && this.requireStaffCompanyId(user) === apartmentCompanyId);
       const canMemberAttach = this.isApartmentMember(apartment, user);
       if (!canStaffAttach && !canMemberAttach) throw new ForbiddenException('Access denied for apartment');
 
@@ -825,7 +831,7 @@ export class DocumentsService {
       scope !== 'apartmentPrivate' &&
       scope !== 'platformPrivate' &&
       isStaffRole(user.role) &&
-      (!user.companyId || this.firstString(data.companyId) === user.companyId);
+      this.firstString(data.companyId) === this.requireStaffCompanyId(user);
 
     if (!ownsDocument && !canPlatformAdminManage && !canManage) throw new ForbiddenException('Access denied for document');
 

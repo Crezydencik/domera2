@@ -1,5 +1,5 @@
-import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
+import { buildRequestCookieHeader } from "@/shared/lib/cookie-header.server";
 
 function resolveApiBaseUrl() {
   const configured = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -10,20 +10,12 @@ function resolveApiBaseUrl() {
   return "http://127.0.0.1:4000/api";
 }
 
-async function buildCookieHeader() {
-  const store = await cookies();
-  return store
-    .getAll()
-    .map((item) => `${item.name}=${item.value}`)
-    .join("; ");
-}
-
 export async function GET(
   _request: NextRequest,
   context: { params: Promise<{ invoiceId: string }> },
 ) {
   const { invoiceId } = await context.params;
-  const cookieHeader = await buildCookieHeader();
+  const cookieHeader = await buildRequestCookieHeader();
   const response = await fetch(`${resolveApiBaseUrl()}/invoices/${encodeURIComponent(invoiceId)}/pdf`, {
     headers: cookieHeader ? { Cookie: cookieHeader } : undefined,
     cache: "no-store",

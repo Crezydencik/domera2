@@ -9,6 +9,8 @@ export declare class CompanyInvitationsService {
     private readonly auditLogService;
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService);
     private assertManagerOrAccountant;
+    private effectiveCompanyId;
+    private assertCompanyScope;
     list(request: Request, user: RequestUser, companyId?: string, buildingId?: string): Promise<{
         invitations: {
             id: string;

@@ -24,6 +24,19 @@ export class NewsService {
     }
   }
 
+  private effectiveCompanyId(user: RequestUser): string {
+    if (user.companyId) return user.companyId;
+    if (user.role === 'ManagementCompany') return user.uid;
+    throw new ForbiddenException('Company scope is required');
+  }
+
+  private assertCompanyScope(user: RequestUser, companyId: unknown): void {
+    const normalizedCompanyId = typeof companyId === 'string' ? companyId.trim() : '';
+    if (!normalizedCompanyId || this.effectiveCompanyId(user) !== normalizedCompanyId) {
+      throw new ForbiddenException('Access denied for company');
+    }
+  }
+
   private async enforceRateLimit(
     request: Request,
     scope: string,
@@ -42,9 +55,7 @@ export class NewsService {
     this.assertManagement(user);
     const normalizedCompanyId = companyId?.trim();
     if (!normalizedCompanyId) throw new BadRequestException('companyId is required');
-    if (user.companyId && user.companyId !== normalizedCompanyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertCompanyScope(user, normalizedCompanyId);
 
     await this.enforceRateLimit(request, 'news:list', `${user.uid}:${normalizedCompanyId}`, 60);
 
@@ -68,9 +79,7 @@ export class NewsService {
     if (!snap.exists) throw new NotFoundException('News not found');
 
     const data = snap.data() as Record<string, unknown>;
-    if (user.companyId && typeof data.companyId === 'string' && user.companyId !== data.companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertCompanyScope(user, data.companyId);
 
     return { id: snap.id, ...data };
   }
@@ -83,9 +92,7 @@ export class NewsService {
 
     if (!companyId) throw new BadRequestException('companyId is required');
     if (!title) throw new BadRequestException('title is required');
-    if (user.companyId && user.companyId !== companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertCompanyScope(user, companyId);
 
     await this.enforceRateLimit(request, 'news:create', `${user.uid}:${companyId}`, 30);
 
@@ -113,9 +120,7 @@ export class NewsService {
     if (!snap.exists) throw new NotFoundException('News not found');
 
     const current = snap.data() as Record<string, unknown>;
-    if (user.companyId && typeof current.companyId === 'string' && user.companyId !== current.companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertCompanyScope(user, current.companyId);
 
     await ref.set({ ...payload, updatedAt: new Date() }, { merge: true });
     return { success: true };
@@ -132,9 +137,7 @@ export class NewsService {
     if (!snap.exists) throw new NotFoundException('News not found');
 
     const current = snap.data() as Record<string, unknown>;
-    if (user.companyId && typeof current.companyId === 'string' && user.companyId !== current.companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertCompanyScope(user, current.companyId);
 
     await ref.delete();
     return { success: true };

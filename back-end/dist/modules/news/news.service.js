@@ -25,6 +25,19 @@ let NewsService = class NewsService {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
     }
+    effectiveCompanyId(user) {
+        if (user.companyId)
+            return user.companyId;
+        if (user.role === 'ManagementCompany')
+            return user.uid;
+        throw new common_1.ForbiddenException('Company scope is required');
+    }
+    assertCompanyScope(user, companyId) {
+        const normalizedCompanyId = typeof companyId === 'string' ? companyId.trim() : '';
+        if (!normalizedCompanyId || this.effectiveCompanyId(user) !== normalizedCompanyId) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
+    }
     async enforceRateLimit(request, scope, discriminator, limit) {
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, scope, discriminator), limit, 60_000);
         if (!rl.allowed)
@@ -35,9 +48,7 @@ let NewsService = class NewsService {
         const normalizedCompanyId = companyId?.trim();
         if (!normalizedCompanyId)
             throw new common_1.BadRequestException('companyId is required');
-        if (user.companyId && user.companyId !== normalizedCompanyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertCompanyScope(user, normalizedCompanyId);
         await this.enforceRateLimit(request, 'news:list', `${user.uid}:${normalizedCompanyId}`, 60);
         const snap = await this.firebaseAdminService.firestore
             .collection('news')
@@ -56,9 +67,7 @@ let NewsService = class NewsService {
         if (!snap.exists)
             throw new common_1.NotFoundException('News not found');
         const data = snap.data();
-        if (user.companyId && typeof data.companyId === 'string' && user.companyId !== data.companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertCompanyScope(user, data.companyId);
         return { id: snap.id, ...data };
     }
     async create(request, user, payload) {
@@ -69,9 +78,7 @@ let NewsService = class NewsService {
             throw new common_1.BadRequestException('companyId is required');
         if (!title)
             throw new common_1.BadRequestException('title is required');
-        if (user.companyId && user.companyId !== companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertCompanyScope(user, companyId);
         await this.enforceRateLimit(request, 'news:create', `${user.uid}:${companyId}`, 30);
         const data = {
             ...payload,
@@ -93,9 +100,7 @@ let NewsService = class NewsService {
         if (!snap.exists)
             throw new common_1.NotFoundException('News not found');
         const current = snap.data();
-        if (user.companyId && typeof current.companyId === 'string' && user.companyId !== current.companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertCompanyScope(user, current.companyId);
         await ref.set({ ...payload, updatedAt: new Date() }, { merge: true });
         return { success: true };
     }
@@ -109,9 +114,7 @@ let NewsService = class NewsService {
         if (!snap.exists)
             throw new common_1.NotFoundException('News not found');
         const current = snap.data();
-        if (user.companyId && typeof current.companyId === 'string' && user.companyId !== current.companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertCompanyScope(user, current.companyId);
         await ref.delete();
         return { success: true };
     }

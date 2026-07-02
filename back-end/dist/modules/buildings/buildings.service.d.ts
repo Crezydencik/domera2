@@ -7,6 +7,8 @@ export declare class BuildingsService {
     private readonly rateLimitService;
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService);
     private assertManagement;
+    private effectiveManagementCompanyId;
+    private assertManagementCompanyScope;
     private assertPlatformAdmin;
     private enforceRateLimit;
     private firstString;

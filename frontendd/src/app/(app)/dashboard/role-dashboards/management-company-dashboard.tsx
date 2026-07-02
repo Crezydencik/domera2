@@ -32,6 +32,26 @@ function isReadingFromMonth(reading: RoleDataBundle["meterReadings"][number], mo
   return !Number.isNaN(submittedAt.getTime()) && submittedAt.getMonth() + 1 === month && submittedAt.getFullYear() === year;
 }
 
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function endOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+}
+
+function getReadingSubmittedDate(reading: RoleDataBundle["meterReadings"][number]): Date | null {
+  const submittedAt = new Date(reading.submittedAt);
+  return Number.isNaN(submittedAt.getTime()) ? null : submittedAt;
+}
+
+function isReadingInSubmissionWindow(reading: RoleDataBundle["meterReadings"][number], window: { start: Date; end: Date }) {
+  const submittedAt = getReadingSubmittedDate(reading);
+  if (!submittedAt) return false;
+
+  return submittedAt >= startOfDay(window.start) && submittedAt <= endOfDay(window.end);
+}
+
 function formatMonthLabel(date: Date, locale: string): string {
   return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(date);
 }
@@ -101,9 +121,13 @@ export async function ManagementCompanyDashboard({ data, selectedBuildingId }: {
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();
+  const portfolioSubmissionPeriod = selectedBuilding?.readingConfig?.submissionPeriod;
+  const submissionWindow = resolveSubmissionWindow(portfolioSubmissionPeriod, now);
+  const submissionWindowHasStarted = startOfDay(now) >= startOfDay(submissionWindow.start);
   const submittedApartmentKeys = new Set(
-    data.meterReadings
+    (submissionWindowHasStarted ? data.meterReadings : [])
       .filter((item) => isReadingFromMonth(item, currentMonth, currentYear))
+      .filter((item) => isReadingInSubmissionWindow(item, submissionWindow))
       .filter((item) => {
         if (!effectiveBuildingId) return true;
         if (item.buildingId) return item.buildingId === effectiveBuildingId;
@@ -115,8 +139,6 @@ export async function ManagementCompanyDashboard({ data, selectedBuildingId }: {
   );
   const submittedApartmentCount = submittedApartmentKeys.size;
   const readingCoverage = selectedApartmentCount > 0 ? Math.round((submittedApartmentCount / selectedApartmentCount) * 100) : 0;
-  const portfolioSubmissionPeriod = selectedBuilding?.readingConfig?.submissionPeriod;
-  const submissionWindow = resolveSubmissionWindow(portfolioSubmissionPeriod, now);
   const readingMonthLabel = formatMonthLabel(now, locale);
   const submissionWindowLabel = `${formatShortDate(submissionWindow.start, locale)} - ${formatShortDate(submissionWindow.end, locale)}`;
 

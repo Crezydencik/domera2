@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const current_user_decorator_1 = require("../../common/auth/current-user.decorator");
 const firebase_auth_guard_1 = require("../../common/auth/firebase-auth.guard");
+const role_constants_1 = require("../../common/auth/role.constants");
 const roles_decorator_1 = require("../../common/auth/roles.decorator");
 const roles_guard_1 = require("../../common/auth/roles.guard");
 const invitations_service_1 = require("./invitations.service");
@@ -66,7 +67,7 @@ __decorate([
 __decorate([
     (0, common_1.Get)('by-email'),
     (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)('ManagementCompany', 'Accountant', 'Resident'),
+    (0, roles_decorator_1.Roles)('ManagementCompany', 'Accountant', ...role_constants_1.PROPERTY_MEMBER_ROLES),
     (0, swagger_1.ApiOperation)({ summary: 'Find invitation by email' }),
     (0, swagger_1.ApiBearerAuth)(),
     (0, swagger_1.ApiCookieAuth)('__session'),
@@ -81,7 +82,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('send'),
     (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)('ManagementCompany', 'Accountant', 'Resident'),
+    (0, roles_decorator_1.Roles)('ManagementCompany', 'Accountant', ...role_constants_1.PROPERTY_MEMBER_ROLES),
     (0, swagger_1.ApiOperation)({ summary: 'Send a resident invitation' }),
     (0, swagger_1.ApiBearerAuth)(),
     (0, swagger_1.ApiCookieAuth)('__session'),

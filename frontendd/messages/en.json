@@ -528,7 +528,7 @@
       "apartments": "Apartments",
       "totalObjects": "Total buildings and apartments",
       "meterReadings": "Meter readings",
-      "submittedThisMonth": "Apartments submitted this month: {coverage}%",
+      "submittedThisMonth": "Submitted in period: {coverage}%",
       "month": "Month: {month}",
       "submissionPeriod": "Submission period: {period}",
       "openReadings": "Open readings"

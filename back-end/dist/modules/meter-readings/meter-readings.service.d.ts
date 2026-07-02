@@ -11,6 +11,8 @@ export declare class MeterReadingsService {
     private readonly emailService;
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService);
     private assertAuthenticated;
+    private requireStaffCompanyId;
+    private assertStaffApartmentCompanyAccess;
     private hasApartmentAccess;
     private extractApartmentReadings;
     private getAccessibleApartmentIds;

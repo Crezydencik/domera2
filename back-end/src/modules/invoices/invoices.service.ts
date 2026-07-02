@@ -113,6 +113,15 @@ export class InvoicesService {
     return isStaffRole(user.role);
   }
 
+  private requireStaffCompanyId(user: RequestUser): string {
+    const companyId = this.firstString(user.companyId);
+    if (!companyId) {
+      throw new ForbiddenException('Company scope is required');
+    }
+
+    return companyId;
+  }
+
   private firstString(...values: unknown[]): string {
     for (const value of values) {
       if (typeof value === 'string' && value.trim()) {
@@ -857,16 +866,17 @@ export class InvoicesService {
     companyId?: string;
     buildingId?: string;
   }): Promise<string[]> {
-    const requestedCompanyId = this.firstString(params.companyId, params.user.companyId);
+    const staffCompanyId = this.requireStaffCompanyId(params.user);
+    const requestedCompanyId = this.firstString(params.companyId, staffCompanyId);
     const requestedBuildingId = this.firstString(params.buildingId);
 
-    if (params.user.companyId && requestedCompanyId && requestedCompanyId !== params.user.companyId) {
+    if (requestedCompanyId !== staffCompanyId) {
       throw new ForbiddenException('Access denied for company');
     }
 
     if (requestedBuildingId) {
       const buildingCompanyId = await this.getBuildingCompanyId(requestedBuildingId);
-      if (params.user.companyId && buildingCompanyId !== params.user.companyId) {
+      if (buildingCompanyId !== staffCompanyId) {
         throw new ForbiddenException('Access denied for building');
       }
 
@@ -913,7 +923,7 @@ export class InvoicesService {
     const buildingId = this.firstString(snap.ref.parent.parent?.id);
     const data = this.pendingApprovalItemFromDoc(snap, buildingId);
     const companyId = this.firstString(data.companyId);
-    if (user.companyId && companyId && companyId !== user.companyId) {
+    if (!companyId || companyId !== this.requireStaffCompanyId(user)) {
       throw new ForbiddenException('Access denied for company');
     }
 
@@ -931,9 +941,14 @@ export class InvoicesService {
     buildingId?: string;
   }): Promise<ApartmentInvoiceContext[]> {
     const db = this.firebaseAdminService.firestore;
-    const requestedCompanyId = this.firstString(params.companyId, params.user.companyId);
+    const staffCompanyId = this.requireStaffCompanyId(params.user);
+    const requestedCompanyId = this.firstString(params.companyId, staffCompanyId);
     const requestedApartmentId = this.firstString(params.apartmentId);
     const requestedBuildingId = this.firstString(params.buildingId);
+
+    if (requestedCompanyId !== staffCompanyId) {
+      throw new ForbiddenException('Access denied for company');
+    }
 
     if (requestedApartmentId) {
       const snap = await db.collection('apartments').doc(requestedApartmentId).get();
@@ -942,7 +957,7 @@ export class InvoicesService {
       }
 
       const apartment = snap.data() as Record<string, unknown>;
-      if (params.user.companyId && !this.apartmentMatchesInvoiceFilters({ apartment, companyId: params.user.companyId })) {
+      if (!this.apartmentMatchesInvoiceFilters({ apartment, companyId: staffCompanyId })) {
         throw new ForbiddenException('Access denied for apartment');
       }
 
@@ -1033,16 +1048,14 @@ export class InvoicesService {
     apartment: Record<string, unknown>;
     buildingCompanyId: string;
   }): string {
+    const staffCompanyId = this.requireStaffCompanyId(params.user);
     const payloadCompanyId = this.firstString(params.payload.companyId, params.payload.company_id);
-    if (params.user.companyId && payloadCompanyId && payloadCompanyId !== params.user.companyId) {
+    if (payloadCompanyId && payloadCompanyId !== staffCompanyId) {
       throw new ForbiddenException('Access denied for company');
     }
 
     const apartmentCompanyIds = this.extractCompanyIds(params.apartment);
-    const companyId = params.user.companyId || payloadCompanyId || params.buildingCompanyId || apartmentCompanyIds[0] || '';
-    if (!companyId) {
-      throw new ForbiddenException('Company scope is required');
-    }
+    const companyId = staffCompanyId;
 
     if (params.buildingCompanyId && params.buildingCompanyId !== companyId) {
       throw new ForbiddenException('Access denied for building/company ownership');
@@ -2579,7 +2592,7 @@ export class InvoicesService {
     const apartment = apartmentSnap.data() as Record<string, unknown>;
     const companyId = this.firstString(data.companyId);
     const buildingId = this.firstString(data.buildingId, approval.buildingId);
-    if (user.companyId && companyId && companyId !== user.companyId) {
+    if (!companyId || companyId !== this.requireStaffCompanyId(user)) {
       throw new ForbiddenException('Access denied for company');
     }
 
@@ -3111,12 +3124,13 @@ export class InvoicesService {
       throw new ForbiddenException('Insufficient permissions');
     }
 
+    const staffCompanyId = this.requireStaffCompanyId(user);
     const requestedCompanyId = this.firstString(query.companyId);
-    if (user.companyId && requestedCompanyId && requestedCompanyId !== user.companyId) {
+    if (requestedCompanyId && requestedCompanyId !== staffCompanyId) {
       throw new ForbiddenException('Access denied for company');
     }
 
-    const companyId = requestedCompanyId || user.companyId || '';
+    const companyId = requestedCompanyId || staffCompanyId;
     const requestedBuildingId = this.firstString(query.buildingId, query.building_id);
     const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50));
     const db = this.firebaseAdminService.firestore;
@@ -3124,7 +3138,7 @@ export class InvoicesService {
     let buildingIds: string[] = [];
     if (requestedBuildingId) {
       const buildingCompanyId = await this.getBuildingCompanyId(requestedBuildingId);
-      if (user.companyId && buildingCompanyId !== user.companyId) {
+      if (buildingCompanyId !== staffCompanyId) {
         throw new ForbiddenException('Access denied for building');
       }
 
@@ -3356,11 +3370,12 @@ export class InvoicesService {
     const apartmentCompanyIds = this.extractCompanyIds(apartmentData);
 
     const payloadCompanyId = typeof payload.companyId === 'string' ? payload.companyId : undefined;
-    if (user.companyId && payloadCompanyId && payloadCompanyId !== user.companyId) {
+    const staffCompanyId = this.requireStaffCompanyId(user);
+    if (payloadCompanyId && payloadCompanyId !== staffCompanyId) {
       throw new ForbiddenException('Access denied for company');
     }
 
-    const targetCompanyId = payloadCompanyId ?? user.companyId ?? apartmentCompanyIds[0];
+    const targetCompanyId = staffCompanyId;
     if (!targetCompanyId || !apartmentCompanyIds.includes(targetCompanyId)) {
       throw new ForbiddenException('Access denied for apartment/company ownership');
     }
@@ -3473,7 +3488,7 @@ export class InvoicesService {
     const apartmentId = typeof data.apartmentId === 'string' ? data.apartmentId : undefined;
 
     if (this.isStaff(user)) {
-      if (user.companyId && targetCompanyId && user.companyId !== targetCompanyId) {
+      if (!targetCompanyId || this.requireStaffCompanyId(user) !== targetCompanyId) {
         throw new ForbiddenException('Access denied for company');
       }
     } else {
@@ -3556,7 +3571,7 @@ export class InvoicesService {
     const invoice = await this.findInvoiceDocument(invoiceId, user);
     const invoiceData = invoice.data;
     const targetCompanyId = typeof invoiceData.companyId === 'string' ? invoiceData.companyId : undefined;
-    if (user.companyId && targetCompanyId && user.companyId !== targetCompanyId) {
+    if (!targetCompanyId || this.requireStaffCompanyId(user) !== targetCompanyId) {
       throw new ForbiddenException('Access denied for company');
     }
 
@@ -3616,7 +3631,7 @@ export class InvoicesService {
     const ref = invoice.ref;
     const current = invoice.data;
     const targetCompanyId = typeof current.companyId === 'string' ? current.companyId : undefined;
-    if (user.companyId && targetCompanyId && user.companyId !== targetCompanyId) {
+    if (!targetCompanyId || this.requireStaffCompanyId(user) !== targetCompanyId) {
       throw new ForbiddenException('Access denied for company');
     }
 
@@ -3661,7 +3676,7 @@ export class InvoicesService {
     const ref = invoice.ref;
     const current = invoice.data;
     const targetCompanyId = typeof current.companyId === 'string' ? current.companyId : undefined;
-    if (user.companyId && targetCompanyId && user.companyId !== targetCompanyId) {
+    if (!targetCompanyId || this.requireStaffCompanyId(user) !== targetCompanyId) {
       throw new ForbiddenException('Access denied for company');
     }
 

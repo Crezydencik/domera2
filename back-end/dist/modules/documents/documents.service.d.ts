@@ -18,6 +18,7 @@ export declare class DocumentsService {
     private readonly logger;
     constructor(firebaseAdminService: FirebaseAdminService);
     private assertAuthenticated;
+    private requireStaffCompanyId;
     private firstString;
     private normalizeScope;
     private sanitizeFileName;

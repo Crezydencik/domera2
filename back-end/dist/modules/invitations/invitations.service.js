@@ -42,11 +42,102 @@ let InvitationsService = class InvitationsService {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
     }
+    effectiveStaffCompanyId(user) {
+        if (user.companyId)
+            return user.companyId;
+        if (user.role === 'ManagementCompany')
+            return user.uid;
+        throw new common_1.ForbiddenException('Company scope is required');
+    }
     assertHouseholdOrStaff(user) {
         if (!user?.uid || !user.role)
             throw new common_1.UnauthorizedException('Authentication required');
         if (!(0, role_constants_1.isStaffRole)(user.role) && !(0, role_constants_1.isPropertyMemberRole)(user.role)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
+        }
+    }
+    invitationPublicItem(doc) {
+        const data = doc.data();
+        const expiresAtRaw = data.expiresAt;
+        const expiresAt = expiresAtRaw instanceof Date
+            ? expiresAtRaw
+            : typeof expiresAtRaw === 'string'
+                ? new Date(expiresAtRaw)
+                : typeof expiresAtRaw?.toDate === 'function'
+                    ? expiresAtRaw.toDate()
+                    : undefined;
+        return {
+            id: doc.id,
+            companyId: typeof data.companyId === 'string' ? data.companyId : undefined,
+            apartmentId: typeof data.apartmentId === 'string' ? data.apartmentId : '',
+            email: typeof data.email === 'string' ? data.email : '',
+            status: typeof data.status === 'string' ? data.status : 'pending',
+            invitedByUid: typeof data.invitedByUid === 'string' ? data.invitedByUid : undefined,
+            createdAt: data.createdAt && typeof data.createdAt.toDate === 'function'
+                ? data.createdAt.toDate()
+                : new Date(),
+            expiresAt,
+        };
+    }
+    apartmentCompanyId(apartment) {
+        if (typeof apartment.companyId === 'string' && apartment.companyId.trim()) {
+            return apartment.companyId.trim();
+        }
+        if (Array.isArray(apartment.companyIds)) {
+            return apartment.companyIds.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim() ?? '';
+        }
+        return '';
+    }
+    isActiveApartmentMember(user, apartment) {
+        const userEmail = (0, invitation_token_1.normalizeEmail)(user.email ?? '');
+        const residentId = typeof apartment.residentId === 'string' ? apartment.residentId.trim() : '';
+        if (residentId && residentId === user.uid)
+            return true;
+        const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId.trim() : '';
+        const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
+        if (apartment.ownerActivated === true &&
+            ((ownerId && ownerId === user.uid) || Boolean(userEmail && ownerEmail === userEmail))) {
+            return true;
+        }
+        const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+        const now = Date.now();
+        return tenants.some((tenant) => {
+            if (!tenant || typeof tenant !== 'object')
+                return false;
+            const record = tenant;
+            const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
+            if (['removed', 'deleted', 'revoked', 'inactive'].includes(status))
+                return false;
+            const tenantUserId = typeof record.userId === 'string' ? record.userId.trim() : '';
+            const tenantEmail = typeof record.email === 'string' ? (0, invitation_token_1.normalizeEmail)(record.email) : '';
+            const matches = tenantUserId === user.uid || Boolean(userEmail && tenantEmail === userEmail);
+            if (!matches)
+                return false;
+            const fromTime = typeof record.fromDate === 'string' && record.fromDate.trim()
+                ? new Date(record.fromDate).getTime()
+                : NaN;
+            const untilTime = typeof record.until === 'string' && record.until.trim()
+                ? new Date(record.until).getTime()
+                : NaN;
+            if (Number.isFinite(fromTime) && now < fromTime)
+                return false;
+            if (Number.isFinite(untilTime) && now > untilTime)
+                return false;
+            return true;
+        });
+    }
+    assertCanUseApartment(user, apartment, companyId) {
+        if ((0, role_constants_1.isStaffRole)(user.role)) {
+            if (!user.companyId) {
+                throw new common_1.ForbiddenException('Company scope is required');
+            }
+            if (!companyId || user.companyId !== companyId) {
+                throw new common_1.ForbiddenException('Access denied for company');
+            }
+            return;
+        }
+        if (!this.isActiveApartmentMember(user, apartment)) {
+            throw new common_1.ForbiddenException('Access denied for apartment');
         }
     }
     firstString(...values) {
@@ -61,19 +152,8 @@ let InvitationsService = class InvitationsService {
         return '';
     }
     resolveFrontendUrl(request) {
-        const origin = typeof request.headers.origin === 'string' ? request.headers.origin : '';
-        if (origin) {
-            return origin.replace(/\/+$/, '');
-        }
-        const referer = typeof request.headers.referer === 'string' ? request.headers.referer : '';
-        if (referer) {
-            try {
-                return new URL(referer).origin.replace(/\/+$/, '');
-            }
-            catch {
-            }
-        }
-        return (process.env.FRONTEND_URL || 'https://domera.app').replace(/\/+$/, '');
+        void request;
+        return (process.env.FRONTEND_URL || process.env.APP_URL || 'https://domera.app').replace(/\/+$/, '');
     }
     async resolveInvitationDisplay(invitation) {
         const db = this.firebaseAdminService.firestore;
@@ -124,15 +204,11 @@ let InvitationsService = class InvitationsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
-        const companyId = Array.isArray(apartment.companyIds)
-            ? apartment.companyIds.find((x) => typeof x === 'string')
-            : undefined;
+        const companyId = this.apartmentCompanyId(apartment);
         if (!companyId) {
             throw new common_1.BadRequestException('Apartment is missing companyId');
         }
-        if (user.companyId && user.companyId !== companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertCanUseApartment(user, apartment, companyId);
         const rawToken = (0, node_crypto_1.randomBytes)(32).toString('hex');
         const tokenHash = await (0, invitation_token_1.hashInvitationToken)(rawToken);
         const invitationRef = db.collection('invitations').doc();
@@ -418,7 +494,7 @@ let InvitationsService = class InvitationsService {
         if (!normalizedCompanyId) {
             throw new common_1.BadRequestException('companyId is required');
         }
-        if (user.companyId && user.companyId !== normalizedCompanyId) {
+        if (this.effectiveStaffCompanyId(user) !== normalizedCompanyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         await this.enforceRateLimit(request, 'invitations:list', `${user.uid}:${normalizedCompanyId}`, 30);
@@ -426,31 +502,7 @@ let InvitationsService = class InvitationsService {
             .collection('invitations')
             .where('companyId', '==', normalizedCompanyId)
             .get();
-        const items = snapshot.docs.map((doc) => {
-            const data = doc.data();
-            const expiresAtRaw = data.expiresAt;
-            const expiresAt = expiresAtRaw instanceof Date
-                ? expiresAtRaw
-                : typeof expiresAtRaw === 'string'
-                    ? new Date(expiresAtRaw)
-                    : typeof expiresAtRaw?.toDate === 'function'
-                        ? expiresAtRaw.toDate()
-                        : undefined;
-            return {
-                id: doc.id,
-                companyId: typeof data.companyId === 'string' ? data.companyId : undefined,
-                apartmentId: typeof data.apartmentId === 'string' ? data.apartmentId : '',
-                email: typeof data.email === 'string' ? data.email : '',
-                status: typeof data.status === 'string' ? data.status : 'pending',
-                token: typeof data.token === 'string' ? data.token : undefined,
-                tokenHash: typeof data.tokenHash === 'string' ? data.tokenHash : undefined,
-                invitedByUid: typeof data.invitedByUid === 'string' ? data.invitedByUid : undefined,
-                createdAt: data.createdAt && typeof data.createdAt.toDate === 'function'
-                    ? data.createdAt.toDate()
-                    : new Date(),
-                expiresAt,
-            };
-        });
+        const items = snapshot.docs.map((doc) => this.invitationPublicItem(doc));
         void this.auditLogService.write({
             request,
             action: 'invitation.list',
@@ -478,24 +530,14 @@ let InvitationsService = class InvitationsService {
         }
         const doc = snapshot.docs[0];
         const data = doc.data();
-        const invitation = {
-            id: doc.id,
-            companyId: typeof data.companyId === 'string' ? data.companyId : undefined,
-            apartmentId: typeof data.apartmentId === 'string' ? data.apartmentId : '',
-            email: typeof data.email === 'string' ? data.email : '',
-            status: typeof data.status === 'string' ? data.status : 'pending',
-            token: typeof data.token === 'string' ? data.token : undefined,
-            tokenHash: typeof data.tokenHash === 'string' ? data.tokenHash : undefined,
-            invitedByUid: typeof data.invitedByUid === 'string' ? data.invitedByUid : undefined,
-            createdAt: data.createdAt && typeof data.createdAt.toDate === 'function'
-                ? data.createdAt.toDate()
-                : new Date(),
-            expiresAt: data.expiresAt && typeof data.expiresAt.toDate === 'function'
-                ? data.expiresAt.toDate()
-                : undefined,
-        };
-        if (user.companyId && invitation.companyId && user.companyId !== invitation.companyId) {
-            throw new common_1.ForbiddenException('Access denied for invitation company');
+        const invitation = this.invitationPublicItem(doc);
+        if ((0, role_constants_1.isStaffRole)(user.role)) {
+            if (!invitation.companyId || this.effectiveStaffCompanyId(user) !== invitation.companyId) {
+                throw new common_1.ForbiddenException('Access denied for invitation company');
+            }
+        }
+        else if ((0, invitation_token_1.normalizeEmail)(user.email ?? '') !== normalized) {
+            throw new common_1.ForbiddenException('Access denied for invitation email');
         }
         return { invitation };
     }
@@ -511,7 +553,7 @@ let InvitationsService = class InvitationsService {
             throw new common_1.NotFoundException('Invitation not found');
         const data = snap.data();
         const companyId = typeof data.companyId === 'string' ? data.companyId : undefined;
-        if (user.companyId && companyId && user.companyId !== companyId) {
+        if (!companyId || this.effectiveStaffCompanyId(user) !== companyId) {
             throw new common_1.ForbiddenException('Access denied for invitation company');
         }
         await ref.set({

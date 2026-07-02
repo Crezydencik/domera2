@@ -36,6 +36,9 @@ export declare class ApartmentsService {
     private assertApartmentBuildingEditableForStaff;
     private assertAuthenticated;
     private isStaff;
+    private effectiveStaffCompanyId;
+    private apartmentBelongsToStaffCompany;
+    private assertApartmentCompanyAccess;
     private getAccessibleApartmentIds;
     private canManageTenants;
     private hasApartmentOccupant;

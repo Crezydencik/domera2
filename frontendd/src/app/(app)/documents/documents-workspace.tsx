@@ -278,6 +278,28 @@ export function DocumentsWorkspace({
     return apartmentOptions.filter((apartment) => apartment.buildingId === archiveBuildingId);
   }, [apartmentOptions, archiveBuildingId, role]);
   const hasMultipleArchiveApartmentOptions = archiveApartmentOptions.length > 1;
+  const archiveBuildingOptions = useMemo(() => {
+    const byId = new Map<string, { id: string; name: string }>();
+
+    for (const building of buildingOptions) {
+      byId.set(building.id, {
+        id: building.id,
+        name: building.address && building.address !== "—" ? building.address : building.name,
+      });
+    }
+
+    for (const apartment of apartmentOptions) {
+      if (!apartment.buildingId || byId.has(apartment.buildingId)) continue;
+      byId.set(apartment.buildingId, {
+        id: apartment.buildingId,
+        name: apartment.buildingName || apartment.buildingId,
+      });
+    }
+
+    return Array.from(byId.values())
+      .filter((building) => building.id)
+      .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }));
+  }, [apartmentOptions, buildingOptions]);
   const selectedArchiveApartment = useMemo(
     () => apartmentOptions.find((apartment) => apartment.id === archiveApartmentId),
     [apartmentOptions, archiveApartmentId],
@@ -372,9 +394,9 @@ export function DocumentsWorkspace({
   }, [buildingId, buildingOptions]);
 
   useEffect(() => {
-    if (archiveBuildingId || role !== "managementCompany" || !buildingOptions[0]) return;
-    setArchiveBuildingId(buildingOptions[0].id);
-  }, [archiveBuildingId, buildingOptions, role]);
+    if (archiveBuildingId || !archiveBuildingOptions[0]) return;
+    setArchiveBuildingId(archiveBuildingOptions[0].id);
+  }, [archiveBuildingId, archiveBuildingOptions]);
 
   useEffect(() => {
     if (buildingId && !buildingOptions.some((building) => building.id === buildingId)) {
@@ -383,10 +405,10 @@ export function DocumentsWorkspace({
   }, [buildingId, buildingOptions]);
 
   useEffect(() => {
-    if (archiveBuildingId && !buildingOptions.some((building) => building.id === archiveBuildingId)) {
-      setArchiveBuildingId(buildingOptions[0]?.id ?? "");
+    if (archiveBuildingId && !archiveBuildingOptions.some((building) => building.id === archiveBuildingId)) {
+      setArchiveBuildingId(archiveBuildingOptions[0]?.id ?? "");
     }
-  }, [archiveBuildingId, buildingOptions]);
+  }, [archiveBuildingId, archiveBuildingOptions]);
 
   useEffect(() => {
     if (apartmentId || !apartmentOptions[0]) return;
@@ -425,8 +447,8 @@ export function DocumentsWorkspace({
     const normalizedQuery = query.trim().toLowerCase();
 
     return allDocuments.filter((item) => {
-      if (role === "managementCompany" && archiveBuildingId && item.buildingId !== archiveBuildingId) return false;
-      if (role !== "managementCompany" && archiveApartmentId) {
+      if (archiveBuildingId && item.buildingId !== archiveBuildingId) return false;
+      if (role !== "managementCompany" && !archiveBuildingId && archiveApartmentId) {
         const isSelectedApartmentDocument = item.apartmentId === archiveApartmentId;
         const isSelectedBuildingDocument =
           Boolean(selectedArchiveApartment?.buildingId) && item.buildingId === selectedArchiveApartment?.buildingId;
@@ -468,7 +490,7 @@ export function DocumentsWorkspace({
     shareWithManagementLabel,
   ]);
 
-  const scopedArchiveDocuments = role === "managementCompany" && archiveBuildingId
+  const scopedArchiveDocuments = archiveBuildingId
     ? allDocuments.filter((item) => item.buildingId === archiveBuildingId)
     : role !== "managementCompany" && archiveApartmentId
       ? allDocuments.filter((item) => {
@@ -852,30 +874,16 @@ export function DocumentsWorkspace({
             <div className="min-w-0">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <h3 className="text-lg font-semibold text-slate-950 sm:text-base">{t("archive.title")}</h3>
-                {role === "managementCompany" && hasMultipleBuildingOptions ? (
+                {archiveBuildingOptions.length ? (
                   <select
                     value={archiveBuildingId}
                     onChange={(event) => setArchiveBuildingId(event.target.value)}
                     className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 sm:w-56"
                     aria-label={t("aria.selectBuilding")}
                   >
-                    {buildingOptions.map((building) => (
+                    {archiveBuildingOptions.map((building) => (
                       <option key={building.id} value={building.id}>
                         {building.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : hasMultipleApartmentOptions ? (
-                  <select
-                    value={archiveApartmentId}
-                    onChange={(event) => setArchiveApartmentId(event.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 sm:w-64"
-                    aria-label={t("aria.selectApartment")}
-                  >
-                    {!apartmentOptions.length ? <option value="">{t("fallbacks.noApartments")}</option> : null}
-                    {apartmentOptions.map((apartment) => (
-                      <option key={apartment.id} value={apartment.id}>
-                        {apartment.label}
                       </option>
                     ))}
                   </select>

@@ -48,6 +48,16 @@ function hasText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function looksLikeOpaqueId(value: string) {
+  return /^[A-Za-z0-9_-]{12,}$/.test(value.trim());
+}
+
+function displayText(value: unknown) {
+  if (!hasText(value)) return undefined;
+  const trimmed = value.trim();
+  return looksLikeOpaqueId(trimmed) ? undefined : trimmed;
+}
+
 function firstText(...values: unknown[]) {
   for (const value of values) {
     if (hasText(value)) {
@@ -226,41 +236,28 @@ export function ResidentsDirectory({ data, labels }: ResidentsDirectoryProps) {
         });
       }
 
-      const residentId = hasText(apartment.residentId) ? apartment.residentId.trim() : "";
-      const residentProfile = residentId ? residentById.get(residentId) : undefined;
-      const residentEmail = firstText(apartment.residentEmail, residentProfile?.email);
-      const residentName = firstText(
-        joinName(apartment.residentFirstName, apartment.residentLastName),
-        apartment.residentName,
-        residentProfile?.fullName,
-        residentEmail,
-        residentId,
-      );
-
-      if (residentId || residentEmail !== EMPTY_CELL || residentName !== EMPTY_CELL) {
-        apartmentContacts.push({
-          key: residentId || residentEmail,
-          fullName: residentName,
-          email: residentEmail,
-          phone: firstText(apartment.residentPhone, residentProfile?.phone),
-          role: "Iedzīvotājs",
-        });
-      }
-
       if (Array.isArray(apartment.tenants)) {
         for (const tenant of apartment.tenants) {
           if (!tenant || typeof tenant !== "object") continue;
           const record = tenant as UnknownRecord;
           if (!isCurrentTenant(record)) continue;
 
-          const email = firstText(record.email);
-          const fullName = firstText(joinName(record.firstName, record.lastName), record.fullName, record.name, email);
+          const tenantId = hasText(record.userId) ? record.userId.trim() : "";
+          const tenantProfile = tenantId ? residentById.get(tenantId) : undefined;
+          const email = firstText(record.email, tenantProfile?.email);
+          const fullName = firstText(
+            joinName(record.firstName, record.lastName),
+            record.fullName,
+            record.name,
+            displayText(tenantProfile?.fullName),
+            email,
+          );
 
           apartmentContacts.push({
-            key: firstText(record.userId, email, `${id}-${fullName}`),
+            key: firstText(tenantId, email, `${id}-${fullName}`),
             fullName,
             email,
-            phone: firstText(record.phone),
+            phone: firstText(record.phone, tenantProfile?.phone),
             role: "Īrnieks",
           });
         }

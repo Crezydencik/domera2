@@ -25,6 +25,7 @@ export declare class InvoicesService {
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService);
     private assertAuthenticated;
     private isStaff;
+    private requireStaffCompanyId;
     private firstString;
     private normalizeSource;
     private normalizeStatus;

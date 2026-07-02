@@ -185,6 +185,27 @@ let ApartmentsService = class ApartmentsService {
     isStaff(user) {
         return (0, role_constants_1.isStaffRole)(user.role);
     }
+    effectiveStaffCompanyId(user) {
+        const companyId = typeof user.companyId === 'string' && user.companyId.trim() ? user.companyId.trim() : '';
+        if (companyId)
+            return companyId;
+        if (user.role === 'ManagementCompany')
+            return user.uid;
+        throw new common_1.ForbiddenException('Company scope is required');
+    }
+    apartmentBelongsToStaffCompany(user, apartment) {
+        const scopedCompanyId = this.effectiveStaffCompanyId(user);
+        const companyIds = Array.isArray(apartment.companyIds)
+            ? apartment.companyIds.filter((x) => typeof x === 'string' && x.trim().length > 0)
+            : [];
+        const companyId = typeof apartment.companyId === 'string' ? apartment.companyId : undefined;
+        return companyIds.includes(scopedCompanyId) || companyId === scopedCompanyId;
+    }
+    assertApartmentCompanyAccess(user, apartment) {
+        if (!this.apartmentBelongsToStaffCompany(user, apartment)) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
+    }
     async getAccessibleApartmentIds(user) {
         const apartmentIds = new Set();
         const addApartmentId = (value) => {
@@ -248,12 +269,9 @@ let ApartmentsService = class ApartmentsService {
             .map((snap) => snap.id);
     }
     canManageTenants(user, apartmentId, apartment) {
+        void apartmentId;
         if (this.isStaff(user)) {
-            const companyIds = Array.isArray(apartment.companyIds)
-                ? apartment.companyIds.filter((x) => typeof x === 'string')
-                : [];
-            const companyId = typeof apartment.companyId === 'string' ? apartment.companyId : undefined;
-            return !user.companyId || companyIds.includes(user.companyId) || companyId === user.companyId;
+            return this.apartmentBelongsToStaffCompany(user, apartment);
         }
         if (user.role !== 'Landlord') {
             return false;
@@ -1100,10 +1118,13 @@ let ApartmentsService = class ApartmentsService {
         if (!buildingId || !companyId) {
             throw new common_1.BadRequestException('Building ID and Company ID are required');
         }
+        if (this.effectiveStaffCompanyId(user) !== companyId) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'apartments:import', user.uid), 5, 60_000);
         if (!rl.allowed)
             throw new common_1.BadRequestException('Too many requests');
-        if (user.companyId && user.companyId !== companyId) {
+        if (this.effectiveStaffCompanyId(user) !== companyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         const db = this.firebaseAdminService.firestore;
@@ -1383,7 +1404,7 @@ let ApartmentsService = class ApartmentsService {
             snapshot = await db.collection('apartments').where('buildingId', '==', buildingId).get();
         }
         else if (companyId) {
-            if (user.companyId && user.companyId !== companyId) {
+            if (!this.isStaff(user) || this.effectiveStaffCompanyId(user) !== companyId) {
                 throw new common_1.ForbiddenException('Access denied for company');
             }
             const [byArray, byLegacy] = await Promise.all([
@@ -1415,14 +1436,8 @@ let ApartmentsService = class ApartmentsService {
         if (!snap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const data = snap.data();
-        const companyIds = Array.isArray(data.companyIds)
-            ? data.companyIds.filter((x) => typeof x === 'string')
-            : [];
-        const companyId = typeof data.companyId === 'string' ? data.companyId : undefined;
         if (this.isStaff(user)) {
-            if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
-                throw new common_1.ForbiddenException('Access denied for company');
-            }
+            this.assertApartmentCompanyAccess(user, data);
         }
         else if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
             const accessibleApartmentIds = await this.getAccessibleApartmentIds(user);
@@ -1447,7 +1462,7 @@ let ApartmentsService = class ApartmentsService {
         if (!number || !buildingId || !companyId) {
             throw new common_1.BadRequestException('number, buildingId and companyId are required');
         }
-        if (user.companyId && user.companyId !== companyId) {
+        if (this.effectiveStaffCompanyId(user) !== companyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         await this.enforceRateLimit(request, 'apartments:create', `${user.uid}:${companyId}`, 20);
@@ -1502,25 +1517,24 @@ let ApartmentsService = class ApartmentsService {
         if (!snap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const current = snap.data();
-        const companyIds = Array.isArray(current.companyIds)
-            ? current.companyIds.filter((x) => typeof x === 'string')
-            : [];
-        const companyId = typeof current.companyId === 'string' ? current.companyId : undefined;
-        if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertApartmentCompanyAccess(user, current);
         await this.assertApartmentBuildingEditableForStaff(user, current);
         const readingConfigOverride = this.normalizeReadingConfigOverride(payload);
+        const scopedCompanyId = this.effectiveStaffCompanyId(user);
+        const currentCompanyId = this.resolveApartmentCompanyId(current);
         const updatedCompanyId = typeof payload.companyId === 'string'
             ? payload.companyId.trim()
-            : companyId ?? user.companyId ?? companyIds[0];
+            : scopedCompanyId;
+        if (updatedCompanyId !== scopedCompanyId) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
         const updatedBuildingId = typeof payload.buildingId === 'string'
             ? payload.buildingId.trim()
             : (typeof current.buildingId === 'string' ? current.buildingId : undefined);
         const updatedNumber = typeof payload.number === 'string'
             ? payload.number
             : (typeof current.number === 'string' ? current.number : undefined);
-        const shouldRegenerateReadableId = Boolean((payload.companyId && updatedCompanyId !== companyId) ||
+        const shouldRegenerateReadableId = Boolean((payload.companyId && updatedCompanyId !== currentCompanyId) ||
             (payload.buildingId && updatedBuildingId !== current.buildingId) ||
             (payload.number && updatedNumber !== current.number));
         if (updatedCompanyId && updatedBuildingId) {
@@ -1558,13 +1572,7 @@ let ApartmentsService = class ApartmentsService {
         if (!snap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const data = snap.data();
-        const companyIds = Array.isArray(data.companyIds)
-            ? data.companyIds.filter((value) => typeof value === 'string')
-            : [];
-        const companyId = typeof data.companyId === 'string' ? data.companyId : undefined;
-        if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertApartmentCompanyAccess(user, data);
         const context = this.resolveApartmentStorageContext(apartmentId, data);
         if (!context) {
             return { path: null, fileCount: 0, hasUserFiles: false };
@@ -1586,13 +1594,7 @@ let ApartmentsService = class ApartmentsService {
         if (!snap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const data = snap.data();
-        const companyIds = Array.isArray(data.companyIds)
-            ? data.companyIds.filter((x) => typeof x === 'string')
-            : [];
-        const companyId = typeof data.companyId === 'string' ? data.companyId : undefined;
-        if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertApartmentCompanyAccess(user, data);
         await this.assertApartmentBuildingEditableForStaff(user, data);
         if (this.hasApartmentOccupant(data)) {
             throw new common_1.BadRequestException('Нельзя удалить квартиру: сначала отвяжите жильцов');
@@ -2321,13 +2323,7 @@ let ApartmentsService = class ApartmentsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
-        const companyIds = Array.isArray(apartment.companyIds)
-            ? apartment.companyIds.filter((x) => typeof x === 'string')
-            : [];
-        const companyId = typeof apartment.companyId === 'string' ? apartment.companyId : undefined;
-        if (user.companyId && !companyIds.includes(user.companyId) && companyId !== user.companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        this.assertApartmentCompanyAccess(user, apartment);
         const logs = await db
             .collection('audit_logs')
             .where('apartmentId', '==', apartmentId)

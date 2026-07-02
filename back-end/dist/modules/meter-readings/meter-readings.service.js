@@ -33,6 +33,23 @@ let MeterReadingsService = class MeterReadingsService {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
     }
+    requireStaffCompanyId(user) {
+        if (user.companyId)
+            return user.companyId;
+        if (user.role === 'ManagementCompany')
+            return user.uid;
+        throw new common_1.ForbiddenException('Company scope is required');
+    }
+    assertStaffApartmentCompanyAccess(user, apartment) {
+        const staffCompanyId = this.requireStaffCompanyId(user);
+        const companyIds = Array.isArray(apartment.companyIds)
+            ? apartment.companyIds.filter((x) => typeof x === 'string' && x.trim().length > 0)
+            : [];
+        const companyId = typeof apartment.companyId === 'string' ? apartment.companyId : '';
+        if (!companyIds.includes(staffCompanyId) && companyId !== staffCompanyId) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
+    }
     hasApartmentAccess(user, apartmentId, apartment) {
         const normalizedUserEmail = (0, invitation_token_1.normalizeEmail)(user.email ?? '');
         const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
@@ -201,16 +218,13 @@ let MeterReadingsService = class MeterReadingsService {
             if (!snap.exists)
                 throw new common_1.NotFoundException('Apartment not found');
             const apartment = snap.data();
-            const companyIds = Array.isArray(apartment.companyIds)
-                ? apartment.companyIds.filter((x) => typeof x === 'string')
-                : [];
             if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
                 if (!this.hasApartmentAccess(user, apartmentId, apartment)) {
                     throw new common_1.ForbiddenException('Access denied for apartment');
                 }
             }
-            else if (user.companyId && !companyIds.includes(user.companyId)) {
-                throw new common_1.ForbiddenException('Access denied for company');
+            else if ((0, role_constants_1.isStaffRole)(user.role)) {
+                this.assertStaffApartmentCompanyAccess(user, apartment);
             }
             return { items: this.extractApartmentReadings(apartmentId, apartment, await this.loadBuildingInfo(apartment), user) };
         }
@@ -233,10 +247,9 @@ let MeterReadingsService = class MeterReadingsService {
             });
             return { items };
         }
-        const effectiveCompanyId = companyId || user.companyId;
-        if (!effectiveCompanyId)
-            return { items: [] };
-        if (user.companyId && user.companyId !== effectiveCompanyId) {
+        const staffCompanyId = this.requireStaffCompanyId(user);
+        const effectiveCompanyId = companyId || staffCompanyId;
+        if (effectiveCompanyId !== staffCompanyId) {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         const snap = await db.collection('apartments').where('companyIds', 'array-contains', effectiveCompanyId).get();
@@ -297,16 +310,13 @@ let MeterReadingsService = class MeterReadingsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
-        const companyIds = Array.isArray(apartment.companyIds)
-            ? apartment.companyIds.filter((x) => typeof x === 'string')
-            : [];
         if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
             if (!this.hasApartmentAccess(user, apartmentId, apartment)) {
                 throw new common_1.ForbiddenException('Access denied for apartment');
             }
         }
-        else if (user.companyId && !companyIds.includes(user.companyId)) {
-            throw new common_1.ForbiddenException('Access denied for company');
+        else if ((0, role_constants_1.isStaffRole)(user.role)) {
+            this.assertStaffApartmentCompanyAccess(user, apartment);
         }
         const now = new Date();
         const month = typeof payload.month === 'number' ? payload.month : now.getMonth() + 1;
@@ -399,16 +409,13 @@ let MeterReadingsService = class MeterReadingsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
-        const companyIds = Array.isArray(apartment.companyIds)
-            ? apartment.companyIds.filter((x) => typeof x === 'string')
-            : [];
         if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
             if (!this.hasApartmentAccess(user, apartmentId, apartment)) {
                 throw new common_1.ForbiddenException('Access denied for apartment');
             }
         }
-        else if (user.companyId && !companyIds.includes(user.companyId)) {
-            throw new common_1.ForbiddenException('Access denied for company');
+        else if ((0, role_constants_1.isStaffRole)(user.role)) {
+            this.assertStaffApartmentCompanyAccess(user, apartment);
         }
         const wr = (apartment.waterReadings ?? {});
         let foundKey = null;
@@ -459,16 +466,13 @@ let MeterReadingsService = class MeterReadingsService {
         if (!apartmentSnap.exists)
             throw new common_1.NotFoundException('Apartment not found');
         const apartment = apartmentSnap.data();
-        const companyIds = Array.isArray(apartment.companyIds)
-            ? apartment.companyIds.filter((x) => typeof x === 'string')
-            : [];
         if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
             if (!this.hasApartmentAccess(user, apartmentId, apartment)) {
                 throw new common_1.ForbiddenException('Access denied for apartment');
             }
         }
-        else if (user.companyId && !companyIds.includes(user.companyId)) {
-            throw new common_1.ForbiddenException('Access denied for company');
+        else if ((0, role_constants_1.isStaffRole)(user.role)) {
+            this.assertStaffApartmentCompanyAccess(user, apartment);
         }
         const wr = (apartment.waterReadings ?? {});
         let foundKey = null;

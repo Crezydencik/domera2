@@ -10,7 +10,12 @@ export declare class InvitationsService {
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService);
     private enforceRateLimit;
     private assertStaff;
+    private effectiveStaffCompanyId;
     private assertHouseholdOrStaff;
+    private invitationPublicItem;
+    private apartmentCompanyId;
+    private isActiveApartmentMember;
+    private assertCanUseApartment;
     private firstString;
     private resolveFrontendUrl;
     private resolveInvitationDisplay;
@@ -48,8 +53,6 @@ export declare class InvitationsService {
             apartmentId: string;
             email: string;
             status: string;
-            token: string | undefined;
-            tokenHash: string | undefined;
             invitedByUid: string | undefined;
             createdAt: Date;
             expiresAt: Date | undefined;
@@ -64,8 +67,6 @@ export declare class InvitationsService {
             apartmentId: string;
             email: string;
             status: string;
-            token: string | undefined;
-            tokenHash: string | undefined;
             invitedByUid: string | undefined;
             createdAt: Date;
             expiresAt: Date | undefined;

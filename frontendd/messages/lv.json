@@ -606,7 +606,7 @@
       "apartments": "Dzīvokļi",
       "totalObjects": "Kopā ēkas un dzīvokļi",
       "meterReadings": "Skaitītāju rādījumi",
-      "submittedThisMonth": "Šomēnes iesnieguši dzīvokļi: {coverage}%",
+      "submittedThisMonth": "Iesnieguši periodā: {coverage}%",
       "month": "Mēnesis: {month}",
       "submissionPeriod": "Iesniegšanas periods: {period}",
       "openReadings": "Atvērt rādījumus"

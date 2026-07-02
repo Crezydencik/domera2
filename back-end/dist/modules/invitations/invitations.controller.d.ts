@@ -14,8 +14,6 @@ export declare class InvitationsController {
             apartmentId: string;
             email: string;
             status: string;
-            token: string | undefined;
-            tokenHash: string | undefined;
             invitedByUid: string | undefined;
             createdAt: Date;
             expiresAt: Date | undefined;
@@ -30,8 +28,6 @@ export declare class InvitationsController {
             apartmentId: string;
             email: string;
             status: string;
-            token: string | undefined;
-            tokenHash: string | undefined;
             invitedByUid: string | undefined;
             createdAt: Date;
             expiresAt: Date | undefined;

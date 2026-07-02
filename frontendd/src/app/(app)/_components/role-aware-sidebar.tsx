@@ -454,7 +454,6 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
 
       if (session.userId && session.email) {
         await establishUserSession({
-          idToken: "",
           userId: session.userId,
           email: session.email,
           accountType: item.type === "tenant-invitation" ? "Resident" : "Landlord",

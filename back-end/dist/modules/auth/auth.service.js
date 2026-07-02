@@ -179,11 +179,10 @@ let AuthService = class AuthService {
         return authEmail;
     }
     buildEmailChangeLink(request, token) {
-        const configuredAppUrl = this.configService.get('APP_URL')?.trim();
-        const host = request.get('host') ?? 'localhost:3000';
-        const forwardedProto = request.get('x-forwarded-proto');
-        const protocol = forwardedProto ?? request.protocol ?? 'http';
-        const origin = configuredAppUrl || `${protocol}://${host}`;
+        void request;
+        const origin = (this.configService.get('APP_URL')?.trim() ||
+            this.configService.get('FRONTEND_URL')?.trim() ||
+            'https://domera.app').replace(/\/+$/, '');
         const url = new URL('/confirm-email', origin);
         url.searchParams.set('token', token);
         return url.toString();
@@ -588,6 +587,14 @@ let AuthService = class AuthService {
     }
     async loginWithEmailPassword(request, input) {
         const email = this.normalizeEmail(input.email ?? '');
+        const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'auth:login', email || 'anon'), 8, 60_000);
+        if (!rl.allowed) {
+            const retryAfter = Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 1000));
+            const error = new Error('Too many requests');
+            error.statusCode = 429;
+            error.retryAfter = retryAfter;
+            throw error;
+        }
         const authResult = await this.callIdentityToolkit('signInWithPassword', {
             email,
             password: input.password,
@@ -927,12 +934,9 @@ let AuthService = class AuthService {
                 },
             });
         }
-        const configuredAppUrl = this.configService.get('APP_URL')?.trim();
-        const host = request.get('host') ?? 'localhost:3000';
-        const forwardedProto = request.get('x-forwarded-proto');
-        const protocol = forwardedProto ?? request.protocol ?? 'http';
-        const requestOrigin = `${protocol}://${host}`;
-        const origin = configuredAppUrl || requestOrigin;
+        const origin = (this.configService.get('APP_URL')?.trim() ||
+            this.configService.get('FRONTEND_URL')?.trim() ||
+            'https://domera.app').replace(/\/+$/, '');
         let firebaseResetLink;
         try {
             firebaseResetLink = await this.firebaseAdminService.auth.generatePasswordResetLink(email);

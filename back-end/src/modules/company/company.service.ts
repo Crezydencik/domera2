@@ -48,9 +48,28 @@ export class CompanyService {
       throw new ForbiddenException('Only the main management company account can manage API keys');
     }
 
-    if (user.companyId && user.companyId !== companyId) {
+    const effectiveCompanyId = user.companyId || user.uid;
+    if (effectiveCompanyId !== companyId) {
       throw new ForbiddenException('Access denied for company');
     }
+  }
+
+  private assertCompanyAccess(user: RequestUser, companyId: string, company: Record<string, unknown>): void {
+    if (user.role === 'PlatformAdmin') return;
+
+    const manager = Array.isArray(company.manager)
+      ? company.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const userIds = Array.isArray(company.userIds)
+      ? company.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const effectiveCompanyId = user.companyId || (user.role === 'ManagementCompany' ? user.uid : '');
+
+    if (effectiveCompanyId === companyId || manager.includes(user.uid) || userIds.includes(user.uid)) {
+      return;
+    }
+
+    throw new ForbiddenException('Access denied for company');
   }
 
   private hashApiKey(apiKey: string): string {
@@ -340,16 +359,7 @@ export class CompanyService {
     if (!snap.exists) throw new NotFoundException('Company not found');
 
     const data = snap.data() as Record<string, unknown>;
-    const manager = Array.isArray(data.manager)
-      ? data.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : [];
-    const userIds = Array.isArray(data.userIds)
-      ? data.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : [];
-
-    if (user.companyId && user.companyId !== companyId && !manager.includes(user.uid) && !userIds.includes(user.uid)) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertCompanyAccess(user, companyId, data);
 
     const publicContactsSnap = await this.firebaseAdminService.firestore
       .collection('users')
@@ -408,16 +418,7 @@ export class CompanyService {
     if (!snap.exists) throw new NotFoundException('Company not found');
 
     const current = snap.data() as Record<string, unknown>;
-    const manager = Array.isArray(current.manager)
-      ? current.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : [];
-    const userIds = Array.isArray(current.userIds)
-      ? current.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : [];
-
-    if (user.companyId && user.companyId !== companyId && !manager.includes(user.uid) && !userIds.includes(user.uid)) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    this.assertCompanyAccess(user, companyId, current);
 
     const normalizedPayload = this.normalizeCompanyPayload(payload, current);
     await ref.set({ ...normalizedPayload, updatedAt: new Date() }, { merge: true });
@@ -605,19 +606,8 @@ export class CompanyService {
   }
 
   private resolveFrontendUrl(request: Request): string {
-    const origin = typeof request.headers.origin === 'string' ? request.headers.origin : '';
-    if (origin) return origin.replace(/\/+$/, '');
-
-    const referer = typeof request.headers.referer === 'string' ? request.headers.referer : '';
-    if (referer) {
-      try {
-        return new URL(referer).origin.replace(/\/+$/, '');
-      } catch {
-        // Fall through to configured URL.
-      }
-    }
-
-    return (process.env.FRONTEND_URL || 'https://domera.app').replace(/\/+$/, '');
+    void request;
+    return (process.env.FRONTEND_URL || process.env.APP_URL || 'https://domera.app').replace(/\/+$/, '');
   }
 
   private async attachMemberToCompany(params: {
@@ -763,7 +753,8 @@ export class CompanyService {
     if (user.role !== 'ManagementCompany') {
       throw new ForbiddenException('Only the main management company account can add members');
     }
-    if (user.companyId && user.companyId !== companyId) {
+    const effectiveCompanyId = user.companyId || user.uid;
+    if (effectiveCompanyId !== companyId) {
       throw new ForbiddenException('Access denied for company');
     }
 
@@ -890,7 +881,8 @@ export class CompanyService {
     if (user.role !== 'ManagementCompany') {
       throw new ForbiddenException('Only the main management company account can remove members');
     }
-    if (user.companyId && user.companyId !== normalizedCompanyId) {
+    const effectiveCompanyId = user.companyId || user.uid;
+    if (effectiveCompanyId !== normalizedCompanyId) {
       throw new ForbiddenException('Access denied for company');
     }
     if (normalizedMemberId === user.uid || normalizedMemberId === normalizedCompanyId) {
