@@ -3,7 +3,7 @@ import { ROUTES } from "@/shared/lib/routes";
 
 const appConfig = {
   name: "Domera",
-  apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api",
+  apiBaseUrl: "/api",
 };
 
 function redirectToLogin() {

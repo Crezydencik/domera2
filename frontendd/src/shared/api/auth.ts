@@ -1,6 +1,6 @@
 "use client";
 
-import { DomeraApiError, apiFetch } from "@/shared/api/client";
+import { apiFetch } from "@/shared/api/client";
 import { notifyAuthSessionChanged } from "@/shared/lib/auth-session";
 
 export type PublicAccountType = "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
@@ -28,23 +28,6 @@ type FirebaseAuthResult = {
   preview: boolean;
   role: PublicUserRole;
   accountType: PublicAccountType;
-  companyId?: string;
-  apartmentId?: string;
-};
-
-type UserProfileResponse = {
-  id?: string;
-  uid?: string;
-  email?: string;
-  firstName?: string;
-  lastName?: string;
-  fullName?: string;
-  name?: string;
-  displayName?: string;
-  username?: string;
-  userName?: string;
-  role?: string;
-  accountType?: string;
   companyId?: string;
   apartmentId?: string;
 };
@@ -168,20 +151,6 @@ function persistSessionHints(params: {
   }
 
   notifyAuthSessionChanged();
-}
-
-function resolveProfileName(profile?: UserProfileResponse | null): string | undefined {
-  const firstName = profile?.firstName?.trim();
-  const lastName = profile?.lastName?.trim();
-  const joinedName = [firstName, lastName].filter(Boolean).join(" ").trim();
-
-  return (
-    joinedName ||
-    profile?.fullName?.trim() ||
-    profile?.name?.trim() ||
-    profile?.displayName?.trim() ||
-    undefined
-  );
 }
 
 function resolvePayloadName(payload: Record<string, unknown>): string | undefined {
@@ -314,28 +283,6 @@ export async function establishUserSession(params: {
     apartmentId: params.apartmentId,
     rememberMe: params.rememberMe,
   });
-
-  void apiFetch<UserProfileResponse | null>(`/users/${encodeURIComponent(params.userId)}`, {
-    redirectOnAuthError: false,
-  })
-    .then((profile) => {
-      if (!profile) return;
-
-      const profileRole = normalizeRole(profile.role ?? resolvedRole ?? profile.accountType);
-      const profileAccountType = normalizeAccountType(profile.accountType ?? profileRole ?? resolvedAccountType);
-
-      persistSessionHints({
-        role: profileRole,
-        accountType: profileAccountType,
-        email: params.email,
-        name: resolveProfileName(profile),
-        userId: params.userId,
-        companyId: profile.companyId ?? params.companyId,
-        apartmentId: profile.apartmentId ?? params.apartmentId,
-        rememberMe: params.rememberMe,
-      });
-    })
-    .catch(() => undefined);
 
   return {
     success: true,
