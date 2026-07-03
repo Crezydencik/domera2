@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 interface DataTableProps {
@@ -37,10 +37,12 @@ export function DataTable({
   mobileCollapsibleIconOnly = false,
   mobileCollapsibleLabel = "Details",
 }: DataTableProps) {
-  const [page, setPage] = useState(0);
+  const batchSize = Math.max(1, pageSize);
+  const [visibleCount, setVisibleCount] = useState(batchSize);
   const [openMobileRow, setOpenMobileRow] = useState<number | null>(null);
-  const totalPages = Math.ceil(rows.length / pageSize);
-  const visibleRows = rows.slice(page * pageSize, (page + 1) * pageSize);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const visibleRows = rows.slice(0, visibleCount);
+  const hasMoreRows = visibleCount < rows.length;
   const desktopHiddenColumnSet = new Set(desktopHiddenColumns);
   const mobileHiddenColumnSet = new Set(mobileHiddenColumns);
   const mobileCollapsibleColumnSet = new Set(mobileCollapsibleColumns);
@@ -58,11 +60,41 @@ export function DataTable({
   );
   const getMobileColumnLabel = (cellIndex: number) => mobileColumnLabels[cellIndex] ?? columns[cellIndex] ?? "";
 
+  useEffect(() => {
+    setVisibleCount(Math.min(batchSize, rows.length));
+    setOpenMobileRow(null);
+  }, [batchSize, rows.length]);
+
+  useEffect(() => {
+    if (!hasMoreRows) return;
+
+    const target = loadMoreRef.current;
+    if (!target) return;
+
+    if (typeof IntersectionObserver === "undefined") {
+      setVisibleCount((count) => Math.min(rows.length, count + batchSize));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisibleCount((count) => Math.min(rows.length, count + batchSize));
+        }
+      },
+      { rootMargin: "240px 0px" },
+    );
+
+    observer.observe(target);
+
+    return () => observer.disconnect();
+  }, [batchSize, hasMoreRows, rows.length, visibleCount]);
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200">
       <div className="divide-y divide-slate-100 bg-white md:hidden">
         {visibleRows.map((row, rowIndex) => {
-          const absoluteRowIndex = page * pageSize + rowIndex;
+          const absoluteRowIndex = rowIndex;
 
           if (mobileCompactSummary && mobileCollapsibleIconOnly) {
             return (
@@ -306,7 +338,7 @@ export function DataTable({
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {visibleRows.map((row, rowIndex) => (
-              <tr key={page * pageSize + rowIndex} className="hover:bg-slate-50">
+              <tr key={rowIndex} className="hover:bg-slate-50">
                 {row.map((cell, cellIndex) => desktopHiddenColumnSet.has(cellIndex) ? null : (
                   <td key={cellIndex} className="px-4 py-3 align-top">
                     {cell}
@@ -317,29 +349,7 @@ export function DataTable({
           </tbody>
         </table>
       </div>
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-          <span>
-            {page * pageSize + 1}–{Math.min((page + 1) * pageSize, rows.length)} из {rows.length}
-          </span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="rounded px-2 py-1 hover:bg-slate-100 disabled:opacity-40"
-            >
-              ←
-            </button>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1}
-              className="rounded px-2 py-1 hover:bg-slate-100 disabled:opacity-40"
-            >
-              →
-            </button>
-          </div>
-        </div>
-      )}
+      {hasMoreRows && <div ref={loadMoreRef} className="h-1 border-t border-slate-100 bg-white" aria-hidden="true" />}
     </div>
   );
 }

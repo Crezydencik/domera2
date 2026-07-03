@@ -4,6 +4,8 @@ export declare class ResidentService {
     private readonly firebaseAdminService;
     constructor(firebaseAdminService: FirebaseAdminService);
     private toOptionalString;
+    private firstDisplayString;
+    private compareApartmentOrder;
     private normalizeStaffContacts;
     private toSerializable;
     apartments(user: RequestUser): Promise<{

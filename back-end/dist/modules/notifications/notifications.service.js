@@ -39,6 +39,32 @@ let NotificationsService = class NotificationsService {
         }
         return 0;
     }
+    isMissingFirestoreIndexError(error) {
+        const details = error && typeof error === 'object' ? error : {};
+        const text = [details.details, details.message]
+            .filter((value) => typeof value === 'string')
+            .join(' ')
+            .toLowerCase();
+        return details.code === 9 || details.code === 'failed-precondition' || text.includes('requires an index');
+    }
+    async getLegacyNotificationsSnapshot(userId) {
+        const baseQuery = this.firebaseAdminService.firestore
+            .collection('notifications')
+            .where('userId', '==', userId);
+        try {
+            return await baseQuery
+                .orderBy('createdAt', 'desc')
+                .limit(100)
+                .get();
+        }
+        catch (error) {
+            if (!this.isMissingFirestoreIndexError(error))
+                throw error;
+            return baseQuery
+                .limit(500)
+                .get();
+        }
+    }
     async findNotificationDocument(notificationId, fallbackUserId) {
         if (fallbackUserId) {
             const directNestedSnap = await this.userNotificationsCollection(fallbackUserId).doc(notificationId).get();
@@ -137,12 +163,7 @@ let NotificationsService = class NotificationsService {
                 .orderBy('createdAt', 'desc')
                 .limit(100)
                 .get(),
-            this.firebaseAdminService.firestore
-                .collection('notifications')
-                .where('userId', '==', normalizedUserId)
-                .orderBy('createdAt', 'desc')
-                .limit(100)
-                .get(),
+            this.getLegacyNotificationsSnapshot(normalizedUserId),
         ]);
         const itemsById = new Map();
         [...nestedSnap.docs, ...legacySnap.docs].forEach((doc) => {

@@ -45,6 +45,8 @@ interface FilterBarProps {
   onChange: (name: string, value: string) => void;
   /** Optional right-aligned slot for action buttons. */
   actions?: React.ReactNode;
+  actionsClassName?: string;
+  mobileActionsInline?: boolean;
   /** Optional footer slot (e.g. results count). */
   footer?: React.ReactNode;
 }
@@ -52,18 +54,25 @@ interface FilterBarProps {
 const inputBase =
   "rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500";
 
-export function FilterBar({ fields, values, onChange, actions, footer }: FilterBarProps) {
+export function FilterBar({ fields, values, onChange, actions, actionsClassName, mobileActionsInline, footer }: FilterBarProps) {
   const visibleFields = fields.filter((f) => f.visible !== false);
+  const resolvedActionsClassName = actionsClassName ?? "grid grid-cols-2 gap-2 sm:grid-cols-4 xl:flex xl:flex-wrap xl:justify-end";
+  const fieldsClassName = mobileActionsInline
+    ? "contents"
+    : "flex flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap";
+  const controlsClassName = mobileActionsInline
+    ? "grid grid-cols-[minmax(0,1fr)_6.75rem_auto] items-start gap-2 md:grid-cols-[minmax(16rem,1fr)_minmax(12rem,18rem)_auto]"
+    : "flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between";
 
   return (
     <div className="mb-6 space-y-4">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap">
+      <div className={controlsClassName}>
+        <div className={fieldsClassName}>
           {visibleFields.map((field) => {
             const value = values[field.name] ?? "";
             if (field.type === "search") {
               return (
-                <div key={field.name} className={field.className ?? "relative w-full sm:w-64"}>
+                <div key={field.name} className={field.className ?? (mobileActionsInline ? "relative min-w-0 w-full" : "relative w-full sm:w-64")}>
                   <svg
                     className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400"
                     viewBox="0 0 24 24"
@@ -91,7 +100,7 @@ export function FilterBar({ fields, values, onChange, actions, footer }: FilterB
                 key={field.name}
                 value={value}
                 onChange={(e) => onChange(field.name, e.target.value)}
-                className={`${inputBase} ${field.className ?? ""}`}
+                className={`${inputBase} ${mobileActionsInline ? "min-w-0 w-full truncate px-2 pr-6 text-xs sm:px-3 sm:pr-8 sm:text-sm" : "pr-8"} ${field.className ?? ""}`}
               >
                 {field.placeholder && <option value="">{field.placeholder}</option>}
                 {field.options.map((opt) => (
@@ -104,7 +113,7 @@ export function FilterBar({ fields, values, onChange, actions, footer }: FilterB
           })}
         </div>
 
-        {actions && <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:flex xl:flex-wrap xl:justify-end">{actions}</div>}
+        {actions && <div className={resolvedActionsClassName}>{actions}</div>}
       </div>
 
       {footer && <div className="text-xs uppercase tracking-wide text-slate-500">{footer}</div>}

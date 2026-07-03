@@ -14,6 +14,8 @@ export declare class NotificationsService {
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService);
     private userNotificationsCollection;
     private notificationCreatedAtMillis;
+    private isMissingFirestoreIndexError;
+    private getLegacyNotificationsSnapshot;
     private findNotificationDocument;
     private notificationOwnerId;
     private assertAuth;

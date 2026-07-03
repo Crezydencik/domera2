@@ -21,6 +21,31 @@ let ResidentService = class ResidentService {
     toOptionalString(value) {
         return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
     }
+    firstDisplayString(...values) {
+        for (const value of values) {
+            if (typeof value === 'string' && value.trim()) {
+                return value.trim();
+            }
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                return String(value);
+            }
+        }
+        return '';
+    }
+    compareApartmentOrder(left, right) {
+        const leftLabel = this.firstDisplayString(left.number, left.apartmentNumber, left.id, left.apartmentId);
+        const rightLabel = this.firstDisplayString(right.number, right.apartmentNumber, right.id, right.apartmentId);
+        const leftNumber = Number(leftLabel);
+        const rightNumber = Number(rightLabel);
+        const bothNumeric = leftLabel !== '' &&
+            rightLabel !== '' &&
+            Number.isFinite(leftNumber) &&
+            Number.isFinite(rightNumber);
+        if (bothNumeric && leftNumber !== rightNumber) {
+            return leftNumber - rightNumber;
+        }
+        return leftLabel.localeCompare(rightLabel, undefined, { numeric: true, sensitivity: 'base' });
+    }
     normalizeStaffContacts(value) {
         return Array.isArray(value)
             ? value.filter((item) => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
@@ -126,7 +151,9 @@ let ResidentService = class ResidentService {
             });
             return isPrimaryResident || isActivatedOwner || isTenant;
         };
-        const apartments = Array.from(mergedApartments.values()).filter(hasConfirmedAccess);
+        const apartments = Array.from(mergedApartments.values())
+            .filter(hasConfirmedAccess)
+            .sort((left, right) => this.compareApartmentOrder(left, right));
         const buildingIds = Array.from(new Set(apartments
             .map((apartment) => this.toOptionalString(apartment.buildingId))
             .filter((value) => Boolean(value))));

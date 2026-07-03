@@ -125,7 +125,7 @@ export function ApartmentsManagementRowActions({
   const ownerData = {
     email: ownerEmail,
     userId: toText(apartmentRecord.ownerId) || undefined,
-    activated: apartmentRecord.ownerActivated === true || apartmentRecord.ownerActivated === "true",
+    activated: apartmentRecord.ownerActivated === true || apartmentRecord.ownerActivated === "true" || Boolean(toText(apartmentRecord.ownerId)),
     invitedAt: formatPossibleDate(apartmentRecord.ownerInvitedAt),
   };
   const tenants = Array.isArray(apartmentRecord.tenants) ? apartmentRecord.tenants : [];

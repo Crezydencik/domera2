@@ -13,11 +13,15 @@ export declare class ApartmentsController {
     constructor(apartmentsService: ApartmentsService);
     list(request: Request, user: RequestUser, query: Record<string, unknown>): Promise<{
         items: {
+            ownerActivated: boolean;
+            tenants: unknown;
             createdAt: Date | undefined;
             id: string;
         }[];
     }>;
     byId(request: Request, user: RequestUser, apartmentId: string): Promise<{
+        ownerActivated: boolean;
+        tenants: unknown;
         createdAt: Date | undefined;
         id: string;
     }>;
@@ -55,6 +59,7 @@ export declare class ApartmentsController {
         contractNumber?: string;
     }): Promise<{
         success: boolean;
+        ownerActivated: boolean;
     }>;
     removeOwner(request: Request, user: RequestUser, apartmentId: string): Promise<{
         success: boolean;

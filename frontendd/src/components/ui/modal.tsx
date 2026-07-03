@@ -9,13 +9,14 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   /** Tailwind max-width class for the dialog. */
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
 }
 
 const sizeClass = {
   sm: "max-w-sm",
   md: "max-w-lg",
   lg: "max-w-2xl",
+  xl: "max-w-5xl",
 } as const;
 
 export function Modal({ open, onClose, title, children, footer, size = "md" }: ModalProps) {

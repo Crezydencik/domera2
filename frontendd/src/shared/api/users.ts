@@ -50,6 +50,10 @@ export function getPlatformUsers() {
   return apiFetch<{ items?: PlatformUser[] }>("/users");
 }
 
+export function getUserByEmail(email: string) {
+  return apiFetch<PlatformUser | null>(`/users/by-email/search?email=${encodeURIComponent(email)}`);
+}
+
 export function setBuildingCreationAccess(
   userId: string,
   approved: boolean,

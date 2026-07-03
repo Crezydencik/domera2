@@ -128,6 +128,28 @@ function firstDisplayString(...values: unknown[]): string {
   return "";
 }
 
+function compareApartmentOrder(left: UnknownRecord, right: UnknownRecord): number {
+  const leftLabel = firstDisplayString(left.number, left.apartmentNumber, left.id, left.apartmentId);
+  const rightLabel = firstDisplayString(right.number, right.apartmentNumber, right.id, right.apartmentId);
+  const leftNumber = Number(leftLabel);
+  const rightNumber = Number(rightLabel);
+  const bothNumeric =
+    leftLabel !== "" &&
+    rightLabel !== "" &&
+    Number.isFinite(leftNumber) &&
+    Number.isFinite(rightNumber);
+
+  if (bothNumeric && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+
+  return leftLabel.localeCompare(rightLabel, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function sortApartmentsByNumber(items: UnknownRecord[]): UnknownRecord[] {
+  return [...items].sort(compareApartmentOrder);
+}
+
 function joinNameParts(...values: unknown[]): string | undefined {
   const parts = values
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
@@ -705,7 +727,9 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
       ]);
 
     const liveBuildings = Array.isArray(buildingsResponse?.items) ? buildingsResponse.items.map(toBuilding) : [];
-    const liveApartments = Array.isArray(apartmentsResponse?.items) ? apartmentsResponse.items : [];
+    const liveApartments = sortApartmentsByNumber(
+      Array.isArray(apartmentsResponse?.items) ? apartmentsResponse.items : [],
+    );
     const liveResidents = Array.isArray(residentsResponse?.items) ? residentsResponse.items.map((item) => toResident(item)) : [];
     const supplementalResidents = deriveResidentsFromApartments(liveApartments);
 
@@ -751,6 +775,7 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
     : apartmentId && apartmentId !== "вЂ”"
       ? [{ id: apartmentId, apartmentId }]
       : [];
+  liveApartments.sort(compareApartmentOrder);
   const liveBuildings = Array.isArray(residentHome?.buildings) ? residentHome.buildings.map(toBuilding) : [];
   const residentHomeCompanies = Array.isArray(residentHome?.managementCompanies) ? residentHome.managementCompanies : [];
   const apartmentIds = liveApartments

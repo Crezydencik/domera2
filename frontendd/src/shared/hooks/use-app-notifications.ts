@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { apiFetch } from "@/shared/api/client";
+import { apiFetch, DomeraApiError } from "@/shared/api/client";
 import { getNotificationSettings, getNotifications, markNotificationRead, removeNotification, type NotificationSettings } from "@/shared/api/notifications";
 import { useAuthSession } from "@/shared/hooks/use-auth";
 import type { NotificationItem } from "@/shared/lib/data";
@@ -269,7 +269,9 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
         setOwnerStatusLoaded(true);
       }
     } catch (caughtError) {
-      const message = caughtError instanceof Error ? caughtError.message : t("loadError");
+      const message = caughtError instanceof DomeraApiError && caughtError.status >= 500
+        ? t("loadError")
+        : caughtError instanceof Error ? caughtError.message : t("loadError");
       setError(message);
     } finally {
       setHasLoaded(true);

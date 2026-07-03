@@ -47,6 +47,35 @@ export class NotificationsService {
     return 0;
   }
 
+  private isMissingFirestoreIndexError(error: unknown): boolean {
+    const details = error && typeof error === 'object' ? error as { code?: unknown; details?: unknown; message?: unknown } : {};
+    const text = [details.details, details.message]
+      .filter((value): value is string => typeof value === 'string')
+      .join(' ')
+      .toLowerCase();
+
+    return details.code === 9 || details.code === 'failed-precondition' || text.includes('requires an index');
+  }
+
+  private async getLegacyNotificationsSnapshot(userId: string): Promise<FirebaseFirestore.QuerySnapshot> {
+    const baseQuery = this.firebaseAdminService.firestore
+      .collection('notifications')
+      .where('userId', '==', userId);
+
+    try {
+      return await baseQuery
+        .orderBy('createdAt', 'desc')
+        .limit(100)
+        .get();
+    } catch (error) {
+      if (!this.isMissingFirestoreIndexError(error)) throw error;
+
+      return baseQuery
+        .limit(500)
+        .get();
+    }
+  }
+
   private async findNotificationDocument(
     notificationId: string,
     fallbackUserId?: string,
@@ -173,12 +202,7 @@ export class NotificationsService {
         .orderBy('createdAt', 'desc')
         .limit(100)
         .get(),
-      this.firebaseAdminService.firestore
-        .collection('notifications')
-        .where('userId', '==', normalizedUserId)
-        .orderBy('createdAt', 'desc')
-        .limit(100)
-        .get(),
+      this.getLegacyNotificationsSnapshot(normalizedUserId),
     ]);
 
     const itemsById = new Map<string, { id: string } & Record<string, unknown>>();

@@ -52,7 +52,10 @@ type ApartmentOccupancyStatus = "occupied" | "pending" | "vacant";
 
 function getApartmentOccupancyStatus(apartment: Record<string, unknown>): ApartmentOccupancyStatus {
   const tenants = Array.isArray(apartment.tenants) ? apartment.tenants.length : 0;
-  const ownerActivated = apartment.ownerActivated === true || apartment.ownerActivated === "true";
+  const ownerActivated =
+    apartment.ownerActivated === true ||
+    apartment.ownerActivated === "true" ||
+    hasReadableText(apartment.ownerId);
   const ownerPending = !ownerActivated && hasReadableText(apartment.ownerEmail) && (
     hasReadableText(apartment.ownerInvitationId) ||
     Boolean(apartment.ownerInvitedAt)
@@ -146,12 +149,14 @@ export function ApartmentsManagementView({
   );
 
   const filteredApartments = useMemo(
-    () => data.apartments.filter((item) => {
-          const buildingIdValue = item.buildingId;
-          const buildingId = hasReadableText(buildingIdValue) ? buildingIdValue.trim() : "";
-          if (normalizedBuildingId) return buildingId === normalizedBuildingId;
-          return !buildingId || approvedBuildingIds.has(buildingId);
-        }),
+    () => data.apartments
+      .filter((item) => {
+        const buildingIdValue = item.buildingId;
+        const buildingId = hasReadableText(buildingIdValue) ? buildingIdValue.trim() : "";
+        if (normalizedBuildingId) return buildingId === normalizedBuildingId;
+        return !buildingId || approvedBuildingIds.has(buildingId);
+      })
+      .sort((left, right) => compareApartmentOrder(left, right)),
     [approvedBuildingIds, data.apartments, normalizedBuildingId],
   );
 
@@ -337,6 +342,7 @@ export function ApartmentsManagementView({
               t("tenantAccess.fields.phone"),
             ]}
             rows={rows}
+            pageSize={25}
             desktopHiddenColumns={[7]}
             mobileColumnLabels={{
               0: t("management.mobile.apartmentAbbr"),

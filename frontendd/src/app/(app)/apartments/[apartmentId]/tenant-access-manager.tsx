@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { inviteApartmentTenant, removeApartmentOwner, removeApartmentTenant, updateApartmentOwner, resendOwnerInvitation, updateApartmentTenant } from "@/shared/api/apartments";
 import { getDocuments, uploadDocument, type DocumentRecord } from "@/shared/api/documents";
+import { getUserByEmail } from "@/shared/api/users";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { FiEdit2, FiPaperclip, FiRefreshCw, FiTrash2 } from "react-icons/fi";
 
@@ -67,9 +68,10 @@ function normalizeSearchText(value: unknown) {
 }
 
 function isTenantConfirmed(tenant: Record<string, unknown>) {
+  if (typeof tenant.userId === "string" && tenant.userId.trim()) return true;
   if (tenant.activated === true || tenant.acceptedAt || tenant.activatedAt) return true;
   const status = typeof tenant.status === "string" ? tenant.status.trim().toLowerCase() : "";
-  return status === "accepted";
+  return status === "accepted" || status === "active";
 }
 
 function splitTenantName(value: unknown) {
@@ -161,6 +163,40 @@ export function TenantAccessManager({
   });
 
   useEffect(() => {
+    setLocalOwner(ownerData ?? {
+      email: EMPTY_CELL,
+      activated: false,
+      invitedAt: EMPTY_CELL,
+    });
+  }, [ownerData]);
+
+  useEffect(() => {
+    const ownerEmail = localOwner.email && localOwner.email !== EMPTY_CELL ? localOwner.email.trim().toLowerCase() : "";
+    if (!ownerEmail || localOwner.activated) return;
+
+    let cancelled = false;
+    getUserByEmail(ownerEmail)
+      .then((user) => {
+        if (cancelled || !user) return;
+        const userId = user.id ?? user.uid;
+        setLocalOwner((current) => {
+          const currentEmail = current.email && current.email !== EMPTY_CELL ? current.email.trim().toLowerCase() : "";
+          if (currentEmail !== ownerEmail || current.activated) return current;
+          return {
+            ...current,
+            userId,
+            activated: true,
+          };
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [localOwner.email, localOwner.activated]);
+
+  useEffect(() => {
     setTenantsState(tenants ?? []);
   }, [tenants]);
 
@@ -207,7 +243,7 @@ export function TenantAccessManager({
     }
     setLoading(true);
     try {
-      await updateApartmentOwner(apartmentId, normalizedEmail, {
+      const result = await updateApartmentOwner(apartmentId, normalizedEmail, {
         firstName: ownerFirstName.trim(),
         lastName: ownerLastName.trim(),
         contractNumber: ownerContractNumber.trim(),
@@ -222,7 +258,7 @@ export function TenantAccessManager({
       setIsOwnerDeleted(false);
       setLocalOwner({
         email: normalizedEmail,
-        activated: false,
+        activated: result.ownerActivated === true,
         invitedAt: new Date().toISOString(),
       });
       setOwnerModalOpen(false);
@@ -251,7 +287,7 @@ export function TenantAccessManager({
     }
     setEditLoading(true);
     try {
-      await updateApartmentOwner(apartmentId, normalizedEmail, {
+      const result = await updateApartmentOwner(apartmentId, normalizedEmail, {
         firstName: editOwnerFirstName.trim(),
         lastName: editOwnerLastName.trim(),
         contractNumber: editOwnerContractNumber.trim(),
@@ -259,7 +295,7 @@ export function TenantAccessManager({
       notifications.success(t("alerts.updateSuccess"));
       setLocalOwner({
         email: normalizedEmail,
-        activated: localOwner.activated,
+        activated: result.ownerActivated === true || localOwner.activated,
         invitedAt: new Date().toISOString(),
       });
       setEditOwnerModal(false);

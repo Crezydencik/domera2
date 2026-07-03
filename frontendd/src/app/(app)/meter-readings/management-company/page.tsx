@@ -50,6 +50,15 @@ interface ManagedBuildingOption {
   apartmentCount: number;
 }
 
+interface MonthlyWaterSummary {
+  monthKey: string;
+  label: string;
+  cold: number;
+  hot: number;
+  total: number;
+  readingsCount: number;
+}
+
 type UnknownRecord = Record<string, unknown>;
 type ExportFormat = "csv" | "excel" | "xml";
 
@@ -83,6 +92,79 @@ function readingConsumption(reading: MeterReadingRecord | null | undefined) {
     return formatConsumption(reading.consumption);
   }
   return formatConsumption(consumptionValue(currentValue, previousValue));
+}
+
+function readingConsumptionNumber(reading: MeterReadingRecord | null | undefined) {
+  if (!reading) return 0;
+  const currentValue = Number(String(reading.currentValue ?? "").replace(",", "."));
+  const previousValue = Number(String(reading.previousValue ?? "").replace(",", "."));
+  if (Number.isFinite(currentValue) && Number.isFinite(previousValue)) {
+    return consumptionValue(currentValue, previousValue);
+  }
+
+  const storedConsumption = Number(String(reading.consumption ?? "").replace(",", "."));
+  return Number.isFinite(storedConsumption) ? Number(storedConsumption.toFixed(3)) : 0;
+}
+
+function isHotWaterMeter(meter: MeterInfo) {
+  return meter.meterKey === "hotmeterwater" || meter.meterType.toLowerCase().includes("hot");
+}
+
+function monthLabelFromKey(monthKey: string) {
+  const [year, month] = monthKey.split("-");
+  return year && month ? `${month}.${year}` : monthKey;
+}
+
+function waterSummaryForApartments(apartments: ApartmentMeterData[], requestedMonthKey?: string | null): MonthlyWaterSummary | null {
+  const allMonthKeys = apartments
+    .flatMap((apt) => apt.meters)
+    .flatMap((meter) => meter.readings.map((reading) => readingMonthKey(reading)))
+    .filter(Boolean)
+    .sort((a, b) => b.localeCompare(a));
+  const monthKey = requestedMonthKey || allMonthKeys[0];
+  if (!monthKey) return null;
+
+  let cold = 0;
+  let hot = 0;
+  let readingsCount = 0;
+
+  apartments.forEach((apt) => {
+    apt.meters.forEach((meter) => {
+      meter.readings.forEach((reading) => {
+        if (readingMonthKey(reading) !== monthKey) return;
+        readingsCount += 1;
+        const value = readingConsumptionNumber(reading);
+        if (isHotWaterMeter(meter)) {
+          hot += value;
+        } else {
+          cold += value;
+        }
+      });
+    });
+  });
+
+  if (readingsCount === 0) return null;
+
+  return {
+    monthKey,
+    label: monthLabelFromKey(monthKey),
+    cold: Number(cold.toFixed(3)),
+    hot: Number(hot.toFixed(3)),
+    total: Number((cold + hot).toFixed(3)),
+    readingsCount,
+  };
+}
+
+function waterSummariesForApartments(apartments: ApartmentMeterData[]) {
+  const monthKeys = Array.from(new Set(
+    apartments
+      .flatMap((apt) => apt.meters)
+      .flatMap((meter) => meter.readings.map((reading) => readingMonthKey(reading)).filter(Boolean)),
+  )).sort((a, b) => b.localeCompare(a));
+
+  return monthKeys
+    .map((monthKey) => waterSummaryForApartments(apartments, monthKey))
+    .filter((summary): summary is MonthlyWaterSummary => Boolean(summary));
 }
 
 function meterFromWaterReading(
@@ -144,7 +226,10 @@ function readingMonthKey(reading: MeterReadingRecord | null | undefined) {
     return `${reading.year}-${String(reading.month).padStart(2, "0")}`;
   }
 
-  const raw = reading.submittedAt;
+  return monthKeyFromDateString(reading.submittedAt);
+}
+
+function monthKeyFromDateString(raw: string | null | undefined) {
   if (!raw || raw === "—" || raw === "вЂ”") return "";
 
   const isoMatch = /^(\d{4})-(\d{2})/.exec(raw);
@@ -165,6 +250,21 @@ function readingMonthLabel(reading: MeterReadingRecord | null | undefined) {
 
   const [year, month] = key.split("-");
   return `${month}.${year}`;
+}
+
+function submittedDateLabel(raw: string | null | undefined) {
+  if (!raw || raw === "—" || raw === "вЂ”" || raw === "РІР‚вЂќ") return "";
+
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+
+  const localMatch = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(raw);
+  if (localMatch) return `${localMatch[3]}-${localMatch[2]}-${localMatch[1]}`;
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function previousReadingForMonth(meter: MeterInfo | undefined, period: string) {
@@ -238,6 +338,10 @@ export default function ManagementCompanyPage() {
   const [periodValue, setPeriodValue] = useState<SubmissionPeriodValue | null>(null);
   const [periodSaving, setPeriodSaving] = useState(false);
   const [periodDeleting, setPeriodDeleting] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const mobileActionsRef = React.useRef<HTMLDivElement | null>(null);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [statsExpandedYear, setStatsExpandedYear] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
   const [exportReadingMonth, setExportReadingMonth] = useState<string>(() => {
@@ -289,14 +393,28 @@ export default function ManagementCompanyPage() {
   // Period-aware status: 'submitted' (зелёный, сдано в текущем периоде),
   // 'pending' (жёлтый, период открыт, ещё не сдано), 'overdue' (красный,
   // период закрыт, не сдано). Если период не настроен — фолбэк 'submitted'.
+  React.useEffect(() => {
+    if (!mobileActionsOpen) return;
+
+    const closeOnOutsideClick = (event: MouseEvent | TouchEvent) => {
+      const target = event.target;
+      if (target instanceof Node && mobileActionsRef.current?.contains(target)) return;
+      setMobileActionsOpen(false);
+    };
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("touchstart", closeOnOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("touchstart", closeOnOutsideClick);
+    };
+  }, [mobileActionsOpen]);
+
   const getPeriodStatus = React.useCallback(
-    (latestSubmittedAt?: string | null): "submitted" | "pending" | "overdue" => {
+    (latestSubmittedAt?: string | null, latestSubmittedMonthKey?: string | null): "submitted" | "pending" | "overdue" => {
       const now = new Date();
       const curYear = now.getFullYear();
       const curMonth = now.getMonth();
-      const prevMonth = curMonth === 0 ? 11 : curMonth - 1;
-      const prevYear = curMonth === 0 ? curYear - 1 : curYear;
-
       // Парсим последнюю отправку (формат "DD/MM/YYYY, HH:mm" или ISO)
       let submittedDate: Date | null = null;
       if (latestSubmittedAt && latestSubmittedAt !== "—") {
@@ -309,15 +427,11 @@ export default function ManagementCompanyPage() {
       }
 
       // Если сдано в текущем месяце ИЛИ в предыдущем — показываем зелёный (submitted)
-      const submittedThisOrPrevMonth = !!submittedDate && (
-        (submittedDate.getFullYear() === curYear && submittedDate.getMonth() === curMonth) ||
-        (submittedDate.getFullYear() === prevYear && submittedDate.getMonth() === prevMonth)
-      );
-      
-      if (submittedThisOrPrevMonth) return "submitted";
+      const submittedMonthKey = latestSubmittedMonthKey || monthKeyFromDateString(latestSubmittedAt);
+      const keyForMonth = (year: number, month: number) => `${year}-${String(month + 1).padStart(2, "0")}`;
 
       if (!periodValue?.startDate || !periodValue?.endDate) {
-        return "pending";
+        return submittedDate?.getFullYear() === curYear && submittedDate.getMonth() === curMonth ? "submitted" : "pending";
       }
       const startD = new Date(periodValue.startDate);
       const endD = new Date(periodValue.endDate);
@@ -327,13 +441,30 @@ export default function ManagementCompanyPage() {
       let windowStart: Date;
       let windowEnd: Date;
       if (periodValue.monthly) {
-        windowStart = new Date(curYear, curMonth, startD.getDate());
-        windowEnd = new Date(curYear, curMonth, endD.getDate(), 23, 59, 59);
+        const monthlyWindow = (year: number, month: number) => {
+          const lastOfMonth = new Date(year, month + 1, 0).getDate();
+          const startDay = Math.min(Math.max(startD.getDate(), 1), lastOfMonth);
+          const endDay = Math.min(Math.max(endD.getDate(), 1), lastOfMonth);
+          return {
+            start: new Date(year, month, startDay),
+            end: new Date(year, month, endDay, 23, 59, 59, 999),
+          };
+        };
+        const currentWindow = monthlyWindow(curYear, curMonth);
+        windowStart = currentWindow.start;
+        windowEnd = currentWindow.end;
+        if (now < windowStart) {
+          const previousMonth = curMonth === 0 ? 11 : curMonth - 1;
+          const previousYear = curMonth === 0 ? curYear - 1 : curYear;
+          return submittedMonthKey === keyForMonth(previousYear, previousMonth) ? "submitted" : "overdue";
+        }
       } else {
         windowStart = startD;
-        windowEnd = new Date(endD.getFullYear(), endD.getMonth(), endD.getDate(), 23, 59, 59);
+        windowEnd = new Date(endD.getFullYear(), endD.getMonth(), endD.getDate(), 23, 59, 59, 999);
       }
 
+      if (periodValue.monthly && submittedMonthKey === keyForMonth(curYear, curMonth)) return "submitted";
+      if (!periodValue.monthly && submittedDate && submittedDate >= windowStart && submittedDate <= windowEnd) return "submitted";
       if (now < windowStart) return "pending";
       if (now <= windowEnd) return "pending";
       return "overdue";
@@ -346,6 +477,220 @@ export default function ManagementCompanyPage() {
     pending: { dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50", border: "border-amber-200", label: t("statusPending") },
     overdue: { dot: "bg-rose-500", text: "text-rose-700", bg: "bg-rose-50", border: "border-rose-200", label: t("statusOverdue") },
   };
+
+  const formatCubic = React.useCallback((value: number) => `${value.toFixed(3)} m\u00b3`, []);
+
+  const renderBuildingStatsPanel = React.useCallback(
+    (summary: MonthlyWaterSummary | null, onOpenChart: () => void) => {
+      if (!summary) return null;
+      return (
+        <div className="mb-5 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("buildingStats")}</div>
+              <div className="text-base font-semibold text-slate-900 tabular-nums">{summary.label}</div>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenChart}
+              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 3v18h18" />
+                <path d="m7 15 4-4 3 3 5-7" />
+              </svg>
+              {t("openChart")}
+            </button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-md bg-blue-50 px-2.5 py-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">{t("coldWaterShort")}</div>
+              <div className="mt-0.5 text-base font-bold text-blue-700 tabular-nums">{formatCubic(summary.cold)}</div>
+            </div>
+            <div className="rounded-md bg-rose-50 px-2.5 py-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-rose-500">{t("hotWaterShort")}</div>
+              <div className="mt-0.5 text-base font-bold text-rose-700 tabular-nums">{formatCubic(summary.hot)}</div>
+            </div>
+          </div>
+        </div>
+      );
+    },
+    [formatCubic, t],
+  );
+
+  const renderBuildingStatsChart = React.useCallback(
+    (summaries: MonthlyWaterSummary[]) => {
+      if (summaries.length === 0) {
+        return (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
+            {t("noConsumptionData")}
+          </div>
+        );
+      }
+
+      const chartData = summaries.slice(0, 12).reverse();
+      const latest = summaries[0] ?? null;
+      const width = 920;
+      const height = 340;
+      const padLeft = 72;
+      const padRight = 28;
+      const padTop = 36;
+      const padBottom = 52;
+      const values = chartData.flatMap((summary) => [summary.cold, summary.hot]).filter((value) => value > 0).sort((a, b) => a - b);
+      const maxValue = Math.max(...values, 1);
+      const medianValue = values.length > 0 ? values[Math.floor(values.length / 2)] : maxValue;
+      const regularLimit = Math.max(medianValue * 4, 1);
+      const regularValues = values.filter((value) => value <= regularLimit);
+      const regularMax = Math.max(...(regularValues.length > 0 ? regularValues : values), 1);
+      const chartMax = maxValue > regularMax * 4 ? Math.max(regularMax * 1.25, 1) : maxValue;
+      const hasOutlier = maxValue > chartMax;
+      const xFor = (index: number) => {
+        if (chartData.length === 1) return width / 2;
+        return padLeft + (index * (width - padLeft - padRight)) / (chartData.length - 1);
+      };
+      const yFor = (value: number) => height - padBottom - (Math.min(value, chartMax) / chartMax) * (height - padTop - padBottom);
+      const coldPoints = chartData.map((summary, index) => `${xFor(index)},${yFor(summary.cold)}`).join(" ");
+      const hotPoints = chartData.map((summary, index) => `${xFor(index)},${yFor(summary.hot)}`).join(" ");
+      const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
+        ratio,
+        value: chartMax * ratio,
+        y: height - padBottom - ratio * (height - padTop - padBottom),
+      }));
+      const yearGroups = chartData.reduce<Array<{ year: string; items: MonthlyWaterSummary[]; cold: number; hot: number }>>((groups, summary) => {
+        const year = summary.monthKey.split("-")[0] || summary.label.slice(-4);
+        const existing = groups.find((group) => group.year === year);
+        if (existing) {
+          existing.items.push(summary);
+          existing.cold += summary.cold;
+          existing.hot += summary.hot;
+        } else {
+          groups.push({ year, items: [summary], cold: summary.cold, hot: summary.hot });
+        }
+        return groups;
+      }, []);
+      const hasMultipleYears = yearGroups.length > 1;
+      const renderMonthRow = (summary: MonthlyWaterSummary) => (
+        <div key={summary.monthKey} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+          <span className="font-semibold text-slate-800 tabular-nums">{summary.label}</span>
+          <div className="flex shrink-0 flex-wrap justify-end gap-2 text-xs font-semibold">
+            <span className="rounded-md bg-blue-50 px-2 py-1 text-blue-700 tabular-nums">{t("coldWaterShort")}: {formatCubic(summary.cold)}</span>
+            <span className="rounded-md bg-rose-50 px-2 py-1 text-rose-700 tabular-nums">{t("hotWaterShort")}: {formatCubic(summary.hot)}</span>
+          </div>
+        </div>
+      );
+
+      return (
+        <div className="space-y-4">
+          {latest && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="rounded-lg bg-blue-50 px-3 py-2">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">{t("coldWaterShort")} {latest.label}</div>
+                <div className="mt-0.5 text-lg font-bold text-blue-700 tabular-nums">{formatCubic(latest.cold)}</div>
+              </div>
+              <div className="rounded-lg bg-rose-50 px-3 py-2">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-rose-500">{t("hotWaterShort")} {latest.label}</div>
+                <div className="mt-0.5 text-lg font-bold text-rose-700 tabular-nums">{formatCubic(latest.hot)}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("buildingStats")}</div>
+                <div className="text-sm text-slate-500">{t("summaryChart")}</div>
+              </div>
+              <div className="flex items-center gap-3 text-xs font-semibold">
+                <span className="inline-flex items-center gap-1 text-blue-700"><span className="h-2 w-2 rounded-full bg-blue-500" />{t("coldWaterShort")}</span>
+                <span className="inline-flex items-center gap-1 text-rose-700"><span className="h-2 w-2 rounded-full bg-rose-500" />{t("hotWaterShort")}</span>
+              </div>
+            </div>
+            {hasOutlier && (
+              <div className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                {t("chartOutlierHint")}
+              </div>
+            )}
+            <svg viewBox={`0 0 ${width} ${height}`} className="h-80 w-full overflow-visible">
+              <line x1={padLeft} y1={height - padBottom} x2={width - padRight} y2={height - padBottom} stroke="#cbd5e1" strokeWidth="1" />
+              <line x1={padLeft} y1={padTop} x2={padLeft} y2={height - padBottom} stroke="#cbd5e1" strokeWidth="1" />
+              {yTicks.map((tick) => (
+                <g key={tick.ratio}>
+                  <line x1={padLeft} y1={tick.y} x2={width - padRight} y2={tick.y} stroke="#e2e8f0" strokeWidth="1" />
+                  <text x={padLeft - 10} y={tick.y + 4} textAnchor="end" className="fill-slate-500 text-[11px] font-semibold">
+                    {tick.ratio === 0 ? "0" : tick.value.toFixed(0)}
+                  </text>
+                </g>
+              ))}
+              <polyline points={coldPoints} fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              <polyline points={hotPoints} fill="none" stroke="#f43f5e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              {chartData.map((summary, index) => (
+                <g key={summary.monthKey}>
+                  <circle cx={xFor(index)} cy={yFor(summary.cold)} r="4" fill="#3b82f6" />
+                  <circle cx={xFor(index)} cy={yFor(summary.hot)} r="4" fill="#f43f5e" />
+                  {summary.cold > chartMax && (
+                    <text x={xFor(index)} y={yFor(summary.cold) - 9} textAnchor="middle" className="fill-blue-700 text-[11px] font-bold">
+                      {formatCubic(summary.cold)}
+                    </text>
+                  )}
+                  {summary.hot > chartMax && (
+                    <text x={xFor(index)} y={yFor(summary.hot) + 17} textAnchor="middle" className="fill-rose-700 text-[11px] font-bold">
+                      {formatCubic(summary.hot)}
+                    </text>
+                  )}
+                  <text x={xFor(index)} y={height - 18} textAnchor="middle" className="fill-slate-500 text-[11px] font-semibold">
+                    {summary.label}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+          {hasMultipleYears ? (
+            <div className="space-y-2">
+              {yearGroups.map((group) => {
+                const isExpanded = statsExpandedYear === group.year;
+                return (
+                  <div key={group.year} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                    <button
+                      type="button"
+                      onClick={() => setStatsExpandedYear((current) => (current === group.year ? null : group.year))}
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <svg
+                          className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="m9 18 6-6-6-6" />
+                        </svg>
+                        <span className="font-semibold text-slate-900 tabular-nums">{group.year}</span>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap justify-end gap-2 text-xs font-semibold">
+                        <span className="rounded-md bg-blue-50 px-2 py-1 text-blue-700 tabular-nums">{t("coldWaterShort")}: {formatCubic(group.cold)}</span>
+                        <span className="rounded-md bg-rose-50 px-2 py-1 text-rose-700 tabular-nums">{t("hotWaterShort")}: {formatCubic(group.hot)}</span>
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div className="space-y-2 border-t border-slate-100 bg-slate-50/60 p-3">
+                        {group.items.map(renderMonthRow)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-2">{chartData.map(renderMonthRow)}</div>
+          )}
+        </div>
+      );
+    },
+    [formatCubic, statsExpandedYear, t],
+  );
 
   // View meters modal
   const [viewOpen, setViewOpen] = useState(false);
@@ -983,6 +1328,7 @@ export default function ManagementCompanyPage() {
         { value: "all", label: t("statusAll") },
         { value: "submitted", label: t("statusSubmitted") },
         { value: "pending", label: t("statusPending") },
+        { value: "overdue", label: t("statusOverdue") },
         { value: "verified", label: t("statusVerified") },
       ],
     },
@@ -997,13 +1343,23 @@ export default function ManagementCompanyPage() {
         .map((m) => m.latestReading?.submittedAt)
         .filter((d): d is string => Boolean(d) && d !== "â€”");
       const latestDate = dates.length > 0 ? dates.sort().reverse()[0] : "â€”";
-      const periodStatus = getPeriodStatus(latestDate);
+      const monthKeys = item.meters
+        .map((m) => readingMonthKey(m.latestReading))
+        .filter(Boolean);
+      const latestMonthKey = monthKeys.length > 0 ? monthKeys.sort().reverse()[0] : undefined;
+      const periodStatus = getPeriodStatus(latestDate, latestMonthKey);
       const hasReadingStatus = item.meters.some((m) => m.latestReading?.status === statusFilter);
       if (statusFilter === "pending") return periodStatus === "pending" || hasReadingStatus;
+      if (statusFilter === "overdue") return periodStatus === "overdue";
+      if (statusFilter === "submitted") return periodStatus === "submitted" || hasReadingStatus;
       if (!hasReadingStatus) return false;
     }
     return true;
   });
+
+  const buildingApartments = apartments.filter((item) => !effectiveBuilding || item.building === effectiveBuilding);
+  const buildingWaterSummaries = waterSummariesForApartments(buildingApartments);
+  const buildingWaterSummary = buildingWaterSummaries[0] ?? null;
 
   const handleExportReadings = () => {
     const exportRows = filteredApartments.flatMap((apt) =>
@@ -1123,13 +1479,7 @@ ${xmlRows}
   };
 
   const toggleExpanded = (id: string) => {
-    const newExpanded = new Set(expandedApartments);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
-    } else {
-      newExpanded.add(id);
-    }
-    setExpandedApartments(newExpanded);
+    setExpandedApartments((current) => (current.has(id) ? new Set() : new Set([id])));
   };
 
   const toggleMonth = (monthKey: string) => {
@@ -1405,6 +1755,15 @@ ${xmlRows}
         </div>
       </Modal>
 
+      <Modal
+        open={statsOpen}
+        onClose={() => setStatsOpen(false)}
+        title={t("statsModalTitle")}
+        size="xl"
+      >
+        {renderBuildingStatsChart(buildingWaterSummaries)}
+      </Modal>
+
       <SectionCard> 
         {buildings.length > 1 && (
           <div className="mb-5 max-w-md">
@@ -1453,13 +1812,15 @@ ${xmlRows}
             fields={filterFields}
             values={{ ...filterValues, building: effectiveBuilding }}
             onChange={setFilterValue}
+            mobileActionsInline
+            actionsClassName="self-end flex justify-end gap-2 md:flex md:flex-nowrap md:justify-end"
             actions={
               <>
                 <button
                   type="button"
                   onClick={() => setPeriodOpen(true)}
                   disabled={!effectiveBuilding}
-                  className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="hidden items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex"
                   title={periodValue?.monthly ? t("periodMonthly") : t("periodModalTitle")}
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1478,7 +1839,7 @@ ${xmlRows}
                   type="button"
                   onClick={() => setSelectAptOpen(true)}
                   disabled={filteredApartments.length === 0}
-                  className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1"
+                  className="hidden items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1 md:inline-flex"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                   {t("submit")}
@@ -1487,11 +1848,70 @@ ${xmlRows}
                   type="button"
                   onClick={() => setExportOpen(true)}
                   disabled={filteredApartments.length === 0}
-                  className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  className="hidden items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-slate-400 md:inline-flex"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
                   {t("export")}
                 </button>
+                <div ref={mobileActionsRef} className="relative flex h-10 w-10 items-center justify-end md:hidden">
+                  {mobileActionsOpen && (
+                    <div className="absolute right-0 top-11 z-20 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileActionsOpen(false);
+                          setPeriodOpen(true);
+                        }}
+                        disabled={!effectiveBuilding}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        title={periodValue?.monthly ? t("periodMonthly") : t("periodModalTitle")}
+                      >
+                        <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="4" width="18" height="18" rx="2" />
+                          <path d="M16 2v4M8 2v4M3 10h18" />
+                        </svg>
+                        {periodButtonLabel}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileActionsOpen(false);
+                          setSelectAptOpen(true);
+                        }}
+                        disabled={filteredApartments.length === 0}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        {t("submit")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileActionsOpen(false);
+                          setExportOpen(true);
+                        }}
+                        disabled={filteredApartments.length === 0}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                        {t("export")}
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setMobileActionsOpen((open) => !open)}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                    aria-label={t("colActions")}
+                    aria-expanded={mobileActionsOpen}
+                  >
+                    <svg className="h-5 w-5 rotate-90" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <circle cx="5" cy="12" r="1.8" />
+                      <circle cx="12" cy="12" r="1.8" />
+                      <circle cx="19" cy="12" r="1.8" />
+                    </svg>
+                  </button>
+                </div>
               </>
             }
             footer={
@@ -1502,6 +1922,8 @@ ${xmlRows}
             }
           />
         )}
+
+        {!selectedBuildingHasNoApartments && renderBuildingStatsPanel(buildingWaterSummary, () => setStatsOpen(true))}
 
         {/* Table */}
         {loading ? (
@@ -1532,7 +1954,12 @@ ${xmlRows}
                 .map((m) => m.latestReading?.submittedAt)
                 .filter((d): d is string => Boolean(d) && d !== "—");
               const latestDate = dates.length > 0 ? dates.sort().reverse()[0] : "—";
-              const cfg = STATUS_CFG[getPeriodStatus(latestDate)];
+              const monthKeys = apt.meters
+                .map((m) => readingMonthKey(m.latestReading))
+                .filter(Boolean);
+              const latestMonthKey = monthKeys.length > 0 ? monthKeys.sort().reverse()[0] : undefined;
+              const cfg = STATUS_CFG[getPeriodStatus(latestDate, latestMonthKey)];
+              const submittedDate = submittedDateLabel(latestDate);
               return (
                 <div key={apt.id} className="rounded-md border border-slate-200 bg-white">
                   <button
@@ -1541,12 +1968,16 @@ ${xmlRows}
                   >
                     <svg className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                     <span className="text-base font-semibold text-slate-900 tabular-nums">{apt.apartment}</span>
-                    <span className="ml-auto flex min-w-0 flex-col items-end gap-1 rounded-xl bg-slate-50 px-2.5 py-1.5">
+                    <span className="ml-auto flex min-w-0 flex-col items-end gap-1 rounded-xl  px-2.5 py-1.5">
                       <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${cfg.bg} ${cfg.border} ${cfg.text}`}>
                         <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
                         {cfg.label}
                       </span>
-                      <span className="max-w-[6.5rem] truncate text-[11px] text-slate-500 tabular-nums">{latestDate}</span>
+                      {submittedDate && (
+                        <span className="max-w-[8.5rem] truncate text-[11px] font-medium text-slate-500 tabular-nums">
+                          {t("submittedDateShort")}: {submittedDate}
+                        </span>
+                      )}
                     </span>
                   </button>
 
@@ -1675,7 +2106,13 @@ ${xmlRows}
           {/* Desktop table */}
           <div className="hidden md:block overflow-hidden rounded-md border border-slate-200">
             <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-10" />
+                <col />
+                <col className="w-36" />
+                <col className="w-32" />
+              </colgroup>
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
                   <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 w-10"></th>
@@ -1700,29 +2137,36 @@ ${xmlRows}
                         <td className="px-3 py-3 align-top">
                           <div className="font-semibold text-slate-900 tabular-nums">{apt.apartment}</div>
                         </td>
-                        <td className="px-3 py-3 text-center align-middle">
+                        <td className="px-2 py-2 text-center align-middle">
                           {(() => {
                             const dates = apt.meters
                               .map((m) => m.latestReading?.submittedAt)
                               .filter((d): d is string => Boolean(d) && d !== "—");
                             const latestDate = dates.length > 0 ? dates.sort().reverse()[0] : undefined;
-                            const cfg = STATUS_CFG[getPeriodStatus(latestDate)];
+                            const monthKeys = apt.meters
+                              .map((m) => readingMonthKey(m.latestReading))
+                              .filter(Boolean);
+                            const statusMonthKey = monthKeys.length > 0 ? monthKeys.sort().reverse()[0] : undefined;
+                            const cfg = STATUS_CFG[getPeriodStatus(latestDate, statusMonthKey)];
+                            const submittedDate = submittedDateLabel(latestDate);
                             return (
-                              <div className="inline-flex flex-col items-center gap-1 rounded-xl bg-slate-50 px-2.5 py-1.5">
-                                <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ${cfg.bg} ${cfg.border} ${cfg.text}`}>
+                              <div className="inline-flex min-w-0 flex-col items-center gap-1">
+                                <span className={`inline-flex max-w-full items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${cfg.bg} ${cfg.border} ${cfg.text}`}>
                                   <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
                                   {cfg.label}
                                 </span>
-                                <span className="max-w-[7rem] truncate text-[11px] text-slate-500 tabular-nums">
-                                  {latestDate ?? "—"}
-                                </span>
+                                {submittedDate && (
+                                  <span className="max-w-[8.5rem] truncate text-[11px] font-medium text-slate-500 tabular-nums">
+                                    {t("submittedDateShort")}: {submittedDate}
+                                  </span>
+                                )}
                               </div>
                             );
                           })()}
                         </td>
                   
-                        <td className="px-3 py-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex gap-1 justify-center">
+                        <td className="px-2 py-2 text-center align-middle" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex justify-center gap-1">
                             <button
                               onClick={() => openViewModal(apt)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"

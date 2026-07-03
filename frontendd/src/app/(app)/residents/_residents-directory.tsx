@@ -175,6 +175,10 @@ function compareApartment(left: ContactRow, right: ContactRow) {
     || left.fullName.localeCompare(right.fullName, undefined, { sensitivity: "base" });
 }
 
+function hasVisibleContact(value: string) {
+  return value.trim() !== "" && value.trim() !== EMPTY_CELL;
+}
+
 export function ResidentsDirectory({ data, labels }: ResidentsDirectoryProps) {
   const [selectedBuildingId, setSelectedBuildingId] = useState("");
 
@@ -306,17 +310,65 @@ export function ResidentsDirectory({ data, labels }: ResidentsDirectoryProps) {
       )}
 
       {contacts.length > 0 ? (
-        <DataTable
-          columns={[labels.apartment, labels.fullName, labels.role, labels.email, labels.phone]}
-          mobileColumnPairs={[[0, 2]]}
-          rows={contacts.map((contact) => [
-            <span key={`${contact.key}-apartment`} className="font-medium text-slate-900">{contact.apartment}</span>,
-            <span key={`${contact.key}-name`} className="block min-w-0 break-words text-slate-900">{contact.fullName}</span>,
-            <span key={`${contact.key}-role`} className="block min-w-0 break-words">{contact.role}</span>,
-            <span key={`${contact.key}-email`} className="block min-w-0 break-all">{contact.email}</span>,
-            <span key={`${contact.key}-phone`} className="block min-w-0 break-words">{contact.phone}</span>,
-          ])}
-        />
+        <>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white md:hidden">
+            <div className="divide-y divide-slate-100">
+              {contacts.map((contact) => {
+                const hasEmail = hasVisibleContact(contact.email);
+                const hasPhone = hasVisibleContact(contact.phone);
+
+                return (
+                  <article key={contact.key} className="px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span
+                          className="flex h-9 min-w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 px-2 text-sm font-semibold text-slate-900"
+                          aria-label={`${labels.apartment} ${contact.apartment}`}
+                        >
+                          {contact.apartment}
+                        </span>
+                        <div className="min-w-0">
+                          <h2 className="break-words text-base font-semibold leading-5 text-slate-950">
+                            {contact.fullName}
+                          </h2>
+                          <div className="mt-2 grid gap-1 text-sm leading-5 text-slate-600">
+                            {hasEmail ? (
+                              <a className="min-w-0 break-all hover:text-slate-900" href={`mailto:${contact.email}`}>
+                                {contact.email}
+                              </a>
+                            ) : null}
+                            {hasPhone ? (
+                              <a className="min-w-0 break-words hover:text-slate-900" href={`tel:${contact.phone}`}>
+                                {contact.phone}
+                              </a>
+                            ) : null}
+                            {!hasEmail && !hasPhone ? <span>{EMPTY_CELL}</span> : null}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="max-w-[38%] shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-right text-xs font-semibold leading-4 text-blue-700">
+                        {contact.role}
+                      </span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="hidden md:block">
+            <DataTable
+              columns={[labels.apartment, labels.fullName, labels.role, labels.email, labels.phone]}
+              rows={contacts.map((contact) => [
+                <span key={`${contact.key}-apartment`} className="font-medium text-slate-900">{contact.apartment}</span>,
+                <span key={`${contact.key}-name`} className="block min-w-0 break-words text-slate-900">{contact.fullName}</span>,
+                <span key={`${contact.key}-role`} className="block min-w-0 break-words">{contact.role}</span>,
+                <span key={`${contact.key}-email`} className="block min-w-0 break-all">{contact.email}</span>,
+                <span key={`${contact.key}-phone`} className="block min-w-0 break-words">{contact.phone}</span>,
+              ])}
+            />
+          </div>
+        </>
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
           {labels.empty}

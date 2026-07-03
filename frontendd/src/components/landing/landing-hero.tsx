@@ -28,8 +28,7 @@ export async function LandingHero() {
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
             <Link
               href={ROUTES.register}
-              className="inline-flex min-h-14 items-center justify-center gap-3 rounded-2xl bg-blue-600 px-7 text-base font-bold text-white shadow-xl shadow-blue-600/25 transition hover:bg-blue-700"
-              style={{ color: "#fff" }}
+              className="inline-flex min-h-14 items-center  justify-center gap-3 rounded-2xl bg-blue-600 px-7 text-base font-bold text-white shadow-xl shadow-blue-600/25 transition hover:bg-blue-700"
             >
               {t("primaryCta")}
               <FiArrowRight className="h-5 w-5" aria-hidden="true" />

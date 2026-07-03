@@ -24,6 +24,11 @@ export declare class ApartmentsService {
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService);
     private enforceRateLimit;
     private firstString;
+    private compareApartmentOrder;
+    private sortApartmentItems;
+    private timestampMillis;
+    private withOwnerInvitationDates;
+    private withResolvedOwnerAccess;
     private getBuildingStorageFolders;
     private getApartmentStorageFolders;
     private getApartmentStorageFolderPath;
@@ -94,11 +99,15 @@ export declare class ApartmentsService {
     private mapApartmentDoc;
     list(request: Request, user: RequestUser, query: Record<string, unknown>): Promise<{
         items: {
+            ownerActivated: boolean;
+            tenants: unknown;
             createdAt: Date | undefined;
             id: string;
         }[];
     }>;
     byId(request: Request, user: RequestUser, apartmentId: string): Promise<{
+        ownerActivated: boolean;
+        tenants: unknown;
         createdAt: Date | undefined;
         id: string;
     }>;
@@ -141,6 +150,7 @@ export declare class ApartmentsService {
         contractNumber?: string;
     }): Promise<{
         success: boolean;
+        ownerActivated: boolean;
     }>;
     removeOwner(request: Request, user: RequestUser, apartmentId: string): Promise<{
         success: boolean;

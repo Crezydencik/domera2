@@ -174,9 +174,9 @@ function asStringArray(value: unknown) {
 function KebabIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5" aria-hidden="true">
-      <circle cx="4" cy="10" r="1.6" />
+      <circle cx="10" cy="4" r="1.6" />
       <circle cx="10" cy="10" r="1.6" />
-      <circle cx="16" cy="10" r="1.6" />
+      <circle cx="10" cy="16" r="1.6" />
     </svg>
   );
 }
@@ -347,7 +347,7 @@ export function ApartmentsManagementActionsMenu({
         const tenants = Array.isArray(record.tenants) ? record.tenants : [];
         const occupied =
           booleanValue(record.ownerActivated) ||
-          Boolean(textValue(record.ownerAcceptedAt, record.residentId)) ||
+          Boolean(textValue(record.ownerId, record.ownerAcceptedAt, record.residentId)) ||
           tenants.some((tenant) => {
             if (!tenant || typeof tenant !== "object") return false;
             const tenantRecord = tenant as Record<string, unknown>;

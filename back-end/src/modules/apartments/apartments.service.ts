@@ -82,6 +82,213 @@ export class ApartmentsService {
     return '';
   }
 
+  private compareApartmentOrder(left: Record<string, unknown>, right: Record<string, unknown>): number {
+    const leftLabel = this.firstString(left.number, left.apartmentNumber, left.id, left.apartmentId);
+    const rightLabel = this.firstString(right.number, right.apartmentNumber, right.id, right.apartmentId);
+    const leftNumber = Number(leftLabel);
+    const rightNumber = Number(rightLabel);
+    const bothNumeric =
+      leftLabel !== '' &&
+      rightLabel !== '' &&
+      Number.isFinite(leftNumber) &&
+      Number.isFinite(rightNumber);
+
+    if (bothNumeric && leftNumber !== rightNumber) {
+      return leftNumber - rightNumber;
+    }
+
+    return leftLabel.localeCompare(rightLabel, undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  private sortApartmentItems<T extends Record<string, unknown>>(items: T[]): T[] {
+    return [...items].sort((left, right) => this.compareApartmentOrder(left, right));
+  }
+
+  private timestampMillis(value: unknown): number {
+    if (!value) return 0;
+    if (value instanceof Date) return value.getTime();
+    if (typeof value === 'string') {
+      const parsed = new Date(value).getTime();
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      const seconds =
+        typeof record.seconds === 'number'
+          ? record.seconds
+          : typeof record._seconds === 'number'
+            ? record._seconds
+            : undefined;
+      if (typeof seconds === 'number') return seconds * 1000;
+      const toDate = record.toDate;
+      if (typeof toDate === 'function') {
+        try {
+          const date = toDate.call(value) as unknown;
+          return date instanceof Date ? date.getTime() : 0;
+        } catch {
+          return 0;
+        }
+      }
+    }
+
+    return 0;
+  }
+
+  private async withOwnerInvitationDates<T extends Record<string, unknown>>(items: T[]): Promise<T[]> {
+    const missingOwnerInvitationDates = items.filter((item) => {
+      const apartmentId = this.firstString(item.id, item.apartmentId);
+      const ownerEmail = this.firstString(item.ownerEmail);
+      return apartmentId && ownerEmail && !item.ownerInvitedAt;
+    });
+
+    if (missingOwnerInvitationDates.length === 0) return items;
+
+    const latestByApartment = new Map<string, { date: unknown; invitationId: string; millis: number }>();
+    const apartmentIds = Array.from(
+      new Set(missingOwnerInvitationDates.map((item) => this.firstString(item.id, item.apartmentId)).filter(Boolean)),
+    );
+    const ownerEmailByApartment = new Map(
+      missingOwnerInvitationDates.map((item) => [
+        this.firstString(item.id, item.apartmentId),
+        this.firstString(item.ownerEmail).toLowerCase(),
+      ]),
+    );
+
+    for (let index = 0; index < apartmentIds.length; index += 30) {
+      const chunk = apartmentIds.slice(index, index + 30);
+      if (chunk.length === 0) continue;
+
+      const invitations = await this.firebaseAdminService.firestore
+        .collection('invitations')
+        .where('apartmentId', 'in', chunk)
+        .get();
+
+      for (const invitationDoc of invitations.docs) {
+        const invitation = invitationDoc.data() as Record<string, unknown>;
+        const apartmentId = this.firstString(invitation.apartmentId);
+        const ownerEmail = ownerEmailByApartment.get(apartmentId);
+        if (!apartmentId || !ownerEmail) continue;
+
+        const invitationEmail = this.firstString(invitation.email).toLowerCase();
+        const inviteType = this.firstString(invitation.inviteType).toLowerCase();
+        const role = this.firstString(invitation.role).toLowerCase();
+        const isOwnerInvitation = inviteType === 'owner' || role === 'landlord';
+        if (!isOwnerInvitation || invitationEmail !== ownerEmail) continue;
+
+        const date = invitation.createdAt ?? invitation.invitedAt;
+        const millis = this.timestampMillis(date);
+        if (!millis) continue;
+
+        const current = latestByApartment.get(apartmentId);
+        if (!current || millis > current.millis) {
+          latestByApartment.set(apartmentId, { date, invitationId: invitationDoc.id, millis });
+        }
+      }
+    }
+
+    if (latestByApartment.size === 0) return items;
+
+    return items.map((item) => {
+      if (item.ownerInvitedAt) return item;
+      const apartmentId = this.firstString(item.id, item.apartmentId);
+      const invitation = latestByApartment.get(apartmentId);
+      if (!invitation) return item;
+
+      return {
+        ...item,
+        ownerInvitedAt: invitation.date,
+        ownerInvitationId: item.ownerInvitationId ?? invitation.invitationId,
+      };
+    });
+  }
+
+  private async withResolvedOwnerAccess<T extends Record<string, unknown>>(items: T[]): Promise<T[]> {
+    const missingOwnerLinks = items.filter((item) => {
+      const apartmentId = this.firstString(item.id, item.apartmentId);
+      const ownerEmail = this.firstString(item.ownerEmail).toLowerCase();
+      const ownerId = this.firstString(item.ownerId);
+      const ownerActivated = item.ownerActivated === true || item.ownerActivated === 'true';
+      return apartmentId && ownerEmail && (!ownerId || !ownerActivated);
+    });
+
+    if (missingOwnerLinks.length === 0) return items;
+
+    const emails = Array.from(
+      new Set(missingOwnerLinks.map((item) => this.firstString(item.ownerEmail).toLowerCase()).filter(Boolean)),
+    );
+    const userIdByEmail = new Map<string, string>();
+
+    for (let index = 0; index < emails.length; index += 30) {
+      const chunk = emails.slice(index, index + 30);
+      if (chunk.length === 0) continue;
+
+      const usersSnap = await this.firebaseAdminService.firestore
+        .collection('users')
+        .where('email', 'in', chunk)
+        .get();
+
+      for (const doc of usersSnap.docs) {
+        const data = doc.data() as Record<string, unknown>;
+        const email = this.firstString(data.email).toLowerCase();
+        if (email && !userIdByEmail.has(email)) {
+          userIdByEmail.set(email, doc.id);
+        }
+      }
+    }
+
+    await Promise.all(
+      emails
+        .filter((email) => !userIdByEmail.has(email))
+        .map(async (email) => {
+          try {
+            const user = await this.firebaseAdminService.auth.getUserByEmail(email);
+            userIdByEmail.set(email, user.uid);
+          } catch {
+            // No auth user exists for this email, so the owner is still invitation-only.
+          }
+        }),
+    );
+
+    if (userIdByEmail.size === 0) return items;
+
+    const now = new Date();
+    const updates: Promise<unknown>[] = [];
+    const nextItems = items.map((item) => {
+      const apartmentId = this.firstString(item.id, item.apartmentId);
+      const ownerEmail = this.firstString(item.ownerEmail).toLowerCase();
+      const resolvedOwnerId = ownerEmail ? userIdByEmail.get(ownerEmail) : undefined;
+      if (!apartmentId || !resolvedOwnerId) return item;
+
+      const ownerId = this.firstString(item.ownerId);
+      const ownerActivated = item.ownerActivated === true || item.ownerActivated === 'true';
+      if (ownerId && ownerActivated) return item;
+
+      updates.push(
+        this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId).set(
+          {
+            ownerId: resolvedOwnerId,
+            ownerActivated: true,
+            ownerAcceptedAt: item.ownerAcceptedAt ?? now,
+            updatedAt: now,
+          },
+          { merge: true },
+        ).catch((error) => {
+          console.error(`Failed to backfill owner activation for apartment ${apartmentId}:`, error);
+        }),
+      );
+
+      return {
+        ...item,
+        ownerId: resolvedOwnerId,
+        ownerActivated: true,
+        ownerAcceptedAt: item.ownerAcceptedAt ?? now,
+      };
+    });
+
+    await Promise.all(updates);
+    return nextItems;
+  }
+
   private getBuildingStorageFolders(companyId: string, buildingId: string): string[] {
     const base = `companies/${companyId}/buildings/${buildingId}`;
 
@@ -1759,10 +1966,31 @@ export class ApartmentsService {
           : typeof createdAtRaw?.toDate === 'function'
             ? createdAtRaw.toDate()
             : undefined;
+    const ownerHasUserId = typeof data.ownerId === 'string' && data.ownerId.trim().length > 0;
+    const ownerActivated = data.ownerActivated === true || data.ownerActivated === 'true' || ownerHasUserId;
+    const tenants = Array.isArray(data.tenants)
+      ? data.tenants.map((tenant) => {
+          if (!tenant || typeof tenant !== 'object') return tenant;
+          const record = tenant as Record<string, unknown>;
+          const tenantHasUserId = typeof record.userId === 'string' && record.userId.trim().length > 0;
+          const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
+          if (!tenantHasUserId || ['removed', 'deleted', 'revoked', 'inactive'].includes(status)) {
+            return tenant;
+          }
+
+          return {
+            ...record,
+            activated: record.activated === false ? true : (record.activated ?? true),
+            status: status === 'pending' ? 'Active' : (record.status ?? 'Active'),
+          };
+        })
+      : data.tenants;
 
     return {
       id,
       ...data,
+      ownerActivated,
+      tenants,
       createdAt,
     };
   }
@@ -1798,7 +2026,12 @@ export class ApartmentsService {
         merged.set(doc.id, doc.data() as Record<string, unknown>);
       }
 
-      return { items: Array.from(merged.entries()).map(([id, data]) => this.mapApartmentDoc(id, data)) };
+      const items = this.sortApartmentItems(
+        Array.from(merged.entries()).map(([id, data]) => this.mapApartmentDoc(id, data)),
+      );
+
+      const withOwnerAccess = await this.withResolvedOwnerAccess(items);
+      return { items: await this.withOwnerInvitationDates(withOwnerAccess) };
     } else {
       if (!['ManagementCompany', 'Accountant'].includes(user.role)) {
         throw new ForbiddenException('Insufficient permissions');
@@ -1806,9 +2039,12 @@ export class ApartmentsService {
       snapshot = await db.collection('apartments').limit(200).get();
     }
 
-    return {
-      items: snapshot.docs.map((doc) => this.mapApartmentDoc(doc.id, doc.data() as Record<string, unknown>)),
-    };
+    const items = this.sortApartmentItems(
+      snapshot.docs.map((doc) => this.mapApartmentDoc(doc.id, doc.data() as Record<string, unknown>)),
+    );
+
+    const withOwnerAccess = await this.withResolvedOwnerAccess(items);
+    return { items: await this.withOwnerInvitationDates(withOwnerAccess) };
   }
 
   async byId(request: Request, user: RequestUser, apartmentId: string) {
@@ -1833,7 +2069,9 @@ export class ApartmentsService {
       throw new ForbiddenException('Insufficient permissions');
     }
 
-    return this.mapApartmentDoc(snap.id, data);
+    const [withOwnerAccess] = await this.withResolvedOwnerAccess([this.mapApartmentDoc(snap.id, data)]);
+    const [item] = await this.withOwnerInvitationDates([withOwnerAccess]);
+    return item;
   }
 
   async create(request: Request, user: RequestUser, payload: Record<string, unknown>) {
@@ -2155,6 +2393,13 @@ export class ApartmentsService {
       lastName,
     });
 
+    const ownerActivated = Boolean(ownerId);
+    const ownerAcceptedAt = ownerActivated
+      ? previousOwnerId === ownerId
+        ? apartment.ownerAcceptedAt ?? new Date()
+        : new Date()
+      : null;
+
     await apartmentRef.set(
       {
         ownerEmail: email,
@@ -2165,7 +2410,8 @@ export class ApartmentsService {
         ownerContractNumber: contractNumber || null,
         ownerInvitedAt: new Date(),
         ownerInvitationId: invitationId,
-        ownerActivated: false,
+        ownerActivated,
+        ownerAcceptedAt,
         updatedAt: new Date(),
       },
       { merge: true },
@@ -2242,7 +2488,7 @@ export class ApartmentsService {
       metadata: { ownerEmail: email },
     });
 
-    return { success: true };
+    return { success: true, ownerActivated };
   }
 
   async removeOwner(request: Request, user: RequestUser, apartmentId: string) {
@@ -2377,11 +2623,13 @@ export class ApartmentsService {
       name: fullName,
       permissions,
       apartmentId,
-      status: 'Pending',
+      status: authUserId ? 'Active' : 'Pending',
       invitedAt: new Date(),
     };
 
     if (authUserId) tenantRecord.userId = authUserId;
+    if (authUserId) tenantRecord.activated = true;
+    if (authUserId) tenantRecord.acceptedAt = new Date();
     if (firstName) tenantRecord.firstName = firstName;
     if (lastName) tenantRecord.lastName = lastName;
     if (phone) tenantRecord.phone = phone;
