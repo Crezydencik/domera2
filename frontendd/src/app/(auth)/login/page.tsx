@@ -52,6 +52,10 @@ export default function LoginPage() {
       return t("googleSignInUnavailable");
     }
 
+    if (normalized.includes("google sign-in returned without an authenticated firebase user")) {
+      return t("googleSignInNotCompleted");
+    }
+
     return message || s("dbError");
   }, [s, t]);
 

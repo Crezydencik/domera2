@@ -66,7 +66,7 @@ type RegisterCodeVerifyResponse = {
 
 const GOOGLE_REDIRECT_REMEMBER_ME_KEY = "domera_google_redirect_remember_me";
 const GOOGLE_REDIRECT_PENDING_KEY = "domera_google_redirect_pending";
-const GOOGLE_REDIRECT_FALLBACK_TIMEOUT_MS = 2_500;
+const GOOGLE_REDIRECT_FALLBACK_TIMEOUT_MS = 3_500;
 
 function normalizeAccountType(value?: string | null): PublicAccountType {
   const normalized = String(value ?? "")
@@ -360,11 +360,19 @@ export async function signInWithGoogle(rememberMe?: boolean): Promise<FirebaseAu
 
 export async function completeGoogleRedirectSignIn(): Promise<FirebaseAuthResult | null> {
   const auth = await getFirebaseAuth();
+  const hadPendingRedirect = hasPendingGoogleRedirect();
   const credential = await getRedirectResult(auth);
   const rememberMe = readGoogleRedirectRememberMe();
-  const user = credential?.user ?? (hasPendingGoogleRedirect() ? await waitForRedirectUser(auth) : null);
+  const user = credential?.user ?? auth.currentUser ?? await waitForRedirectUser(auth);
 
-  if (!user) return null;
+  if (!user) {
+    if (hadPendingRedirect) {
+      clearGoogleRedirectState();
+      throw new Error("Google sign-in returned without an authenticated Firebase user.");
+    }
+
+    return null;
+  }
 
   const session = await createGoogleBackendSession(user, rememberMe);
   clearGoogleRedirectState();

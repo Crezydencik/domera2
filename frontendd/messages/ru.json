@@ -1407,6 +1407,7 @@
     "googleSigningIn": "Открываем Google...",
     "googleSignInCancelled": "Вход через Google отменен.",
     "googleSignInUnavailable": "Вход через Google пока не настроен.",
+    "googleSignInNotCompleted": "Вход через Google не завершился. Попробуйте еще раз.",
     "registerTitle": "Создать аккаунт",
     "registerSubtitle": "Зарегистрируйтесь, чтобы начать работу с Domera",
     "registerCompanyEmailHint": "Необязательно: используйте это поле, если email компании отличается от вашего email для входа",

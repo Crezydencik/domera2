@@ -1405,6 +1405,7 @@
     "googleSigningIn": "Atver Google...",
     "googleSignInCancelled": "Google pierakstīšanās tika atcelta.",
     "googleSignInUnavailable": "Google pierakstīšanās vēl nav konfigurēta.",
+    "googleSignInNotCompleted": "Google pierakstīšanās netika pabeigta. Mēģiniet vēlreiz.",
     "registerTitle": "Izveidot kontu",
     "registerSubtitle": "Reģistrējieties, lai sāktu darbu ar Domera",
     "registerCompanyEmailHint": "Neobligāti: izmantojiet šo, ja uzņēmuma e-pasts atšķiras no jūsu pieslēgšanās e-pasta",
