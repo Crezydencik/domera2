@@ -8,6 +8,9 @@ let firebaseConfigPromise: Promise<FirebaseOptions> | null = null;
 async function getFirebaseConfig(): Promise<FirebaseOptions> {
   firebaseConfigPromise ??= fetch("/firebase-config", {
     credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+    },
     cache: "no-store",
   }).then(async (response) => {
     const payload = (await response.json().catch(() => null)) as FirebaseOptions | { message?: string } | null;

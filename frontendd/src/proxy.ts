@@ -13,6 +13,28 @@ const authCookieNames = [
   "userEmail",
 ] as const;
 
+const productionHosts = new Set(["domera.lv", "www.domera.lv"]);
+
+function withSecurityHeaders(response: NextResponse) {
+  response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  return response;
+}
+
+function redirectToHttps(request: NextRequest) {
+  const host = request.headers.get("host")?.toLowerCase() ?? "";
+  const protocol = request.headers.get("x-forwarded-proto")?.toLowerCase();
+
+  if (!productionHosts.has(host) || protocol !== "http") {
+    return undefined;
+  }
+
+  const url = request.nextUrl.clone();
+  url.protocol = "https:";
+  url.host = host;
+
+  return withSecurityHeaders(NextResponse.redirect(url, 308));
+}
+
 function redirectToLogin(request: NextRequest, pathname: string) {
   const loginUrl = new URL(ROUTES.login, request.url);
   const nextPath = `${pathname}${request.nextUrl.search}`;
@@ -23,7 +45,7 @@ function redirectToLogin(request: NextRequest, pathname: string) {
 
   const response = NextResponse.redirect(loginUrl);
   clearAuthCookies(response);
-  return response;
+  return withSecurityHeaders(response);
 }
 
 function clearAuthCookies(response: NextResponse) {
@@ -37,6 +59,9 @@ function clearAuthCookies(response: NextResponse) {
 }
 
 export default function proxy(request: NextRequest) {
+  const httpsRedirect = redirectToHttps(request);
+  if (httpsRedirect) return httpsRedirect;
+
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get("__session")?.value?.trim();
   const sessionMarker = request.cookies.get("domera_session")?.value?.trim();
@@ -55,7 +80,7 @@ export default function proxy(request: NextRequest) {
       },
     });
     clearAuthCookies(response);
-    return response;
+    return withSecurityHeaders(response);
   }
 
   if (isProtectedPath(pathname) && !isAuthenticated) {
@@ -64,12 +89,12 @@ export default function proxy(request: NextRequest) {
 
   if (isAuthRoute(pathname) && isAuthenticated) {
     const dashboardUrl = new URL(ROUTES.dashboard, request.url);
-    return NextResponse.redirect(dashboardUrl);
+    return withSecurityHeaders(NextResponse.redirect(dashboardUrl));
   }
 
   if (isProtectedPath(pathname) && !isAllowedPath(pathname, resolvedRole)) {
     const dashboardUrl = new URL(ROUTES.dashboard, request.url);
-    return NextResponse.redirect(dashboardUrl);
+    return withSecurityHeaders(NextResponse.redirect(dashboardUrl));
   }
 
   const response = NextResponse.next({
@@ -91,7 +116,7 @@ export default function proxy(request: NextRequest) {
     response.cookies.set("domera_session", "1", cookieOptions);
   }
 
-  return response;
+  return withSecurityHeaders(response);
 }
 
 export const config = {
