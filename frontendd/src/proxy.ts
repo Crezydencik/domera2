@@ -24,7 +24,19 @@ function redirectToHttps(request: NextRequest) {
   const host = request.headers.get("host")?.toLowerCase() ?? "";
   const protocol = request.headers.get("x-forwarded-proto")?.toLowerCase();
 
-  if (!productionHosts.has(host) || protocol !== "http") {
+  if (!productionHosts.has(host)) {
+    return undefined;
+  }
+
+  if (host === "domera.lv") {
+    const url = request.nextUrl.clone();
+    url.protocol = "https:";
+    url.host = "www.domera.lv";
+
+    return withSecurityHeaders(NextResponse.redirect(url, 308));
+  }
+
+  if (protocol !== "http") {
     return undefined;
   }
 

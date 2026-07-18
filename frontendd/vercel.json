@@ -11,14 +11,9 @@
         {
           "type": "host",
           "value": "domera.lv"
-        },
-        {
-          "type": "header",
-          "key": "x-forwarded-proto",
-          "value": "http"
         }
       ],
-      "destination": "https://domera.lv/$1",
+      "destination": "https://www.domera.lv/$1",
       "permanent": true
     },
     {
