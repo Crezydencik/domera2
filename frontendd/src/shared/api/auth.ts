@@ -221,7 +221,7 @@ export async function signInWithGoogle(rememberMe?: boolean): Promise<FirebaseAu
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
 
-  const credential = await signInWithPopup(getFirebaseAuth(), provider);
+  const credential = await signInWithPopup(await getFirebaseAuth(), provider);
   const idToken = await credential.user.getIdToken();
   const email = credential.user.email?.trim().toLowerCase() ?? "";
 

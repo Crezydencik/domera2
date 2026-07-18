@@ -43,7 +43,7 @@ export default function LoginPage() {
       return t("googleSignInCancelled");
     }
 
-    if (normalized.includes("firebase client config is missing")) {
+    if (normalized.includes("firebase client config is missing") || normalized.includes("google sign-in is not configured")) {
       return t("googleSignInUnavailable");
     }
 
