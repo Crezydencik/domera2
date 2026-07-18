@@ -6,7 +6,22 @@ export interface BuildingReadingConfig {
   heatingEnabled: boolean;
   hotWaterMetersPerResident: number;
   coldWaterMetersPerResident: number;
+  electricityMeterDigits?: number;
+  electricityUserSetsDigits?: boolean;
+  electricityAllowMultipleMonthlySubmissions?: boolean;
+  electricityFixedPriceEnabled?: boolean;
+  electricityPricePerKwh?: number;
   submissionPeriod?: {
+    startDate: string;
+    endDate: string;
+    monthly: boolean;
+  } | null;
+  waterSubmissionPeriod?: {
+    startDate: string;
+    endDate: string;
+    monthly: boolean;
+  } | null;
+  electricitySubmissionPeriod?: {
     startDate: string;
     endDate: string;
     monthly: boolean;

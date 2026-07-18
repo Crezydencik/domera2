@@ -16,6 +16,10 @@ import { buildMeterHistorySnapshot } from '../../common/utils/meter-reading-hist
 import { normalizeEmail } from '../../common/utils/invitation-token';
 import { EmailService } from '../emails/email.service';
 
+type MeterReadingKey = 'coldmeterwater' | 'hotmeterwater' | 'electricitymeter';
+
+const METER_READING_KEYS: readonly MeterReadingKey[] = ['coldmeterwater', 'hotmeterwater', 'electricitymeter'];
+
 @Injectable()
 export class MeterReadingsService {
   constructor(
@@ -96,6 +100,39 @@ export class MeterReadingsService {
     return isOwner || isPrimaryResident || isTenantWithSubmit;
   }
 
+  private historySubmittedAtTime(value: unknown): number {
+    if (value instanceof Date) return value.getTime();
+    if (typeof value === 'string') {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+    }
+    if (value && typeof value === 'object' && typeof (value as { toDate?: () => Date }).toDate === 'function') {
+      const parsed = (value as { toDate: () => Date }).toDate();
+      return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+    }
+    return 0;
+  }
+
+  private async electricityAllowsMultipleMonthlySubmissions(
+    apartment: Record<string, unknown>,
+    payloadBuildingId?: unknown,
+  ): Promise<boolean> {
+    const buildingId = typeof payloadBuildingId === 'string' && payloadBuildingId.trim()
+      ? payloadBuildingId.trim()
+      : typeof apartment.buildingId === 'string'
+        ? apartment.buildingId.trim()
+        : '';
+    if (!buildingId) return false;
+
+    const buildingSnap = await this.firebaseAdminService.firestore.collection('buildings').doc(buildingId).get();
+    const building = buildingSnap.data() as Record<string, unknown> | undefined;
+    const readingConfig = building?.readingConfig && typeof building.readingConfig === 'object'
+      ? building.readingConfig as Record<string, unknown>
+      : {};
+
+    return Boolean(readingConfig.electricityAllowMultipleMonthlySubmissions);
+  }
+
   private extractApartmentReadings(
     apartmentId: string,
     apartment: Record<string, unknown>,
@@ -123,7 +160,7 @@ export class MeterReadingsService {
     const buildingName = buildingInfo?.name ?? '';
     const buildingAddress = buildingInfo?.address ?? (typeof apartment.address === 'string' ? apartment.address : '');
 
-    for (const key of ['coldmeterwater', 'hotmeterwater'] as const) {
+    for (const key of METER_READING_KEYS) {
       const group = wr[key] as Record<string, unknown> | undefined;
       if (!group || !Array.isArray(group.history)) continue;
       const serialNumber = typeof group.serialNumber === 'string' ? group.serialNumber : '';
@@ -143,7 +180,15 @@ export class MeterReadingsService {
         }
       }
 
-      for (const item of group.history as Record<string, unknown>[]) {
+      const meterHistory = [...(group.history as Record<string, unknown>[])].sort((a, b) => {
+        const yearDiff = Number(a.year ?? 0) - Number(b.year ?? 0);
+        if (yearDiff !== 0) return yearDiff;
+        const monthDiff = Number(a.month ?? 0) - Number(b.month ?? 0);
+        if (monthDiff !== 0) return monthDiff;
+        return this.historySubmittedAtTime(a.submittedAt) - this.historySubmittedAtTime(b.submittedAt);
+      });
+
+      for (const [entryIndex, item] of meterHistory.entries()) {
         // Нормализуем submittedAt в ISO 8601 формат
         let submittedAt: string | undefined;
         let submittedAtDate: Date | null = null;
@@ -175,8 +220,9 @@ export class MeterReadingsService {
           ? true
           : !((tenantFromDate && submittedAtDate < tenantFromDate) || (tenantUntilDate && submittedAtDate > tenantUntilDate));
         
-        entries.push({ 
+        entries.push({
           ...item, 
+          ...(entryIndex === 0 ? { previousValue: null, consumption: 0 } : {}),
           historyVisible,
           apartmentId: String(item.apartmentId ?? apartmentId), 
           apartmentNumber,
@@ -318,6 +364,215 @@ export class MeterReadingsService {
     return { items };
   }
 
+  private electricityPaymentFromDoc(apartmentId: string, doc: { id: string; data: () => Record<string, unknown> }) {
+    const data = doc.data() as Record<string, unknown>;
+    const dateValue = data.paidAt as { toDate?: () => Date } | Date | string | undefined;
+    const paidAt =
+      dateValue instanceof Date
+        ? dateValue.toISOString()
+        : typeof dateValue === 'string'
+          ? dateValue
+          : typeof dateValue?.toDate === 'function'
+            ? dateValue.toDate().toISOString()
+            : '';
+
+    return {
+      id: doc.id,
+      apartmentId,
+      amount: Number(data.amount ?? 0) || 0,
+      paidKwh: Number(data.paidKwh ?? 0) || 0,
+      paidAt,
+      note: typeof data.note === 'string' ? data.note : '',
+      confirmed: data.confirmed !== false,
+      confirmedBy: typeof data.confirmedBy === 'string' ? data.confirmedBy : '',
+      createdAt: data.createdAt,
+    };
+  }
+
+  async listElectricityPayments(
+    user: RequestUser,
+    query: { buildingId?: string; apartmentId?: string },
+  ) {
+    this.assertAuthenticated(user);
+    const db = this.firebaseAdminService.firestore;
+    let apartmentIds: string[] = [];
+
+    if (query.apartmentId) {
+      const snap = await db.collection('apartments').doc(query.apartmentId).get();
+      if (!snap.exists) throw new NotFoundException('Apartment not found');
+      const apartment = snap.data() as Record<string, unknown>;
+      if (isPropertyMemberRole(user.role)) {
+        if (!this.hasApartmentAccess(user, snap.id, apartment)) throw new ForbiddenException('Access denied for apartment');
+      } else {
+        this.assertStaffApartmentCompanyAccess(user, apartment);
+      }
+      apartmentIds = [snap.id];
+    } else if (isPropertyMemberRole(user.role)) {
+      const accessibleIds = await this.getAccessibleApartmentIds(user);
+      if (!accessibleIds.length) return { items: [] };
+      const snaps = await db.getAll(...accessibleIds.map((id) => db.collection('apartments').doc(id)));
+      apartmentIds = snaps
+        .filter((snap) => snap.exists)
+        .filter((snap) => !query.buildingId || (snap.data() as Record<string, unknown>).buildingId === query.buildingId)
+        .map((snap) => snap.id);
+    } else {
+      const staffCompanyId = this.requireStaffCompanyId(user);
+      const snap = await db.collection('apartments').where('companyIds', 'array-contains', staffCompanyId).get();
+      apartmentIds = snap.docs
+        .filter((doc) => !query.buildingId || (doc.data() as Record<string, unknown>).buildingId === query.buildingId)
+        .map((doc) => doc.id);
+    }
+
+    if (!apartmentIds.length) return { items: [] };
+
+    const batches = await Promise.all(
+      apartmentIds.map(async (apartmentId) => {
+        const snap = await db
+          .collection('apartments')
+          .doc(apartmentId)
+          .collection('electricity_payments')
+          .orderBy('paidAt', 'desc')
+          .get();
+        return snap.docs.map((doc) => this.electricityPaymentFromDoc(apartmentId, doc));
+      }),
+    );
+
+    return {
+      items: batches
+        .flat()
+        .sort((left, right) => String(right.paidAt).localeCompare(String(left.paidAt))),
+    };
+  }
+
+  async createElectricityPayment(request: Request, user: RequestUser, payload: Record<string, unknown>) {
+    this.assertAuthenticated(user);
+
+    const apartmentId = typeof payload.apartmentId === 'string' ? payload.apartmentId.trim() : '';
+    if (!apartmentId) throw new BadRequestException('apartmentId is required');
+
+    const amount = Number(payload.amount ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('amount must be positive');
+
+    const paidKwh = Number(payload.paidKwh ?? 0);
+    const paidAtRaw = typeof payload.paidAt === 'string' ? payload.paidAt : '';
+    const paidAtDate = paidAtRaw ? new Date(paidAtRaw) : new Date();
+    if (Number.isNaN(paidAtDate.getTime())) throw new BadRequestException('Invalid paidAt');
+
+    const db = this.firebaseAdminService.firestore;
+    const apartmentRef = db.collection('apartments').doc(apartmentId);
+    const apartmentSnap = await apartmentRef.get();
+    if (!apartmentSnap.exists) throw new NotFoundException('Apartment not found');
+    const apartment = apartmentSnap.data() as Record<string, unknown>;
+    const staffSubmission = isStaffRole(user.role);
+    if (staffSubmission) {
+      this.assertStaffApartmentCompanyAccess(user, apartment);
+    } else if (!this.hasApartmentAccess(user, apartmentId, apartment)) {
+      throw new ForbiddenException('Access denied for apartment');
+    }
+
+    const ref = apartmentRef.collection('electricity_payments').doc();
+    const payment = {
+      id: ref.id,
+      apartmentId,
+      amount: Number(amount.toFixed(2)),
+      paidKwh: Number.isFinite(paidKwh) && paidKwh > 0 ? Number(paidKwh.toFixed(3)) : 0,
+      paidAt: paidAtDate,
+      note: typeof payload.note === 'string' ? payload.note.trim().slice(0, 500) : '',
+      confirmed: staffSubmission,
+      confirmedBy: staffSubmission ? user.uid : '',
+      companyId: typeof apartment.companyId === 'string' ? apartment.companyId : user.companyId ?? '',
+      createdAt: new Date(),
+    };
+
+    await ref.set(payment);
+
+    void this.auditLogService.write({
+      request,
+      action: staffSubmission ? 'meter_reading.electricity_payment.confirm' : 'meter_reading.electricity_payment.request',
+      status: 'success',
+      actorUid: user.uid,
+      actorRole: user.role,
+      companyId: user.companyId,
+      apartmentId,
+      metadata: { amount: payment.amount, paidKwh: payment.paidKwh },
+    });
+
+    return { success: true, payment: { ...payment, paidAt: payment.paidAt.toISOString() } };
+  }
+
+  async confirmElectricityPayment(request: Request, user: RequestUser, paymentId: string, payload: Record<string, unknown>) {
+    this.assertAuthenticated(user);
+    if (!isStaffRole(user.role)) throw new ForbiddenException('Only staff can confirm electricity payments');
+
+    const apartmentId = typeof payload.apartmentId === 'string' ? payload.apartmentId.trim() : '';
+    if (!apartmentId || !paymentId) throw new BadRequestException('apartmentId and paymentId are required');
+
+    const db = this.firebaseAdminService.firestore;
+    const apartmentRef = db.collection('apartments').doc(apartmentId);
+    const apartmentSnap = await apartmentRef.get();
+    if (!apartmentSnap.exists) throw new NotFoundException('Apartment not found');
+    const apartment = apartmentSnap.data() as Record<string, unknown>;
+    this.assertStaffApartmentCompanyAccess(user, apartment);
+
+    const paymentRef = apartmentRef.collection('electricity_payments').doc(paymentId);
+    const paymentSnap = await paymentRef.get();
+    if (!paymentSnap.exists) throw new NotFoundException('Electricity payment not found');
+
+    await paymentRef.set(
+      {
+        confirmed: true,
+        confirmedBy: user.uid,
+        confirmedAt: new Date(),
+      },
+      { merge: true },
+    );
+
+    void this.auditLogService.write({
+      request,
+      action: 'meter_reading.electricity_payment.confirm',
+      status: 'success',
+      actorUid: user.uid,
+      actorRole: user.role,
+      companyId: user.companyId,
+      apartmentId,
+      metadata: { paymentId },
+    });
+
+    return { success: true };
+  }
+
+  async removeElectricityPayment(request: Request, user: RequestUser, paymentId: string, apartmentId: string) {
+    this.assertAuthenticated(user);
+    if (!isStaffRole(user.role)) throw new ForbiddenException('Only staff can delete electricity payments');
+    if (!apartmentId || !paymentId) throw new BadRequestException('apartmentId and paymentId are required');
+
+    const db = this.firebaseAdminService.firestore;
+    const apartmentRef = db.collection('apartments').doc(apartmentId);
+    const apartmentSnap = await apartmentRef.get();
+    if (!apartmentSnap.exists) throw new NotFoundException('Apartment not found');
+    const apartment = apartmentSnap.data() as Record<string, unknown>;
+    this.assertStaffApartmentCompanyAccess(user, apartment);
+
+    const paymentRef = apartmentRef.collection('electricity_payments').doc(paymentId);
+    const paymentSnap = await paymentRef.get();
+    if (!paymentSnap.exists) throw new NotFoundException('Electricity payment not found');
+
+    await paymentRef.delete();
+
+    void this.auditLogService.write({
+      request,
+      action: 'meter_reading.electricity_payment.delete',
+      status: 'success',
+      actorUid: user.uid,
+      actorRole: user.role,
+      companyId: user.companyId,
+      apartmentId,
+      metadata: { paymentId },
+    });
+
+    return { success: true };
+  }
+
   private async loadBuildingInfo(apartment: Record<string, unknown>): Promise<{ name?: string; address?: string } | undefined> {
     const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : '';
     if (!buildingId) return undefined;
@@ -409,17 +664,21 @@ export class MeterReadingsService {
     };
 
     const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
-    const namedKey = (['coldmeterwater', 'hotmeterwater'] as const).find(
+    const namedKey = METER_READING_KEYS.find(
       (k) => (wr[k] as Record<string, unknown> | undefined)?.meterId === meterId,
     );
-    const preferredKey = payload.meterKey === 'coldmeterwater' || payload.meterKey === 'hotmeterwater'
-      ? payload.meterKey
+    const preferredKey = METER_READING_KEYS.includes(payload.meterKey as MeterReadingKey)
+      ? payload.meterKey as MeterReadingKey
       : undefined;
     const key = namedKey ?? preferredKey ?? 'coldmeterwater';
     const meterGroup = (wr[key] as Record<string, unknown> | undefined) ?? { meterId, history: [] };
     const history = Array.isArray(meterGroup.history) ? [...(meterGroup.history as Record<string, unknown>[])] : [];
 
-    const duplicate = history.some((h) => Number(h.month) === month && Number(h.year) === year);
+    const allowMultipleMonthlyElectricityReadings = key === 'electricitymeter'
+      ? await this.electricityAllowsMultipleMonthlySubmissions(apartment, payload.buildingId)
+      : false;
+    const duplicate = !allowMultipleMonthlyElectricityReadings
+      && history.some((h) => Number(h.month) === month && Number(h.year) === year);
     if (duplicate) {
       throw new ForbiddenException('Reading already exists for current month');
     }
@@ -430,7 +689,9 @@ export class MeterReadingsService {
           const ay = Number(a.year ?? 0);
           const by = Number(b.year ?? 0);
           if (ay !== by) return by - ay;
-          return Number(b.month ?? 0) - Number(a.month ?? 0);
+          const monthDiff = Number(b.month ?? 0) - Number(a.month ?? 0);
+          if (monthDiff !== 0) return monthDiff;
+          return this.historySubmittedAtTime(b.submittedAt) - this.historySubmittedAtTime(a.submittedAt);
         })[0]
       : null;
     const lastValue = lastEntry
@@ -443,7 +704,9 @@ export class MeterReadingsService {
     }
 
     history.push(reading);
-    const { history: recalculatedHistory, latestReading } = buildMeterHistorySnapshot(history as never[]);
+    const { history: recalculatedHistory, latestReading } = buildMeterHistorySnapshot(history as never[], {
+      collapseMonthly: !allowMultipleMonthlyElectricityReadings,
+    });
 
     await apartmentRef.set(
       {
@@ -452,6 +715,9 @@ export class MeterReadingsService {
           [key]: {
             ...meterGroup,
             meterId,
+            ...(key === 'electricitymeter'
+              ? { meterDigits: Math.min(7, Math.max(5, Number(payload.meterDigits ?? meterGroup.meterDigits ?? 6) || 6)) }
+              : {}),
             history: recalculatedHistory,
             currentValue: latestReading?.currentValue ?? null,
             previousValue: latestReading?.previousValue ?? null,
@@ -510,10 +776,10 @@ export class MeterReadingsService {
     }
 
     const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
-    let foundKey: 'coldmeterwater' | 'hotmeterwater' | null = null;
+    let foundKey: MeterReadingKey | null = null;
     let foundGroup: Record<string, unknown> | null = null;
     let foundIndex = -1;
-    for (const key of ['coldmeterwater', 'hotmeterwater'] as const) {
+    for (const key of METER_READING_KEYS) {
       const group = wr[key] as Record<string, unknown> | undefined;
       if (!group || !Array.isArray(group.history)) continue;
       const idx = (group.history as Record<string, unknown>[]).findIndex((h) => String(h.id ?? '') === readingId);
@@ -528,7 +794,12 @@ export class MeterReadingsService {
 
     const history = [...(foundGroup.history as Record<string, unknown>[])];
     history[foundIndex] = { ...history[foundIndex], ...payload, id: history[foundIndex].id };
-    const { history: recalculatedHistory, latestReading } = buildMeterHistorySnapshot(history as never[]);
+    const allowMultipleMonthlyElectricityReadings = foundKey === 'electricitymeter'
+      ? await this.electricityAllowsMultipleMonthlySubmissions(apartment)
+      : false;
+    const { history: recalculatedHistory, latestReading } = buildMeterHistorySnapshot(history as never[], {
+      collapseMonthly: !allowMultipleMonthlyElectricityReadings,
+    });
 
     await apartmentRef.set(
       {
@@ -577,10 +848,10 @@ export class MeterReadingsService {
     }
 
     const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
-    let foundKey: 'coldmeterwater' | 'hotmeterwater' | null = null;
+    let foundKey: MeterReadingKey | null = null;
     let foundGroup: Record<string, unknown> | null = null;
     let foundEntry: Record<string, unknown> | null = null;
-    for (const key of ['coldmeterwater', 'hotmeterwater'] as const) {
+    for (const key of METER_READING_KEYS) {
       const group = wr[key] as Record<string, unknown> | undefined;
       if (!group || !Array.isArray(group.history)) continue;
       const entry = (group.history as Record<string, unknown>[]).find((h) => String(h.id ?? '') === readingId);
@@ -617,7 +888,12 @@ export class MeterReadingsService {
     }
 
     const history = (foundGroup.history as Record<string, unknown>[]).filter((h) => String(h.id ?? '') !== readingId);
-    const { history: recalculatedHistory, latestReading } = buildMeterHistorySnapshot(history as never[]);
+    const allowMultipleMonthlyElectricityReadings = foundKey === 'electricitymeter'
+      ? await this.electricityAllowsMultipleMonthlySubmissions(apartment)
+      : false;
+    const { history: recalculatedHistory, latestReading } = buildMeterHistorySnapshot(history as never[], {
+      collapseMonthly: !allowMultipleMonthlyElectricityReadings,
+    });
 
     await apartmentRef.set(
       {

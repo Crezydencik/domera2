@@ -77,12 +77,19 @@ export declare class BuildingsController {
     }>;
     remove(request: Request, user: RequestUser, buildingId: string): Promise<{
         success: boolean;
+        deletedRequest: boolean;
+        backup?: undefined;
+    } | {
+        success: boolean;
         backup: {
-            backupStoragePath: string;
-            backupStoragePrefix: string;
-            retainedStoragePrefix: string;
+            backupStoragePath: string | null;
+            backupStoragePrefix: string | null;
+            retainedStoragePrefix: string | null;
             retentionExpiresAt: Date;
             copiedStorageFilesCount: number;
+            backupFailed?: boolean;
+            backupError?: string;
         };
+        deletedRequest?: undefined;
     }>;
 }

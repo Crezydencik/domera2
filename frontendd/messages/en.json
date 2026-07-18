@@ -60,23 +60,23 @@
       "registerShort": "Join",
       "loginRegister": "Log in / Register",
       "loginRegisterShort": "Log in",
-      "demo": "Request demo",
+      "demo": "Book a Demo",
       "demoShort": "Demo"
     },
     "hero": {
       "badge": "PropTech SaaS · 2026",
-      "title": "Modern building management",
-      "titleAccent": "without Excel or paperwork",
-      "description": "Domera brings building operations, utility charges, meter readings, payments, documents and resident communication into one cloud platform.",
-      "primaryCta": "Request demo",
-      "secondaryCta": "View features",
+      "title": "Run property management",
+      "titleAccent": "without spreadsheets, paperwork or chaos.",
+      "description": "Domera brings your daily operations into one smart platform. Meter readings, billing, resident communication, documents and reports work together, so your team spends less time on administration and more time delivering great service.",
+      "primaryCta": "Start Free",
+      "secondaryCta": "Book a Demo",
       "benefits": {
-        "cloud": "Cloud platform",
-        "billing": "Automated charges",
+        "cloud": "One smart platform",
+        "billing": "Automated billing",
         "payment": "Online payments",
-        "access": "24/7 access",
-        "storage": "Secure storage",
-        "install": "No installation"
+        "access": "Access from any device",
+        "storage": "Secure documents",
+        "install": "No local setup"
       }
     },
     "dashboard": {
@@ -120,62 +120,62 @@
     },
     "whyDomera": {
       "eyebrow": "Why Domera",
-      "title": "The platform professionals trust",
-      "description": "Domera is built for management companies that want to work faster, more transparently and without paper routine.",
+      "title": "Give every team more time for real service",
+      "description": "Domera removes the repetitive work that slows property management teams down: manual calculations, scattered files and resident calls that should be self-service.",
       "items": {
         "automation": {
-          "title": "Automation",
-          "description": "Up to 90% of daily operations run automatically - from charges to notifications."
+          "title": "Save hours every week",
+          "description": "Automate repetitive tasks, reduce manual calculations and keep monthly work moving without spreadsheet checks."
         },
         "cloud": {
-          "title": "Cloud platform",
-          "description": "Work from anywhere through the browser. No local installations or servers."
+          "title": "Everything in one place",
+          "description": "Properties, apartments, residents, invoices and documents stay available from one connected dashboard."
         },
         "transparency": {
-          "title": "Transparency",
-          "description": "User actions are recorded in the log for a complete audit trail."
+          "title": "Built for modern property management",
+          "description": "Secure cloud infrastructure, automatic updates and access from any device keep the team moving."
         },
         "security": {
-          "title": "Security",
-          "description": "Data encryption, backups and role-based access control."
+          "title": "Clear roles, safer work",
+          "description": "Managers, accountants, owners and residents see the right tools and data without crossing permissions."
         }
       }
     },
     "features": {
-      "eyebrow": "Features",
-      "title": "Every core building process in one place",
-      "description": "Domera covers the daily operations of a management company: from the property database to invoices, documents and communication.",
+      "eyebrow": "About",
+      "title": "One platform. Every building.",
+      "description": "Managing properties shouldn't require five different programs. Domera gives your team one connected workspace where billing, maintenance, resident communication and reporting happen together.",
       "items": {
         "properties": {
-          "title": "Buildings, apartments and residents",
-          "description": "A single registry for properties, units, owners and tenants with role-based access."
+          "title": "Properties, apartments and residents",
+          "description": "Keep every building, unit, owner and resident profile organized in a registry your whole team can trust."
         },
         "meters": {
           "title": "Meter readings",
-          "description": "Readings collection, consumption history and reminders without manual spreadsheets."
+          "description": "Collect readings, review consumption history and send reminders without chasing files or calls."
         },
         "payments": {
-          "title": "Charges and payments",
-          "description": "Invoices, payment statuses, debts and a clear financial view for each building."
+          "title": "Billing and payments",
+          "description": "Create invoices, track payment status and see debts clearly for every building."
         },
         "documents": {
           "title": "Documents",
-          "description": "Contracts, acts, invoices and apartment files are available to the right people at the right time."
+          "description": "Contracts, invoices, acts and apartment files are available to the right people at the right time."
         },
         "communication": {
-          "title": "Communication",
-          "description": "News, notifications and resident requests collected in one workspace."
+          "title": "Resident communication",
+          "description": "Send news, reminders and important updates from the same workspace your team already uses."
         },
         "security": {
           "title": "Roles and security",
-          "description": "Separate access for managers, accountants, owners and residents."
+          "description": "Give administrators, accountants, owners and residents access that matches their work."
         }
       }
     },
     "platform": {
       "eyebrow": "Platform",
-      "title": "A work circuit for the management team",
-      "description": "The platform helps teams see facts, complete routine work faster and avoid losing data across chats, files and employees.",
+      "title": "Less administration. More transparency. Better service.",
+      "description": "Domera keeps daily operations connected, so the team sees what changed, what needs attention and what has already been handled.",
       "trust": {
         "cloud": "Cloud architecture",
         "security": "Protected access",
@@ -188,76 +188,76 @@
         "installs": "local installations"
       },
       "workflowEyebrow": "Workflow",
-      "workflowTitle": "From import to payment control",
+      "workflowTitle": "From resident data to monthly control",
       "workflow": {
         "import": {
-          "title": "Import your database",
-          "description": "Add buildings, apartments, contracts and residents manually or through prepared import."
+          "title": "Bring your portfolio in",
+          "description": "Add buildings, apartments, contracts and residents manually or with a prepared import."
         },
         "automate": {
-          "title": "Automate routine work",
-          "description": "Domera reminds residents about readings, helps issue invoices and tracks payments."
+          "title": "Let routine work run",
+          "description": "Domera reminds residents about readings, supports billing and keeps payment status visible."
         },
         "control": {
-          "title": "Control the result",
+          "title": "Stay in control",
           "description": "Dashboards show collections, debts, requests and activity for every property."
         }
       }
     },
     "solutions": {
       "eyebrow": "Solutions",
-      "title": "One product for the team and residents",
-      "description": "Domera separates interfaces and access so every participant sees only their work and the data they need.",
+      "title": "A calmer experience for teams and residents",
+      "description": "Everyone gets the information they need without extra calls, repeated questions or files sent through chat.",
       "items": {
         "companies": {
           "title": "Management companies",
-          "description": "An operations center for buildings, residents, charges, debts and documents."
+          "description": "A single operations center for buildings, residents, billing, debts and documents."
         },
         "teams": {
-          "title": "Technical teams",
-          "description": "Requests, notifications and work history without losing context between properties."
+          "title": "Building administrators",
+          "description": "Requests, notifications and work history stay tied to the right building and apartment."
         },
         "residents": {
           "title": "Residents and owners",
-          "description": "A personal cabinet for readings, invoices, payments and important messages from management."
+          "description": "Residents can submit meter readings, receive invoices, review payment history and stay informed without calling the office."
         }
       }
     },
     "pricing": {
       "eyebrow": "Pricing",
-      "title": "Choose scale, not extra complexity",
-      "description": "Start with the core toolkit and expand the platform as your building portfolio and team grow.",
-      "perMonth": "/ mo",
-      "customPrice": "on request",
-      "cta": "Request demo",
-      "plans": {
-        "start": {
-          "name": "Start",
-          "caption": "for a small portfolio",
-          "features": {
-            "houses": "up to 3 buildings",
-            "residents": "residents and apartments",
-            "documents": "invoices and documents"
-          }
-        },
-        "growth": {
-          "name": "Growth",
-          "caption": "for an active management company",
-          "features": {
-            "houses": "up to 20 buildings",
-            "reminders": "automatic reminders",
-            "analytics": "analytics and roles"
-          }
-        },
-        "network": {
-          "name": "Network",
-          "caption": "for larger portfolios",
-          "features": {
-            "unlimited": "unlimited properties",
-            "api": "API and integrations",
-            "support": "priority support"
-          }
-        }
+      "title": "Simple & Transparent Pricing",
+      "description": "Pay only for the apartments you manage. No hidden fees, no setup costs, no minimum monthly payment.",
+      "calculator": {
+        "label": "Pricing calculator",
+        "hint": "Move the slider or type your portfolio size.",
+        "apartments": "apartments managed",
+        "manualLabel": "Apartment count",
+        "inputAria": "Number of apartments"
+      },
+      "priceCard": {
+        "eyebrow": "Live estimate",
+        "title": "Your Monthly Price",
+        "perMonth": "per month",
+        "formula": "{apartments} apartments × €{price}"
+      },
+      "benefits": {
+        "price": "€0.50 per apartment",
+        "noMinimum": "No minimum monthly payment",
+        "noSetup": "No setup or onboarding fee",
+        "updates": "Free updates",
+        "support": "Free technical support"
+      },
+      "actions": {
+        "primary": "Start Free",
+        "secondary": "Contact Sales"
+      },
+      "info": {
+        "title": "Simple. Fair. Scalable.",
+        "description": "Domera uses one of the simplest pricing models in the PropTech industry. You only pay for the apartments you actively manage. There are no hidden fees, expensive packages, or mandatory upgrades. As your portfolio grows, your monthly price scales automatically while remaining completely transparent."
+      },
+      "examples": {
+        "apartments": "apartments",
+        "perMonth": "/month"
       }
     },
     "faq": {
@@ -284,7 +284,9 @@
       }
     },
     "footer": {
-      "description": "A cloud platform for building management, utility charges, payments, documents and resident communication.",
+      "title": "Ready to modernize your property management?",
+      "description": "See how Domera can save your team time, reduce errors and deliver a better experience for every resident.",
+      "cta": "Start Free",
       "privacy": "Privacy policy",
       "terms": "Terms of use",
       "rights": "© 2026 Domera"
@@ -300,6 +302,7 @@
         "apartments": "Apartments",
         "residents": "Residents",
         "invoices": "Invoices",
+        "electricity": "Electricity",
         "meterReadings": "Meter readings",
         "debts": "Debts",
         "documents": "Documents",
@@ -605,7 +608,12 @@
       "occupiedApartments": "Occupied apartments",
       "status": "Status",
       "hotWaterMetersPerResident": "Hot water meters in the apartment",
-      "coldWaterMetersPerResident": "Cold water meters in the apartment"
+      "coldWaterMetersPerResident": "Cold water meters in the apartment",
+      "electricityMeterDigits": "Electricity reading cells",
+      "electricityUserSetsDigits": "Resident chooses cells on first submission",
+      "electricityAllowMultipleMonthlySubmissions": "Allow multiple electricity readings per month",
+      "electricityFixedPriceEnabled": "Use fixed electricity price per kWh",
+      "electricityPricePerKwh": "Electricity price per kWh"
     },
     "tabs": {
       "general": "General",
@@ -624,7 +632,8 @@
       },
       "electricity": {
         "title": "Electricity reading submissions",
-        "description": "Enable this if residents must submit electricity readings."
+        "description": "Enable this if residents must submit electricity readings.",
+        "multipleMonthlyDescription": "Water stays limited to once per month, while electricity can be submitted again during the same month."
       },
       "heating": {
         "title": "Heating reading submissions",
@@ -668,6 +677,8 @@
       "subscriptionTermMonthsInvalid": "Term must be at least 1 month.",
       "hotWaterMetersInvalid": "Hot water meter count must be 0 or greater.",
       "coldWaterMetersInvalid": "Cold water meter count must be 0 or greater.",
+      "electricityMeterDigitsInvalid": "Electricity reading cells must be from 5 to 7.",
+      "electricityPricePerKwhInvalid": "Electricity price per kWh must be greater than 0.",
       "occupiedApartmentsInvalid": "Occupied apartment count must be 0 or greater.",
       "occupiedExceedsTotal": "Occupied apartments cannot exceed the total apartment count.",
       "createFailed": "Failed to create the building.",
@@ -725,8 +736,11 @@
     "resident": {
       "meterLabels": {
         "coldWater": "Cold water",
-        "hotWater": "Hot water"
+        "hotWater": "Hot water",
+        "electricity": "Electricity"
       },
+      "waterTab": "Water",
+      "electricityTab": "Electricity",
       "closedDefault": "The reading submission period is currently closed.",
       "closedWithDates": "The reading submission period is closed. Available from {start} to {end}.",
       "loadFailed": "Failed to load readings",
@@ -756,7 +770,22 @@
       "previousReading": "Previous reading",
       "currentReading": "Current reading",
       "serialPrefix": "№",
+      "electricityDigits": "Electricity reading cells",
       "submitting": "Submitting...",
+      "advanceTitle": "Electricity advance",
+      "advanceDescription": "Send an advance payment request for management confirmation.",
+      "advanceButton": "Pay in advance",
+      "advanceModalDescription": "Enter how many kWh you want to pay in advance. The amount is calculated automatically.",
+      "advanceKwh": "Advance kWh",
+      "advanceTariff": "Tariff",
+      "advanceCalculatedAmount": "Calculated amount",
+      "advanceSubmit": "Send advance",
+      "advanceCancel": "Cancel",
+      "advanceSaving": "Sending...",
+      "advanceKwhRequired": "Enter advance kWh.",
+      "advanceTariffMissing": "Electricity tariff is not configured.",
+      "advanceSubmitted": "Advance payment sent for confirmation",
+      "advanceSubmitFailed": "Failed to send advance payment",
       "submit": "Submit readings",
       "noMeters": "Meters have not been added for your apartments yet."
     }
@@ -1380,6 +1409,10 @@
     "haveAccount": "Already have an account?",
     "rememberMe": "Remember me?",
     "invalidEmailOrPassword": "Incorrect email or password",
+    "continueWithGoogle": "Continue with Google",
+    "googleSigningIn": "Opening Google...",
+    "googleSignInCancelled": "Google sign-in was cancelled.",
+    "googleSignInUnavailable": "Google sign-in is not configured yet.",
     "registerTitle": "Create an account",
     "registerSubtitle": "Register to get started with Domera",
     "registerCompanyEmailHint": "Optional: use this if the company email differs from your login email",
@@ -1486,6 +1519,25 @@
     "monthLabel": "Month for which readings are submitted:",
     "coldWater": "Cold water",
     "hotWater": "Hot water",
+    "electricity": "Electricity",
+    "water": "Water",
+    "electricityBalance": "Electricity balance",
+    "electricityTariff": "Tariff",
+    "electricityConsumption": "Consumption",
+    "charged": "Charged",
+    "confirmedPaid": "Confirmed paid",
+    "balance": "Balance",
+    "advance": "Advance",
+    "debt": "Debt",
+    "electricityPaymentTitle": "Confirm electricity payment",
+    "paymentAmount": "Paid amount",
+    "paymentKwh": "Paid kWh",
+    "paymentDate": "Payment date",
+    "paymentNote": "Confirmation note",
+    "confirmPayment": "Confirm payment",
+    "paymentAmountRequired": "Enter the paid amount.",
+    "paymentConfirmed": "Electricity payment confirmed",
+    "paymentConfirmError": "Failed to confirm payment",
     "coldWaterFull": "Cold water (CWS)",
     "hotWaterFull": "Hot water (HWS)",
     "previousReading": "Previous reading",
@@ -1500,6 +1552,15 @@
     "noData": "no data",
     "period": "Period",
     "periodMonthly": "monthly",
+    "periodStartDate": "Opening date",
+    "periodEndDate": "Closing date",
+    "periodMonthlyCheckbox": "Submit every month",
+    "periodFreeMode": "Free submission",
+    "periodDateMode": "By dates",
+    "periodFreeModeHint": "Residents can submit readings at any time.",
+    "periodMonthlyHint": "The period repeats monthly from day {startDay} to day {endDay}.",
+    "deletePeriod": "Delete period",
+    "deletingPeriod": "Deleting...",
     "colApartment": "Apartment",
     "colMeter": "Meter",
     "colReading": "Reading",
@@ -1563,6 +1624,7 @@
       "user": "User",
       "company": "Company",
       "apiKey": "API key",
+      "invoiceGeneration": "Invoice generation",
       "notifications": "Notifications",
       "contacts": "Contacts",
       "billing": "Billing accounts",
@@ -1612,7 +1674,94 @@
         "name": "Company name",
         "registrationNumber": "Registration number",
         "email": "Company email",
-        "phone": "Company phone"
+        "phone": "Company phone",
+        "bankName": "Bank name",
+        "bankAccountIban": "IBAN",
+        "bankSwift": "SWIFT / BIC",
+        "bankBeneficiary": "Beneficiary name"
+      },
+      "bankDetails": {
+        "title": "Bank details"
+      },
+      "invoiceGeneration": {
+        "title": "Invoice generation",
+        "description": "Configure invoice numbering, provider details, default payment fields, and the visual invoice template.",
+        "saving": "Saving...",
+        "saved": "Invoice settings saved.",
+        "saveFailed": "Failed to save invoice settings.",
+        "bankDetailsHint": "Leave a field empty to use the bank details saved in the company profile.",
+        "logoHint": "PNG, JPG, or WebP up to 350 KB. Press Save after uploading.",
+        "logoInvalid": "Could not upload the logo. Use PNG, JPG, or WebP.",
+        "logoTooLarge": "The logo is too large. Maximum size is 350 KB.",
+        "sections": {
+          "branding": "Logo and color",
+          "numbering": "Numbering and format",
+          "bankDetails": "Bank details",
+          "provider": "Provider details",
+          "amounts": "Amounts and totals"
+        },
+        "fields": {
+          "autoNumber": "Invoice number",
+          "autoNumberHint": "Generated automatically when the invoice is created.",
+          "numberPrefix": "Number prefix",
+          "numberPattern": "Number pattern",
+          "invoiceNumberParts": "Build number from",
+          "invoiceNumberPartsHint": "If parts are selected, the number is built from them. If nothing is selected, the number pattern is used.",
+          "invoiceNumberSeparator": "Separator",
+          "invoiceNumberSeparators": "Separators between parts",
+          "invoiceNumberSeparatorAfter": "After",
+          "language": "Invoice language",
+          "currency": "Currency",
+          "logo": "Logo",
+          "logoUpload": "Upload logo",
+          "logoRemove": "Remove logo",
+          "logoUseText": "Restore text logo",
+          "logoNone": "No logo",
+          "accentColor": "Invoice color",
+          "providerAddress": "Provider address",
+          "overrideBankName": "Bank name",
+          "overrideBankAccountIban": "IBAN",
+          "overrideBankSwift": "SWIFT / BIC",
+          "overrideBankBeneficiary": "Payment recipient",
+          "providerSignerName": "Signer name",
+          "providerSignerTitle": "Signer title",
+          "defaultServiceName": "Default service name",
+          "defaultVatRate": "Default VAT rate, %",
+          "invoiceLineItems": "Invoice rows",
+          "invoiceTableColumns": "Table columns",
+          "paymentTermDays": "Payment term, days",
+          "amountWordsPrefix": "Amount in words label",
+          "showAmountWords": "Show amount in words",
+          "showSignature": "Show signature block",
+          "footerNote": "Footer note"
+        },
+        "invoiceNumberParts": {
+          "companyCode": "3 company digits",
+          "apartmentNumber": "Apartment number",
+          "month": "Month",
+          "year": "Year",
+          "date": "Date",
+          "sequence": "Sequence number"
+        },
+        "invoiceLineItems": {
+          "electricityAdvance": "Advance",
+          "electricityPayment": "Electricity payment",
+          "other": "Other"
+        },
+        "invoiceTableColumns": {
+          "period": "Period",
+          "price": "Price",
+          "amount": "Quantity",
+          "unit": "Unit",
+          "vat": "VAT",
+          "sum": "Sum",
+          "recalculation": "Recalculation",
+          "net": "Without VAT"
+        },
+        "preview": {
+          "signerTitleFallback": "Board member",
+          "serviceNameFallback": "Management services"
+        }
       },
       "roles": {
         "managementCompany": "Company staff",

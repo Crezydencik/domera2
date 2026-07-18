@@ -50,22 +50,29 @@ function compareApartmentOrder(a: Record<string, unknown>, b: Record<string, unk
 
 type ApartmentOccupancyStatus = "occupied" | "pending" | "vacant";
 
-function getApartmentOccupancyStatus(apartment: Record<string, unknown>): ApartmentOccupancyStatus {
-  const tenants = Array.isArray(apartment.tenants) ? apartment.tenants.length : 0;
-  const ownerActivated =
-    apartment.ownerActivated === true ||
-    apartment.ownerActivated === "true" ||
-    hasReadableText(apartment.ownerId);
-  const ownerPending = !ownerActivated && hasReadableText(apartment.ownerEmail) && (
-    hasReadableText(apartment.ownerInvitationId) ||
-    Boolean(apartment.ownerInvitedAt)
-  );
+function isActiveOccupant(record: Record<string, unknown>) {
+  if (record.activated === true || record.acceptedAt || record.activatedAt) return true;
+  const status = typeof record.status === "string" ? record.status.trim().toLowerCase() : "";
+  return status === "active" || status === "accepted";
+}
 
-  if (apartment.residentId || tenants > 0 || ownerActivated) {
+function getApartmentOccupancyStatus(apartment: Record<string, unknown>): ApartmentOccupancyStatus {
+  const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+  const ownerActivated = apartment.ownerActivated === true || apartment.ownerActivated === "true" || Boolean(apartment.ownerAcceptedAt);
+  const activeTenant = tenants.some((tenant) => tenant && typeof tenant === "object" && isActiveOccupant(tenant as Record<string, unknown>));
+  const pendingTenant = tenants.some((tenant) => {
+    if (!tenant || typeof tenant !== "object") return false;
+    const record = tenant as Record<string, unknown>;
+    const status = typeof record.status === "string" ? record.status.trim().toLowerCase() : "";
+    return !isActiveOccupant(record) && !["removed", "deleted", "revoked", "inactive"].includes(status);
+  });
+  const ownerPending = !ownerActivated && hasReadableText(apartment.ownerEmail);
+
+  if (apartment.residentId || ownerActivated || activeTenant) {
     return "occupied";
   }
 
-  return ownerPending ? "pending" : "vacant";
+  return ownerPending || pendingTenant ? "pending" : "vacant";
 }
 
 function getStatusTranslationKey(status: ApartmentOccupancyStatus) {

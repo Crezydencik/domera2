@@ -5,6 +5,8 @@ import { ROUTES } from "@/shared/lib/routes";
 import { DashboardPreview } from "./dashboard-preview";
 import { heroBenefits } from "./landing-data";
 
+const demoRequestHref = "mailto:lumtach@gmail.com?subject=Domera%20demo%20request";
+
 export async function LandingHero() {
   const t = await getTranslations("landing.hero");
 
@@ -34,7 +36,7 @@ export async function LandingHero() {
               <FiArrowRight className="h-5 w-5" aria-hidden="true" />
             </Link>
             <a
-              href="#features"
+              href={demoRequestHref}
               className="inline-flex min-h-14 items-center justify-center rounded-2xl border border-slate-200 bg-white px-7 text-base font-bold text-slate-900 shadow-sm transition hover:border-blue-200 hover:bg-blue-50"
             >
               {t("secondaryCta")}

@@ -138,14 +138,28 @@ let BuildingsService = class BuildingsService {
         const existingConfig = existing?.readingConfig && typeof existing.readingConfig === 'object'
             ? existing.readingConfig
             : {};
-        const waterEnabled = Boolean(payloadConfig.waterEnabled ?? existingConfig.waterEnabled);
+        const hasExisting = existing !== undefined;
+        const hasPayloadWaterEnabled = Object.prototype.hasOwnProperty.call(payloadConfig, 'waterEnabled');
+        const hasExistingWaterEnabled = Object.prototype.hasOwnProperty.call(existingConfig, 'waterEnabled');
+        const waterEnabled = hasPayloadWaterEnabled
+            ? Boolean(payloadConfig.waterEnabled)
+            : hasExistingWaterEnabled
+                ? Boolean(existingConfig.waterEnabled)
+                : !hasExisting;
         const electricityEnabled = Boolean(payloadConfig.electricityEnabled ?? existingConfig.electricityEnabled);
         const heatingEnabled = Boolean(payloadConfig.heatingEnabled ?? existingConfig.heatingEnabled);
+        const defaultWaterMeterCount = !hasExisting || payloadConfig.waterEnabled === true ? 1 : 0;
+        const electricityMeterDigits = Math.min(7, Math.max(5, this.normalizeMeterCount(payloadConfig.electricityMeterDigits, existingConfig.electricityMeterDigits, 6) || 6));
+        const electricityUserSetsDigits = Boolean(payloadConfig.electricityUserSetsDigits ?? existingConfig.electricityUserSetsDigits);
+        const electricityAllowMultipleMonthlySubmissions = Boolean(payloadConfig.electricityAllowMultipleMonthlySubmissions
+            ?? existingConfig.electricityAllowMultipleMonthlySubmissions);
+        const electricityFixedPriceEnabled = Boolean(payloadConfig.electricityFixedPriceEnabled ?? existingConfig.electricityFixedPriceEnabled);
+        const electricityPricePerKwh = Math.max(0, Number(payloadConfig.electricityPricePerKwh ?? existingConfig.electricityPricePerKwh ?? 0) || 0);
         const hotWaterMetersPerResident = waterEnabled
-            ? this.normalizeMeterCount(payloadConfig.hotWaterMetersPerResident, existingConfig.hotWaterMetersPerResident)
+            ? this.normalizeMeterCount(payloadConfig.hotWaterMetersPerResident, existingConfig.hotWaterMetersPerResident, defaultWaterMeterCount)
             : 0;
         const coldWaterMetersPerResident = waterEnabled
-            ? this.normalizeMeterCount(payloadConfig.coldWaterMetersPerResident, existingConfig.coldWaterMetersPerResident)
+            ? this.normalizeMeterCount(payloadConfig.coldWaterMetersPerResident, existingConfig.coldWaterMetersPerResident, defaultWaterMeterCount)
             : 0;
         return {
             waterEnabled,
@@ -153,16 +167,26 @@ let BuildingsService = class BuildingsService {
             heatingEnabled,
             hotWaterMetersPerResident,
             coldWaterMetersPerResident,
+            electricityMeterDigits,
+            electricityUserSetsDigits,
+            electricityAllowMultipleMonthlySubmissions,
+            electricityFixedPriceEnabled,
+            electricityPricePerKwh: electricityFixedPriceEnabled ? electricityPricePerKwh : 0,
             submissionPeriod: this.normalizeSubmissionPeriod(payloadConfig, existingConfig),
+            waterSubmissionPeriod: this.normalizeSubmissionPeriodByKey(payloadConfig, existingConfig, 'waterSubmissionPeriod'),
+            electricitySubmissionPeriod: this.normalizeSubmissionPeriodByKey(payloadConfig, existingConfig, 'electricitySubmissionPeriod'),
         };
     }
     normalizeSubmissionPeriod(payloadConfig, existingConfig) {
-        const hasPayload = Object.prototype.hasOwnProperty.call(payloadConfig, 'submissionPeriod');
-        const source = hasPayload ? payloadConfig.submissionPeriod : existingConfig.submissionPeriod;
+        return this.normalizeSubmissionPeriodByKey(payloadConfig, existingConfig, 'submissionPeriod');
+    }
+    normalizeSubmissionPeriodByKey(payloadConfig, existingConfig, key) {
+        const hasPayload = Object.prototype.hasOwnProperty.call(payloadConfig, key);
+        const source = hasPayload ? payloadConfig[key] : existingConfig[key];
         if (source === null)
             return null;
         if (!source || typeof source !== 'object') {
-            return hasPayload ? null : existingConfig.submissionPeriod ?? null;
+            return hasPayload ? null : existingConfig[key] ?? null;
         }
         const obj = source;
         const startDate = typeof obj.startDate === 'string' ? obj.startDate.trim() : '';
@@ -1168,6 +1192,31 @@ let BuildingsService = class BuildingsService {
         if (!companyId) {
             throw new common_1.BadRequestException('companyId is missing for building');
         }
+        if (this.isBuildingCreationRequestStatus(current.status)) {
+            const deletedAt = new Date();
+            const requestedBy = this.firstString(current.requestedBy);
+            const batch = db.batch();
+            batch.delete(ref);
+            batch.set(db.collection('companies').doc(companyId), {
+                ...this.buildCompanyBuildingLinkPatch(buildingId, 'remove', deletedAt),
+                buildingCreationRequestStatus: firestore_1.FieldValue.delete(),
+                buildingCreationRequestId: firestore_1.FieldValue.delete(),
+                buildingCreationRequestBuildingName: firestore_1.FieldValue.delete(),
+                buildingCreationRequestBuildingAddress: firestore_1.FieldValue.delete(),
+            }, { merge: true });
+            if (requestedBy) {
+                batch.set(db.collection('users').doc(requestedBy), {
+                    buildingCreationRequestStatus: firestore_1.FieldValue.delete(),
+                    buildingCreationRequestId: firestore_1.FieldValue.delete(),
+                    buildingCreationRequestBuildingName: firestore_1.FieldValue.delete(),
+                    buildingCreationRequestBuildingAddress: firestore_1.FieldValue.delete(),
+                    updatedAt: deletedAt,
+                }, { merge: true });
+            }
+            await this.markPlatformAdminCreationRequestNotificationsRead(batch, buildingId, deletedAt);
+            await batch.commit();
+            return { success: true, deletedRequest: true };
+        }
         if (current.editLocked === true) {
             throw new common_1.ForbiddenException('This building is locked by the platform administrator');
         }
@@ -1175,13 +1224,29 @@ let BuildingsService = class BuildingsService {
             throw new common_1.ConflictException('Cannot delete building while apartments are linked to it');
         }
         const deletedAt = new Date();
-        const backup = await this.backupBuildingBeforeDelete({
-            buildingId,
-            companyId,
-            building: current,
-            deletedBy: user.uid,
-            deletedAt,
-        });
+        let backup;
+        try {
+            backup = await this.backupBuildingBeforeDelete({
+                buildingId,
+                companyId,
+                building: current,
+                deletedBy: user.uid,
+                deletedAt,
+            });
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error(`Failed to create delete backup for building ${buildingId}:`, message);
+            backup = {
+                backupStoragePath: null,
+                backupStoragePrefix: null,
+                retainedStoragePrefix: null,
+                retentionExpiresAt: this.addDays(deletedAt, DELETED_BUILDING_STORAGE_RETENTION_DAYS),
+                copiedStorageFilesCount: 0,
+                backupFailed: true,
+                backupError: message,
+            };
+        }
         const batch = db.batch();
         batch.delete(ref);
         batch.set(db.collection('companies').doc(companyId), {
@@ -1195,6 +1260,8 @@ let BuildingsService = class BuildingsService {
                 retainedStoragePrefix: backup.retainedStoragePrefix,
                 retentionDays: DELETED_BUILDING_STORAGE_RETENTION_DAYS,
                 retentionExpiresAt: backup.retentionExpiresAt,
+                backupFailed: backup.backupFailed === true,
+                backupError: backup.backupError ?? null,
             },
         }, { merge: true });
         batch.set(db.collection('companies')
@@ -1210,6 +1277,8 @@ let BuildingsService = class BuildingsService {
             copiedStorageFilesCount: backup.copiedStorageFilesCount,
             retentionDays: DELETED_BUILDING_STORAGE_RETENTION_DAYS,
             retentionExpiresAt: backup.retentionExpiresAt,
+            backupFailed: backup.backupFailed === true,
+            backupError: backup.backupError ?? null,
         }, { merge: true });
         await batch.commit();
         return { success: true, backup };

@@ -540,6 +540,8 @@ export class AuthService {
   async createSessionCookie(input: SetSessionDto): Promise<{
     cookie: string;
     maxAgeSeconds: number;
+    userId: string;
+    email?: string;
     role?: string;
     accountType?: string;
     companyId?: string;
@@ -564,10 +566,41 @@ export class AuthService {
       throw new Error('email does not match token subject');
     }
 
+    const email = decoded.email ? this.normalizeEmail(decoded.email) : undefined;
+    let hydratedProfile: Record<string, unknown> | undefined;
+
+    if (email) {
+      try {
+        hydratedProfile = await this.ensureUserProfileDocument({
+          uid: decoded.uid,
+          email,
+        });
+
+        if (resolveAccountType({ role: hydratedProfile.role, accountType: hydratedProfile.accountType }) === 'ManagementCompany') {
+          await this.ensureManagementCompanyDocument({
+            uid: decoded.uid,
+            email,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to hydrate Firebase user profile during session creation:', error);
+      }
+    }
+
     let role = resolveUserRole({ role: decoded.role });
     let accountType = resolveAccountType({ role, accountType: decoded.accountType });
     let companyId = typeof decoded.companyId === 'string' ? decoded.companyId : undefined;
     let apartmentId = typeof decoded.apartmentId === 'string' ? decoded.apartmentId : undefined;
+
+    if (hydratedProfile) {
+      role = role ?? resolveUserRole({ role: hydratedProfile.role, accountType: hydratedProfile.accountType });
+      accountType = accountType ?? resolveAccountType({
+        role: hydratedProfile.role,
+        accountType: hydratedProfile.accountType,
+      });
+      companyId = companyId ?? (typeof hydratedProfile.companyId === 'string' ? hydratedProfile.companyId : undefined);
+      apartmentId = apartmentId ?? (typeof hydratedProfile.apartmentId === 'string' ? hydratedProfile.apartmentId : undefined);
+    }
 
     if (!role || !accountType || !companyId || !apartmentId) {
       try {
@@ -628,6 +661,8 @@ export class AuthService {
     return {
       cookie: sessionCookie,
       maxAgeSeconds: Math.floor(ttlMs / 1000),
+      userId: decoded.uid,
+      email,
       role,
       accountType,
       companyId,

@@ -10,6 +10,16 @@ type SettingsPageProps = {
 };
 
 type UnknownRecord = Record<string, unknown>;
+type InvoiceSettingsLanguage = "ru" | "lv" | "en";
+type InvoiceNumberPart = "companyCode" | "apartmentNumber" | "month" | "year" | "date" | "sequence";
+type InvoiceLineItem = "electricityAdvance" | "electricityPayment" | "other";
+type InvoiceTableColumn = "period" | "price" | "amount" | "unit" | "vat" | "sum" | "recalculation" | "net";
+
+const invoiceNumberPartOptions: InvoiceNumberPart[] = ["companyCode", "apartmentNumber", "month", "year", "date", "sequence"];
+const invoiceLineItemOptions: InvoiceLineItem[] = ["electricityAdvance", "electricityPayment", "other"];
+const invoiceTableColumnOptions: InvoiceTableColumn[] = ["period", "price", "amount", "unit", "vat", "sum", "recalculation", "net"];
+const defaultInvoiceLineItems: InvoiceLineItem[] = ["electricityAdvance", "electricityPayment", "other"];
+const defaultInvoiceTableColumns: InvoiceTableColumn[] = ["period", "price", "amount", "unit", "sum", "recalculation"];
 
 const defaultNotificationSettings: NotificationSettings = {
   general: true,
@@ -61,6 +71,91 @@ function normalizeNotificationSettings(value: unknown): NotificationSettings {
     meterReminder: typeof settings.meterReminder === "boolean" ? settings.meterReminder : defaultNotificationSettings.meterReminder,
     paymentReminder: typeof settings.paymentReminder === "boolean" ? settings.paymentReminder : defaultNotificationSettings.paymentReminder,
     language,
+  };
+}
+
+function normalizeInvoiceAccentColor(value: unknown): string {
+  return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value.trim()) ? value.trim() : "";
+}
+
+function normalizeInvoiceLogoDataUrl(value: unknown): string {
+  return typeof value === "string" && /^data:image\/(?:png|jpe?g|webp);base64,/i.test(value) ? value : "";
+}
+
+function normalizeInvoiceNumberParts(value: unknown): InvoiceNumberPart[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is InvoiceNumberPart =>
+      typeof item === "string" && invoiceNumberPartOptions.includes(item as InvoiceNumberPart),
+    )
+    : [];
+}
+
+function normalizeInvoiceNumberSeparators(value: unknown): Partial<Record<InvoiceNumberPart, string>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(
+    invoiceNumberPartOptions
+      .map((part) => [part, (value as UnknownRecord)[part]])
+      .filter((entry): entry is [InvoiceNumberPart, string] => typeof entry[1] === "string"),
+  );
+}
+
+function normalizeInvoiceLineItems(value: unknown): InvoiceLineItem[] {
+  const items = Array.isArray(value)
+    ? value.filter((item): item is InvoiceLineItem =>
+      typeof item === "string" && invoiceLineItemOptions.includes(item as InvoiceLineItem),
+    )
+    : [];
+
+  return items.length > 0 ? items : defaultInvoiceLineItems;
+}
+
+function normalizeInvoiceTableColumns(value: unknown): InvoiceTableColumn[] {
+  const columns = Array.isArray(value)
+    ? value.filter((item): item is InvoiceTableColumn =>
+      typeof item === "string" && invoiceTableColumnOptions.includes(item as InvoiceTableColumn),
+    )
+    : [];
+
+  return columns.length > 0 ? columns : defaultInvoiceTableColumns;
+}
+
+function normalizeInvoiceSettings(value: unknown) {
+  const settings = value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
+  const language: InvoiceSettingsLanguage =
+    settings.language === "ru" || settings.language === "lv" || settings.language === "en"
+      ? settings.language
+      : "lv";
+  const paymentTermDays = Number(settings.paymentTermDays);
+  const defaultVatRate = Number(settings.defaultVatRate);
+
+  return {
+    numberPrefix: firstString(settings.numberPrefix),
+    numberPattern: firstString(settings.numberPattern, "YYYY/MM/###"),
+    invoiceNumberParts: normalizeInvoiceNumberParts(settings.invoiceNumberParts),
+    invoiceNumberSeparator: firstString(settings.invoiceNumberSeparator, "/"),
+    invoiceNumberSeparators: normalizeInvoiceNumberSeparators(settings.invoiceNumberSeparators),
+    language,
+    currency: firstString(settings.currency, "EUR").toUpperCase(),
+    logoDataUrl: normalizeInvoiceLogoDataUrl(settings.logoDataUrl),
+    logoHidden: settings.logoHidden === true,
+    accentColor: normalizeInvoiceAccentColor(settings.accentColor) || "#ef3340",
+    providerAddress: firstString(settings.providerAddress),
+    overrideBankName: firstString(settings.overrideBankName),
+    overrideBankAccountIban: firstString(settings.overrideBankAccountIban),
+    overrideBankSwift: firstString(settings.overrideBankSwift),
+    overrideBankBeneficiary: firstString(settings.overrideBankBeneficiary),
+    providerSignerName: firstString(settings.providerSignerName),
+    providerSignerTitle: firstString(settings.providerSignerTitle),
+    paymentTermDays: Number.isFinite(paymentTermDays) && paymentTermDays >= 0 ? Math.trunc(paymentTermDays) : 10,
+    defaultServiceName: firstString(settings.defaultServiceName, "Apsaimniekošanas pakalpojumi"),
+    defaultVatRate: Number.isFinite(defaultVatRate) && defaultVatRate >= 0 ? Math.round(defaultVatRate * 100) / 100 : 0,
+    invoiceLineItems: normalizeInvoiceLineItems(settings.invoiceLineItems),
+    invoiceTableColumns: normalizeInvoiceTableColumns(settings.invoiceTableColumns),
+    showAmountWords: settings.showAmountWords !== false,
+    amountWordsPrefix: firstString(settings.amountWordsPrefix, "Summa vārdiem:"),
+    showSignature: settings.showSignature !== false,
+    footerNote: firstString(settings.footerNote),
   };
 }
 
@@ -139,8 +234,14 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           companyId,
           name: firstString(company?.companyName, company?.name, profile?.companyName, fullName),
           registrationNumber: firstString(company?.registrationNumber, profile?.registrationNumber),
+          address: firstString(company?.address, company?.companyAddress, profile?.address, profile?.companyAddress),
           email: firstString(company?.companyEmail, company?.email, company?.contactEmail, profile?.companyEmail, email),
           phone: firstString(company?.companyPhone, company?.phone, company?.contactPhone, profile?.companyPhone),
+          bankName: firstString(company?.bankName, profile?.bankName),
+          bankAccountIban: firstString(company?.bankAccountIban, company?.iban, profile?.bankAccountIban, profile?.iban),
+          bankSwift: firstString(company?.bankSwift, company?.swift, company?.bic, profile?.bankSwift, profile?.swift, profile?.bic),
+          bankBeneficiary: firstString(company?.bankBeneficiary, company?.beneficiaryName, profile?.bankBeneficiary, profile?.beneficiaryName),
+          invoiceSettings: normalizeInvoiceSettings(company?.invoiceSettings),
           apiKeys,
           buildings: data.buildings
             .filter(isApprovedBuilding)

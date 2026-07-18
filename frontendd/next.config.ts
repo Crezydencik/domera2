@@ -3,7 +3,33 @@ import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
 
 const withNextIntl = createNextIntlPlugin("./src/shared/i18n/request.ts");
-const backendApiBaseUrl = process.env.API_BASE_URL ?? "http://localhost:4000/api";
+
+function trimTrailingSlashes(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+function normalizeApiBaseUrl(value?: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimTrailingSlashes(trimmed);
+  }
+
+  return undefined;
+}
+
+function appendApiPath(value?: string) {
+  const baseUrl = normalizeApiBaseUrl(value);
+  if (!baseUrl) return undefined;
+
+  return baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
+}
+
+const backendApiBaseUrl =
+  normalizeApiBaseUrl(process.env.API_BASE_URL) ??
+  appendApiPath(process.env.BACKEND_URL) ??
+  (process.env.NODE_ENV === "production" ? "https://domeraback.vercel.app/api" : "http://localhost:4000/api");
 
 const nextConfig: NextConfig = {
   images: {

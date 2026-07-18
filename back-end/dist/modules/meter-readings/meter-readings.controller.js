@@ -32,6 +32,20 @@ let MeterReadingsController = class MeterReadingsController {
     list(user, apartmentId, companyId) {
         return this.meterReadingsService.list(user, apartmentId, companyId);
     }
+    listElectricityPayments(user, buildingId, apartmentId) {
+        return this.meterReadingsService.listElectricityPayments(user, { buildingId, apartmentId });
+    }
+    createElectricityPayment(request, user, body) {
+        return this.meterReadingsService.createElectricityPayment(request, user, body);
+    }
+    confirmElectricityPayment(request, user, paymentId, body) {
+        return this.meterReadingsService.confirmElectricityPayment(request, user, paymentId, body);
+    }
+    removeElectricityPayment(request, user, paymentId, apartmentId) {
+        if (!apartmentId)
+            throw new common_1.BadRequestException('apartmentId is required');
+        return this.meterReadingsService.removeElectricityPayment(request, user, paymentId, apartmentId);
+    }
     create(request, user, body) {
         return this.meterReadingsService.create(request, user, body);
     }
@@ -64,6 +78,53 @@ __decorate([
     __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", void 0)
 ], MeterReadingsController.prototype, "list", null);
+__decorate([
+    (0, common_1.Get)('electricity-payments'),
+    (0, swagger_1.ApiOperation)({ summary: 'List confirmed electricity payments and advances' }),
+    (0, swagger_1.ApiQuery)({ name: 'buildingId', required: false, type: String }),
+    (0, swagger_1.ApiQuery)({ name: 'apartmentId', required: false, type: String }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)('buildingId')),
+    __param(2, (0, common_1.Query)('apartmentId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", void 0)
+], MeterReadingsController.prototype, "listElectricityPayments", null);
+__decorate([
+    (0, common_1.Post)('electricity-payments'),
+    (0, swagger_1.ApiOperation)({ summary: 'Create confirmed electricity payment or advance' }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, Object]),
+    __metadata("design:returntype", void 0)
+], MeterReadingsController.prototype, "createElectricityPayment", null);
+__decorate([
+    (0, common_1.Patch)('electricity-payments/:paymentId/confirm'),
+    (0, swagger_1.ApiOperation)({ summary: 'Confirm resident electricity advance payment' }),
+    (0, swagger_1.ApiParam)({ name: 'paymentId', type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('paymentId')),
+    __param(3, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, Object]),
+    __metadata("design:returntype", void 0)
+], MeterReadingsController.prototype, "confirmElectricityPayment", null);
+__decorate([
+    (0, common_1.Delete)('electricity-payments/:paymentId'),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete electricity payment or advance' }),
+    (0, swagger_1.ApiParam)({ name: 'paymentId', type: String }),
+    (0, swagger_1.ApiQuery)({ name: 'apartmentId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('paymentId')),
+    __param(3, (0, common_1.Query)('apartmentId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, String]),
+    __metadata("design:returntype", void 0)
+], MeterReadingsController.prototype, "removeElectricityPayment", null);
 __decorate([
     (0, common_1.Post)(),
     (0, swagger_1.ApiOperation)({ summary: 'Create meter reading entry' }),

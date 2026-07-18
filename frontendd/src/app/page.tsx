@@ -4,6 +4,7 @@ import { LandingFooter } from "@/components/landing/landing-footer";
 import { LandingHeader } from "@/components/landing/landing-header";
 import { LandingHero } from "@/components/landing/landing-hero";
 import { PlatformSection } from "@/components/landing/platform-section";
+import { PricingSection } from "@/components/landing/pricing-section";
 import { SolutionsSection } from "@/components/landing/solutions-section";
 import { WhyDomeraSection } from "@/components/landing/why-domera-section";
 
@@ -17,7 +18,7 @@ export default function HomePage() {
         <FeaturesSection />
         <PlatformSection />
         <SolutionsSection />
-        {/* <PricingSection /> */}
+        <PricingSection />
         <FaqSection />
       </main>
       <LandingFooter />

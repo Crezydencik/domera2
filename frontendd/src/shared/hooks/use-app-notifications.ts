@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
+import { getBuildings } from "@/shared/api/buildings";
 import { apiFetch, DomeraApiError } from "@/shared/api/client";
 import { getNotificationSettings, getNotifications, markNotificationRead, removeNotification, type NotificationSettings } from "@/shared/api/notifications";
 import { useAuthSession } from "@/shared/hooks/use-auth";
+import { isElectricityEnabledBuilding } from "@/shared/lib/buildings";
+import { BUILDINGS_CHANGED_EVENT } from "@/shared/lib/buildings-events";
 import type { NotificationItem } from "@/shared/lib/data";
 import { ROUTES } from "@/shared/lib/routes";
 
@@ -25,6 +28,15 @@ function firstString(...values: unknown[]): string {
   }
 
   return "";
+}
+
+function asRecord(value: unknown): UnknownRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
+}
+
+function numberValue(value: unknown) {
+  const parsed = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function toNotificationItem(item: UnknownRecord): NotificationItem {
@@ -193,8 +205,10 @@ interface UseAppNotificationsOptions {
 export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   const { previewLimit = 5 } = options;
   const t = useTranslations("appShell.header.notifications");
-  const { dashboardRole, userId } = useAuthSession();
+  const { companyId, dashboardRole, userId } = useAuthSession();
   const [items, setItems] = useState<NotificationItem[]>([]);
+  const [electricitySetupItems, setElectricitySetupItems] = useState<NotificationItem[]>([]);
+  const [profileCompanyId, setProfileCompanyId] = useState<string | undefined>(undefined);
   const [settings, setSettings] = useState<NotificationSettings>(defaultNotificationSettings);
   const [ownerMissingReadings, setOwnerMissingReadings] = useState(0);
   const [ownerMissingApartmentLabels, setOwnerMissingApartmentLabels] = useState<string[]>([]);
@@ -211,6 +225,52 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
       dashboardRole !== "managementCompany" && nextSettings.general && nextSettings.meterReminder,
     [dashboardRole],
   );
+
+  const loadElectricitySetupNotifications = useCallback(async () => {
+    const targetCompanyId = companyId ?? profileCompanyId ?? (dashboardRole === "managementCompany" ? userId : undefined);
+    if (dashboardRole !== "managementCompany" || !targetCompanyId) {
+      setElectricitySetupItems([]);
+      return;
+    }
+
+    const response = await getBuildings(targetCompanyId, { redirectOnAuthError: false }).catch(() => ({ items: [] as UnknownRecord[] }));
+    const nextItems = (response.items ?? [])
+      .filter((building) => isElectricityEnabledBuilding(building))
+      .map((building): NotificationItem | null => {
+        const readingConfig = asRecord(building.readingConfig);
+        const buildingId = firstString(building.id, building.buildingId, building.name, building.address);
+        const buildingLabel = firstString(building.name, building.title, building.address, buildingId);
+        const electricityPrice = numberValue(readingConfig.electricityPricePerKwh ?? building.electricityPricePerKwh);
+        const rawDigits = readingConfig.electricityMeterDigits ?? building.electricityMeterDigits;
+        const digits = numberValue(rawDigits);
+        const residentCanChooseDigits = Boolean(readingConfig.electricityUserSetsDigits ?? building.electricityUserSetsDigits);
+        const messages: string[] = [];
+
+        if (electricityPrice <= 0) {
+          messages.push("Electricity tariff is not configured");
+        }
+
+        if (!residentCanChooseDigits && (digits < 5 || digits > 7)) {
+          messages.push("Electricity reading cells are not set");
+        }
+
+        if (!messages.length) return null;
+
+        return {
+          id: `electricity-setup-local-${buildingId || buildingLabel}`,
+          title: "Electricity setup needs attention",
+          description: `${buildingLabel}: ${messages.join("; ")}.`,
+          channel: "Electricity",
+          actionHref: `${ROUTES.electricity}?settings=1`,
+          actionLabel: "Open settings",
+          type: "electricity-setup",
+          buildingName: buildingLabel,
+        };
+      })
+      .filter((item): item is NotificationItem => Boolean(item));
+
+    setElectricitySetupItems(nextItems);
+  }, [companyId, dashboardRole, profileCompanyId, userId]);
 
   const loadOwnerStatus = useCallback(
     async (nextSettings = settings) => {
@@ -261,6 +321,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
 
       setDuplicateNotificationIdsById(idsByVisibleId);
       setItems(visibleItems);
+      void loadElectricitySetupNotifications();
       if (canLoadOwnerStatus(nextSettings)) {
         setOwnerStatusLoaded(false);
       } else {
@@ -277,7 +338,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
       setHasLoaded(true);
       setIsLoading(false);
     }
-  }, [canLoadOwnerStatus, t, userId]);
+  }, [canLoadOwnerStatus, loadElectricitySetupNotifications, t, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -301,6 +362,28 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   }, [refresh]);
 
   useEffect(() => {
+    if (!userId || companyId) {
+      setProfileCompanyId(undefined);
+      return;
+    }
+
+    let active = true;
+
+    apiFetch<UnknownRecord | null>("/users/me", { redirectOnAuthError: false })
+      .then((profile) => {
+        if (!active) return;
+        setProfileCompanyId(firstString(profile?.companyId));
+      })
+      .catch(() => {
+        if (active) setProfileCompanyId(undefined);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [companyId, userId]);
+
+  useEffect(() => {
     const handleChange = () => {
       void refresh();
       void loadOwnerStatus();
@@ -309,6 +392,31 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
     window.addEventListener(METER_READINGS_CHANGED_EVENT, handleChange);
     return () => window.removeEventListener(METER_READINGS_CHANGED_EVENT, handleChange);
   }, [loadOwnerStatus, refresh]);
+
+  useEffect(() => {
+    void loadElectricitySetupNotifications();
+
+    const handleBuildingsChanged = (event: Event) => {
+      const detail = event instanceof CustomEvent ? event.detail as { electricitySetupItems?: unknown } : {};
+      if (Array.isArray(detail.electricitySetupItems)) {
+        setElectricitySetupItems(
+          detail.electricitySetupItems.filter((item): item is NotificationItem =>
+            item && typeof item === "object" && typeof (item as NotificationItem).id === "string",
+          ),
+        );
+        return;
+      }
+
+      void loadElectricitySetupNotifications();
+    };
+
+    window.addEventListener(BUILDINGS_CHANGED_EVENT, handleBuildingsChanged);
+    window.addEventListener("focus", handleBuildingsChanged);
+    return () => {
+      window.removeEventListener(BUILDINGS_CHANGED_EVENT, handleBuildingsChanged);
+      window.removeEventListener("focus", handleBuildingsChanged);
+    };
+  }, [loadElectricitySetupNotifications]);
 
   useEffect(() => {
     const handleOwnerStatus = (event: Event) => {
@@ -363,8 +471,15 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   }, [dashboardRole, dismissedLocalNotificationIds, ownerMissingApartmentLabels, ownerMissingReadings, settings.general, settings.meterReminder, t]);
 
   const allItems = useMemo(
-    () => (computedOwnerNotification ? [computedOwnerNotification, ...items] : items),
-    [computedOwnerNotification, items],
+    () => {
+      const visibleElectricityItems = electricitySetupItems.filter((item) => !dismissedLocalNotificationIds.has(item.id));
+      return [
+        ...visibleElectricityItems,
+        ...(computedOwnerNotification ? [computedOwnerNotification] : []),
+        ...items,
+      ];
+    },
+    [computedOwnerNotification, dismissedLocalNotificationIds, electricitySetupItems, items],
   );
   const previewItems = useMemo(() => allItems.slice(0, previewLimit), [allItems, previewLimit]);
 
@@ -372,7 +487,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   const close = useCallback(() => setIsOpen(false), []);
   const toggle = useCallback(() => setIsOpen((value) => !value), []);
   const dismiss = useCallback(async (notificationId: string) => {
-    if (notificationId.startsWith("owner-meter-readings-local-")) {
+    if (notificationId.startsWith("owner-meter-readings-local-") || notificationId.startsWith("electricity-setup-local-")) {
       setDismissedLocalNotificationIds((current) => new Set(current).add(notificationId));
       return;
     }

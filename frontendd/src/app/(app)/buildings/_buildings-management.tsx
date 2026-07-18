@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { DomeraApiError } from "@/shared/api/client";
 import { cancelBuildingCreationRequest, deleteBuilding, requestBuildingCreationAccess, updateBuilding, type BuildingMutationInput } from "@/shared/api/buildings";
 import { useNotifications } from "@/shared/hooks/use-notifications";
+import { notifyBuildingsChanged } from "@/shared/lib/buildings-events";
 import type { Building, BuildingReadingConfig } from "@/shared/lib/data";
 
 type EditableBuilding = Building & {
@@ -36,11 +37,16 @@ const EMPTY_FORM: FormState = {
   subscriptionTermYears: "1",
   comment: "",
   readingConfig: {
-    waterEnabled: false,
+    waterEnabled: true,
     electricityEnabled: false,
     heatingEnabled: false,
     hotWaterMetersPerResident: 1,
     coldWaterMetersPerResident: 1,
+    electricityMeterDigits: 6,
+    electricityUserSetsDigits: false,
+    electricityAllowMultipleMonthlySubmissions: false,
+    electricityFixedPriceEnabled: false,
+    electricityPricePerKwh: 0,
   },
 };
 
@@ -199,6 +205,11 @@ function buildPayloadFromBuilding(building: EditableBuilding): Omit<BuildingMuta
       heatingEnabled: Boolean(building.readingConfig?.heatingEnabled),
       hotWaterMetersPerResident: building.readingConfig?.hotWaterMetersPerResident ?? 1,
       coldWaterMetersPerResident: building.readingConfig?.coldWaterMetersPerResident ?? 1,
+      electricityMeterDigits: building.readingConfig?.electricityMeterDigits ?? 6,
+      electricityUserSetsDigits: Boolean(building.readingConfig?.electricityUserSetsDigits),
+      electricityAllowMultipleMonthlySubmissions: Boolean(building.readingConfig?.electricityAllowMultipleMonthlySubmissions),
+      electricityFixedPriceEnabled: Boolean(building.readingConfig?.electricityFixedPriceEnabled),
+      electricityPricePerKwh: building.readingConfig?.electricityPricePerKwh ?? 0,
     },
   };
 }
@@ -215,12 +226,14 @@ function ModalShell({
   open,
   title,
   description,
+  tabs,
   children,
   onClose,
 }: {
   open: boolean;
   title: string;
   description?: string;
+  tabs?: React.ReactNode;
   children: React.ReactNode;
   onClose: () => void;
 }) {
@@ -231,7 +244,7 @@ function ModalShell({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
+        className="relative flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <button
@@ -242,11 +255,14 @@ function ModalShell({
         >
           ×
         </button>
-        <div className="mb-5 pr-8">
+        <div className="shrink-0 border-b border-slate-100 px-6 pb-5 pt-6 pr-14">
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
           {description ? <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p> : null}
         </div>
-        {children}
+        {tabs ? <div className="shrink-0 px-6 pt-5">{tabs}</div> : null}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -264,7 +280,7 @@ function FormTabs({
   onChange: (tab: FormTab) => void;
 }) {
   return (
-    <div className="mb-5 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+    <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
       {([
         ["general", generalLabel],
         ["readings", readingsLabel],
@@ -434,8 +450,8 @@ export function BuildingsManagement({
   }
 
   function toggleReading(key: "waterEnabled" | "electricityEnabled" | "heatingEnabled") {
+    const nextEnabled = !form.readingConfig[key];
     setForm((current) => {
-      const nextEnabled = !current.readingConfig[key];
       return {
         ...current,
         readingConfig: {
@@ -486,6 +502,11 @@ export function BuildingsManagement({
         heatingEnabled: Boolean(building.readingConfig?.heatingEnabled),
         hotWaterMetersPerResident: building.readingConfig?.hotWaterMetersPerResident ?? 1,
         coldWaterMetersPerResident: building.readingConfig?.coldWaterMetersPerResident ?? 1,
+        electricityMeterDigits: building.readingConfig?.electricityMeterDigits ?? 6,
+        electricityUserSetsDigits: Boolean(building.readingConfig?.electricityUserSetsDigits),
+        electricityAllowMultipleMonthlySubmissions: Boolean(building.readingConfig?.electricityAllowMultipleMonthlySubmissions),
+        electricityFixedPriceEnabled: Boolean(building.readingConfig?.electricityFixedPriceEnabled),
+        electricityPricePerKwh: building.readingConfig?.electricityPricePerKwh ?? 0,
       },
     });
     setActiveTab("general");
@@ -510,6 +531,15 @@ export function BuildingsManagement({
     );
     const hotWaterMetersPerResident = Number(form.readingConfig.hotWaterMetersPerResident || 0);
     const coldWaterMetersPerResident = Number(form.readingConfig.coldWaterMetersPerResident || 0);
+    const electricityMeterDigits = Number(form.readingConfig.electricityMeterDigits || 6);
+    const electricityPricePerKwh = Number(form.readingConfig.electricityPricePerKwh || 0);
+    const safeElectricityMeterDigits = Math.min(
+      7,
+      Math.max(5, Number.isFinite(electricityMeterDigits) ? Math.floor(electricityMeterDigits) : 6),
+    );
+    const safeElectricityPricePerKwh = Number.isFinite(electricityPricePerKwh) && electricityPricePerKwh > 0
+      ? electricityPricePerKwh
+      : 0;
 
     if (!form.name.trim()) {
       throw new Error(t("errors.nameRequired"));
@@ -535,7 +565,6 @@ export function BuildingsManagement({
     ) {
       throw new Error(t("errors.coldWaterMetersInvalid"));
     }
-
     return {
       name: form.name.trim(),
       address: form.address.trim(),
@@ -549,6 +578,19 @@ export function BuildingsManagement({
         heatingEnabled: form.readingConfig.heatingEnabled,
         hotWaterMetersPerResident: form.readingConfig.waterEnabled ? Math.floor(hotWaterMetersPerResident) : 0,
         coldWaterMetersPerResident: form.readingConfig.waterEnabled ? Math.floor(coldWaterMetersPerResident) : 0,
+        electricityMeterDigits: form.readingConfig.electricityEnabled ? safeElectricityMeterDigits : 6,
+        electricityUserSetsDigits: form.readingConfig.electricityEnabled
+          ? Boolean(form.readingConfig.electricityUserSetsDigits)
+          : false,
+        electricityAllowMultipleMonthlySubmissions: form.readingConfig.electricityEnabled
+          ? Boolean(form.readingConfig.electricityAllowMultipleMonthlySubmissions)
+          : false,
+        electricityFixedPriceEnabled: form.readingConfig.electricityEnabled
+          ? Boolean(form.readingConfig.electricityFixedPriceEnabled && safeElectricityPricePerKwh > 0)
+          : false,
+        electricityPricePerKwh: form.readingConfig.electricityEnabled && form.readingConfig.electricityFixedPriceEnabled
+          ? safeElectricityPricePerKwh
+          : 0,
       },
     };
   }
@@ -566,6 +608,7 @@ export function BuildingsManagement({
       notifications.success(response.alreadyPending ? t("gating.requestAlreadyPending") : t("gating.requestSent"));
       setCreateOpen(false);
       resetForm();
+      notifyBuildingsChanged({ electricityEnabled: payload.readingConfig?.electricityEnabled });
       router.refresh();
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : t("errors.createFailed"));
@@ -587,6 +630,7 @@ export function BuildingsManagement({
       notifications.success(t("feedback.updated", { building: payload.name }));
       setEditOpen(false);
       resetForm();
+      notifyBuildingsChanged({ electricityEnabled: payload.readingConfig?.electricityEnabled });
       router.refresh();
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : t("errors.updateFailed"));
@@ -607,6 +651,7 @@ export function BuildingsManagement({
       notifications.success(t("feedback.deleted", { building: deletingBuildingName || t("title") }));
       setDeleteOpen(false);
       resetDeleteState();
+      notifyBuildingsChanged();
       router.refresh();
     } catch (error) {
       const message = error instanceof DomeraApiError && error.status === 409
@@ -625,6 +670,7 @@ export function BuildingsManagement({
     try {
       await cancelBuildingCreationRequest(building.id);
       notifications.success(t("feedback.requestCancelled", { building: building.name }));
+      notifyBuildingsChanged();
       router.refresh();
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : t("errors.requestCancelFailed"));
@@ -647,6 +693,7 @@ export function BuildingsManagement({
           ? t("gating.requestAlreadyPending")
           : t("feedback.requestRepeated", { building: building.name }),
       );
+      notifyBuildingsChanged();
       router.refresh();
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : t("errors.requestRepeatFailed"));
@@ -802,14 +849,15 @@ export function BuildingsManagement({
         onClose={() => !loading && setCreateOpen(false)}
         title={t("dialogs.create.title")}
         description={t("dialogs.create.description")}
+        tabs={
+          <FormTabs
+            activeTab={activeTab}
+            generalLabel={t("tabs.general")}
+            readingsLabel={t("tabs.readings")}
+            onChange={setActiveTab}
+          />
+        }
       >
-        <FormTabs
-          activeTab={activeTab}
-          generalLabel={t("tabs.general")}
-          readingsLabel={t("tabs.readings")}
-          onChange={setActiveTab}
-        />
-
         {activeTab === "general" ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -872,12 +920,20 @@ export function BuildingsManagement({
               description={t("readings.electricity.description")}
               onChange={() => toggleReading("electricityEnabled")}
             />
-            <ReadingToggle
-              checked={form.readingConfig.heatingEnabled}
-              title={t("readings.heating.title")}
-              description={t("readings.heating.description")}
-              onChange={() => toggleReading("heatingEnabled")}
-            />
+            {form.readingConfig.electricityEnabled ? (
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50/70 p-4 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-200"
+                  checked={Boolean(form.readingConfig.electricityAllowMultipleMonthlySubmissions)}
+                  onChange={(event) => updateReadingConfig("electricityAllowMultipleMonthlySubmissions", event.target.checked)}
+                />
+                <span>
+                  <span className="block font-medium text-slate-900">{t("fields.electricityAllowMultipleMonthlySubmissions")}</span>
+                  <span className="mt-1 block text-slate-500">{t("readings.electricity.multipleMonthlyDescription")}</span>
+                </span>
+              </label>
+            ) : null}
           </div>
         )}
 
@@ -896,14 +952,15 @@ export function BuildingsManagement({
         onClose={() => !loading && setEditOpen(false)}
         title={t("dialogs.edit.title")}
         description={t("dialogs.edit.description")}
+        tabs={
+          <FormTabs
+            activeTab={activeTab}
+            generalLabel={t("tabs.general")}
+            readingsLabel={t("tabs.readings")}
+            onChange={setActiveTab}
+          />
+        }
       >
-        <FormTabs
-          activeTab={activeTab}
-          generalLabel={t("tabs.general")}
-          readingsLabel={t("tabs.readings")}
-          onChange={setActiveTab}
-        />
-
         {activeTab === "general" ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -966,12 +1023,20 @@ export function BuildingsManagement({
               description={t("readings.electricity.description")}
               onChange={() => toggleReading("electricityEnabled")}
             />
-            <ReadingToggle
-              checked={form.readingConfig.heatingEnabled}
-              title={t("readings.heating.title")}
-              description={t("readings.heating.description")}
-              onChange={() => toggleReading("heatingEnabled")}
-            />
+            {form.readingConfig.electricityEnabled ? (
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50/70 p-4 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-200"
+                  checked={Boolean(form.readingConfig.electricityAllowMultipleMonthlySubmissions)}
+                  onChange={(event) => updateReadingConfig("electricityAllowMultipleMonthlySubmissions", event.target.checked)}
+                />
+                <span>
+                  <span className="block font-medium text-slate-900">{t("fields.electricityAllowMultipleMonthlySubmissions")}</span>
+                  <span className="mt-1 block text-slate-500">{t("readings.electricity.multipleMonthlyDescription")}</span>
+                </span>
+              </label>
+            ) : null}
           </div>
         )}
 

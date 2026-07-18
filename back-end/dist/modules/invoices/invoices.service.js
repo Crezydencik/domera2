@@ -2685,6 +2685,12 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             month: Number(payload.month),
             year: Number(payload.year),
             amount,
+            currency: this.firstString(payload.currency, 'EUR'),
+            externalId: this.firstString(payload.externalId) || null,
+            period: this.firstString(payload.period) || null,
+            invoiceDate: this.parseOptionalDate(payload.invoiceDate) ?? new Date(),
+            dueDate: this.parseOptionalDate(payload.dueDate) ?? this.parseOptionalDate(payload.invoiceDate) ?? new Date(),
+            comment: this.firstString(payload.comment) || '',
             status: payload.status === 'pending' || payload.status === 'paid' || payload.status === 'overdue'
                 ? payload.status
                 : 'pending',

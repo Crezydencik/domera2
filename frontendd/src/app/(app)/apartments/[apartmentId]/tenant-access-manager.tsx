@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { inviteApartmentTenant, removeApartmentOwner, removeApartmentTenant, updateApartmentOwner, resendOwnerInvitation, updateApartmentTenant } from "@/shared/api/apartments";
 import { getDocuments, uploadDocument, type DocumentRecord } from "@/shared/api/documents";
-import { getUserByEmail } from "@/shared/api/users";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { FiEdit2, FiPaperclip, FiRefreshCw, FiTrash2 } from "react-icons/fi";
 
@@ -68,7 +67,6 @@ function normalizeSearchText(value: unknown) {
 }
 
 function isTenantConfirmed(tenant: Record<string, unknown>) {
-  if (typeof tenant.userId === "string" && tenant.userId.trim()) return true;
   if (tenant.activated === true || tenant.acceptedAt || tenant.activatedAt) return true;
   const status = typeof tenant.status === "string" ? tenant.status.trim().toLowerCase() : "";
   return status === "accepted" || status === "active";
@@ -169,32 +167,6 @@ export function TenantAccessManager({
       invitedAt: EMPTY_CELL,
     });
   }, [ownerData]);
-
-  useEffect(() => {
-    const ownerEmail = localOwner.email && localOwner.email !== EMPTY_CELL ? localOwner.email.trim().toLowerCase() : "";
-    if (!ownerEmail || localOwner.activated) return;
-
-    let cancelled = false;
-    getUserByEmail(ownerEmail)
-      .then((user) => {
-        if (cancelled || !user) return;
-        const userId = user.id ?? user.uid;
-        setLocalOwner((current) => {
-          const currentEmail = current.email && current.email !== EMPTY_CELL ? current.email.trim().toLowerCase() : "";
-          if (currentEmail !== ownerEmail || current.activated) return current;
-          return {
-            ...current,
-            userId,
-            activated: true,
-          };
-        });
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [localOwner.email, localOwner.activated]);
 
   useEffect(() => {
     setTenantsState(tenants ?? []);

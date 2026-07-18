@@ -34,6 +34,8 @@ export declare class AuthController {
     }, response: Response): Promise<void>;
     setCookies(dto: SetSessionDto, response: Response): Promise<{
         success: boolean;
+        userId: string;
+        email: string | undefined;
         role: string | undefined;
         accountType: string | undefined;
         companyId: string | undefined;
@@ -41,6 +43,8 @@ export declare class AuthController {
     }>;
     createSession(dto: SetSessionDto, response: Response): Promise<{
         success: boolean;
+        userId: string;
+        email: string | undefined;
         role: string | undefined;
         accountType: string | undefined;
         companyId: string | undefined;

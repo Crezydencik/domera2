@@ -7,10 +7,12 @@ type MeterHistoryEntry = {
     year?: number;
     submittedAt?: Date | string;
 };
-export declare const buildMeterHistorySnapshot: (history: MeterHistoryEntry[]) => {
+export declare const buildMeterHistorySnapshot: (history: MeterHistoryEntry[], options?: {
+    collapseMonthly?: boolean;
+}) => {
     history: {
         previousValue: number | null;
-        consumption: number | null;
+        consumption: number;
         id: string;
         currentValue?: number | null;
         month?: number;
@@ -19,7 +21,7 @@ export declare const buildMeterHistorySnapshot: (history: MeterHistoryEntry[]) =
     }[];
     latestReading: {
         previousValue: number | null;
-        consumption: number | null;
+        consumption: number;
         id: string;
         currentValue?: number | null;
         month?: number;

@@ -22,6 +22,12 @@ export declare class InvoicesController {
             month: number;
             year: number;
             amount: number;
+            currency: string;
+            externalId: string | null;
+            period: string | null;
+            invoiceDate: Date;
+            dueDate: Date;
+            comment: string;
             status: string;
             pdfUrl: string;
             companyId: string;

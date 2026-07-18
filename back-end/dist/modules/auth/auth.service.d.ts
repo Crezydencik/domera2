@@ -51,6 +51,8 @@ export declare class AuthService {
     createSessionCookie(input: SetSessionDto): Promise<{
         cookie: string;
         maxAgeSeconds: number;
+        userId: string;
+        email?: string;
         role?: string;
         accountType?: string;
         companyId?: string;
@@ -72,6 +74,8 @@ export declare class AuthService {
         session: {
             cookie: string;
             maxAgeSeconds: number;
+            userId: string;
+            email?: string;
             role?: string;
             accountType?: string;
             companyId?: string;
@@ -85,6 +89,8 @@ export declare class AuthService {
         session: {
             cookie: string;
             maxAgeSeconds: number;
+            userId: string;
+            email?: string;
             role?: string;
             accountType?: string;
             companyId?: string;
@@ -116,6 +122,8 @@ export declare class AuthService {
         session: {
             cookie: string;
             maxAgeSeconds: number;
+            userId: string;
+            email?: string;
             role?: string;
             accountType?: string;
             companyId?: string;

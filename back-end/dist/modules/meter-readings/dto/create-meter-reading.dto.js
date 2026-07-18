@@ -26,11 +26,18 @@ __decorate([
     __metadata("design:type", String)
 ], CreateMeterReadingDto.prototype, "meterId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ enum: ['coldmeterwater', 'hotmeterwater'], description: 'Optional meter group key.' }),
+    (0, swagger_1.ApiPropertyOptional)({ enum: ['coldmeterwater', 'hotmeterwater', 'electricitymeter'], description: 'Optional meter group key.' }),
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsIn)(['coldmeterwater', 'hotmeterwater']),
+    (0, class_validator_1.IsIn)(['coldmeterwater', 'hotmeterwater', 'electricitymeter']),
     __metadata("design:type", String)
 ], CreateMeterReadingDto.prototype, "meterKey", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Electricity meter digit count.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(5),
+    __metadata("design:type", Number)
+], CreateMeterReadingDto.prototype, "meterDigits", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'Previous meter value.' }),
     (0, class_validator_1.IsNumber)(),

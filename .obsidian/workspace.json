@@ -16,8 +16,19 @@
               "icon": "lucide-git-fork",
               "title": "Graph view"
             }
+          },
+          {
+            "id": "a03234f9bd417091",
+            "type": "leaf",
+            "state": {
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "New tab"
+            }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -177,7 +188,7 @@
       "bases:Create new base": false
     }
   },
-  "active": "02ee3d123047a0e9",
+  "active": "a03234f9bd417091",
   "lastOpenFiles": [
     "back-end/dist/modules/resident/dto/resident-response.dto.js",
     "back-end/dist/modules/resident/dto/resident-response.dto.d.ts",

@@ -23,14 +23,16 @@ interface MeterReadingRecord {
   submittedAt: string;
   month?: number;
   year?: number;
+  isInitialReading?: boolean;
   status: "submitted" | "pending" | "verified";
 }
 
 interface MeterInfo {
   meterType: string;
-  meterKey?: "coldmeterwater" | "hotmeterwater";
+  meterKey?: "coldmeterwater" | "hotmeterwater" | "electricitymeter";
   meterId?: string;
   serialNumber?: string;
+  meterDigits?: number;
   readings: MeterReadingRecord[];
   latestReading: MeterReadingRecord | null;
 }
@@ -48,6 +50,10 @@ interface ManagedBuildingOption {
   id: string;
   label: string;
   apartmentCount: number;
+  waterEnabled?: boolean;
+  electricityEnabled?: boolean;
+  electricityFixedPriceEnabled?: boolean;
+  electricityPricePerKwh?: number;
 }
 
 interface MonthlyWaterSummary {
@@ -61,6 +67,7 @@ interface MonthlyWaterSummary {
 
 type UnknownRecord = Record<string, unknown>;
 type ExportFormat = "csv" | "excel" | "xml";
+type UtilityTab = "water" | "electricity";
 
 function text(...values: unknown[]) {
   for (const value of values) {
@@ -85,6 +92,7 @@ function formatConsumption(value: unknown) {
 }
 
 function readingConsumption(reading: MeterReadingRecord | null | undefined) {
+  if (reading?.isInitialReading) return formatConsumption(0);
   if (!reading) return "—";
   const currentValue = Number(String(reading.currentValue ?? "").replace(",", "."));
   const previousValue = Number(String(reading.previousValue ?? "").replace(",", "."));
@@ -95,6 +103,7 @@ function readingConsumption(reading: MeterReadingRecord | null | undefined) {
 }
 
 function readingConsumptionNumber(reading: MeterReadingRecord | null | undefined) {
+  if (reading?.isInitialReading) return 0;
   if (!reading) return 0;
   const currentValue = Number(String(reading.currentValue ?? "").replace(",", "."));
   const previousValue = Number(String(reading.previousValue ?? "").replace(",", "."));
@@ -110,9 +119,53 @@ function isHotWaterMeter(meter: MeterInfo) {
   return meter.meterKey === "hotmeterwater" || meter.meterType.toLowerCase().includes("hot");
 }
 
+function isElectricityMeter(meter: MeterInfo | undefined) {
+  return Boolean(meter && (meter.meterKey === "electricitymeter" || meter.meterType.toLowerCase().includes("electric")));
+}
+
+function isWaterMeter(meter: MeterInfo | undefined) {
+  return Boolean(meter && (meter.meterKey === "coldmeterwater" || meter.meterKey === "hotmeterwater" || meter.meterType.toLowerCase().includes("water")));
+}
+
+function meterMatchesTab(meter: MeterInfo, tab: UtilityTab) {
+  return tab === "water" ? isWaterMeter(meter) : isElectricityMeter(meter);
+}
+
+function allowedMeterKeysFromBuilding(building: UnknownRecord | undefined) {
+  const readingConfig = building?.readingConfig && typeof building.readingConfig === "object"
+    ? building.readingConfig as UnknownRecord
+    : null;
+  if (!readingConfig) return null;
+
+  const hasExplicitConfig = Object.prototype.hasOwnProperty.call(readingConfig, "waterEnabled")
+    || Object.prototype.hasOwnProperty.call(readingConfig, "electricityEnabled");
+  if (!hasExplicitConfig) return null;
+
+  const keys = new Set<MeterInfo["meterKey"]>();
+  if (readingConfig.waterEnabled) {
+    keys.add("coldmeterwater");
+    keys.add("hotmeterwater");
+  }
+  if (readingConfig.electricityEnabled) {
+    keys.add("electricitymeter");
+  }
+  return keys;
+}
+
 function monthLabelFromKey(monthKey: string) {
   const [year, month] = monthKey.split("-");
   return year && month ? `${month}.${year}` : monthKey;
+}
+
+function formatPeriodButtonDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}.${date.getFullYear()}`;
+}
+
+function periodButtonLabel(value?: SubmissionPeriodValue | null) {
+  if (!value?.startDate || !value?.endDate) return "";
+  return `${formatPeriodButtonDate(value.startDate)} - ${formatPeriodButtonDate(value.endDate)}`;
 }
 
 function waterSummaryForApartments(apartments: ApartmentMeterData[], requestedMonthKey?: string | null): MonthlyWaterSummary | null {
@@ -130,6 +183,7 @@ function waterSummaryForApartments(apartments: ApartmentMeterData[], requestedMo
 
   apartments.forEach((apt) => {
     apt.meters.forEach((meter) => {
+      if (isElectricityMeter(meter)) return;
       meter.readings.forEach((reading) => {
         if (readingMonthKey(reading) !== monthKey) return;
         readingsCount += 1;
@@ -168,7 +222,7 @@ function waterSummariesForApartments(apartments: ApartmentMeterData[]) {
 }
 
 function meterFromWaterReading(
-  key: "coldmeterwater" | "hotmeterwater",
+  key: "coldmeterwater" | "hotmeterwater" | "electricitymeter",
   group: unknown,
   fallbackApartmentId: string,
 ): MeterInfo | null {
@@ -176,12 +230,14 @@ function meterFromWaterReading(
   const data = group as UnknownRecord;
   const meterId = text(data.meterId, data.id, data.serialNumber, `${fallbackApartmentId}:${key}`);
   const isHot = key === "hotmeterwater";
+  const isElectricity = key === "electricitymeter";
 
   return {
-    meterType: isHot ? "Hot Water" : "Cold Water",
+    meterType: isElectricity ? "Electricity" : isHot ? "Hot Water" : "Cold Water",
     meterKey: key,
     meterId,
     serialNumber: text(data.serialNumber),
+    meterDigits: isElectricity ? Math.min(7, Math.max(5, numberValue(data.meterDigits) || 6)) : undefined,
     readings: [],
     latestReading: null,
   };
@@ -192,10 +248,10 @@ function fallbackMetersFromBuilding(apartmentId: string, building: UnknownRecord
     ? building.readingConfig as UnknownRecord
     : {};
 
-  if (!readingConfig.waterEnabled) return [];
+  if (!readingConfig.waterEnabled && !readingConfig.electricityEnabled) return [];
 
   const meters: MeterInfo[] = [];
-  if (numberValue(readingConfig.coldWaterMetersPerResident) > 0) {
+  if (readingConfig.waterEnabled && numberValue(readingConfig.coldWaterMetersPerResident) > 0) {
     meters.push({
       meterType: "Cold Water",
       meterKey: "coldmeterwater",
@@ -205,12 +261,23 @@ function fallbackMetersFromBuilding(apartmentId: string, building: UnknownRecord
       latestReading: null,
     });
   }
-  if (numberValue(readingConfig.hotWaterMetersPerResident) > 0) {
+  if (readingConfig.waterEnabled && numberValue(readingConfig.hotWaterMetersPerResident) > 0) {
     meters.push({
       meterType: "Hot Water",
       meterKey: "hotmeterwater",
       meterId: `${apartmentId}:hotmeterwater`,
       serialNumber: "",
+      readings: [],
+      latestReading: null,
+    });
+  }
+  if (readingConfig.electricityEnabled) {
+    meters.push({
+      meterType: "Electricity",
+      meterKey: "electricitymeter",
+      meterId: `${apartmentId}:electricitymeter`,
+      serialNumber: "",
+      meterDigits: Math.min(7, Math.max(5, numberValue(readingConfig.electricityMeterDigits) || 6)),
       readings: [],
       latestReading: null,
     });
@@ -283,6 +350,43 @@ function previousReadingValue(reading: MeterReadingRecord | null | undefined) {
   return reading.currentValue || reading.previousValue || "—";
 }
 
+function compareReadingsAscending(left: MeterReadingRecord, right: MeterReadingRecord) {
+  const leftMonth = readingMonthKey(left);
+  const rightMonth = readingMonthKey(right);
+  if (leftMonth !== rightMonth) return leftMonth.localeCompare(rightMonth);
+  return submittedDateLabel(left.submittedAt).localeCompare(submittedDateLabel(right.submittedAt));
+}
+
+function normalizeInitialMeterReadings(apartments: ApartmentMeterData[]) {
+  return apartments.map((apartment) => ({
+    ...apartment,
+    meters: apartment.meters.map((meter) => {
+      if (meter.readings.length === 0) return meter;
+
+      const firstReading = [...meter.readings].sort(compareReadingsAscending)[0];
+      const readings = meter.readings.map((reading) =>
+        reading === firstReading || reading.id === firstReading.id
+          ? {
+              ...reading,
+              previousValue: "-",
+              consumption: formatConsumption(0),
+              isInitialReading: true,
+            }
+          : { ...reading, isInitialReading: false },
+      );
+      const latestReading = readings
+        .slice()
+        .sort((left, right) => readingMonthKey(right).localeCompare(readingMonthKey(left)))[0] ?? null;
+
+      return {
+        ...meter,
+        readings,
+        latestReading,
+      };
+    }),
+  }));
+}
+
 function csvCell(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
@@ -333,9 +437,14 @@ export default function ManagementCompanyPage() {
   const searchQuery = filterValues.search;
   const selectedBuilding = filterValues.building;
   const statusFilter = filterValues.status;
+  const [activeTab, setActiveTab] = useState<UtilityTab>("water");
   const [expandedApartments, setExpandedApartments] = useState<Set<string>>(new Set());
   const [periodOpen, setPeriodOpen] = useState(false);
-  const [periodValue, setPeriodValue] = useState<SubmissionPeriodValue | null>(null);
+  const [periodTab, setPeriodTab] = useState<UtilityTab>("water");
+  const [periodValues, setPeriodValues] = useState<Record<UtilityTab, SubmissionPeriodValue | null>>({
+    water: null,
+    electricity: null,
+  });
   const [periodSaving, setPeriodSaving] = useState(false);
   const [periodDeleting, setPeriodDeleting] = useState(false);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
@@ -352,6 +461,7 @@ export default function ManagementCompanyPage() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
+  const periodValue = periodValues[activeTab];
 
   // Submission modal state
   const [selectAptOpen, setSelectAptOpen] = useState(false);
@@ -363,6 +473,7 @@ export default function ManagementCompanyPage() {
   });
   const [submitCold, setSubmitCold] = useState("");
   const [submitHot, setSubmitHot] = useState("");
+  const [submitElectricity, setSubmitElectricity] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const submitMonthParts = React.useMemo(() => {
     const [rawYear, rawMonth] = submitMonth.split("-");
@@ -695,8 +806,8 @@ export default function ManagementCompanyPage() {
   // View meters modal
   const [viewOpen, setViewOpen] = useState(false);
   const [viewApt, setViewApt] = useState<ApartmentMeterData | null>(null);
-  const [viewSerials, setViewSerials] = useState<{ cold: string; hot: string }>({ cold: "", hot: "" });
-  const [viewDates, setViewDates] = useState<{ cold: string; hot: string }>({ cold: "", hot: "" });
+  const [viewSerials, setViewSerials] = useState<{ cold: string; hot: string; electricity: string }>({ cold: "", hot: "", electricity: "" });
+  const [viewDates, setViewDates] = useState<{ cold: string; hot: string; electricity: string }>({ cold: "", hot: "", electricity: "" });
   const [viewLoading, setViewLoading] = useState(false);
   const [viewSaving, setViewSaving] = useState(false);
 
@@ -707,13 +818,15 @@ export default function ManagementCompanyPage() {
     setViewSerials({
       cold: apt.meters.find((m) => m.meterKey === "coldmeterwater")?.serialNumber ?? "",
       hot: apt.meters.find((m) => m.meterKey === "hotmeterwater")?.serialNumber ?? "",
+      electricity: apt.meters.find((m) => m.meterKey === "electricitymeter")?.serialNumber ?? "",
     });
-    setViewDates({ cold: "", hot: "" });
+    setViewDates({ cold: "", hot: "", electricity: "" });
     try {
       const data = (await apiFetch(`/apartments/${encodeURIComponent(apt.apartmentId)}`)) as Record<string, unknown> | null;
       const wr = (data?.waterReadings ?? {}) as Record<string, Record<string, unknown> | undefined>;
       const cold = wr.coldmeterwater ?? {};
       const hot = wr.hotmeterwater ?? {};
+      const electricity = wr.electricitymeter ?? {};
       const isoDate = (v: unknown): string => {
         if (!v) return "";
         if (typeof v === "string") {
@@ -726,10 +839,12 @@ export default function ManagementCompanyPage() {
       setViewSerials({
         cold: typeof cold.serialNumber === "string" ? cold.serialNumber : (apt.meters.find((m) => m.meterKey === "coldmeterwater")?.serialNumber ?? ""),
         hot: typeof hot.serialNumber === "string" ? hot.serialNumber : (apt.meters.find((m) => m.meterKey === "hotmeterwater")?.serialNumber ?? ""),
+        electricity: typeof electricity.serialNumber === "string" ? electricity.serialNumber : (apt.meters.find((m) => m.meterKey === "electricitymeter")?.serialNumber ?? ""),
       });
       setViewDates({
         cold: isoDate(cold.checkDueDate),
         hot: isoDate(hot.checkDueDate),
+        electricity: isoDate(electricity.checkDueDate),
       });
     } catch (e) {
       console.error("Failed to load apartment", e);
@@ -752,6 +867,10 @@ export default function ManagementCompanyPage() {
             serialNumber: viewSerials.hot || null,
             checkDueDate: viewDates.hot || null,
           },
+          electricitymeter: {
+            serialNumber: viewSerials.electricity || null,
+            checkDueDate: viewDates.electricity || null,
+          },
         },
       };
       await apiFetch(`/apartments/${encodeURIComponent(viewApt.apartmentId)}`, {
@@ -767,6 +886,7 @@ export default function ManagementCompanyPage() {
                 meters: a.meters.map((m) => {
                   if (m.meterKey === "coldmeterwater") return { ...m, serialNumber: viewSerials.cold || m.serialNumber };
                   if (m.meterKey === "hotmeterwater") return { ...m, serialNumber: viewSerials.hot || m.serialNumber };
+                  if (m.meterKey === "electricitymeter") return { ...m, serialNumber: viewSerials.electricity || m.serialNumber };
                   return m;
                 }),
               }
@@ -799,7 +919,7 @@ export default function ManagementCompanyPage() {
         );
       }
       setApartments((prev) =>
-        prev.map((a) => {
+        normalizeInitialMeterReadings(prev.map((a) => {
           if (a.apartmentId !== apartmentId) return a;
           const idSet = new Set(readingIds);
           return {
@@ -809,7 +929,7 @@ export default function ManagementCompanyPage() {
               return { ...m, readings: filtered, latestReading: filtered[0] ?? null };
             }),
           };
-        }),
+        })),
       );
       notify.success(t("notifyDeletedReadings", { monthKey }));
     } catch (e) {
@@ -824,6 +944,7 @@ export default function ManagementCompanyPage() {
     setSubmitApt(apt);
     setSubmitCold("");
     setSubmitHot("");
+    setSubmitElectricity("");
     const d = new Date();
     setSubmitMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
     setSubmitOpen(true);
@@ -836,6 +957,7 @@ export default function ManagementCompanyPage() {
     const month = Number(monthStr);
     const coldMeter = submitApt.meters.find((m) => m.meterKey === "coldmeterwater" || m.meterType.toLowerCase().includes("cold"));
     const hotMeter = submitApt.meters.find((m) => m.meterKey === "hotmeterwater" || m.meterType.toLowerCase().includes("hot"));
+    const electricityMeter = submitApt.meters.find((m) => isElectricityMeter(m));
     const buildBody = (meter: MeterInfo, currentValueStr: string) => {
       const currentValue = Number(currentValueStr.replace(",", "."));
       const previousReading = previousReadingForMonth(meter, submitMonth);
@@ -844,6 +966,7 @@ export default function ManagementCompanyPage() {
         apartmentId: submitApt.apartmentId,
         meterId: meter.meterId ?? meter.serialNumber ?? "",
         meterKey: meter.meterKey,
+        meterDigits: meter.meterKey === "electricitymeter" ? meter.meterDigits ?? 6 : undefined,
         previousValue,
         currentValue,
         consumption: consumptionValue(currentValue, previousValue),
@@ -867,6 +990,7 @@ export default function ManagementCompanyPage() {
       };
       checkBelowPrevious(coldMeter, submitCold, t("coldWater"));
       checkBelowPrevious(hotMeter, submitHot, t("hotWater"));
+      checkBelowPrevious(electricityMeter, submitElectricity, t("electricity"));
       if (violations.length > 0) {
         notify.error(t("notifyBelowPrevious", { violations: violations.join("; ") }));
         return;
@@ -879,6 +1003,10 @@ export default function ManagementCompanyPage() {
       }
       if (hotMeter && submitHot) {
         await apiFetch(`/meter-readings`, { method: "POST", body: JSON.stringify(buildBody(hotMeter, submitHot)) });
+        count += 1;
+      }
+      if (electricityMeter && submitElectricity) {
+        await apiFetch(`/meter-readings`, { method: "POST", body: JSON.stringify(buildBody(electricityMeter, submitElectricity)) });
         count += 1;
       }
       if (count === 0) {
@@ -920,6 +1048,27 @@ export default function ManagementCompanyPage() {
                 const prevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
                 const nextReading: MeterReadingRecord = {
                   id: `local-${submitApt.apartmentId}-${m.meterKey ?? m.meterId ?? "hot"}-${submitMonth}`,
+                  previousValue: String(prevVal),
+                  currentValue: String(currentVal),
+                  consumption: formatConsumption(consumptionValue(currentVal, prevVal)),
+                  submittedAt: `${submitMonth}-${String(now.getDate()).padStart(2, "0")}`,
+                  month,
+                  year,
+                  status: "submitted" as const,
+                };
+                return {
+                  ...m,
+                  readings: [nextReading, ...m.readings.filter((reading) => readingMonthKey(reading) !== submitMonth)]
+                    .sort((left, right) => readingMonthKey(right).localeCompare(readingMonthKey(left))),
+                  latestReading: nextReading,
+                };
+              }
+              if (electricityMeter && submitElectricity && (m.meterKey === "electricitymeter" || m.meterId === electricityMeter.meterId)) {
+                const currentVal = Number(submitElectricity.replace(",", "."));
+                const previousReading = previousReadingForMonth(m, submitMonth);
+                const prevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+                const nextReading: MeterReadingRecord = {
+                  id: `local-${submitApt.apartmentId}-${m.meterKey ?? m.meterId ?? "electricity"}-${submitMonth}`,
                   previousValue: String(prevVal),
                   currentValue: String(currentVal),
                   consumption: formatConsumption(consumptionValue(currentVal, prevVal)),
@@ -1027,12 +1176,23 @@ export default function ManagementCompanyPage() {
         if (isMounted) {
           setManagedBuildings(
             approvedBuildingItems
-              .map((item) => {
+              .map((item): ManagedBuildingOption | null => {
                 const building = item as UnknownRecord;
                 const id = text(building.id, building.buildingId);
                 const label = text(building.address, building.street, building.location, building.name, building.title, id);
                 const apartmentCount = Number(building.apartmentsCount ?? building.apartments ?? 0);
-                return id ? { id, label, apartmentCount: Number.isFinite(apartmentCount) ? apartmentCount : 0 } : null;
+                const readingConfig = building.readingConfig && typeof building.readingConfig === "object"
+                  ? building.readingConfig as UnknownRecord
+                  : {};
+                return id ? {
+                  id,
+                  label,
+                  apartmentCount: Number.isFinite(apartmentCount) ? apartmentCount : 0,
+                  waterEnabled: readingConfig.waterEnabled !== false,
+                  electricityEnabled: Boolean(readingConfig.electricityEnabled),
+                  electricityFixedPriceEnabled: Boolean(readingConfig.electricityFixedPriceEnabled),
+                  electricityPricePerKwh: Math.max(0, numberValue(readingConfig.electricityPricePerKwh)),
+                } : null;
               })
               .filter((item): item is ManagedBuildingOption => Boolean(item))
               .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" })),
@@ -1064,8 +1224,15 @@ export default function ManagementCompanyPage() {
             const meters = [
               meterFromWaterReading("coldmeterwater", waterReadings.coldmeterwater, apartmentId),
               meterFromWaterReading("hotmeterwater", waterReadings.hotmeterwater, apartmentId),
+              meterFromWaterReading("electricitymeter", waterReadings.electricitymeter, apartmentId),
             ].filter((meter): meter is MeterInfo => Boolean(meter));
-            const fallbackMeters = meters.length > 0 ? [] : fallbackMetersFromBuilding(apartmentId, buildingData);
+            const allowedKeys = allowedMeterKeysFromBuilding(buildingData);
+            const configuredMeters = allowedKeys
+              ? meters.filter((meter) => allowedKeys.has(meter.meterKey))
+              : meters;
+            const existingKeys = new Set(configuredMeters.map((meter) => meter.meterKey));
+            const fallbackMeters = fallbackMetersFromBuilding(apartmentId, buildingData)
+              .filter((meter) => !existingKeys.has(meter.meterKey));
 
             apartmentMap.set(apartmentId, {
               id: apartmentId,
@@ -1073,7 +1240,7 @@ export default function ManagementCompanyPage() {
               apartment: text(apartment.number, apartment.apartmentNumber, apartment.label, apartment.name, apartmentId),
               building: buildingId || buildingLabel,
               buildingLabel,
-              meters: meters.length > 0 ? meters : fallbackMeters,
+              meters: [...configuredMeters, ...fallbackMeters],
             });
           });
 
@@ -1099,8 +1266,13 @@ export default function ManagementCompanyPage() {
               let meterType = "Water";
               const meterKey = String(i.meterKey || "");
               const meterNameValue = String(i.meterName || "");
+              const readingBuildingData = buildingDataById.get(buildingId);
+              const allowedKeys = allowedMeterKeysFromBuilding(readingBuildingData);
+              if (allowedKeys && !allowedKeys.has(meterKey as MeterInfo["meterKey"])) return;
               
-              if (meterKey === "hotmeterwater" || meterNameValue.toLowerCase().includes("hot")) {
+              if (meterKey === "electricitymeter" || meterNameValue.toLowerCase().includes("electric")) {
+                meterType = "Electricity";
+              } else if (meterKey === "hotmeterwater" || meterNameValue.toLowerCase().includes("hot")) {
                 meterType = "Hot Water";
               } else if (meterKey === "coldmeterwater" || meterNameValue.toLowerCase().includes("cold")) {
                 meterType = "Cold Water";
@@ -1118,7 +1290,7 @@ export default function ManagementCompanyPage() {
               const reading: MeterReadingRecord = {
                 id: String(i.id || Math.random()),
                 currentValue: String(i.currentValue || "0"),
-                previousValue: String(i.previousValue || "0"),
+                previousValue: i.previousValue === null || i.previousValue === undefined ? "—" : String(i.previousValue || "0"),
                 consumption: formatConsumption(i.consumption),
                 submittedAt: formattedDate,
                 month: typeof i.month === "number" ? i.month : Number(i.month) || undefined,
@@ -1127,8 +1299,8 @@ export default function ManagementCompanyPage() {
               };
 
               const meterKeyTyped =
-                meterKey === "hotmeterwater" || meterKey === "coldmeterwater"
-                  ? (meterKey as "hotmeterwater" | "coldmeterwater")
+                meterKey === "hotmeterwater" || meterKey === "coldmeterwater" || meterKey === "electricitymeter"
+                  ? (meterKey as "hotmeterwater" | "coldmeterwater" | "electricitymeter")
                   : undefined;
               const meterIdValue = i.meterId ? String(i.meterId) : undefined;
 
@@ -1175,10 +1347,10 @@ export default function ManagementCompanyPage() {
               }
             });
 
-            const apartmentList = Array.from(apartmentMap.values());
+            const apartmentList = normalizeInitialMeterReadings(Array.from(apartmentMap.values()));
             setApartments(apartmentList);
           } else {
-            setApartments(Array.from(apartmentMap.values()));
+            setApartments(normalizeInitialMeterReadings(Array.from(apartmentMap.values())));
           }
         }
       } catch (err) {
@@ -1213,6 +1385,7 @@ export default function ManagementCompanyPage() {
       : (buildings[0] ?? "");
   const selectedBuildingApartmentCount = buildingApartmentCounts.get(effectiveBuilding);
   const selectedBuildingHasNoApartments = selectedBuildingApartmentCount === 0;
+  const selectedBuildingOption = managedBuildings.find((building) => building.id === effectiveBuilding);
 
   React.useEffect(() => {
     if (selectedBuilding !== effectiveBuilding) {
@@ -1223,36 +1396,47 @@ export default function ManagementCompanyPage() {
   // Load saved submission period for selected building
   React.useEffect(() => {
     if (!effectiveBuilding) {
-      setPeriodValue(null);
+      setPeriodValues({ water: null, electricity: null });
       return;
     }
     let cancelled = false;
     apiFetch(`/buildings/${encodeURIComponent(effectiveBuilding)}`)
       .then((res) => {
         if (cancelled) return;
-        const cfg = (res as { readingConfig?: { submissionPeriod?: SubmissionPeriodValue | null } })
-          ?.readingConfig?.submissionPeriod;
-        setPeriodValue(cfg ?? null);
+        const cfg = (res as {
+          readingConfig?: {
+            submissionPeriod?: SubmissionPeriodValue | null;
+            waterSubmissionPeriod?: SubmissionPeriodValue | null;
+            electricitySubmissionPeriod?: SubmissionPeriodValue | null;
+          };
+        })?.readingConfig;
+        setPeriodValues({
+          water: cfg?.waterSubmissionPeriod ?? cfg?.submissionPeriod ?? null,
+          electricity: cfg?.electricitySubmissionPeriod ?? null,
+        });
       })
       .catch(() => {
-        if (!cancelled) setPeriodValue(null);
+        if (!cancelled) setPeriodValues({ water: null, electricity: null });
       });
     return () => {
       cancelled = true;
     };
   }, [effectiveBuilding]);
 
-  const savePeriod = async (value: SubmissionPeriodValue) => {
+  const savePeriodFor = async (tab: UtilityTab, value: SubmissionPeriodValue | null) => {
     if (!effectiveBuilding) return;
+    const periodKey = tab === "water" ? "waterSubmissionPeriod" : "electricitySubmissionPeriod";
+    const readingConfig = tab === "water"
+      ? { submissionPeriod: value, waterSubmissionPeriod: value }
+      : { [periodKey]: value };
     setPeriodSaving(true);
     try {
       await apiFetch(`/buildings/${encodeURIComponent(effectiveBuilding)}`, {
         method: "PATCH",
-        body: JSON.stringify({ readingConfig: { submissionPeriod: value } }),
+        body: JSON.stringify({ readingConfig }),
         headers: { "Content-Type": "application/json" },
       });
-      setPeriodValue(value);
-      setPeriodOpen(false);
+      setPeriodValues((current) => ({ ...current, [tab]: value }));
       notify.success(t("notifyPeriodSaved"));
     } catch (e) {
       console.error("Failed to save submission period", e);
@@ -1262,48 +1446,19 @@ export default function ManagementCompanyPage() {
     }
   };
 
-  // If monthly, derive the current month's window from saved day numbers.
-  const resolveCurrentPeriod = React.useCallback(
-    (v: SubmissionPeriodValue | null): { startDate: string; endDate: string } | null => {
-      if (!v?.startDate || !v?.endDate) return null;
-      if (!v.monthly) return { startDate: v.startDate, endDate: v.endDate };
-      const today = new Date();
-      const y = today.getFullYear();
-      const m = today.getMonth();
-      const startDay = new Date(v.startDate).getDate();
-      const endDay = new Date(v.endDate).getDate();
-      const lastOfMonth = new Date(y, m + 1, 0).getDate();
-      const clamp = (d: number) => Math.min(Math.max(d, 1), lastOfMonth);
-      const fmt = (d: Date) =>
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      return {
-        startDate: fmt(new Date(y, m, clamp(startDay))),
-        endDate: fmt(new Date(y, m, clamp(endDay))),
-      };
-    },
-    [],
-  );
-
-  const currentPeriod = resolveCurrentPeriod(periodValue);
-  const formatShort = (iso: string) => {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
-  };
-  const periodButtonLabel = currentPeriod
-    ? `${formatShort(currentPeriod.startDate)} — ${formatShort(currentPeriod.endDate)}`
-    : t("period");
-
-  const deletePeriod = async () => {
+  const deletePeriodFor = async (tab: UtilityTab) => {
     setPeriodDeleting(true);
+    const periodKey = tab === "water" ? "waterSubmissionPeriod" : "electricitySubmissionPeriod";
+    const readingConfig = tab === "water"
+      ? { submissionPeriod: null, waterSubmissionPeriod: null }
+      : { [periodKey]: null };
     try {
       await apiFetch(`/buildings/${encodeURIComponent(effectiveBuilding)}`, {
         method: "PATCH",
-        body: JSON.stringify({ readingConfig: { submissionPeriod: null } }),
+        body: JSON.stringify({ readingConfig }),
         headers: { "Content-Type": "application/json" },
       });
-      setPeriodValue(null);
-      setPeriodOpen(false);
+      setPeriodValues((current) => ({ ...current, [tab]: null }));
       notify.success(t("notifyPeriodDeleted"));
     } catch (e) {
       console.error("Failed to delete submission period", e);
@@ -1334,6 +1489,46 @@ export default function ManagementCompanyPage() {
     },
   ];
 
+  const buildingScopedApartments = apartments.filter((item) => !effectiveBuilding || item.building === effectiveBuilding);
+  const hasWaterMeters = buildingScopedApartments.some((apartment) => apartment.meters.some((meter) => meterMatchesTab(meter, "water")));
+  const hasElectricityMeters = buildingScopedApartments.some((apartment) => apartment.meters.some((meter) => meterMatchesTab(meter, "electricity")));
+  const waterReadingsEnabled = selectedBuildingOption ? selectedBuildingOption.waterEnabled !== false : hasWaterMeters;
+  const electricityReadingsEnabled = selectedBuildingOption ? Boolean(selectedBuildingOption.electricityEnabled) : hasElectricityMeters;
+  const hasWaterTab = waterReadingsEnabled && hasWaterMeters;
+  const hasElectricityTab = electricityReadingsEnabled && hasElectricityMeters;
+  const availableTabs: UtilityTab[] = hasWaterTab && hasElectricityTab
+    ? ["water", "electricity"]
+    : hasWaterTab
+      ? ["water"]
+      : hasElectricityTab
+        ? ["electricity"]
+        : [];
+  const periodAvailableTabs: UtilityTab[] = [
+    ...(waterReadingsEnabled ? ["water" as const] : []),
+    ...(electricityReadingsEnabled ? ["electricity" as const] : []),
+  ];
+  const effectiveTab = availableTabs.includes(activeTab) ? activeTab : availableTabs[0] ?? activeTab;
+  const effectivePeriodTab = periodAvailableTabs.includes(periodTab) ? periodTab : periodAvailableTabs[0] ?? periodTab;
+  const activePeriodButtonLabel = periodButtonLabel(periodValues[effectiveTab]);
+  const fallbackPeriodButtonLabel = periodAvailableTabs
+    .map((tab) => periodButtonLabel(periodValues[tab]))
+    .find(Boolean);
+  const periodActionLabel = activePeriodButtonLabel || fallbackPeriodButtonLabel || t("periodModalTitle");
+  const periodOpenTab = periodAvailableTabs.includes(effectiveTab) ? effectiveTab : effectivePeriodTab;
+
+  React.useEffect(() => {
+    if ((hasWaterTab || hasElectricityTab) && activeTab !== effectiveTab) {
+      setActiveTab(effectiveTab);
+      setExpandedApartments(new Set());
+    }
+  }, [activeTab, effectiveTab, hasElectricityTab, hasWaterTab]);
+
+  React.useEffect(() => {
+    if (periodAvailableTabs.length > 0 && periodTab !== effectivePeriodTab) {
+      setPeriodTab(effectivePeriodTab);
+    }
+  }, [effectivePeriodTab, periodAvailableTabs.length, periodTab]);
+
   const filteredApartments = apartments.filter((item) => {
     if (effectiveBuilding && item.building !== effectiveBuilding) return false;
     if (searchQuery && !item.apartment.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -1355,9 +1550,17 @@ export default function ManagementCompanyPage() {
       if (!hasReadingStatus) return false;
     }
     return true;
-  });
+  }).map((item) => ({
+    ...item,
+    meters: item.meters.filter((meter) => meterMatchesTab(meter, effectiveTab)),
+  })).filter((item) => item.meters.length > 0);
 
-  const buildingApartments = apartments.filter((item) => !effectiveBuilding || item.building === effectiveBuilding);
+  const buildingApartments = buildingScopedApartments
+    .map((item) => ({
+      ...item,
+      meters: item.meters.filter((meter) => meterMatchesTab(meter, effectiveTab)),
+    }))
+    .filter((item) => item.meters.length > 0);
   const buildingWaterSummaries = waterSummariesForApartments(buildingApartments);
   const buildingWaterSummary = buildingWaterSummaries[0] ?? null;
 
@@ -1500,15 +1703,47 @@ ${xmlRows}
         title={t("periodModalTitle")}
         size="lg"
       >
+        {periodAvailableTabs.length > 1 ? (
+          <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-100 pb-4">
+            {periodAvailableTabs.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setPeriodTab(tab)}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                effectivePeriodTab === tab
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {tab === "water" ? t("water") : t("electricity")}
+            </button>
+            ))}
+          </div>
+        ) : null}
         <SubmissionPeriodCard
+          key={`${effectiveBuilding}:${effectivePeriodTab}`}
           bare
           hideHeader
-          buildingLabel={buildingLabels.get(effectiveBuilding)}
-          value={periodValue}
-          onSave={savePeriod}
-          onDelete={deletePeriod}
+          buildingLabel={effectivePeriodTab === "water" ? t("water") : t("electricity")}
+          value={periodValues[effectivePeriodTab]}
+          onSave={(value) => savePeriodFor(effectivePeriodTab, value)}
+          onDelete={() => deletePeriodFor(effectivePeriodTab)}
           saving={periodSaving}
           deleting={periodDeleting}
+          labels={{
+            startDate: t("periodStartDate"),
+            endDate: t("periodEndDate"),
+            monthly: t("periodMonthlyCheckbox"),
+            freeMode: t("periodFreeMode"),
+            dateMode: t("periodDateMode"),
+            freeModeHint: t("periodFreeModeHint"),
+            monthlyHint: (startDay, endDay) => t("periodMonthlyHint", { startDay, endDay }),
+            save: t("save"),
+            saving: t("saving"),
+            delete: t("deletePeriod"),
+            deleting: t("deletingPeriod"),
+          }}
         />
       </Modal>
 
@@ -1574,10 +1809,12 @@ ${xmlRows}
             {(() => {
               const cold = submitApt.meters.find((m) => m.meterKey === "coldmeterwater" || m.meterType.toLowerCase().includes("cold"));
               const hot = submitApt.meters.find((m) => m.meterKey === "hotmeterwater" || m.meterType.toLowerCase().includes("hot"));
+              const electricity = submitApt.meters.find((m) => isElectricityMeter(m));
               const [yearStr, monthStr] = submitMonth.split("-");
               const currentPeriodLabel = `${monthStr}.${yearStr}`;
               const coldPreviousReading = previousReadingForMonth(cold, submitMonth);
               const hotPreviousReading = previousReadingForMonth(hot, submitMonth);
+              const electricityPreviousReading = previousReadingForMonth(electricity, submitMonth);
               return (
                 <div className="space-y-4">
                   {cold && (
@@ -1607,6 +1844,24 @@ ${xmlRows}
                       currentPeriod={currentPeriodLabel}
                       value={submitHot}
                       onChange={setSubmitHot}
+                      size="compact"
+                      labels={{ previous: t("previousReading"), current: t("currentReading"), serialPrefix: t("serialPrefix") }}
+                    />
+                    </div>
+                  )}
+                  {electricity && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3 sm:p-4">
+                    <MeterReadingInput
+                      variant="electricity"
+                      label={t("electricity")}
+                      serialNumber={electricity.serialNumber}
+                      previousValue={previousReadingValue(electricityPreviousReading)}
+                      previousPeriod={readingMonthLabel(electricityPreviousReading)}
+                      currentPeriod={currentPeriodLabel}
+                      value={submitElectricity}
+                      onChange={setSubmitElectricity}
+                      intDigits={Math.min(7, Math.max(5, electricity.meterDigits ?? 6))}
+                      decDigits={0}
                       size="compact"
                       labels={{ previous: t("previousReading"), current: t("currentReading"), serialPrefix: t("serialPrefix") }}
                     />
@@ -1644,9 +1899,10 @@ ${xmlRows}
             <p className="-mt-1 text-xs text-slate-400">{t("pressEscToClose")}{viewLoading ? ` · ${t("loadingShort")}` : ""}</p>
             {viewApt.meters.map((m) => {
               const isHot = m.meterKey === "hotmeterwater" || m.meterType.toLowerCase().includes("hot");
-              const dot = isHot ? "bg-rose-500" : "bg-blue-500";
-              const label = isHot ? t("hotWaterFull") : t("coldWaterFull");
-              const slot: "cold" | "hot" = isHot ? "hot" : "cold";
+              const isElectricity = isElectricityMeter(m);
+              const dot = isElectricity ? "bg-amber-400" : isHot ? "bg-rose-500" : "bg-blue-500";
+              const label = isElectricity ? t("electricity") : isHot ? t("hotWaterFull") : t("coldWaterFull");
+              const slot: "cold" | "hot" | "electricity" = isElectricity ? "electricity" : isHot ? "hot" : "cold";
               const key = m.meterKey ?? m.serialNumber ?? m.meterType;
               return (
                 <div key={key} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4">
@@ -1818,16 +2074,19 @@ ${xmlRows}
               <>
                 <button
                   type="button"
-                  onClick={() => setPeriodOpen(true)}
-                  disabled={!effectiveBuilding}
+                  onClick={() => {
+                    setPeriodTab(periodOpenTab);
+                    setPeriodOpen(true);
+                  }}
+                  disabled={!effectiveBuilding || periodAvailableTabs.length === 0}
                   className="hidden items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex"
-                  title={periodValue?.monthly ? t("periodMonthly") : t("periodModalTitle")}
+                  title={periodActionLabel}
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="4" width="18" height="18" rx="2" />
                     <path d="M16 2v4M8 2v4M3 10h18" />
                   </svg>
-                  {periodButtonLabel}
+                  {periodActionLabel}
                   {periodValue?.monthly && (
                     <svg className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="ежемесячно">
                       <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
@@ -1860,17 +2119,18 @@ ${xmlRows}
                         type="button"
                         onClick={() => {
                           setMobileActionsOpen(false);
+                          setPeriodTab(periodOpenTab);
                           setPeriodOpen(true);
                         }}
-                        disabled={!effectiveBuilding}
+                        disabled={!effectiveBuilding || periodAvailableTabs.length === 0}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        title={periodValue?.monthly ? t("periodMonthly") : t("periodModalTitle")}
+                        title={periodActionLabel}
                       >
                         <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <rect x="3" y="4" width="18" height="18" rx="2" />
                           <path d="M16 2v4M8 2v4M3 10h18" />
                         </svg>
-                        {periodButtonLabel}
+                        {periodActionLabel}
                       </button>
                       <button
                         type="button"
@@ -1923,7 +2183,31 @@ ${xmlRows}
           />
         )}
 
-        {!selectedBuildingHasNoApartments && renderBuildingStatsPanel(buildingWaterSummary, () => setStatsOpen(true))}
+        {!selectedBuildingHasNoApartments && availableTabs.length > 1 ? (
+          <div className="mb-4 inline-flex rounded-xl bg-slate-100 p-1">
+            {availableTabs.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => {
+                  setActiveTab(tab);
+                  setExpandedApartments(new Set());
+                }}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                  effectiveTab === tab
+                    ? tab === "electricity"
+                      ? "bg-amber-400 text-slate-950 shadow-sm"
+                      : "bg-blue-600 text-white shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {tab === "electricity" ? t("electricity") : t("water")}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {!selectedBuildingHasNoApartments && effectiveTab === "water" && renderBuildingStatsPanel(buildingWaterSummary, () => setStatsOpen(true))}
 
         {/* Table */}
         {loading ? (
@@ -1985,8 +2269,10 @@ ${xmlRows}
                   <div className="border-t border-slate-100 px-3 py-3 space-y-2">
                     {apt.meters.map((meter, idx) => {
                       const isHot = meter.meterType.toLowerCase().includes("hot");
-                      const dotColor = isHot ? "bg-red-500" : "bg-blue-500";
-                      const consumptionColor = isHot ? "text-red-600" : "text-blue-600";
+                      const isElectricity = isElectricityMeter(meter);
+                      const dotColor = isElectricity ? "bg-amber-400" : isHot ? "bg-red-500" : "bg-blue-500";
+                      const consumptionColor = isElectricity ? "text-amber-600" : isHot ? "text-red-600" : "text-blue-600";
+                      const unit = isElectricity ? "kWh" : "m3";
                       const currPeriod = readingMonthKey(meter.latestReading);
                       const currLabel = readingMonthLabel(meter.latestReading) ?? "";
                       const previousReading = currPeriod ? previousReadingForMonth(meter, currPeriod) : null;
@@ -2011,7 +2297,7 @@ ${xmlRows}
                             </div>
                             <div className="text-right">
                               <div className="text-[10px] uppercase tracking-wide text-slate-400">{t("useShort")}</div>
-                              <div className={`font-semibold ${consumptionColor}`}>+{readingConsumption(meter.latestReading)} m³</div>
+                              <div className={`font-semibold ${consumptionColor}`}>+{readingConsumption(meter.latestReading)} {unit}</div>
                             </div>
                           </div>
                         </div>
@@ -2074,8 +2360,10 @@ ${xmlRows}
                                   <div className="border-t border-slate-100 px-2 py-2 space-y-1.5">
                                     {items.map(({ meter, r }) => {
                                       const isHot = meter.meterType.toLowerCase().includes("hot");
-                                      const dotColor = isHot ? "bg-red-500" : "bg-blue-500";
-                                      const consumptionColor = isHot ? "text-red-600" : "text-blue-600";
+                                      const isElectricity = isElectricityMeter(meter);
+                                      const dotColor = isElectricity ? "bg-amber-400" : isHot ? "bg-red-500" : "bg-blue-500";
+                                      const consumptionColor = isElectricity ? "text-amber-600" : isHot ? "text-red-600" : "text-blue-600";
+                                      const unit = isElectricity ? "kWh" : "m3";
                                       return (
                                         <div key={r.id} className="flex items-center justify-between gap-2 rounded-md bg-slate-50/50 px-2.5 py-2 text-xs">
                                           <div className="flex items-center gap-1.5 min-w-0">
@@ -2084,7 +2372,7 @@ ${xmlRows}
                                           </div>
                                           <div className="text-right tabular-nums">
                                             <div className="text-slate-500">{r.previousValue} → <span className="font-semibold text-slate-900">{r.currentValue}</span></div>
-                                            <div className={`font-semibold ${consumptionColor}`}>+{readingConsumption(r)} m³</div>
+                                            <div className={`font-semibold ${consumptionColor}`}>+{readingConsumption(r)} {unit}</div>
                                           </div>
                                         </div>
                                       );
@@ -2197,8 +2485,10 @@ ${xmlRows}
                                   const previousReading = currPeriod ? previousReadingForMonth(meter, currPeriod) : null;
                                   const prevLabel = readingMonthLabel(previousReading) ?? "";
                                   const isHot = meter.meterType.toLowerCase().includes("hot");
-                                  const dotColor = isHot ? "bg-red-500" : "bg-blue-500";
-                                  const consumptionColor = isHot ? "text-red-600" : "text-blue-600";
+                                  const isElectricity = isElectricityMeter(meter);
+                                  const dotColor = isElectricity ? "bg-amber-400" : isHot ? "bg-red-500" : "bg-blue-500";
+                                  const consumptionColor = isElectricity ? "text-amber-600" : isHot ? "text-red-600" : "text-blue-600";
+                                  const unit = isElectricity ? "kWh" : "m3";
                                   return (
                                     <div key={idx} className="rounded-md border border-slate-200 bg-white px-3 py-2.5">
                                       <div className="mb-2 flex items-center justify-between gap-3">
@@ -2221,7 +2511,7 @@ ${xmlRows}
                                           <div className="truncate font-semibold text-slate-900">{meter.latestReading?.currentValue ?? "—"}</div>
                                         </div>
                                         <span className="text-slate-300">=</span>
-                                        <span className={`whitespace-nowrap font-semibold ${consumptionColor}`}>+{readingConsumption(meter.latestReading)} m³</span>
+                                        <span className={`whitespace-nowrap font-semibold ${consumptionColor}`}>+{readingConsumption(meter.latestReading)} {unit}</span>
                                       </div>
                                     </div>
                                   );

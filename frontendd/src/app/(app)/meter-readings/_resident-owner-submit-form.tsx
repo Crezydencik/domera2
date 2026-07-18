@@ -5,12 +5,14 @@ import { useTranslations } from "next-intl";
 import MeterReadingInput from "@/components/ui/meter-reading-input";
 
 export interface ResidentOwnerMeterOption {
-  key: "coldmeterwater" | "hotmeterwater";
+  key: "coldmeterwater" | "hotmeterwater" | "electricitymeter";
   id: string;
   label: string;
   serialNumber: string;
   previousValue: number | string;
   previousPeriod?: string;
+  meterDigits?: number;
+  userCanSetDigits?: boolean;
 }
 
 export interface ResidentOwnerApartmentOption {
@@ -18,6 +20,11 @@ export interface ResidentOwnerApartmentOption {
   label: string;
   buildingId: string;
   submissionPeriod?: SubmissionPeriodValue | null;
+  waterSubmissionPeriod?: SubmissionPeriodValue | null;
+  electricitySubmissionPeriod?: SubmissionPeriodValue | null;
+  electricityAllowMultipleMonthlySubmissions?: boolean;
+  electricityFixedPriceEnabled?: boolean;
+  electricityPricePerKwh?: number;
   meters: ResidentOwnerMeterOption[];
 }
 
@@ -35,11 +42,13 @@ interface ResidentOwnerSubmitFormProps {
   currentMonthSubmitted?: boolean;
   closedMessage?: string;
   values: Record<string, string>;
+  meterDigits?: Record<string, number>;
   period: string;
   submitting: boolean;
   onApartmentChange?: (apartmentId: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onValueChange: (key: string, value: string) => void;
+  onMeterDigitsChange?: (key: string, value: number) => void;
 }
 
 export function residentOwnerMeterValueKey(apartmentId: string, meterKey: ResidentOwnerMeterOption["key"]) {
@@ -70,11 +79,13 @@ export function ResidentOwnerSubmitForm({
   currentMonthSubmitted = false,
   closedMessage,
   values,
+  meterDigits = {},
   period,
   submitting,
   onApartmentChange,
   onSubmit,
   onValueChange,
+  onMeterDigitsChange,
 }: ResidentOwnerSubmitFormProps) {
   const t = useTranslations("meterReadings.resident");
   const hasMeters = apartments.some((apartment) => apartment.meters.length > 0);
@@ -120,25 +131,44 @@ export function ResidentOwnerSubmitForm({
                 <div className="grid min-w-0 items-start gap-5 lg:grid-cols-2">
                   {apartment.meters.map((meter) => {
                     const key = residentOwnerMeterValueKey(apartment.id, meter.key);
+                    const isElectricity = meter.key === "electricitymeter";
+                    const activeMeterDigits = Math.min(7, Math.max(5, meterDigits[key] ?? meter.meterDigits ?? 6));
 
                     return (
-                      <MeterReadingInput
-                        key={key}
-                        variant={meter.key === "hotmeterwater" ? "hot" : "cold"}
-                        label={meter.label}
-                        serialNumber={meter.serialNumber}
-                        previousValue={meter.previousValue}
-                        previousPeriod={meter.previousPeriod ?? periodDisplay.previous}
-                        currentPeriod={periodDisplay.current}
-                        value={values[key] ?? ""}
-                        onChange={(nextValue) => onValueChange(key, nextValue)}
-                        size="compact"
-                        labels={{
-                          previous: t("previousReading"),
-                          current: t("currentReading"),
-                          serialPrefix: t("serialPrefix"),
-                        }}
-                      />
+                      <div key={key} className={isElectricity ? "rounded-2xl border border-amber-200 bg-amber-50/60 p-3" : undefined}>
+                        {isElectricity && meter.userCanSetDigits ? (
+                          <label className="mb-3 block text-sm font-semibold text-amber-800">
+                            {t("electricityDigits")}
+                            <select
+                              value={String(activeMeterDigits)}
+                              onChange={(event) => onMeterDigitsChange?.(key, Number(event.target.value))}
+                              className="mt-1 h-9 w-full rounded-lg border border-amber-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                            >
+                              <option value="5">5</option>
+                              <option value="6">6</option>
+                              <option value="7">7</option>
+                            </select>
+                          </label>
+                        ) : null}
+                        <MeterReadingInput
+                          variant={isElectricity ? "electricity" : meter.key === "hotmeterwater" ? "hot" : "cold"}
+                          label={meter.label}
+                          serialNumber={meter.serialNumber}
+                          previousValue={meter.previousValue}
+                          previousPeriod={meter.previousPeriod ?? periodDisplay.previous}
+                          currentPeriod={periodDisplay.current}
+                          value={values[key] ?? ""}
+                          onChange={(nextValue) => onValueChange(key, nextValue)}
+                          intDigits={isElectricity ? activeMeterDigits : 5}
+                          decDigits={isElectricity ? 0 : 3}
+                          size="compact"
+                          labels={{
+                            previous: t("previousReading"),
+                            current: t("currentReading"),
+                            serialPrefix: t("serialPrefix"),
+                          }}
+                        />
+                      </div>
                     );
                   })}
                 </div>

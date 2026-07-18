@@ -36,6 +36,7 @@ export const allowedRoutesByRole: Record<DashboardRole, string[]> = {
     ROUTES.apartments,
     ROUTES.residents,
     ROUTES.invoices,
+    ROUTES.electricity,
     ROUTES.meterReadings,
     ROUTES.debts,
     ROUTES.documents,

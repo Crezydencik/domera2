@@ -2,6 +2,15 @@ import { Request } from 'express';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { RateLimitService } from '../../common/services/rate-limit.service';
+type BuildingDeleteBackupResult = {
+    backupStoragePath: string | null;
+    backupStoragePrefix: string | null;
+    retainedStoragePrefix: string | null;
+    retentionExpiresAt: Date;
+    copiedStorageFilesCount: number;
+    backupFailed?: boolean;
+    backupError?: string;
+};
 export declare class BuildingsService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
@@ -23,6 +32,7 @@ export declare class BuildingsService {
     private normalizeSubscriptionTermYears;
     private normalizeReadingConfig;
     private normalizeSubmissionPeriod;
+    private normalizeSubmissionPeriodByKey;
     private buildReadablePrefix;
     private buildSecureRandomToken;
     private generateBuildingId;
@@ -130,12 +140,12 @@ export declare class BuildingsService {
     }>;
     remove(request: Request, user: RequestUser, buildingId: string): Promise<{
         success: boolean;
-        backup: {
-            backupStoragePath: string;
-            backupStoragePrefix: string;
-            retainedStoragePrefix: string;
-            retentionExpiresAt: Date;
-            copiedStorageFilesCount: number;
-        };
+        deletedRequest: boolean;
+        backup?: undefined;
+    } | {
+        success: boolean;
+        backup: BuildingDeleteBackupResult;
+        deletedRequest?: undefined;
     }>;
 }
+export {};

@@ -62,6 +62,54 @@ export class MeterReadingsController {
     return this.meterReadingsService.list(user, apartmentId, companyId);
   }
 
+  @Get('electricity-payments')
+  @ApiOperation({ summary: 'List confirmed electricity payments and advances' })
+  @ApiQuery({ name: 'buildingId', required: false, type: String })
+  @ApiQuery({ name: 'apartmentId', required: false, type: String })
+  listElectricityPayments(
+    @CurrentUser() user: RequestUser,
+    @Query('buildingId') buildingId?: string,
+    @Query('apartmentId') apartmentId?: string,
+  ) {
+    return this.meterReadingsService.listElectricityPayments(user, { buildingId, apartmentId });
+  }
+
+  @Post('electricity-payments')
+  @ApiOperation({ summary: 'Create confirmed electricity payment or advance' })
+  createElectricityPayment(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.meterReadingsService.createElectricityPayment(request, user, body);
+  }
+
+  @Patch('electricity-payments/:paymentId/confirm')
+  @ApiOperation({ summary: 'Confirm resident electricity advance payment' })
+  @ApiParam({ name: 'paymentId', type: String })
+  confirmElectricityPayment(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('paymentId') paymentId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.meterReadingsService.confirmElectricityPayment(request, user, paymentId, body);
+  }
+
+  @Delete('electricity-payments/:paymentId')
+  @ApiOperation({ summary: 'Delete electricity payment or advance' })
+  @ApiParam({ name: 'paymentId', type: String })
+  @ApiQuery({ name: 'apartmentId', required: true, type: String })
+  removeElectricityPayment(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('paymentId') paymentId: string,
+    @Query('apartmentId') apartmentId?: string,
+  ) {
+    if (!apartmentId) throw new BadRequestException('apartmentId is required');
+    return this.meterReadingsService.removeElectricityPayment(request, user, paymentId, apartmentId);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create meter reading entry' })
   @ApiBody({ type: CreateMeterReadingDto })

@@ -1,0 +1,8 @@
+⨯ Another next dev server is already running.
+
+- Local:        http://localhost:3000
+- PID:          55312
+- Dir:          C:\Users\User\Documents\It projekt\domera\domera3\frontendd
+- Log:          .next\dev\logs\next-development.log
+
+Run taskkill /PID 55312 /F to stop it.

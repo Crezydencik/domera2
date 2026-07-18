@@ -14,7 +14,10 @@ export async function LandingFooter() {
         <div className="grid gap-10 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
             <LandingLogo imageClassName="brightness-0 invert" />
-            <p className="mt-5 max-w-xl text-base leading-8 text-slate-300">
+            <h2 className="mt-8 max-w-2xl text-3xl font-bold leading-tight text-white md:text-5xl">
+              {t("footer.title")}
+            </h2>
+            <p className="mt-5 max-w-2xl text-base leading-8 text-slate-300 md:text-lg">
               {t("footer.description")}
             </p>
           </div>
@@ -24,7 +27,7 @@ export async function LandingFooter() {
             className="inline-flex min-h-14 items-center justify-center gap-3 rounded-2xl bg-white px-7 text-base font-bold text-slate-950 transition hover:bg-blue-50"
             style={{ color: "#020617" }}
           >
-            {t("actions.demo")}
+            {t("footer.cta")}
             <FiArrowRight className="h-5 w-5" aria-hidden="true" />
           </Link>
         </div>

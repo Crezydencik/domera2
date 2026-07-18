@@ -19,6 +19,7 @@ const rate_limit_service_1 = require("../../common/services/rate-limit.service")
 const meter_reading_history_1 = require("../../common/utils/meter-reading-history");
 const invitation_token_1 = require("../../common/utils/invitation-token");
 const email_service_1 = require("../emails/email.service");
+const METER_READING_KEYS = ['coldmeterwater', 'hotmeterwater', 'electricitymeter'];
 let MeterReadingsService = class MeterReadingsService {
     constructor(firebaseAdminService, rateLimitService, auditLogService, emailService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -83,6 +84,34 @@ let MeterReadingsService = class MeterReadingsService {
             });
         return isOwner || isPrimaryResident || isTenantWithSubmit;
     }
+    historySubmittedAtTime(value) {
+        if (value instanceof Date)
+            return value.getTime();
+        if (typeof value === 'string') {
+            const parsed = new Date(value);
+            return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+        }
+        if (value && typeof value === 'object' && typeof value.toDate === 'function') {
+            const parsed = value.toDate();
+            return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+        }
+        return 0;
+    }
+    async electricityAllowsMultipleMonthlySubmissions(apartment, payloadBuildingId) {
+        const buildingId = typeof payloadBuildingId === 'string' && payloadBuildingId.trim()
+            ? payloadBuildingId.trim()
+            : typeof apartment.buildingId === 'string'
+                ? apartment.buildingId.trim()
+                : '';
+        if (!buildingId)
+            return false;
+        const buildingSnap = await this.firebaseAdminService.firestore.collection('buildings').doc(buildingId).get();
+        const building = buildingSnap.data();
+        const readingConfig = building?.readingConfig && typeof building.readingConfig === 'object'
+            ? building.readingConfig
+            : {};
+        return Boolean(readingConfig.electricityAllowMultipleMonthlySubmissions);
+    }
     extractApartmentReadings(apartmentId, apartment, buildingInfo, user) {
         const wr = (apartment.waterReadings ?? {});
         const entries = [];
@@ -99,7 +128,7 @@ let MeterReadingsService = class MeterReadingsService {
         const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : '';
         const buildingName = buildingInfo?.name ?? '';
         const buildingAddress = buildingInfo?.address ?? (typeof apartment.address === 'string' ? apartment.address : '');
-        for (const key of ['coldmeterwater', 'hotmeterwater']) {
+        for (const key of METER_READING_KEYS) {
             const group = wr[key];
             if (!group || !Array.isArray(group.history))
                 continue;
@@ -122,7 +151,16 @@ let MeterReadingsService = class MeterReadingsService {
                         tenantUntilDate = new Date(t.until);
                 }
             }
-            for (const item of group.history) {
+            const meterHistory = [...group.history].sort((a, b) => {
+                const yearDiff = Number(a.year ?? 0) - Number(b.year ?? 0);
+                if (yearDiff !== 0)
+                    return yearDiff;
+                const monthDiff = Number(a.month ?? 0) - Number(b.month ?? 0);
+                if (monthDiff !== 0)
+                    return monthDiff;
+                return this.historySubmittedAtTime(a.submittedAt) - this.historySubmittedAtTime(b.submittedAt);
+            });
+            for (const [entryIndex, item] of meterHistory.entries()) {
                 let submittedAt;
                 let submittedAtDate = null;
                 if (item.submittedAt) {
@@ -154,6 +192,7 @@ let MeterReadingsService = class MeterReadingsService {
                     : !((tenantFromDate && submittedAtDate < tenantFromDate) || (tenantUntilDate && submittedAtDate > tenantUntilDate));
                 entries.push({
                     ...item,
+                    ...(entryIndex === 0 ? { previousValue: null, consumption: 0 } : {}),
                     historyVisible,
                     apartmentId: String(item.apartmentId ?? apartmentId),
                     apartmentNumber,
@@ -264,6 +303,197 @@ let MeterReadingsService = class MeterReadingsService {
         });
         return { items };
     }
+    electricityPaymentFromDoc(apartmentId, doc) {
+        const data = doc.data();
+        const dateValue = data.paidAt;
+        const paidAt = dateValue instanceof Date
+            ? dateValue.toISOString()
+            : typeof dateValue === 'string'
+                ? dateValue
+                : typeof dateValue?.toDate === 'function'
+                    ? dateValue.toDate().toISOString()
+                    : '';
+        return {
+            id: doc.id,
+            apartmentId,
+            amount: Number(data.amount ?? 0) || 0,
+            paidKwh: Number(data.paidKwh ?? 0) || 0,
+            paidAt,
+            note: typeof data.note === 'string' ? data.note : '',
+            confirmed: data.confirmed !== false,
+            confirmedBy: typeof data.confirmedBy === 'string' ? data.confirmedBy : '',
+            createdAt: data.createdAt,
+        };
+    }
+    async listElectricityPayments(user, query) {
+        this.assertAuthenticated(user);
+        const db = this.firebaseAdminService.firestore;
+        let apartmentIds = [];
+        if (query.apartmentId) {
+            const snap = await db.collection('apartments').doc(query.apartmentId).get();
+            if (!snap.exists)
+                throw new common_1.NotFoundException('Apartment not found');
+            const apartment = snap.data();
+            if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
+                if (!this.hasApartmentAccess(user, snap.id, apartment))
+                    throw new common_1.ForbiddenException('Access denied for apartment');
+            }
+            else {
+                this.assertStaffApartmentCompanyAccess(user, apartment);
+            }
+            apartmentIds = [snap.id];
+        }
+        else if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
+            const accessibleIds = await this.getAccessibleApartmentIds(user);
+            if (!accessibleIds.length)
+                return { items: [] };
+            const snaps = await db.getAll(...accessibleIds.map((id) => db.collection('apartments').doc(id)));
+            apartmentIds = snaps
+                .filter((snap) => snap.exists)
+                .filter((snap) => !query.buildingId || snap.data().buildingId === query.buildingId)
+                .map((snap) => snap.id);
+        }
+        else {
+            const staffCompanyId = this.requireStaffCompanyId(user);
+            const snap = await db.collection('apartments').where('companyIds', 'array-contains', staffCompanyId).get();
+            apartmentIds = snap.docs
+                .filter((doc) => !query.buildingId || doc.data().buildingId === query.buildingId)
+                .map((doc) => doc.id);
+        }
+        if (!apartmentIds.length)
+            return { items: [] };
+        const batches = await Promise.all(apartmentIds.map(async (apartmentId) => {
+            const snap = await db
+                .collection('apartments')
+                .doc(apartmentId)
+                .collection('electricity_payments')
+                .orderBy('paidAt', 'desc')
+                .get();
+            return snap.docs.map((doc) => this.electricityPaymentFromDoc(apartmentId, doc));
+        }));
+        return {
+            items: batches
+                .flat()
+                .sort((left, right) => String(right.paidAt).localeCompare(String(left.paidAt))),
+        };
+    }
+    async createElectricityPayment(request, user, payload) {
+        this.assertAuthenticated(user);
+        const apartmentId = typeof payload.apartmentId === 'string' ? payload.apartmentId.trim() : '';
+        if (!apartmentId)
+            throw new common_1.BadRequestException('apartmentId is required');
+        const amount = Number(payload.amount ?? 0);
+        if (!Number.isFinite(amount) || amount <= 0)
+            throw new common_1.BadRequestException('amount must be positive');
+        const paidKwh = Number(payload.paidKwh ?? 0);
+        const paidAtRaw = typeof payload.paidAt === 'string' ? payload.paidAt : '';
+        const paidAtDate = paidAtRaw ? new Date(paidAtRaw) : new Date();
+        if (Number.isNaN(paidAtDate.getTime()))
+            throw new common_1.BadRequestException('Invalid paidAt');
+        const db = this.firebaseAdminService.firestore;
+        const apartmentRef = db.collection('apartments').doc(apartmentId);
+        const apartmentSnap = await apartmentRef.get();
+        if (!apartmentSnap.exists)
+            throw new common_1.NotFoundException('Apartment not found');
+        const apartment = apartmentSnap.data();
+        const staffSubmission = (0, role_constants_1.isStaffRole)(user.role);
+        if (staffSubmission) {
+            this.assertStaffApartmentCompanyAccess(user, apartment);
+        }
+        else if (!this.hasApartmentAccess(user, apartmentId, apartment)) {
+            throw new common_1.ForbiddenException('Access denied for apartment');
+        }
+        const ref = apartmentRef.collection('electricity_payments').doc();
+        const payment = {
+            id: ref.id,
+            apartmentId,
+            amount: Number(amount.toFixed(2)),
+            paidKwh: Number.isFinite(paidKwh) && paidKwh > 0 ? Number(paidKwh.toFixed(3)) : 0,
+            paidAt: paidAtDate,
+            note: typeof payload.note === 'string' ? payload.note.trim().slice(0, 500) : '',
+            confirmed: staffSubmission,
+            confirmedBy: staffSubmission ? user.uid : '',
+            companyId: typeof apartment.companyId === 'string' ? apartment.companyId : user.companyId ?? '',
+            createdAt: new Date(),
+        };
+        await ref.set(payment);
+        void this.auditLogService.write({
+            request,
+            action: staffSubmission ? 'meter_reading.electricity_payment.confirm' : 'meter_reading.electricity_payment.request',
+            status: 'success',
+            actorUid: user.uid,
+            actorRole: user.role,
+            companyId: user.companyId,
+            apartmentId,
+            metadata: { amount: payment.amount, paidKwh: payment.paidKwh },
+        });
+        return { success: true, payment: { ...payment, paidAt: payment.paidAt.toISOString() } };
+    }
+    async confirmElectricityPayment(request, user, paymentId, payload) {
+        this.assertAuthenticated(user);
+        if (!(0, role_constants_1.isStaffRole)(user.role))
+            throw new common_1.ForbiddenException('Only staff can confirm electricity payments');
+        const apartmentId = typeof payload.apartmentId === 'string' ? payload.apartmentId.trim() : '';
+        if (!apartmentId || !paymentId)
+            throw new common_1.BadRequestException('apartmentId and paymentId are required');
+        const db = this.firebaseAdminService.firestore;
+        const apartmentRef = db.collection('apartments').doc(apartmentId);
+        const apartmentSnap = await apartmentRef.get();
+        if (!apartmentSnap.exists)
+            throw new common_1.NotFoundException('Apartment not found');
+        const apartment = apartmentSnap.data();
+        this.assertStaffApartmentCompanyAccess(user, apartment);
+        const paymentRef = apartmentRef.collection('electricity_payments').doc(paymentId);
+        const paymentSnap = await paymentRef.get();
+        if (!paymentSnap.exists)
+            throw new common_1.NotFoundException('Electricity payment not found');
+        await paymentRef.set({
+            confirmed: true,
+            confirmedBy: user.uid,
+            confirmedAt: new Date(),
+        }, { merge: true });
+        void this.auditLogService.write({
+            request,
+            action: 'meter_reading.electricity_payment.confirm',
+            status: 'success',
+            actorUid: user.uid,
+            actorRole: user.role,
+            companyId: user.companyId,
+            apartmentId,
+            metadata: { paymentId },
+        });
+        return { success: true };
+    }
+    async removeElectricityPayment(request, user, paymentId, apartmentId) {
+        this.assertAuthenticated(user);
+        if (!(0, role_constants_1.isStaffRole)(user.role))
+            throw new common_1.ForbiddenException('Only staff can delete electricity payments');
+        if (!apartmentId || !paymentId)
+            throw new common_1.BadRequestException('apartmentId and paymentId are required');
+        const db = this.firebaseAdminService.firestore;
+        const apartmentRef = db.collection('apartments').doc(apartmentId);
+        const apartmentSnap = await apartmentRef.get();
+        if (!apartmentSnap.exists)
+            throw new common_1.NotFoundException('Apartment not found');
+        const apartment = apartmentSnap.data();
+        this.assertStaffApartmentCompanyAccess(user, apartment);
+        const paymentRef = apartmentRef.collection('electricity_payments').doc(paymentId);
+        const paymentSnap = await paymentRef.get();
+        if (!paymentSnap.exists)
+            throw new common_1.NotFoundException('Electricity payment not found');
+        await paymentRef.delete();
+        void this.auditLogService.write({
+            request,
+            action: 'meter_reading.electricity_payment.delete',
+            status: 'success',
+            actorUid: user.uid,
+            actorRole: user.role,
+            companyId: user.companyId,
+            apartmentId,
+            metadata: { paymentId },
+        });
+        return { success: true };
+    }
     async loadBuildingInfo(apartment) {
         const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : '';
         if (!buildingId)
@@ -342,14 +572,18 @@ let MeterReadingsService = class MeterReadingsService {
             year,
         };
         const wr = (apartment.waterReadings ?? {});
-        const namedKey = ['coldmeterwater', 'hotmeterwater'].find((k) => wr[k]?.meterId === meterId);
-        const preferredKey = payload.meterKey === 'coldmeterwater' || payload.meterKey === 'hotmeterwater'
+        const namedKey = METER_READING_KEYS.find((k) => wr[k]?.meterId === meterId);
+        const preferredKey = METER_READING_KEYS.includes(payload.meterKey)
             ? payload.meterKey
             : undefined;
         const key = namedKey ?? preferredKey ?? 'coldmeterwater';
         const meterGroup = wr[key] ?? { meterId, history: [] };
         const history = Array.isArray(meterGroup.history) ? [...meterGroup.history] : [];
-        const duplicate = history.some((h) => Number(h.month) === month && Number(h.year) === year);
+        const allowMultipleMonthlyElectricityReadings = key === 'electricitymeter'
+            ? await this.electricityAllowsMultipleMonthlySubmissions(apartment, payload.buildingId)
+            : false;
+        const duplicate = !allowMultipleMonthlyElectricityReadings
+            && history.some((h) => Number(h.month) === month && Number(h.year) === year);
         if (duplicate) {
             throw new common_1.ForbiddenException('Reading already exists for current month');
         }
@@ -359,7 +593,10 @@ let MeterReadingsService = class MeterReadingsService {
                 const by = Number(b.year ?? 0);
                 if (ay !== by)
                     return by - ay;
-                return Number(b.month ?? 0) - Number(a.month ?? 0);
+                const monthDiff = Number(b.month ?? 0) - Number(a.month ?? 0);
+                if (monthDiff !== 0)
+                    return monthDiff;
+                return this.historySubmittedAtTime(b.submittedAt) - this.historySubmittedAtTime(a.submittedAt);
             })[0]
             : null;
         const lastValue = lastEntry
@@ -369,13 +606,18 @@ let MeterReadingsService = class MeterReadingsService {
             throw new common_1.BadRequestException(`Current reading (${reading.currentValue}) cannot be lower than the previous (${lastValue})`);
         }
         history.push(reading);
-        const { history: recalculatedHistory, latestReading } = (0, meter_reading_history_1.buildMeterHistorySnapshot)(history);
+        const { history: recalculatedHistory, latestReading } = (0, meter_reading_history_1.buildMeterHistorySnapshot)(history, {
+            collapseMonthly: !allowMultipleMonthlyElectricityReadings,
+        });
         await apartmentRef.set({
             waterReadings: {
                 ...wr,
                 [key]: {
                     ...meterGroup,
                     meterId,
+                    ...(key === 'electricitymeter'
+                        ? { meterDigits: Math.min(7, Math.max(5, Number(payload.meterDigits ?? meterGroup.meterDigits ?? 6) || 6)) }
+                        : {}),
                     history: recalculatedHistory,
                     currentValue: latestReading?.currentValue ?? null,
                     previousValue: latestReading?.previousValue ?? null,
@@ -421,7 +663,7 @@ let MeterReadingsService = class MeterReadingsService {
         let foundKey = null;
         let foundGroup = null;
         let foundIndex = -1;
-        for (const key of ['coldmeterwater', 'hotmeterwater']) {
+        for (const key of METER_READING_KEYS) {
             const group = wr[key];
             if (!group || !Array.isArray(group.history))
                 continue;
@@ -437,7 +679,12 @@ let MeterReadingsService = class MeterReadingsService {
             throw new common_1.NotFoundException('Reading not found');
         const history = [...foundGroup.history];
         history[foundIndex] = { ...history[foundIndex], ...payload, id: history[foundIndex].id };
-        const { history: recalculatedHistory, latestReading } = (0, meter_reading_history_1.buildMeterHistorySnapshot)(history);
+        const allowMultipleMonthlyElectricityReadings = foundKey === 'electricitymeter'
+            ? await this.electricityAllowsMultipleMonthlySubmissions(apartment)
+            : false;
+        const { history: recalculatedHistory, latestReading } = (0, meter_reading_history_1.buildMeterHistorySnapshot)(history, {
+            collapseMonthly: !allowMultipleMonthlyElectricityReadings,
+        });
         await apartmentRef.set({
             waterReadings: {
                 ...wr,
@@ -478,7 +725,7 @@ let MeterReadingsService = class MeterReadingsService {
         let foundKey = null;
         let foundGroup = null;
         let foundEntry = null;
-        for (const key of ['coldmeterwater', 'hotmeterwater']) {
+        for (const key of METER_READING_KEYS) {
             const group = wr[key];
             if (!group || !Array.isArray(group.history))
                 continue;
@@ -510,7 +757,12 @@ let MeterReadingsService = class MeterReadingsService {
             }
         }
         const history = foundGroup.history.filter((h) => String(h.id ?? '') !== readingId);
-        const { history: recalculatedHistory, latestReading } = (0, meter_reading_history_1.buildMeterHistorySnapshot)(history);
+        const allowMultipleMonthlyElectricityReadings = foundKey === 'electricitymeter'
+            ? await this.electricityAllowsMultipleMonthlySubmissions(apartment)
+            : false;
+        const { history: recalculatedHistory, latestReading } = (0, meter_reading_history_1.buildMeterHistorySnapshot)(history, {
+            collapseMonthly: !allowMultipleMonthlyElectricityReadings,
+        });
         await apartmentRef.set({
             waterReadings: {
                 ...wr,

@@ -1,6 +1,8 @@
 "use client";
 
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { apiFetch } from "@/shared/api/client";
+import { getFirebaseAuth } from "@/shared/lib/firebase-client";
 import { notifyAuthSessionChanged } from "@/shared/lib/auth-session";
 
 export type PublicAccountType = "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
@@ -213,6 +215,35 @@ export async function signInWithEmailPassword(
   });
 
   return mapAuthResponse(data, normalizedEmail, "ManagementCompany");
+}
+
+export async function signInWithGoogle(rememberMe?: boolean): Promise<FirebaseAuthResult> {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+
+  const credential = await signInWithPopup(getFirebaseAuth(), provider);
+  const idToken = await credential.user.getIdToken();
+  const email = credential.user.email?.trim().toLowerCase() ?? "";
+
+  const data = await apiFetch<BackendAuthResponse>("/auth/session", {
+    method: "POST",
+    body: JSON.stringify({
+      idToken,
+      userId: credential.user.uid,
+      email: email || undefined,
+      rememberMe,
+    }),
+  });
+
+  return mapAuthResponse(
+    {
+      ...data,
+      userId: data.userId ?? credential.user.uid,
+      email: data.email ?? email,
+    },
+    email,
+    "ManagementCompany",
+  );
 }
 
 export async function signUpWithEmailPassword(

@@ -159,8 +159,7 @@ let ApartmentsService = class ApartmentsService {
             const apartmentId = this.firstString(item.id, item.apartmentId);
             const ownerEmail = this.firstString(item.ownerEmail).toLowerCase();
             const ownerId = this.firstString(item.ownerId);
-            const ownerActivated = item.ownerActivated === true || item.ownerActivated === 'true';
-            return apartmentId && ownerEmail && (!ownerId || !ownerActivated);
+            return apartmentId && ownerEmail && !ownerId;
         });
         if (missingOwnerLinks.length === 0)
             return items;
@@ -203,13 +202,10 @@ let ApartmentsService = class ApartmentsService {
             if (!apartmentId || !resolvedOwnerId)
                 return item;
             const ownerId = this.firstString(item.ownerId);
-            const ownerActivated = item.ownerActivated === true || item.ownerActivated === 'true';
-            if (ownerId && ownerActivated)
+            if (ownerId)
                 return item;
             updates.push(this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId).set({
                 ownerId: resolvedOwnerId,
-                ownerActivated: true,
-                ownerAcceptedAt: item.ownerAcceptedAt ?? now,
                 updatedAt: now,
             }, { merge: true }).catch((error) => {
                 console.error(`Failed to backfill owner activation for apartment ${apartmentId}:`, error);
@@ -217,8 +213,6 @@ let ApartmentsService = class ApartmentsService {
             return {
                 ...item,
                 ownerId: resolvedOwnerId,
-                ownerActivated: true,
-                ownerAcceptedAt: item.ownerAcceptedAt ?? now,
             };
         });
         await Promise.all(updates);
@@ -510,10 +504,12 @@ let ApartmentsService = class ApartmentsService {
             ? building.readingConfig
             : {};
         const waterEnabled = Boolean(readingConfig.waterEnabled);
-        if (!waterEnabled && readingConfigOverride?.useBuildingDefaults !== false) {
+        const electricityEnabled = Boolean(readingConfig.electricityEnabled);
+        if (!waterEnabled && !electricityEnabled && readingConfigOverride?.useBuildingDefaults !== false) {
             return {};
         }
         const count = (value) => Math.max(0, Math.trunc(Number(value ?? 0) || 0));
+        const digitCount = (value) => Math.min(7, Math.max(5, Math.trunc(Number(value ?? 6) || 6)));
         const hotWaterMeters = readingConfigOverride?.useBuildingDefaults === false
             ? readingConfigOverride.hotWaterMeters
             : count(readingConfig.hotWaterMetersPerResident);
@@ -535,6 +531,17 @@ let ApartmentsService = class ApartmentsService {
             waterReadings.coldmeterwater = {
                 meterId: (0, node_crypto_1.randomUUID)(),
                 serialNumber: '',
+                checkDueDate: '',
+                history: [],
+                apartmentId,
+                buildingId,
+            };
+        }
+        if (electricityEnabled && readingConfig.electricityUserSetsDigits !== true) {
+            waterReadings.electricitymeter = {
+                meterId: (0, node_crypto_1.randomUUID)(),
+                serialNumber: '',
+                meterDigits: digitCount(readingConfig.electricityMeterDigits),
                 checkDueDate: '',
                 history: [],
                 apartmentId,
@@ -1560,23 +1567,17 @@ let ApartmentsService = class ApartmentsService {
                 : typeof createdAtRaw?.toDate === 'function'
                     ? createdAtRaw.toDate()
                     : undefined;
-        const ownerHasUserId = typeof data.ownerId === 'string' && data.ownerId.trim().length > 0;
-        const ownerActivated = data.ownerActivated === true || data.ownerActivated === 'true' || ownerHasUserId;
+        const ownerActivated = data.ownerActivated === true || data.ownerActivated === 'true';
         const tenants = Array.isArray(data.tenants)
             ? data.tenants.map((tenant) => {
                 if (!tenant || typeof tenant !== 'object')
                     return tenant;
                 const record = tenant;
-                const tenantHasUserId = typeof record.userId === 'string' && record.userId.trim().length > 0;
                 const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
-                if (!tenantHasUserId || ['removed', 'deleted', 'revoked', 'inactive'].includes(status)) {
+                if (['removed', 'deleted', 'revoked', 'inactive'].includes(status)) {
                     return tenant;
                 }
-                return {
-                    ...record,
-                    activated: record.activated === false ? true : (record.activated ?? true),
-                    status: status === 'pending' ? 'Active' : (record.status ?? 'Active'),
-                };
+                return tenant;
             })
             : data.tenants;
         return {
@@ -1913,11 +1914,9 @@ let ApartmentsService = class ApartmentsService {
             firstName,
             lastName,
         });
-        const ownerActivated = Boolean(ownerId);
+        const ownerActivated = previousOwnerId === ownerId && apartment.ownerActivated === true;
         const ownerAcceptedAt = ownerActivated
-            ? previousOwnerId === ownerId
-                ? apartment.ownerAcceptedAt ?? new Date()
-                : new Date()
+            ? apartment.ownerAcceptedAt ?? new Date()
             : null;
         await apartmentRef.set({
             ownerEmail: email,
@@ -2095,15 +2094,11 @@ let ApartmentsService = class ApartmentsService {
             name: fullName,
             permissions,
             apartmentId,
-            status: authUserId ? 'Active' : 'Pending',
+            status: 'Pending',
             invitedAt: new Date(),
         };
         if (authUserId)
             tenantRecord.userId = authUserId;
-        if (authUserId)
-            tenantRecord.activated = true;
-        if (authUserId)
-            tenantRecord.acceptedAt = new Date();
         if (firstName)
             tenantRecord.firstName = firstName;
         if (lastName)

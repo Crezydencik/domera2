@@ -6,6 +6,13 @@ const appConfig = {
   apiBaseUrl: "/api",
 };
 
+const DEFAULT_API_TIMEOUT_MS = 30_000;
+
+function resolveApiTimeoutMs() {
+  const value = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS ?? DEFAULT_API_TIMEOUT_MS);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_API_TIMEOUT_MS;
+}
+
 function redirectToLogin() {
   if (typeof window === "undefined") return;
 
@@ -53,6 +60,10 @@ export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T>
   const url = `${appConfig.apiBaseUrl}${path}`;
   const { redirectOnAuthError = true, ...fetchInit } = init ?? {};
   const headers = new Headers(fetchInit.headers);
+  const controller = fetchInit.signal ? null : new AbortController();
+  const timeout = controller
+    ? window.setTimeout(() => controller.abort(), resolveApiTimeoutMs())
+    : null;
 
   if (!isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -65,10 +76,19 @@ export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T>
       headers,
       credentials: "include",
       cache: "no-store",
+      signal: fetchInit.signal ?? controller?.signal,
     });
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new DomeraApiError(`Request timed out for ${path} (${url})`, 0);
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     throw new DomeraApiError(`Network request failed for ${path} (${url}): ${message}`, 0);
+  } finally {
+    if (timeout) {
+      window.clearTimeout(timeout);
+    }
   }
 
   const payload = (await response.json().catch(() => null)) as T | Record<string, unknown> | null;

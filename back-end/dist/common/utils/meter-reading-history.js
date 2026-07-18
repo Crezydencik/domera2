@@ -13,13 +13,18 @@ const toNumberOrNull = (value) => {
 const toDateValue = (value) => {
     if (value instanceof Date && !Number.isNaN(value.getTime()))
         return value;
+    if (value && typeof value === 'object' && typeof value.toDate === 'function') {
+        const parsed = value.toDate();
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
     if (typeof value === 'string') {
         const parsed = new Date(value);
         return Number.isNaN(parsed.getTime()) ? null : parsed;
     }
     return null;
 };
-const buildMeterHistorySnapshot = (history) => {
+const buildMeterHistorySnapshot = (history, options = {}) => {
+    const collapseMonthly = options.collapseMonthly !== false;
     const sorted = [...history].sort((a, b) => {
         const yearA = toNumberOrNull(a.year) ?? 0;
         const yearB = toNumberOrNull(b.year) ?? 0;
@@ -40,14 +45,14 @@ const buildMeterHistorySnapshot = (history) => {
         const key = `${year}-${month}`;
         monthlyMap.set(key, item);
     }
-    const uniqueByMonth = Array.from(monthlyMap.values());
+    const uniqueByMonth = collapseMonthly ? Array.from(monthlyMap.values()) : sorted;
     let prevCurrentValue = null;
     const normalized = uniqueByMonth.map((item) => {
         const currentValue = toNumberOrNull(item.currentValue);
         const previousValue = prevCurrentValue;
         const consumption = previousValue != null && currentValue != null
             ? Math.max(0, currentValue - previousValue)
-            : toNumberOrNull(item.consumption);
+            : 0;
         if (currentValue != null) {
             prevCurrentValue = currentValue;
         }

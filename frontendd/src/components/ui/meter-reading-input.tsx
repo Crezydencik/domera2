@@ -2,7 +2,7 @@
 
 import React from "react";
 
-export type MeterVariant = "cold" | "hot";
+export type MeterVariant = "cold" | "hot" | "electricity";
 
 export interface MeterReadingInputProps {
   variant: MeterVariant;
@@ -43,6 +43,11 @@ const VARIANT_STYLES: Record<MeterVariant, { bar: string; cell: string; separato
     bar: "bg-rose-500",
     cell: "border-rose-400 bg-rose-50 text-slate-950 focus:border-rose-500 focus:ring-rose-300/50",
     separator: "text-rose-300",
+  },
+  electricity: {
+    bar: "bg-amber-400",
+    cell: "border-amber-400 bg-amber-50 text-slate-950 focus:border-amber-500 focus:ring-amber-300/50",
+    separator: "text-amber-300",
   },
 };
 
@@ -221,7 +226,11 @@ export function MeterReadingInput({
           <div className={`h-7 w-1 shrink-0 rounded-full ${styles.bar}`} aria-hidden />
           <div
             className="grid min-w-0 items-center gap-0.5 min-[360px]:gap-1"
-            style={{ gridTemplateColumns: `repeat(${intDigits}, minmax(0, 1fr)) auto repeat(${decDigits}, minmax(0, 1fr))` }}
+            style={{
+              gridTemplateColumns: decDigits > 0
+                ? `repeat(${intDigits}, minmax(0, 1fr)) auto repeat(${decDigits}, minmax(0, 1fr))`
+                : `repeat(${intDigits}, minmax(0, 1fr))`,
+            }}
           >
             {ints.map((digit, i) => (
               <input
@@ -241,8 +250,8 @@ export function MeterReadingInput({
                 aria-label={`integer digit ${i + 1}`}
               />
             ))}
-            <span className={`px-0.5 text-center text-lg font-bold leading-none ${styles.separator}`}>,</span>
-            {decs.map((digit, i) => (
+            {decDigits > 0 ? <span className={`px-0.5 text-center text-lg font-bold leading-none ${styles.separator}`}>,</span> : null}
+            {decDigits > 0 ? decs.map((digit, i) => (
               <input
                 key={`dec-${i}`}
                 ref={(el) => {
@@ -259,7 +268,7 @@ export function MeterReadingInput({
                 className={cellClass}
                 aria-label={`decimal digit ${i + 1}`}
               />
-            ))}
+            )) : null}
           </div>
         </div>
       ) : (
@@ -287,8 +296,8 @@ export function MeterReadingInput({
                 aria-label={`integer digit ${i + 1}`}
               />
             ))}
-            <span className={`mx-3 shrink-0 text-3xl font-bold leading-none sm:text-4xl ${styles.separator}`}>,</span>
-            {decs.map((digit, i) => (
+            {decDigits > 0 ? <span className={`mx-3 shrink-0 text-3xl font-bold leading-none sm:text-4xl ${styles.separator}`}>,</span> : null}
+            {decDigits > 0 ? decs.map((digit, i) => (
               <input
                 key={`dec-${i}`}
                 ref={(el) => {
@@ -305,7 +314,7 @@ export function MeterReadingInput({
                 className={cellClass}
                 aria-label={`decimal digit ${i + 1}`}
               />
-            ))}
+            )) : null}
           </div>
         </div>
       )}

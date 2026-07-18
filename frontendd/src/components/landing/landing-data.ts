@@ -19,7 +19,7 @@ export const navItems = [
   { key: "features", href: "#features" },
   { key: "platform", href: "#platform" },
   { key: "solutions", href: "#solutions" },
-  // { key: "pricing", href: "#pricing" },
+  { key: "pricing", href: "#pricing" },
   { key: "faq", href: "#faq" },
 ];
 

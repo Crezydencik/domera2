@@ -19,6 +19,7 @@ export declare class CompanyService {
     private firstString;
     private toOptionalTrimmedString;
     private normalizeStaffContacts;
+    private normalizeInvoiceSettings;
     private getBuildingApiKeyCollection;
     private firestoreDateToIso;
     private mapApiKeyDocument;

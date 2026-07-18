@@ -247,11 +247,30 @@ function toBuilding(item: UnknownRecord): Building {
         heatingEnabled: Boolean(rawReadingConfig.heatingEnabled),
         hotWaterMetersPerResident: Math.max(0, firstNumber(rawReadingConfig.hotWaterMetersPerResident)),
         coldWaterMetersPerResident: Math.max(0, firstNumber(rawReadingConfig.coldWaterMetersPerResident)),
+        electricityMeterDigits: Math.min(7, Math.max(5, firstNumber(rawReadingConfig.electricityMeterDigits) || 6)),
+        electricityUserSetsDigits: Boolean(rawReadingConfig.electricityUserSetsDigits),
+        electricityAllowMultipleMonthlySubmissions: Boolean(rawReadingConfig.electricityAllowMultipleMonthlySubmissions),
+        electricityFixedPriceEnabled: Boolean(rawReadingConfig.electricityFixedPriceEnabled),
+        electricityPricePerKwh: Math.max(0, firstNumber(rawReadingConfig.electricityPricePerKwh)),
         submissionPeriod: rawReadingConfig.submissionPeriod && typeof rawReadingConfig.submissionPeriod === "object"
           ? {
               startDate: firstDisplayString((rawReadingConfig.submissionPeriod as UnknownRecord).startDate),
               endDate: firstDisplayString((rawReadingConfig.submissionPeriod as UnknownRecord).endDate),
               monthly: Boolean((rawReadingConfig.submissionPeriod as UnknownRecord).monthly),
+            }
+          : null,
+        waterSubmissionPeriod: rawReadingConfig.waterSubmissionPeriod && typeof rawReadingConfig.waterSubmissionPeriod === "object"
+          ? {
+              startDate: firstDisplayString((rawReadingConfig.waterSubmissionPeriod as UnknownRecord).startDate),
+              endDate: firstDisplayString((rawReadingConfig.waterSubmissionPeriod as UnknownRecord).endDate),
+              monthly: Boolean((rawReadingConfig.waterSubmissionPeriod as UnknownRecord).monthly),
+            }
+          : null,
+        electricitySubmissionPeriod: rawReadingConfig.electricitySubmissionPeriod && typeof rawReadingConfig.electricitySubmissionPeriod === "object"
+          ? {
+              startDate: firstDisplayString((rawReadingConfig.electricitySubmissionPeriod as UnknownRecord).startDate),
+              endDate: firstDisplayString((rawReadingConfig.electricitySubmissionPeriod as UnknownRecord).endDate),
+              monthly: Boolean((rawReadingConfig.electricitySubmissionPeriod as UnknownRecord).monthly),
             }
           : null,
       }

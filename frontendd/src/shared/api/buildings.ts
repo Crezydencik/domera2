@@ -57,9 +57,11 @@ export type PlatformBillingInvoice = {
   createdAt?: unknown;
 };
 
-export function getBuildings(companyId?: string) {
+export function getBuildings(companyId?: string, options?: { redirectOnAuthError?: boolean }) {
   const query = companyId ? `?companyId=${encodeURIComponent(companyId)}` : "";
-  return apiFetch<{ items?: Record<string, unknown>[] }>(`/buildings${query}`);
+  return apiFetch<{ items?: Record<string, unknown>[] }>(`/buildings${query}`, {
+    redirectOnAuthError: options?.redirectOnAuthError,
+  });
 }
 
 export type BuildingCreationAccess = {

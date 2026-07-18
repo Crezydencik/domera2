@@ -20,21 +20,21 @@ root, framework detection fails with `No Next.js version detected`.
 Add these variables in Vercel for Production, Preview, and Development:
 
 ```bash
-NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api
+NEXT_PUBLIC_API_BASE_URL=/api
 API_BASE_URL=https://your-backend-domain.example/api
 NEXT_PUBLIC_DEMO_COMPANY_ID=demo-company
 NEXT_PUBLIC_DEMO_APARTMENT_ID=demo-apartment
 ```
 
-Use the real deployed backend URL instead of `https://your-backend-domain.example/api`.
+Use the real deployed backend URL for `API_BASE_URL` instead of `https://your-backend-domain.example/api`.
 
 ## Backend note
 
 The `back-end` app is a Nest server and should be deployed separately. After deployment, configure its CORS/session settings to allow the Vercel frontend domain:
 
 ```bash
-FRONTEND_URL=https://your-vercel-project.vercel.app
-APP_URL=https://your-vercel-project.vercel.app
-CORS_ALLOWED_ORIGINS=https://your-vercel-project.vercel.app
+FRONTEND_URL=https://domera.lv
+APP_URL=https://domera.lv
+CORS_ALLOWED_ORIGINS=https://domera.lv,https://www.domera.lv,https://domerafront.vercel.app
 TRUST_PROXY_HEADERS=true
 ```

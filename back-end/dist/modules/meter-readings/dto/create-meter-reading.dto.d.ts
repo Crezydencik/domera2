@@ -1,7 +1,8 @@
 export declare class CreateMeterReadingDto {
     apartmentId: string;
     meterId: string;
-    meterKey?: 'coldmeterwater' | 'hotmeterwater';
+    meterKey?: 'coldmeterwater' | 'hotmeterwater' | 'electricitymeter';
+    meterDigits?: number;
     previousValue: number;
     currentValue: number;
     consumption: number;

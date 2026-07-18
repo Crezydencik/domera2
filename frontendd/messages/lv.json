@@ -144,23 +144,23 @@
       "registerShort": "Reģ.",
       "loginRegister": "Ieiet / Reģistrēties",
       "loginRegisterShort": "Ieiet",
-      "demo": "Pieteikt demo",
+      "demo": "Pieteikt demonstrāciju",
       "demoShort": "Demo"
     },
     "hero": {
       "badge": "PropTech SaaS · 2026",
-      "title": "Mūsdienīga māju pārvaldība",
-      "titleAccent": "bez Excel un papīriem",
-      "description": "Domera apvieno māju pārvaldību, komunālo maksājumu aprēķinus, skaitītāju rādījumus, maksājumus, dokumentus un saziņu ar iedzīvotājiem vienā mākoņplatformā.",
-      "primaryCta": "Pieteikt demo",
-      "secondaryCta": "Skatīt iespējas",
+      "title": "Pārvaldiet namus",
+      "titleAccent": "bez tabulām, papīriem un haosa.",
+      "description": "Domera apvieno apsaimniekošanas uzņēmuma ikdienas darbu vienā gudrā platformā. Skaitītāju rādījumi, rēķini, saziņa ar iedzīvotājiem, dokumenti un pārskati darbojas kopā, lai komanda mazāk laika tērētu administrēšanai un vairāk - labam servisam.",
+      "primaryCta": "Sākt bez maksas",
+      "secondaryCta": "Pieteikt demonstrāciju",
       "benefits": {
-        "cloud": "Mākoņsistēma",
-        "billing": "Automātiski aprēķini",
+        "cloud": "Viena gudra platforma",
+        "billing": "Automātiski rēķini",
         "payment": "Tiešsaistes maksājumi",
-        "access": "Piekļuve 24/7",
-        "storage": "Droša glabāšana",
-        "install": "Bez instalēšanas"
+        "access": "Piekļuve no jebkuras ierīces",
+        "storage": "Droši dokumenti",
+        "install": "Bez lokālas uzstādīšanas"
       }
     },
     "dashboard": {
@@ -204,62 +204,62 @@
     },
     "whyDomera": {
       "eyebrow": "Kāpēc Domera",
-      "title": "Platforma, kurai uzticas profesionāļi",
-      "description": "Domera ir radīta apsaimniekošanas uzņēmumiem, kas vēlas strādāt ātrāk, caurspīdīgāk un bez papīra rutīnas.",
+      "title": "Atbrīvojiet komandu no liekas rutīnas",
+      "description": "Domera noņem atkārtotos darbus, kas bremzē apsaimniekošanas uzņēmumus: manuālus aprēķinus, izkaisītus failus un zvanus, kurus iedzīvotāji var atrisināt pašapkalpošanās ceļā.",
       "items": {
         "automation": {
-          "title": "Automatizācija",
-          "description": "Līdz 90% ikdienas darbību notiek automātiski - no aprēķiniem līdz paziņojumiem."
+          "title": "Ietaupiet stundas katru nedēļu",
+          "description": "Automatizējiet atkārtotus uzdevumus, samaziniet manuālus aprēķinus un aizvadiet mēneša darbus bez tabulu pārbaudēm."
         },
         "cloud": {
-          "title": "Mākoņplatforma",
-          "description": "Strādājiet no jebkuras vietas pārlūkā. Bez lokālām instalācijām un serveriem."
+          "title": "Viss vienuviet",
+          "description": "Ēkas, dzīvokļi, iedzīvotāji, rēķini un dokumenti ir pieejami vienā savienotā darba vidē."
         },
         "transparency": {
-          "title": "Caurspīdīgums",
-          "description": "Lietotāju darbības tiek fiksētas žurnālā pilnam audita ceļam."
+          "title": "Mūsdienīga namu pārvaldība",
+          "description": "Droša mākoņinfrastruktūra, automātiski atjauninājumi un piekļuve no jebkuras ierīces palīdz komandai kustēties ātrāk."
         },
         "security": {
-          "title": "Drošība",
-          "description": "Datu šifrēšana, rezerves kopijas un piekļuves kontrole pēc lomām."
+          "title": "Lomas un droša piekļuve",
+          "description": "Pārvaldnieki, grāmatveži, īpašnieki un iedzīvotāji redz tikai tos datus un rīkus, kas viņiem vajadzīgi."
         }
       }
     },
     "features": {
-      "eyebrow": "Iespējas",
-      "title": "Visi svarīgākie mājas procesi vienuviet",
-      "description": "Domera aptver apsaimniekošanas uzņēmuma ikdienas darbu: no objektu datubāzes līdz rēķiniem, dokumentiem un saziņai.",
+      "eyebrow": "Par platformu",
+      "title": "Viena platforma. Katrai ēkai.",
+      "description": "Efektīvai namu pārvaldībai nav vajadzīgas piecas dažādas programmas. Domera dod komandai vienotu darba vidi, kur rēķini, ēku uzturēšana, saziņa ar iedzīvotājiem un pārskati darbojas kopā.",
       "items": {
         "properties": {
           "title": "Ēkas, dzīvokļi un iedzīvotāji",
-          "description": "Vienots reģistrs objektiem, telpām, īpašniekiem un īrniekiem ar lomu piekļuvi."
+          "description": "Sakārtojiet objektus, telpas, īpašniekus un iedzīvotājus reģistrā, kam var uzticēties visa komanda."
         },
         "meters": {
           "title": "Skaitītāju rādījumi",
-          "description": "Rādījumu iesniegšana, patēriņa vēsture un atgādinājumi bez manuālām tabulām."
+          "description": "Vāciet rādījumus, skatiet patēriņa vēsturi un sūtiet atgādinājumus bez manuālām tabulām un liekiem zvaniem."
         },
         "payments": {
-          "title": "Aprēķini un maksājumi",
-          "description": "Rēķini, apmaksas statusi, parādi un skaidrs finanšu pārskats katrai ēkai."
+          "title": "Rēķini un maksājumi",
+          "description": "Sagatavojiet rēķinus, sekojiet apmaksas statusiem un skaidri redziet parādus katrai ēkai."
         },
         "documents": {
           "title": "Dokumenti",
           "description": "Līgumi, akti, rēķini un dzīvokļu faili ir pieejami pareizajiem cilvēkiem pareizajā brīdī."
         },
         "communication": {
-          "title": "Saziņa",
-          "description": "Ziņas, paziņojumi un iedzīvotāju pieprasījumi vienā darba vidē."
+          "title": "Saziņa ar iedzīvotājiem",
+          "description": "Nosūtiet ziņas, atgādinājumus un svarīgus paziņojumus no tās pašas darba vides, kur strādā komanda."
         },
         "security": {
           "title": "Lomas un drošība",
-          "description": "Atsevišķa piekļuve pārvaldniekiem, grāmatvežiem, īpašniekiem un iedzīvotājiem."
+          "description": "Piešķiriet administratoriem, grāmatvežiem, īpašniekiem un iedzīvotājiem piekļuvi, kas atbilst viņu darbam."
         }
       }
     },
     "platform": {
       "eyebrow": "Platforma",
-      "title": "Darba vide apsaimniekošanas komandai",
-      "description": "Platforma palīdz redzēt faktus, ātrāk paveikt rutīnas darbus un nezaudēt datus starp čatiem, failiem un darbiniekiem.",
+      "title": "Mazāk administrēšanas. Vairāk caurspīdīguma. Labāks serviss.",
+      "description": "Domera savieno ikdienas procesus, lai komanda redzētu, kas ir mainījies, kam jāpievērš uzmanība un kas jau ir izdarīts.",
       "trust": {
         "cloud": "Mākoņa arhitektūra",
         "security": "Aizsargāta piekļuve",
@@ -272,76 +272,76 @@
         "installs": "lokālu instalāciju"
       },
       "workflowEyebrow": "Workflow",
-      "workflowTitle": "No importa līdz maksājumu kontrolei",
+      "workflowTitle": "No iedzīvotāju datiem līdz mēneša kontrolei",
       "workflow": {
         "import": {
-          "title": "Importējiet datubāzi",
+          "title": "Pārnesiet portfeli",
           "description": "Pievienojiet ēkas, dzīvokļus, līgumus un iedzīvotājus manuāli vai ar sagatavotu importu."
         },
         "automate": {
-          "title": "Automatizējiet rutīnu",
-          "description": "Domera atgādina par rādījumiem, palīdz izrakstīt rēķinus un seko maksājumiem."
+          "title": "Iedarbiniet rutīnas procesus",
+          "description": "Domera atgādina par rādījumiem, palīdz ar rēķiniem un uztur maksājumu statusus pārskatāmus."
         },
         "control": {
-          "title": "Kontrolējiet rezultātu",
+          "title": "Saglabājiet kontroli",
           "description": "Paneļi rāda iekasēšanu, parādus, pieteikumus un aktivitāti katram objektam."
         }
       }
     },
     "solutions": {
       "eyebrow": "Risinājumi",
-      "title": "Viens produkts komandai un iedzīvotājiem",
-      "description": "Domera atdala saskarnes un piekļuves, lai katrs dalībnieks redzētu tikai savu darbu un vajadzīgos datus.",
+      "title": "Mierīgāka pieredze komandai un iedzīvotājiem",
+      "description": "Katrs saņem vajadzīgo informāciju bez liekiem zvaniem, atkārtotiem jautājumiem un dokumentiem, kas pazūd sarakstēs.",
       "items": {
         "companies": {
           "title": "Apsaimniekošanas uzņēmumi",
-          "description": "Operāciju centrs ēkām, iedzīvotājiem, aprēķiniem, parādiem un dokumentiem."
+          "description": "Vienots operāciju centrs ēkām, iedzīvotājiem, rēķiniem, parādiem un dokumentiem."
         },
         "teams": {
-          "title": "Tehniskās komandas",
-          "description": "Pieteikumi, paziņojumi un darbu vēsture, nezaudējot kontekstu starp objektiem."
+          "title": "Namu administratori",
+          "description": "Pieteikumi, paziņojumi un darbu vēsture paliek piesaistīta pareizajai ēkai un dzīvoklim."
         },
         "residents": {
           "title": "Iedzīvotāji un īpašnieki",
-          "description": "Personīgais kabinets rādījumiem, rēķiniem, maksājumiem un svarīgiem pārvaldnieka ziņojumiem."
+          "description": "Iedzīvotāji var iesniegt skaitītāju rādījumus, saņemt rēķinus, apskatīt maksājumu vēsturi un sekot mājas jaunumiem bez zvaniem uz biroju."
         }
       }
     },
     "pricing": {
       "eyebrow": "Tarifi",
-      "title": "Izvēlieties mērogu, nevis lieku sarežģītību",
-      "description": "Sāciet ar pamata rīkiem un paplašiniet platformu, augot ēku portfelim un komandai.",
-      "perMonth": "/ mēn",
-      "customPrice": "pēc pieprasījuma",
-      "cta": "Pieteikt demo",
-      "plans": {
-        "start": {
-          "name": "Starts",
-          "caption": "nelielam portfelim",
-          "features": {
-            "houses": "līdz 3 ēkām",
-            "residents": "iedzīvotāji un dzīvokļi",
-            "documents": "rēķini un dokumenti"
-          }
-        },
-        "growth": {
-          "name": "Izaugsme",
-          "caption": "aktīvam apsaimniekotājam",
-          "features": {
-            "houses": "līdz 20 ēkām",
-            "reminders": "automātiski atgādinājumi",
-            "analytics": "analītika un lomas"
-          }
-        },
-        "network": {
-          "name": "Tīkls",
-          "caption": "lielākiem portfeļiem",
-          "features": {
-            "unlimited": "neierobežoti objekti",
-            "api": "API un integrācijas",
-            "support": "prioritārs atbalsts"
-          }
-        }
+      "title": "Vienkārša un caurspīdīga cena",
+      "description": "Maksājiet tikai par dzīvokļiem, kurus pārvaldāt. Bez slēptām maksām, ieviešanas izmaksām un minimālā mēneša maksājuma.",
+      "calculator": {
+        "label": "Cenas kalkulators",
+        "hint": "Pavelciet slīdni vai ievadiet portfeļa lielumu.",
+        "apartments": "pārvaldīti dzīvokļi",
+        "manualLabel": "Dzīvokļu skaits",
+        "inputAria": "Dzīvokļu skaits"
+      },
+      "priceCard": {
+        "eyebrow": "Aprēķins tiešsaistē",
+        "title": "Jūsu mēneša cena",
+        "perMonth": "mēnesī",
+        "formula": "{apartments} dzīvokļi × €{price}"
+      },
+      "benefits": {
+        "price": "€0.50 par dzīvokli",
+        "noMinimum": "Nav minimālā mēneša maksājuma",
+        "noSetup": "Nav ieviešanas vai pieslēgšanas maksas",
+        "updates": "Bezmaksas atjauninājumi",
+        "support": "Bezmaksas tehniskais atbalsts"
+      },
+      "actions": {
+        "primary": "Sākt bez maksas",
+        "secondary": "Sazināties ar pārdošanu"
+      },
+      "info": {
+        "title": "Vienkārši. Godīgi. Mērogojami.",
+        "description": "Domera izmanto vienu no vienkāršākajiem cenu modeļiem PropTech nozarē. Jūs maksājat tikai par dzīvokļiem, kurus aktīvi pārvaldāt. Nav slēptu maksu, dārgu paku vai obligātu jauninājumu. Portfelim augot, mēneša cena mērogojas automātiski un paliek pilnībā caurspīdīga."
+      },
+      "examples": {
+        "apartments": "dzīvokļi",
+        "perMonth": "/mēn"
       }
     },
     "faq": {
@@ -358,7 +358,7 @@
           "answer": "Jā. Sistēmā var nodalīt ēkas, dzīvokļus, darbinieku lomas un iedzīvotāju piekļuvi."
         },
         "documents": {
-          "question": "Kas notiek ar dokumentiem un rēķiniem?",
+          "question": "Kur glabājas dokumenti un rēķini?",
           "answer": "Faili glabājas pie objektiem un dzīvokļiem, un piekļuvi var ierobežot pēc lomām."
         },
         "residents": {
@@ -368,7 +368,9 @@
       }
     },
     "footer": {
-      "description": "Mākoņplatforma māju pārvaldībai, komunālajiem aprēķiniem, maksājumiem, dokumentiem un saziņai ar iedzīvotājiem.",
+      "title": "Gatavi pāriet uz mūsdienīgu namu pārvaldību?",
+      "description": "Apskatiet, kā Domera palīdz komandai ietaupīt laiku, samazināt kļūdas un sniegt iedzīvotājiem labāku pieredzi.",
+      "cta": "Sākt bez maksas",
       "privacy": "Privātuma politika",
       "terms": "Lietošanas noteikumi",
       "rights": "© 2026 Domera"
@@ -383,6 +385,7 @@
         "apartments": "Dzīvokļi",
         "residents": "Iedzīvotāji",
         "invoices": "Rēķini",
+        "electricity": "Elektrība",
         "meterReadings": "Skaitītāju rādījumi",
         "debts": "Parādi",
         "documents": "Dokumenti",
@@ -683,7 +686,12 @@
       "occupiedApartments": "Aizņemtie dzīvokļi",
       "status": "Statuss",
       "hotWaterMetersPerResident": "Karstā ūdens skaitītāji dzīvoklī",
-      "coldWaterMetersPerResident": "Aukstā ūdens skaitītāji dzīvoklī"
+      "coldWaterMetersPerResident": "Aukstā ūdens skaitītāji dzīvoklī",
+      "electricityMeterDigits": "Elektrības rādījuma šūnas",
+      "electricityUserSetsDigits": "Iedzīvotājs izvēlas šūnu skaitu pirmajā iesniegšanā",
+      "electricityAllowMultipleMonthlySubmissions": "Atļaut vairākus elektrības rādījumus mēnesī",
+      "electricityFixedPriceEnabled": "Fiksēta elektrības cena par kWh",
+      "electricityPricePerKwh": "Elektrības cena par kWh"
     },
     "tabs": {
       "general": "Pamata",
@@ -702,7 +710,8 @@
       },
       "electricity": {
         "title": "Elektrības rādījumu iesniegšana",
-        "description": "Ieslēdziet šo, ja iedzīvotājiem jāiesniedz elektrības rādījumi."
+        "description": "Ieslēdziet šo, ja iedzīvotājiem jāiesniedz elektrības rādījumi.",
+        "multipleMonthlyDescription": "Ūdenim paliek viens rādījums mēnesī, bet elektrību varēs iesniegt atkārtoti tekošajā mēnesī."
       },
       "heating": {
         "title": "Apkures rādījumu iesniegšana",
@@ -746,6 +755,8 @@
       "subscriptionTermMonthsInvalid": "Termiņam jābūt vismaz 1 mēnesim.",
       "hotWaterMetersInvalid": "Karstā ūdens skaitītāju skaitam jābūt 0 vai lielākam.",
       "coldWaterMetersInvalid": "Aukstā ūdens skaitītāju skaitam jābūt 0 vai lielākam.",
+      "electricityMeterDigitsInvalid": "Elektrības rādījuma šūnu skaitam jābūt no 5 līdz 7.",
+      "electricityPricePerKwhInvalid": "Elektrības cenai par kWh jābūt lielākai par 0.",
       "occupiedApartmentsInvalid": "Aizņemto dzīvokļu skaitam jābūt 0 vai lielākam.",
       "occupiedExceedsTotal": "Aizņemto dzīvokļu skaits nevar pārsniegt kopējo dzīvokļu skaitu.",
       "createFailed": "Neizdevās izveidot ēku.",
@@ -803,8 +814,11 @@
     "resident": {
       "meterLabels": {
         "coldWater": "Aukstais ūdens",
-        "hotWater": "Karstais ūdens"
+        "hotWater": "Karstais ūdens",
+        "electricity": "Elektrība"
       },
+      "waterTab": "Ūdens",
+      "electricityTab": "Elektrība",
       "closedDefault": "Rādījumu iesniegšanas periods pašlaik ir slēgts.",
       "closedWithDates": "Rādījumu iesniegšanas periods ir slēgts. Pieejams no {start} līdz {end}.",
       "loadFailed": "Neizdevās ielādēt rādījumus",
@@ -834,7 +848,22 @@
       "previousReading": "Iepriekšējais rādījums",
       "currentReading": "Pašreizējais rādījums",
       "serialPrefix": "№",
+      "electricityDigits": "Elektrības rādījuma šūnas",
       "submitting": "Iesniedz...",
+      "advanceTitle": "Elektrības avanss",
+      "advanceDescription": "Nosūtiet avansa maksājumu pārvaldnieka apstiprināšanai.",
+      "advanceButton": "Apmaksāt avansā",
+      "advanceModalDescription": "Ievadiet, cik kWh vēlaties apmaksāt avansā. Summa tiks aprēķināta automātiski.",
+      "advanceKwh": "Avansa kWh",
+      "advanceTariff": "Tarifs",
+      "advanceCalculatedAmount": "Aprēķinātā summa",
+      "advanceSubmit": "Nosūtīt avansu",
+      "advanceCancel": "Atcelt",
+      "advanceSaving": "Sūta...",
+      "advanceKwhRequired": "Ievadiet avansa kWh.",
+      "advanceTariffMissing": "Elektrības tarifs nav iestatīts.",
+      "advanceSubmitted": "Avansa maksājums nosūtīts apstiprināšanai",
+      "advanceSubmitFailed": "Neizdevās nosūtīt avansa maksājumu",
       "submit": "Iesniegt rādījumus",
       "noMeters": "Jūsu dzīvokļiem skaitītāji vēl nav pievienoti."
     }
@@ -1372,6 +1401,10 @@
     "haveAccount": "Jau ir konts?",
     "rememberMe": "Atcerēties mani?",
     "invalidEmailOrPassword": "Nepareizs e-pasts vai parole",
+    "continueWithGoogle": "Turpināt ar Google",
+    "googleSigningIn": "Atver Google...",
+    "googleSignInCancelled": "Google pierakstīšanās tika atcelta.",
+    "googleSignInUnavailable": "Google pierakstīšanās vēl nav konfigurēta.",
     "registerTitle": "Izveidot kontu",
     "registerSubtitle": "Reģistrējieties, lai sāktu darbu ar Domera",
     "registerCompanyEmailHint": "Neobligāti: izmantojiet šo, ja uzņēmuma e-pasts atšķiras no jūsu pieslēgšanās e-pasta",
@@ -1478,6 +1511,25 @@
     "monthLabel": "Mēnesis, par kuru tiek iesniegti rādījumi:",
     "coldWater": "Aukstais ūdens",
     "hotWater": "Karstais ūdens",
+    "electricity": "Elektrība",
+    "water": "Ūdens",
+    "electricityBalance": "Elektrības bilance",
+    "electricityTariff": "Tarifs",
+    "electricityConsumption": "Patēriņš",
+    "charged": "Aprēķināts",
+    "confirmedPaid": "Apstiprināti apmaksāts",
+    "balance": "Bilance",
+    "advance": "Avanss",
+    "debt": "Parāds",
+    "electricityPaymentTitle": "Apstiprināt elektrības maksājumu",
+    "paymentAmount": "Apmaksātā summa",
+    "paymentKwh": "Apmaksātie kWh",
+    "paymentDate": "Maksājuma datums",
+    "paymentNote": "Apstiprinājuma piezīme",
+    "confirmPayment": "Apstiprināt maksājumu",
+    "paymentAmountRequired": "Ievadiet apmaksāto summu.",
+    "paymentConfirmed": "Elektrības maksājums apstiprināts",
+    "paymentConfirmError": "Neizdevās apstiprināt maksājumu",
     "coldWaterFull": "Aukstais ūdens (ĀŪ)",
     "hotWaterFull": "Karstais ūdens (KŪ)",
     "previousReading": "Iepriekšējais rādījums",
@@ -1492,6 +1544,15 @@
     "noData": "nav datu",
     "period": "Periods",
     "periodMonthly": "ikmēneša",
+    "periodStartDate": "Atvēršanas datums",
+    "periodEndDate": "Aizvēršanas datums",
+    "periodMonthlyCheckbox": "Iesniegt katru mēnesi",
+    "periodFreeMode": "Brīva iesniegšana",
+    "periodDateMode": "Pēc datumiem",
+    "periodFreeModeHint": "Iedzīvotāji var iesniegt rādījumus jebkurā laikā.",
+    "periodMonthlyHint": "Periods automātiski atkārtosies no {startDay}. līdz {endDay}. datumam katru mēnesi.",
+    "deletePeriod": "Dzēst periodu",
+    "deletingPeriod": "Dzēš...",
     "colApartment": "Dzīvoklis",
     "colMeter": "Skaitītājs",
     "colReading": "Rādījums",
@@ -1555,6 +1616,7 @@
       "user": "Lietotājs",
       "company": "Uzņēmums",
       "apiKey": "API atslēga",
+      "invoiceGeneration": "Rēķinu ģenerēšana",
       "notifications": "Paziņojumi",
       "contacts": "Kontakti",
       "billing": "Norēķinu konti",
@@ -1604,7 +1666,94 @@
         "name": "Uzņēmuma nosaukums",
         "registrationNumber": "Reģistrācijas numurs",
         "email": "Uzņēmuma e-pasts",
-        "phone": "Uzņēmuma tālrunis"
+        "phone": "Uzņēmuma tālrunis",
+        "bankName": "Bankas nosaukums",
+        "bankAccountIban": "IBAN",
+        "bankSwift": "SWIFT / BIC",
+        "bankBeneficiary": "Maksājuma saņēmējs"
+      },
+      "bankDetails": {
+        "title": "Bankas rekvizīti"
+      },
+      "invoiceGeneration": {
+        "title": "Rēķinu ģenerēšana",
+        "description": "Iestatiet rēķina numerāciju, pakalpojuma sniedzēja datus, apmaksas laukus un rēķina parauga izskatu.",
+        "saving": "Saglabā...",
+        "saved": "Rēķinu iestatījumi saglabāti.",
+        "saveFailed": "Neizdevās saglabāt rēķinu iestatījumus.",
+        "bankDetailsHint": "Ja lauks paliek tukšs, rekvizīti automātiski tiks ņemti no uzņēmuma datiem.",
+        "logoHint": "PNG, JPG vai WebP līdz 350 KB. Pēc augšupielādes nospiediet “Saglabāt”.",
+        "logoInvalid": "Neizdevās augšupielādēt logotipu. Izmantojiet PNG, JPG vai WebP.",
+        "logoTooLarge": "Logotips ir pārāk liels. Maksimālais izmērs ir 350 KB.",
+        "sections": {
+          "branding": "Logotips un krāsa",
+          "numbering": "Numerācija un formāts",
+          "bankDetails": "Norēķinu rekvizīti",
+          "provider": "Pakalpojuma sniedzēja dati",
+          "amounts": "Summas un kopsummas"
+        },
+        "fields": {
+          "autoNumber": "Rēķina numurs",
+          "autoNumberHint": "Tiek ģenerēts automātiski, izveidojot rēķinu.",
+          "numberPrefix": "Numura prefikss",
+          "numberPattern": "Numura šablons",
+          "invoiceNumberParts": "No kā veidot numuru",
+          "invoiceNumberPartsHint": "Ja ir izvēlētas daļas, numurs tiek veidots no tām. Ja nekas nav izvēlēts, tiek izmantots numura šablons.",
+          "invoiceNumberSeparator": "Atdalītājs",
+          "invoiceNumberSeparators": "Atdalītāji starp daļām",
+          "invoiceNumberSeparatorAfter": "Pēc",
+          "language": "Rēķina valoda",
+          "currency": "Valūta",
+          "logo": "Logotips",
+          "logoUpload": "Augšupielādēt logotipu",
+          "logoRemove": "Noņemt logotipu",
+          "logoUseText": "Atjaunot teksta logotipu",
+          "logoNone": "Bez logotipa",
+          "accentColor": "Rēķina krāsa",
+          "providerAddress": "Pakalpojuma sniedzēja adrese",
+          "overrideBankName": "Bankas nosaukums",
+          "overrideBankAccountIban": "IBAN",
+          "overrideBankSwift": "SWIFT / BIC",
+          "overrideBankBeneficiary": "Maksājuma saņēmējs",
+          "providerSignerName": "Parakstītājs",
+          "providerSignerTitle": "Parakstītāja amats",
+          "defaultServiceName": "Noklusētais pakalpojuma nosaukums",
+          "defaultVatRate": "Noklusētā PVN likme, %",
+          "invoiceLineItems": "Rēķina rindas",
+          "invoiceTableColumns": "Tabulas kolonnas",
+          "paymentTermDays": "Apmaksas termiņš, dienas",
+          "amountWordsPrefix": "Summa vārdiem teksts",
+          "showAmountWords": "Rādīt summu vārdiem",
+          "showSignature": "Rādīt paraksta bloku",
+          "footerNote": "Piezīme rēķina apakšā"
+        },
+        "invoiceNumberParts": {
+          "companyCode": "3 pārvaldnieka cipari",
+          "apartmentNumber": "Dzīvokļa numurs",
+          "month": "Mēnesis",
+          "year": "Gads",
+          "date": "Datums",
+          "sequence": "Kārtas numurs"
+        },
+        "invoiceLineItems": {
+          "electricityAdvance": "Avanss",
+          "electricityPayment": "Elektroenerģijas apmaksa",
+          "other": "Cits"
+        },
+        "invoiceTableColumns": {
+          "period": "Periods",
+          "price": "Cena",
+          "amount": "Daudzums",
+          "unit": "Mērv.",
+          "vat": "PVN",
+          "sum": "Summa",
+          "recalculation": "Pārrēķins",
+          "net": "Bez PVN"
+        },
+        "preview": {
+          "signerTitleFallback": "Valdes loceklis",
+          "serviceNameFallback": "Apsaimniekošanas pakalpojumi"
+        }
       },
       "roles": {
         "managementCompany": "UK darbinieks",

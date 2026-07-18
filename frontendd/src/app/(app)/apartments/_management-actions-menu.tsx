@@ -347,12 +347,12 @@ export function ApartmentsManagementActionsMenu({
         const tenants = Array.isArray(record.tenants) ? record.tenants : [];
         const occupied =
           booleanValue(record.ownerActivated) ||
-          Boolean(textValue(record.ownerId, record.ownerAcceptedAt, record.residentId)) ||
+          Boolean(textValue(record.ownerAcceptedAt, record.residentId)) ||
           tenants.some((tenant) => {
             if (!tenant || typeof tenant !== "object") return false;
             const tenantRecord = tenant as Record<string, unknown>;
             const status = textValue(tenantRecord.status).toLowerCase();
-            return Boolean(textValue(tenantRecord.userId)) || status === "active" || status === "accepted";
+            return booleanValue(tenantRecord.activated) || Boolean(textValue(tenantRecord.acceptedAt, tenantRecord.activatedAt)) || status === "active" || status === "accepted";
           });
         const pendingInvitation = pendingInvitationsByApartment.get(apartmentId);
         const invitationId = pendingInvitation?.id;

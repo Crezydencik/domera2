@@ -10,10 +10,16 @@ export class CreateMeterReadingDto {
   @IsString()
   meterId!: string;
 
-  @ApiPropertyOptional({ enum: ['coldmeterwater', 'hotmeterwater'], description: 'Optional meter group key.' })
+  @ApiPropertyOptional({ enum: ['coldmeterwater', 'hotmeterwater', 'electricitymeter'], description: 'Optional meter group key.' })
   @IsOptional()
-  @IsIn(['coldmeterwater', 'hotmeterwater'])
-  meterKey?: 'coldmeterwater' | 'hotmeterwater';
+  @IsIn(['coldmeterwater', 'hotmeterwater', 'electricitymeter'])
+  meterKey?: 'coldmeterwater' | 'hotmeterwater' | 'electricitymeter';
+
+  @ApiPropertyOptional({ description: 'Electricity meter digit count.' })
+  @IsOptional()
+  @IsNumber()
+  @Min(5)
+  meterDigits?: number;
 
   @ApiProperty({ description: 'Previous meter value.' })
   @IsNumber()

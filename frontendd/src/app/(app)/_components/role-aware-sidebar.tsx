@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { FiAlertCircle, FiArrowRight, FiBell, FiCheckCircle, FiChevronDown, FiLogOut, FiMenu, FiSettings, FiUser, FiX } from "react-icons/fi";
+import { FiAlertCircle, FiBell, FiCheckCircle, FiChevronDown, FiLogOut, FiMenu, FiSettings, FiUser, FiX } from "react-icons/fi";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { apiFetch } from "@/shared/api/client";
+import { getBuildings } from "@/shared/api/buildings";
 import { establishUserSession } from "@/shared/lib/auth-client";
 import { clearBrowserAuthCookies } from "@/shared/lib/auth-session";
 import { getPlatformUsers, type PlatformUser } from "@/shared/api/users";
@@ -15,6 +16,8 @@ import { useAuthSession } from "@/shared/hooks/use-auth";
 import { useAppNotifications } from "@/shared/hooks/use-app-notifications";
 import { useNotifications as useToastNotifications } from "@/shared/hooks/use-notifications";
 import { BUILDING_CREATION_REQUESTS_CHANGED_EVENT } from "@/shared/lib/building-creation-requests-events";
+import { isElectricityEnabledBuilding } from "@/shared/lib/buildings";
+import { BUILDINGS_CHANGED_EVENT, readStoredElectricityNavigation, type BuildingsChangedDetail } from "@/shared/lib/buildings-events";
 import { ROUTES } from "@/shared/lib/routes";
 import { type DashboardRole, normalizeDashboardRole } from "@/shared/role-ui";
 import type { NotificationItem } from "@/shared/lib/data";
@@ -35,6 +38,7 @@ type NavItem = {
 };
 
 type UserProfileSummary = {
+  companyId?: string;
   email?: string;
   firstName?: string;
   lastName?: string;
@@ -102,7 +106,7 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
     });
   });
 }
-  
+
   export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAwareSidebarProps) {
     const tm = useTranslations("appShell.header.pageTitles");
   const navByRole: Record<DashboardRole, NavItem[]> = {
@@ -121,6 +125,7 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
       { href: ROUTES.apartments, label: tm("apartments"), icon: "▥" },
       { href: ROUTES.residents, label: tm("residents"), icon: "◌" },
       { href: ROUTES.meterReadings, label: tm("meterReadings"), icon: "◔" },
+      { href: ROUTES.electricity, label: tm("electricity"), icon: "E" },
       { href: ROUTES.invoices, label: tm("invoices"), icon: "€" },
       // { href: ROUTES.debts, label: "Debts", icon: "!" },
       { href: ROUTES.documents, label: tm("documents"), icon: "▤" },
@@ -150,7 +155,9 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
   const pathname = rawPathname ?? ROUTES.dashboard;
   const role = normalizeDashboardRole(defaultRole);
   const [hasPendingBuildingRequests, setHasPendingBuildingRequests] = useState(false);
-  const navItems = role === "platformAdmin"
+  const [hasElectricityNavigation, setHasElectricityNavigation] = useState(readStoredElectricityNavigation);
+  const optimisticElectricityUntilRef = useRef(0);
+  const baseNavItems = role === "platformAdmin"
     ? navByRole[role]
         .filter((item) => item.href !== ROUTES.approvals)
         .map((item) =>
@@ -159,6 +166,9 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
             : item,
         )
     : navByRole[role];
+  const navItems = role === "managementCompany" && !hasElectricityNavigation
+    ? baseNavItems.filter((item) => item.href !== ROUTES.electricity)
+    : baseNavItems;
   const [profileOpen, setProfileOpen] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -172,6 +182,7 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
   const toast = useToastNotifications();
   const session = useAuthSession();
   const [profileSummary, setProfileSummary] = useState<UserProfileSummary | null>(null);
+  const navigationCompanyId = session.companyId ?? profileSummary?.companyId ?? (role === "managementCompany" ? session.userId : undefined);
 
  const userEmail = session.email ?? "user@domera.lv";
 const userName = resolveProfileName(profileSummary, session.name, userEmail);
@@ -209,6 +220,7 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
       { href: ROUTES.apartments, key: "apartments" },
       { href: ROUTES.residents, key: "residents" },
       { href: ROUTES.invoices, key: "invoices" },
+      { href: ROUTES.electricity, key: "electricity" },
       { href: ROUTES.meterReadings, key: "meterReadings" },
       { href: ROUTES.debts, key: "debts" },
       { href: ROUTES.documents, key: "documents" },
@@ -348,6 +360,54 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
   }, [session.isAuthenticated, session.userId]);
 
   useEffect(() => {
+    if (readStoredElectricityNavigation()) {
+      setHasElectricityNavigation(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (role !== "managementCompany" || !session.isAuthenticated || !navigationCompanyId) {
+      return;
+    }
+
+    let active = true;
+
+    const refreshElectricityNavigation = () => {
+      getBuildings(navigationCompanyId, { redirectOnAuthError: false })
+        .then((response) => {
+          if (!active) return;
+          const hasEnabled = (response.items ?? []).some((building) => isElectricityEnabledBuilding(building));
+          const optimisticActive = Date.now() < optimisticElectricityUntilRef.current;
+          setHasElectricityNavigation(hasEnabled || optimisticActive || readStoredElectricityNavigation());
+        })
+        .catch(() => {
+          if (active) setHasElectricityNavigation(false);
+        });
+    };
+
+    refreshElectricityNavigation();
+
+    const handleBuildingsChanged = (event: Event) => {
+      const detail = (event as CustomEvent<BuildingsChangedDetail>).detail;
+      if (detail?.electricityEnabled) {
+        optimisticElectricityUntilRef.current = Date.now() + 10000;
+        setHasElectricityNavigation(true);
+        window.setTimeout(refreshElectricityNavigation, 10200);
+      }
+      refreshElectricityNavigation();
+    };
+
+    window.addEventListener("focus", refreshElectricityNavigation);
+    window.addEventListener(BUILDINGS_CHANGED_EVENT, handleBuildingsChanged);
+
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshElectricityNavigation);
+      window.removeEventListener(BUILDINGS_CHANGED_EVENT, handleBuildingsChanged);
+    };
+  }, [navigationCompanyId, role, session.isAuthenticated, session.userId]);
+
+  useEffect(() => {
     if (role !== "platformAdmin" || !session.isAuthenticated) {
       setHasPendingBuildingRequests(false);
       return;
@@ -401,17 +461,17 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
     if (item.type === "owner-invitation" || item.type === "tenant-invitation") {
       return {
         icon: FiCheckCircle,
-        container: "bg-emerald-50 text-emerald-950",
-        iconBox: "bg-emerald-100 text-emerald-600",
-        action: "text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700",
+        container: "bg-white text-slate-950 shadow-sm",
+        iconBox: "bg-emerald-500 text-white",
+        action: "hover:bg-emerald-50/40 focus-within:ring-2 focus-within:ring-emerald-100",
       };
     }
 
     return {
       icon: FiAlertCircle,
-      container: "bg-blue-50 text-blue-950",
-      iconBox: "bg-blue-100 text-blue-600",
-      action: "text-blue-600 hover:bg-blue-100 hover:text-blue-700",
+      container: "bg-white text-slate-950 shadow-sm",
+      iconBox: "bg-blue-500 text-white",
+      action: "hover:bg-blue-50/40 focus-within:ring-2 focus-within:ring-blue-100",
     };
   }
 
@@ -612,40 +672,37 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
                             const ToneIcon = tone.icon;
 
                             return (
-                            <div key={item.id} className={`flex items-start gap-3 rounded-lg px-3 py-3 ${tone.container}`}>
-                              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone.iconBox}`}>
+                            <div key={item.id} className={`grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3 rounded-xl px-3 py-3 transition ${tone.container} ${item.actionHref ? tone.action : ""}`}>
+                              <span className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${tone.iconBox}`}>
                                 <ToneIcon className="h-4 w-4" aria-hidden="true" />
                               </span>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="truncate text-sm font-bold leading-5">{display.title}</p>
-                                    <p className="line-clamp-2 text-xs leading-4 text-slate-600">{display.description}</p>
-                                  </div>
+                              <div className="min-w-0">
+                                {item.actionHref && display.actionLabel ? (
                                   <button
                                     type="button"
-                                    onClick={() => void notifications.dismiss(item.id)}
-                                    className="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-white/60 hover:text-slate-700"
-                                    aria-label={t("notifications.dismissAria")}
+                                    onClick={() => void handleNotificationAction(item)}
+                                    disabled={acceptingNotificationId === item.id}
+                                    className="block w-full min-w-0 rounded-md text-left outline-none disabled:pointer-events-none disabled:opacity-60"
+                                    aria-label={display.actionLabel}
                                   >
-                                    <FiX className="h-4 w-4" aria-hidden="true" />
+                                    <span className="block truncate text-sm font-semibold leading-5">{display.title}</span>
+                                    <span className="mt-0.5 block line-clamp-2 text-xs leading-4 text-slate-600">{display.description}</span>
                                   </button>
-                                </div>
-                                <div className="mt-1.5 flex items-center">
-                                  {item.actionHref && display.actionLabel ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleNotificationAction(item)}
-                                      disabled={acceptingNotificationId === item.id}
-                                      className={`inline-flex h-6 w-6 items-center justify-center rounded-md transition disabled:pointer-events-none disabled:opacity-60 ${tone.action}`}
-                                      aria-label={display.actionLabel}
-                                      title={display.actionLabel}
-                                    >
-                                      <FiArrowRight className="h-4 w-4" aria-hidden="true" />
-                                    </button>
-                                  ) : null}
-                                </div>
+                                ) : (
+                                  <>
+                                    <p className="truncate text-sm font-semibold leading-5">{display.title}</p>
+                                    <p className="mt-0.5 line-clamp-2 text-xs leading-4 text-slate-600">{display.description}</p>
+                                  </>
+                                )}
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => void notifications.dismiss(item.id)}
+                                className="mt-0.5 shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                aria-label={t("notifications.dismissAria")}
+                              >
+                                <FiX className="h-4 w-4" aria-hidden="true" />
+                              </button>
                             </div>
                             );
                           })}

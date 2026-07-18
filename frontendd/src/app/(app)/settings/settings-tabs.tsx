@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ChangeEvent, type ReactNode, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { FaEye, FaInfoCircle, FaRegUser } from "react-icons/fa";
 import {
@@ -29,7 +29,16 @@ import { type NotificationSettings, updateNotificationSettings } from "@/shared/
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { isStrongPassword } from "@/shared/lib/password-validation";
 
-type SettingsTab = "user" | "company" | "apiKey" | "notifications" | "contacts" | "billing" | "additionalUsers" | "dataManagement";
+type SettingsTab =
+  | "user"
+  | "company"
+  | "apiKey"
+  | "invoiceGeneration"
+  | "notifications"
+  | "contacts"
+  | "billing"
+  | "additionalUsers"
+  | "dataManagement";
 
 type UserSettings = {
   userId: string;
@@ -45,11 +54,46 @@ type CompanySettings = {
   companyId: string;
   name: string;
   registrationNumber: string;
+  address: string;
   email: string;
   phone: string;
+  bankName: string;
+  bankAccountIban: string;
+  bankSwift: string;
+  bankBeneficiary: string;
+  invoiceSettings: InvoiceGenerationSettings;
   apiKeys: CompanyApiKeyItem[];
   buildings: CompanyAccessBuilding[];
   members: CompanyMember[];
+};
+
+type InvoiceGenerationSettings = {
+  numberPrefix: string;
+  numberPattern: string;
+  invoiceNumberParts: InvoiceNumberPart[];
+  invoiceNumberSeparator: string;
+  invoiceNumberSeparators: Partial<Record<InvoiceNumberPart, string>>;
+  language: "ru" | "lv" | "en";
+  currency: string;
+  logoDataUrl: string;
+  logoHidden: boolean;
+  accentColor: string;
+  providerAddress: string;
+  overrideBankName: string;
+  overrideBankAccountIban: string;
+  overrideBankSwift: string;
+  overrideBankBeneficiary: string;
+  providerSignerName: string;
+  providerSignerTitle: string;
+  paymentTermDays: number;
+  defaultServiceName: string;
+  defaultVatRate: number;
+  invoiceLineItems: InvoiceLineItem[];
+  invoiceTableColumns: InvoiceTableColumn[];
+  showAmountWords: boolean;
+  amountWordsPrefix: string;
+  showSignature: boolean;
+  footerNote: string;
 };
 
 type CompanyAccessBuilding = {
@@ -77,7 +121,15 @@ type SettingsTabsProps = {
 };
 
 type EditableField = "email" | "name" | "phone" | "password" | null;
-type EditableCompanyField = "name" | "registrationNumber" | "email" | "phone" | null;
+type EditableCompanyField = "name" | "registrationNumber" | "address" | "email" | "phone" | null;
+type BankDetailsField = "bankName" | "bankAccountIban" | "bankSwift" | "bankBeneficiary";
+type InvoiceGenerationAccordionKey = "branding" | "numbering" | "bankDetails" | "provider" | "amounts" | "footer";
+type InvoiceNumberPart = "companyCode" | "apartmentNumber" | "month" | "year" | "date" | "sequence";
+type InvoiceLineItem = "electricityAdvance" | "electricityPayment" | "other";
+type InvoiceTableColumn = "period" | "price" | "amount" | "unit" | "vat" | "sum" | "recalculation" | "net";
+type PreviewInvoiceRow =
+  | { type: "group"; service: string }
+  | { service: string; period: string; price: number; amount: number; unit: string };
 
 type NameDraft = {
   firstName: string;
@@ -91,10 +143,194 @@ type PasswordDraft = {
 };
 
 type VisiblePasswordField = keyof PasswordDraft;
-type CompanyDraft = Pick<CompanySettings, "companyId" | "name" | "registrationNumber" | "email" | "phone">;
+type CompanyDraft = Pick<
+  CompanySettings,
+  | "companyId"
+  | "name"
+  | "registrationNumber"
+  | "address"
+  | "email"
+  | "phone"
+  | "bankName"
+  | "bankAccountIban"
+  | "bankSwift"
+  | "bankBeneficiary"
+>;
 type CompanyMemberRole = "ManagementCompany" | "Accountant";
 
 const baseTabs: SettingsTab[] = ["user", "notifications"];
+const MAX_INVOICE_LOGO_BYTES = 350 * 1024;
+const DEFAULT_INVOICE_ACCENT_COLOR = "#ef3340";
+const invoiceNumberPartOptions: InvoiceNumberPart[] = ["companyCode", "apartmentNumber", "month", "year", "date", "sequence"];
+const invoiceLineItemOptions: InvoiceLineItem[] = ["electricityAdvance", "electricityPayment", "other"];
+const invoiceTableColumnOptions: InvoiceTableColumn[] = ["period", "price", "amount", "unit", "vat", "sum", "recalculation", "net"];
+const defaultInvoiceTableColumns: InvoiceTableColumn[] = ["period", "price", "amount", "unit", "sum", "recalculation"];
+
+const defaultInvoiceGenerationSettings: InvoiceGenerationSettings = {
+  numberPrefix: "",
+  numberPattern: "YYYY/MM/###",
+  invoiceNumberParts: [],
+  invoiceNumberSeparator: "/",
+  invoiceNumberSeparators: {},
+  language: "lv",
+  currency: "EUR",
+  logoDataUrl: "",
+  logoHidden: false,
+  accentColor: DEFAULT_INVOICE_ACCENT_COLOR,
+  providerAddress: "",
+  overrideBankName: "",
+  overrideBankAccountIban: "",
+  overrideBankSwift: "",
+  overrideBankBeneficiary: "",
+  providerSignerName: "",
+  providerSignerTitle: "",
+  paymentTermDays: 10,
+  defaultServiceName: "Apsaimniekošanas pakalpojumi",
+  defaultVatRate: 0,
+  invoiceLineItems: ["electricityAdvance", "electricityPayment", "other"],
+  invoiceTableColumns: defaultInvoiceTableColumns,
+  showAmountWords: true,
+  amountWordsPrefix: "Summa vārdiem:",
+  showSignature: true,
+  footerNote: "",
+};
+
+function normalizeInvoiceGenerationSettings(value: Partial<InvoiceGenerationSettings> | undefined): InvoiceGenerationSettings {
+  const language = value?.language === "ru" || value?.language === "lv" || value?.language === "en"
+    ? value.language
+    : defaultInvoiceGenerationSettings.language;
+  const paymentTermDays = Number(value?.paymentTermDays);
+  const defaultVatRate = Number(value?.defaultVatRate);
+
+  return {
+    numberPrefix: value?.numberPrefix ?? defaultInvoiceGenerationSettings.numberPrefix,
+    numberPattern: value?.numberPattern ?? defaultInvoiceGenerationSettings.numberPattern,
+    invoiceNumberParts: normalizeInvoiceNumberParts(value?.invoiceNumberParts),
+    invoiceNumberSeparator: typeof value?.invoiceNumberSeparator === "string"
+      ? value.invoiceNumberSeparator
+      : defaultInvoiceGenerationSettings.invoiceNumberSeparator,
+    invoiceNumberSeparators: normalizeInvoiceNumberSeparators(value?.invoiceNumberSeparators),
+    language,
+    currency: (value?.currency ?? defaultInvoiceGenerationSettings.currency).toUpperCase(),
+    logoDataUrl: isAllowedInvoiceLogoDataUrl(value?.logoDataUrl) ? value.logoDataUrl : defaultInvoiceGenerationSettings.logoDataUrl,
+    logoHidden: value?.logoHidden === true,
+    accentColor: normalizeInvoiceAccentColor(value?.accentColor) || defaultInvoiceGenerationSettings.accentColor,
+    providerAddress: value?.providerAddress ?? defaultInvoiceGenerationSettings.providerAddress,
+    overrideBankName: value?.overrideBankName ?? defaultInvoiceGenerationSettings.overrideBankName,
+    overrideBankAccountIban: value?.overrideBankAccountIban ?? defaultInvoiceGenerationSettings.overrideBankAccountIban,
+    overrideBankSwift: value?.overrideBankSwift ?? defaultInvoiceGenerationSettings.overrideBankSwift,
+    overrideBankBeneficiary: value?.overrideBankBeneficiary ?? defaultInvoiceGenerationSettings.overrideBankBeneficiary,
+    providerSignerName: value?.providerSignerName ?? defaultInvoiceGenerationSettings.providerSignerName,
+    providerSignerTitle: value?.providerSignerTitle ?? defaultInvoiceGenerationSettings.providerSignerTitle,
+    paymentTermDays: Number.isFinite(paymentTermDays) && paymentTermDays >= 0
+      ? Math.trunc(paymentTermDays)
+      : defaultInvoiceGenerationSettings.paymentTermDays,
+    defaultServiceName: value?.defaultServiceName ?? defaultInvoiceGenerationSettings.defaultServiceName,
+    defaultVatRate: Number.isFinite(defaultVatRate) && defaultVatRate >= 0
+      ? Math.round(defaultVatRate * 100) / 100
+      : defaultInvoiceGenerationSettings.defaultVatRate,
+    invoiceLineItems: normalizeInvoiceLineItems(value?.invoiceLineItems),
+    invoiceTableColumns: normalizeInvoiceTableColumns(value?.invoiceTableColumns),
+    showAmountWords: value?.showAmountWords ?? defaultInvoiceGenerationSettings.showAmountWords,
+    amountWordsPrefix: value?.amountWordsPrefix ?? defaultInvoiceGenerationSettings.amountWordsPrefix,
+    showSignature: value?.showSignature ?? defaultInvoiceGenerationSettings.showSignature,
+    footerNote: value?.footerNote ?? defaultInvoiceGenerationSettings.footerNote,
+  };
+}
+
+function normalizeInvoiceAccentColor(value: unknown): string {
+  return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value.trim()) ? value.trim() : "";
+}
+
+function isAllowedInvoiceLogoDataUrl(value: unknown): value is string {
+  return typeof value === "string" && /^data:image\/(?:png|jpe?g|webp);base64,/i.test(value);
+}
+
+function normalizeInvoiceNumberParts(value: unknown): InvoiceNumberPart[] {
+  if (!Array.isArray(value)) return defaultInvoiceGenerationSettings.invoiceNumberParts;
+
+  return value.filter((item): item is InvoiceNumberPart =>
+    typeof item === "string" && invoiceNumberPartOptions.includes(item as InvoiceNumberPart),
+  );
+}
+
+function normalizeInvoiceNumberSeparators(value: unknown): Partial<Record<InvoiceNumberPart, string>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(
+    invoiceNumberPartOptions
+      .map((part) => [part, (value as Record<string, unknown>)[part]])
+      .filter((entry): entry is [InvoiceNumberPart, string] => typeof entry[1] === "string"),
+  );
+}
+
+function normalizeInvoiceLineItems(value: unknown): InvoiceLineItem[] {
+  if (!Array.isArray(value)) return defaultInvoiceGenerationSettings.invoiceLineItems;
+  const items = value.filter((item): item is InvoiceLineItem =>
+    typeof item === "string" && invoiceLineItemOptions.includes(item as InvoiceLineItem),
+  );
+
+  return items.length > 0 ? invoiceLineItemOptions.filter((item) => items.includes(item)) : defaultInvoiceGenerationSettings.invoiceLineItems;
+}
+
+function normalizeInvoiceTableColumns(value: unknown): InvoiceTableColumn[] {
+  if (!Array.isArray(value)) return defaultInvoiceGenerationSettings.invoiceTableColumns;
+  const columns = value.filter((item): item is InvoiceTableColumn =>
+    typeof item === "string" && invoiceTableColumnOptions.includes(item as InvoiceTableColumn),
+  );
+
+  return columns.length > 0
+    ? invoiceTableColumnOptions.filter((item) => columns.includes(item))
+    : defaultInvoiceGenerationSettings.invoiceTableColumns;
+}
+
+function buildInvoiceNumberPreview(settings: InvoiceGenerationSettings, company: CompanySettings): string {
+  const prefix = settings.numberPrefix.trim();
+  const parts = normalizeInvoiceNumberParts(settings.invoiceNumberParts);
+
+  if (parts.length > 0) {
+    const companyDigits = company.registrationNumber.replace(/\D/g, "");
+    const companyCode = companyDigits ? companyDigits.slice(-3).padStart(3, "0") : "089";
+    const values: Record<InvoiceNumberPart, string> = {
+      companyCode,
+      apartmentNumber: "38",
+      month: "07",
+      year: "2026",
+      date: "09072026",
+      sequence: "2607",
+    };
+    const separators = normalizeInvoiceNumberSeparators(settings.invoiceNumberSeparators);
+    const number = parts
+      .map((part, index) => `${values[part]}${index < parts.length - 1 ? separators[part] ?? "" : ""}`)
+      .join("");
+
+    return `${prefix}${number}`.trim() || "A1442603167/2607";
+  }
+
+  const pattern = (settings.numberPattern.trim() || defaultInvoiceGenerationSettings.numberPattern)
+    .replace(/YYYY/g, "2026")
+    .replace(/YY/g, "26")
+    .replace(/MM/g, "07")
+    .replace(/DD/g, "09")
+    .replace(/#+/g, (match) => "2607".slice(-match.length).padStart(match.length, "0"));
+
+  return `${prefix}${pattern}`.trim() || "A1442603167/2607";
+}
+
+function formatInvoiceDate(value: Date): string {
+  return `${String(value.getDate()).padStart(2, "0")}.${String(value.getMonth() + 1).padStart(2, "0")}.${value.getFullYear()}.`;
+}
+
+function formatInvoiceNumber(value: number, fractionDigits: number): string {
+  return value.toLocaleString("lv-LV", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
 
 function SettingsRow({
   label,
@@ -1556,6 +1792,733 @@ curl -X POST https://api.domera.app/api/invoices/upload \\
     </div>
   );
 }
+
+function InvoiceGenerationPanel({ company, recipientName }: { company: CompanySettings; recipientName: string }) {
+  const t = useTranslations("settings");
+  const notify = useNotifications();
+  const [settings, setSettings] = useState<InvoiceGenerationSettings>(() => normalizeInvoiceGenerationSettings(company.invoiceSettings));
+  const [isSaving, setIsSaving] = useState(false);
+  const [openSection, setOpenSection] = useState<InvoiceGenerationAccordionKey>("branding");
+
+  const accentColor = normalizeInvoiceAccentColor(settings.accentColor) || DEFAULT_INVOICE_ACCENT_COLOR;
+  const logoDataUrl = isAllowedInvoiceLogoDataUrl(settings.logoDataUrl) ? settings.logoDataUrl : "";
+  const isLogoHidden = settings.logoHidden === true;
+  const showTextLogo = !logoDataUrl && !isLogoHidden;
+  const providerAddress = settings.providerAddress.trim() || company.address || "Kungu iela 31/33 - 24, Liepāja, LV-3401";
+  const signerName = settings.providerSignerName.trim() || "Sergejs Morozovs";
+  const signerTitle = settings.providerSignerTitle.trim() || t("company.invoiceGeneration.preview.signerTitleFallback");
+  const serviceName = settings.defaultServiceName.trim() || t("company.invoiceGeneration.preview.serviceNameFallback");
+  const currency = settings.currency.trim().toUpperCase() || "EUR";
+  const invoiceNumber = buildInvoiceNumberPreview(settings, company);
+  const customerCode = "TH49268553";
+  const previewInvoiceDate = new Date(2026, 6, 9);
+  const previewDueDate = new Date(previewInvoiceDate);
+  previewDueDate.setDate(previewDueDate.getDate() + Math.max(0, Math.trunc(Number(settings.paymentTermDays) || 0)));
+  const invoiceDate = formatInvoiceDate(previewInvoiceDate);
+  const dueDate = formatInvoiceDate(previewDueDate);
+  const bankAccountIban = settings.overrideBankAccountIban.trim() || company.bankAccountIban || "LV53UNLA0055005129766";
+  const bankName = settings.overrideBankName.trim() || company.bankName || "AS \"SEB banka\"";
+  const bankSwift = settings.overrideBankSwift.trim() || company.bankSwift;
+  const bankBeneficiary = settings.overrideBankBeneficiary.trim() || company.bankBeneficiary || company.name;
+  const previewRecipientName = recipientName.trim() || "Deniss Kargins";
+  const providerLogoText = (company.name || "TEHHE").trim().toUpperCase();
+  const previewAddress = providerAddress || "Brīvības iela 136-38, Rīga";
+  const vatRate = Math.max(0, Number(settings.defaultVatRate) || 0);
+  const hasVat = vatRate > 0;
+  const selectedTableColumns = normalizeInvoiceTableColumns(settings.invoiceTableColumns)
+    .filter((column) => column !== "vat" || hasVat)
+    .filter((column) => column !== "net" || hasVat);
+  const selectedLineItems = normalizeInvoiceLineItems(settings.invoiceLineItems);
+  const previewLineRows: Record<InvoiceLineItem, Extract<PreviewInvoiceRow, { service: string; period: string }>> = {
+    electricityAdvance: { service: "Avanss par elektroenerģiju", period: "01.07. - 31.07.", price: 15, amount: 1, unit: "gab." },
+    electricityPayment: { service: serviceName || "Elektroenerģijas patēriņš", period: "01.06. - 30.06.", price: 0.18, amount: 142, unit: "kWh" },
+    other: { service: "Citi maksājumi", period: "01.07. - 31.07.", price: 0, amount: 1, unit: "gab." },
+  };
+  const previewRows: PreviewInvoiceRow[] = [
+    { type: "group", service: "Elektroenerģija" },
+    ...selectedLineItems.map((item) => previewLineRows[item]),
+  ];
+  const previewItems = previewRows.filter((row): row is Extract<PreviewInvoiceRow, { service: string; period: string }> => !("type" in row));
+  const netTotal = roundMoney(previewItems.reduce((sum, row) => sum + row.price * row.amount, 0));
+  const vatAmount = hasVat ? roundMoney((netTotal * vatRate) / 100) : 0;
+  const grossTotal = roundMoney(netTotal + vatAmount);
+  const tableColumnCount = 1 + selectedTableColumns.length;
+
+  const updateSetting = <Key extends keyof InvoiceGenerationSettings>(key: Key, value: InvoiceGenerationSettings[Key]) => {
+    setSettings((current) => ({ ...current, [key]: value }));
+  };
+
+  const toggleInvoiceNumberPart = (part: InvoiceNumberPart) => {
+    setSettings((current) => {
+      const currentParts = normalizeInvoiceNumberParts(current.invoiceNumberParts);
+      const invoiceNumberParts = currentParts.includes(part)
+        ? currentParts.filter((item) => item !== part)
+        : [...currentParts, part];
+
+      return {
+        ...current,
+        invoiceNumberParts: invoiceNumberPartOptions.filter((item) => invoiceNumberParts.includes(item)),
+      };
+    });
+  };
+
+  const updateInvoiceNumberSeparator = (part: InvoiceNumberPart, separator: string) => {
+    setSettings((current) => ({
+      ...current,
+      invoiceNumberSeparators: {
+        ...normalizeInvoiceNumberSeparators(current.invoiceNumberSeparators),
+        [part]: separator,
+      },
+    }));
+  };
+
+  const toggleInvoiceLineItem = (item: InvoiceLineItem) => {
+    setSettings((current) => {
+      const currentItems = normalizeInvoiceLineItems(current.invoiceLineItems);
+      const invoiceLineItems = currentItems.includes(item)
+        ? currentItems.filter((currentItem) => currentItem !== item)
+        : [...currentItems, item];
+
+      return {
+        ...current,
+        invoiceLineItems: invoiceLineItemOptions.filter((option) => invoiceLineItems.includes(option)),
+      };
+    });
+  };
+
+  const toggleInvoiceTableColumn = (column: InvoiceTableColumn) => {
+    setSettings((current) => {
+      const currentColumns = normalizeInvoiceTableColumns(current.invoiceTableColumns);
+      const invoiceTableColumns = currentColumns.includes(column)
+        ? currentColumns.filter((currentColumn) => currentColumn !== column)
+        : [...currentColumns, column];
+
+      return {
+        ...current,
+        invoiceTableColumns: invoiceTableColumnOptions.filter((option) => invoiceTableColumns.includes(option)),
+      };
+    });
+  };
+
+  const handleLogoUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      notify.error(t("company.invoiceGeneration.logoInvalid"));
+      return;
+    }
+
+    if (file.size > MAX_INVOICE_LOGO_BYTES) {
+      notify.error(t("company.invoiceGeneration.logoTooLarge"));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      if (!isAllowedInvoiceLogoDataUrl(result)) {
+        notify.error(t("company.invoiceGeneration.logoInvalid"));
+        return;
+      }
+
+      setSettings((current) => ({ ...current, logoDataUrl: result, logoHidden: false }));
+    };
+    reader.onerror = () => notify.error(t("company.invoiceGeneration.logoInvalid"));
+    reader.readAsDataURL(file);
+  };
+
+  const renderAccordionSection = (
+    section: InvoiceGenerationAccordionKey,
+    title: string,
+    children: ReactNode,
+  ) => {
+    const isOpen = openSection === section;
+
+    return (
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <button
+          type="button"
+          aria-expanded={isOpen}
+          onClick={() => setOpenSection(section)}
+          className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-black/10"
+        >
+          <span className="text-base font-bold text-black">{title}</span>
+          <FiChevronDown
+            className={`h-5 w-5 shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          />
+        </button>
+        {isOpen ? <div className="border-t border-slate-200 px-4 py-5">{children}</div> : null}
+      </section>
+    );
+  };
+
+  const saveSettings = async () => {
+    setIsSaving(true);
+    try {
+      const nextSettings = normalizeInvoiceGenerationSettings(settings);
+      await updateCompany(company.companyId, { invoiceSettings: nextSettings });
+      setSettings(nextSettings);
+      notify.success(t("company.invoiceGeneration.saved"));
+    } catch (error) {
+      notify.error(error instanceof Error ? error.message : t("company.invoiceGeneration.saveFailed"));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="py-7">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-xl font-bold leading-7 text-black">{t("company.invoiceGeneration.title")}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{t("company.invoiceGeneration.description")}</p>
+        </div>
+        <Button type="button" variant="dark" size="pill" disabled={isSaving} onClick={() => void saveSettings()} className="h-11 px-6 font-bold">
+          {isSaving ? t("company.invoiceGeneration.saving") : t("actions.save")}
+        </Button>
+      </div>
+
+      <div className="mt-7 grid gap-8 xl:grid-cols-[minmax(320px,520px)_minmax(560px,1fr)] xl:items-start">
+        <div className="space-y-3">
+          {renderAccordionSection("branding", t("company.invoiceGeneration.sections.branding"), (
+            <div className="grid gap-5">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.logo")}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-black transition hover:bg-slate-100">
+                    {t("company.invoiceGeneration.fields.logoUpload")}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={isSaving}
+                      onChange={handleLogoUpload}
+                      className="sr-only"
+                    />
+                  </label>
+                  {logoDataUrl || showTextLogo ? (
+                    <Button
+                      type="button"
+                      variant="inlineLink"
+                      size="link"
+                      disabled={isSaving}
+                      onClick={() => setSettings((current) => ({ ...current, logoDataUrl: "", logoHidden: true }))}
+                      className="font-semibold"
+                    >
+                      {t("company.invoiceGeneration.fields.logoRemove")}
+                    </Button>
+                  ) : null}
+                  {isLogoHidden ? (
+                    <Button
+                      type="button"
+                      variant="inlineLink"
+                      size="link"
+                      disabled={isSaving}
+                      onClick={() => updateSetting("logoHidden", false)}
+                      className="font-semibold"
+                    >
+                      {t("company.invoiceGeneration.fields.logoUseText")}
+                    </Button>
+                  ) : null}
+                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-500">{t("company.invoiceGeneration.logoHint")}</p>
+                <div className="mt-4 flex h-20 items-center rounded-lg border border-dashed border-slate-300 bg-white px-4">
+                  {logoDataUrl ? (
+                    <img src={logoDataUrl} alt="" className="max-h-14 max-w-full object-contain" />
+                  ) : showTextLogo ? (
+                    <div className="flex items-center gap-3">
+                      <p className="max-w-[260px] truncate text-3xl font-black uppercase leading-none tracking-normal" style={{ color: accentColor }}>
+                        {providerLogoText}
+                      </p>
+                      <div className="flex h-8 w-8 shrink-0 rotate-45 items-center justify-center border-4" style={{ borderColor: accentColor }}>
+                        <div className="h-2.5 w-2.5 border-4" style={{ borderColor: accentColor }} />
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-medium text-slate-500">{t("company.invoiceGeneration.fields.logoNone")}</p>
+                  )}
+                </div>
+              </div>
+
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.accentColor")}</span>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={accentColor}
+                    disabled={isSaving}
+                    onChange={(event) => updateSetting("accentColor", event.target.value)}
+                    className="h-11 w-16 cursor-pointer rounded-lg border border-slate-300 bg-white p-1"
+                  />
+                  <input
+                    value={settings.accentColor}
+                    disabled={isSaving}
+                    onChange={(event) => updateSetting("accentColor", event.target.value)}
+                    onBlur={() => updateSetting("accentColor", accentColor)}
+                    className="h-11 w-32 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                  />
+                </div>
+              </label>
+            </div>
+          ))}
+
+          {renderAccordionSection("numbering", t("company.invoiceGeneration.sections.numbering"), (
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 sm:col-span-2">
+                <p className="text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.autoNumber")}</p>
+                <p className="mt-1 text-sm leading-5 text-slate-600">{t("company.invoiceGeneration.fields.autoNumberHint")}</p>
+                <p className="mt-3 font-mono text-base font-bold text-black">{invoiceNumber}</p>
+              </div>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.numberPrefix")}</span>
+                <input
+                  value={settings.numberPrefix}
+                  disabled={isSaving}
+                  placeholder="A"
+                  onChange={(event) => updateSetting("numberPrefix", event.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.numberPattern")}</span>
+                <input
+                  value={settings.numberPattern}
+                  disabled={isSaving}
+                  placeholder="YYYY/MM/###"
+                  onChange={(event) => updateSetting("numberPattern", event.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+              <div className="sm:col-span-2">
+                <p className="text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.invoiceNumberParts")}</p>
+                <p className="mt-1 text-sm leading-5 text-slate-600">{t("company.invoiceGeneration.fields.invoiceNumberPartsHint")}</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {invoiceNumberPartOptions.map((part) => (
+                    <label key={part} className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={settings.invoiceNumberParts.includes(part)}
+                        disabled={isSaving}
+                        onChange={() => toggleInvoiceNumberPart(part)}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-black focus:ring-black"
+                      />
+                      <span>{t(`company.invoiceGeneration.invoiceNumberParts.${part}`)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {settings.invoiceNumberParts.length > 1 ? (
+                <div className="sm:col-span-2">
+                  <p className="text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.invoiceNumberSeparators")}</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {settings.invoiceNumberParts.slice(0, -1).map((part) => (
+                      <label key={part} className="block">
+                        <span className="mb-1.5 block text-sm font-semibold text-black">
+                          {t("company.invoiceGeneration.fields.invoiceNumberSeparatorAfter")} {t(`company.invoiceGeneration.invoiceNumberParts.${part}`)}
+                        </span>
+                        <input
+                          value={settings.invoiceNumberSeparators[part] ?? ""}
+                          disabled={isSaving}
+                          maxLength={3}
+                          placeholder="/"
+                          onChange={(event) => updateInvoiceNumberSeparator(part, event.target.value)}
+                          className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.language")}</span>
+                <select
+                  value={settings.language}
+                  disabled={isSaving}
+                  onChange={(event) => updateSetting("language", event.target.value as InvoiceGenerationSettings["language"])}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                >
+                  <option value="lv">{t("languages.lv")}</option>
+                  <option value="ru">{t("languages.ru")}</option>
+                  <option value="en">{t("languages.en")}</option>
+                </select>
+              </label>
+            </div>
+          ))}
+
+          {renderAccordionSection("bankDetails", t("company.invoiceGeneration.sections.bankDetails"), (
+            <>
+            <p className="text-sm leading-6 text-slate-600">{t("company.invoiceGeneration.bankDetailsHint")}</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.overrideBankName")}</span>
+                <input
+                  value={settings.overrideBankName}
+                  disabled={isSaving}
+                  placeholder={company.bankName || t("emptyValue")}
+                  onChange={(event) => updateSetting("overrideBankName", event.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.overrideBankAccountIban")}</span>
+                <input
+                  value={settings.overrideBankAccountIban}
+                  disabled={isSaving}
+                  placeholder={company.bankAccountIban || t("emptyValue")}
+                  onChange={(event) => updateSetting("overrideBankAccountIban", event.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.overrideBankSwift")}</span>
+                <input
+                  value={settings.overrideBankSwift}
+                  disabled={isSaving}
+                  placeholder={company.bankSwift || t("emptyValue")}
+                  onChange={(event) => updateSetting("overrideBankSwift", event.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.overrideBankBeneficiary")}</span>
+                <input
+                  value={settings.overrideBankBeneficiary}
+                  disabled={isSaving}
+                  placeholder={company.bankBeneficiary || company.name || t("emptyValue")}
+                  onChange={(event) => updateSetting("overrideBankBeneficiary", event.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+            </div>
+            </>
+          ))}
+
+          {renderAccordionSection("provider", t("company.invoiceGeneration.sections.provider"), (
+            <div className="grid gap-4">
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.providerAddress")}</span>
+                <textarea
+                  value={settings.providerAddress}
+                  disabled={isSaving}
+                  rows={3}
+                  onChange={(event) => updateSetting("providerAddress", event.target.value)}
+                  className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.providerSignerName")}</span>
+                  <input
+                    value={settings.providerSignerName}
+                    disabled={isSaving}
+                    onChange={(event) => updateSetting("providerSignerName", event.target.value)}
+                    className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.providerSignerTitle")}</span>
+                  <input
+                    value={settings.providerSignerTitle}
+                    disabled={isSaving}
+                    onChange={(event) => updateSetting("providerSignerTitle", event.target.value)}
+                    className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                  />
+                </label>
+              </div>
+            </div>
+          ))}
+
+          {renderAccordionSection("amounts", t("company.invoiceGeneration.sections.amounts"), (
+            <>
+            <div className="grid gap-5">
+              <div>
+                <p className="text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.invoiceLineItems")}</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {invoiceLineItemOptions.map((item) => (
+                    <label key={item} className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={settings.invoiceLineItems.includes(item)}
+                        disabled={isSaving}
+                        onChange={() => toggleInvoiceLineItem(item)}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-black focus:ring-black"
+                      />
+                      <span>{t(`company.invoiceGeneration.invoiceLineItems.${item}`)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.invoiceTableColumns")}</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {invoiceTableColumnOptions.map((column) => (
+                    <label key={column} className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={settings.invoiceTableColumns.includes(column)}
+                        disabled={isSaving}
+                        onChange={() => toggleInvoiceTableColumn(column)}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-black focus:ring-black"
+                      />
+                      <span>{t(`company.invoiceGeneration.invoiceTableColumns.${column}`)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.currency")}</span>
+                <input
+                  value={settings.currency}
+                  disabled={isSaving}
+                  maxLength={3}
+                  onChange={(event) => updateSetting("currency", event.target.value.toUpperCase())}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.defaultServiceName")}</span>
+                <input
+                  value={settings.defaultServiceName}
+                  disabled={isSaving}
+                  onChange={(event) => updateSetting("defaultServiceName", event.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.defaultVatRate")}</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={settings.defaultVatRate}
+                  disabled={isSaving}
+                  onChange={(event) => updateSetting("defaultVatRate", Number(event.target.value))}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.paymentTermDays")}</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={settings.paymentTermDays}
+                  disabled={isSaving}
+                  onChange={(event) => updateSetting("paymentTermDays", Number(event.target.value))}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-black">{t("company.invoiceGeneration.fields.amountWordsPrefix")}</span>
+                <input
+                  value={settings.amountWordsPrefix}
+                  disabled={isSaving}
+                  onChange={(event) => updateSetting("amountWordsPrefix", event.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+                />
+              </label>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <label className="flex items-start gap-3 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={settings.showAmountWords}
+                  disabled={isSaving}
+                  onChange={(event) => updateSetting("showAmountWords", event.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-black focus:ring-black"
+                />
+                <span>{t("company.invoiceGeneration.fields.showAmountWords")}</span>
+              </label>
+              <label className="flex items-start gap-3 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={settings.showSignature}
+                  disabled={isSaving}
+                  onChange={(event) => updateSetting("showSignature", event.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-black focus:ring-black"
+                />
+                <span>{t("company.invoiceGeneration.fields.showSignature")}</span>
+              </label>
+            </div>
+            </>
+          ))}
+
+          {renderAccordionSection("footer", t("company.invoiceGeneration.fields.footerNote"), (
+          <label className="block">
+            <textarea
+              value={settings.footerNote}
+              disabled={isSaving}
+              rows={3}
+              onChange={(event) => updateSetting("footerNote", event.target.value)}
+              className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-black outline-none focus:border-black focus:ring-2 focus:ring-black/10"
+            />
+          </label>
+          ))}
+        </div>
+
+        <div className="min-w-0 overflow-x-auto border border-slate-200 bg-slate-100 p-4">
+          <div className="mx-auto min-h-[760px] w-full min-w-[900px] max-w-[980px] bg-white px-12 py-14 text-[#303846] shadow-sm">
+            <div className="grid grid-cols-[1fr_320px] items-start gap-10">
+              <div>
+                <div className="flex min-h-[74px] items-center gap-3">
+                  {logoDataUrl ? (
+                    <img src={logoDataUrl} alt="" className="max-h-[74px] max-w-[360px] object-contain" />
+                  ) : showTextLogo ? (
+                    <>
+                      <p className="max-w-[480px] truncate text-[54px] font-black uppercase leading-none tracking-normal" style={{ color: accentColor }}>
+                        {providerLogoText}
+                      </p>
+                      <div className="flex h-12 w-12 shrink-0 rotate-45 items-center justify-center border-[6px]" style={{ borderColor: accentColor }}>
+                        <div className="h-4 w-4 border-[5px]" style={{ borderColor: accentColor }} />
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+                <p className="mt-8 text-[25px] font-extrabold leading-7">{previewAddress}</p>
+                <p className="mt-4 text-[22px] font-extrabold leading-6">{previewRecipientName}</p>
+                <p className="text-[20px] leading-6">Klienta kods: {customerCode}</p>
+              </div>
+
+              <div className="text-right">
+                <p className="text-[43px] font-black leading-none tracking-wide">
+                  {currency} {formatInvoiceNumber(grossTotal, 2)}
+                </p>
+                <p className="mt-5 text-[18px] leading-6">Samaksāt līdz {dueDate}</p>
+                <p className="text-[18px] leading-6">Datums {invoiceDate}</p>
+                <div className="ml-auto mt-8 h-3 w-[275px]" style={{ backgroundColor: accentColor }} />
+              </div>
+            </div>
+
+            <h3 className="mt-8 text-[29px] font-black leading-9">Rēķins Nr. {invoiceNumber}</h3>
+
+            <table className="mt-4 w-full table-fixed border-collapse text-[13px] leading-5">
+              <colgroup>
+                <col className="w-[34%]" />
+                {selectedTableColumns.map((column) => (
+                  <col key={column} />
+                ))}
+              </colgroup>
+              <thead>
+                <tr className="bg-[#e8e8e8] text-left text-[12px] font-medium text-slate-600">
+                  <th className="px-1.5 py-1">Pakalpojums</th>
+                  {selectedTableColumns.map((column) => (
+                    <th
+                      key={column}
+                      className={`px-1.5 py-1 ${column === "period" || column === "unit" ? "" : "text-right"}`}
+                    >
+                      {column === "price"
+                        ? `${t(`company.invoiceGeneration.invoiceTableColumns.${column}`)}, ${currency}`
+                        : column === "net"
+                          ? `${t(`company.invoiceGeneration.invoiceTableColumns.${column}`)}, ${currency}`
+                          : t(`company.invoiceGeneration.invoiceTableColumns.${column}`)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {previewRows.map((row, index) => (
+                  "type" in row ? (
+                    <tr key={`${row.service}-${index}`}>
+                      <td className="border-b border-slate-200 px-1.5 py-0.5 font-black" colSpan={tableColumnCount}>
+                        {row.service}
+                      </td>
+                    </tr>
+                  ) : (() => {
+                    const rowNetAmount = roundMoney(row.price * row.amount);
+
+                    const columnValue = (column: InvoiceTableColumn) => {
+                      switch (column) {
+                        case "period":
+                          return row.period;
+                        case "price":
+                          return formatInvoiceNumber(row.price, 5);
+                        case "amount":
+                          return formatInvoiceNumber(row.amount, 3);
+                        case "unit":
+                          return row.unit;
+                        case "vat":
+                          return `${formatInvoiceNumber(vatRate, 0)}%`;
+                        case "sum":
+                          return formatInvoiceNumber(rowNetAmount, 2);
+                        case "recalculation":
+                          return "";
+                        case "net":
+                          return formatInvoiceNumber(rowNetAmount, 2);
+                        default:
+                          return "";
+                      }
+                    };
+
+                    return (
+                      <tr key={`${row.service}-${index}`}>
+                        <td className="border-b border-slate-200 px-1.5 py-0.5">{row.service}</td>
+                        {selectedTableColumns.map((column) => (
+                          <td
+                            key={column}
+                            className={`border-b border-slate-200 px-1.5 py-0.5 ${column === "period" || column === "unit" ? "" : "text-right"}`}
+                          >
+                            {columnValue(column)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })()
+                ))}
+                {hasVat ? (
+                  <tr>
+                    <td className="border-y-2 border-slate-300 px-1.5 py-1 text-right" colSpan={Math.max(1, tableColumnCount - 1)}>
+                      Ar PVN {formatInvoiceNumber(vatRate, 0)}% apliekama summa <strong>{formatInvoiceNumber(netTotal, 2)}</strong> {currency}; PVN <strong>{formatInvoiceNumber(vatAmount, 2)}</strong> {currency}; Kopā:
+                    </td>
+                    <td className="border-y-2 border-slate-300 px-1.5 py-1 text-right font-black">{formatInvoiceNumber(grossTotal, 2)}</td>
+                  </tr>
+                ) : null}
+                <tr>
+                  {tableColumnCount > 2 ? (
+                    <td className="border-b border-slate-200 px-1.5 py-1 text-slate-500" colSpan={tableColumnCount - 2}>
+                      {settings.showAmountWords ? `${settings.amountWordsPrefix || "Summa vārdiem:"} ${formatInvoiceNumber(grossTotal, 2)} ${currency}` : ""}
+                    </td>
+                  ) : null}
+                  <td className="border-b border-slate-200 px-1.5 py-1 text-right" colSpan={tableColumnCount > 2 ? 1 : Math.max(1, tableColumnCount - 1)}>Kopā aprēķināts</td>
+                  <td className="border-b border-slate-200 px-1.5 py-1 text-right font-black">{formatInvoiceNumber(grossTotal, 2)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <p className="mt-5 text-[16px] leading-6">
+              Veicot rēķinu apmaksu, obligāti norādiet rēķina numuru <strong>{invoiceNumber}</strong> vai klienta kodu <strong>{customerCode}</strong>
+              <br />
+              Maksājums ir uzskatāms par veiktu dienā, kad naudas līdzekļi ienāk Pārvaldnieka kontā.
+            </p>
+
+            <div className="mt-7 h-0.5 w-full" style={{ backgroundColor: accentColor }} />
+
+            <div className="mt-7 grid grid-cols-[110px_1fr_1.5fr] gap-5 text-[13px] leading-5 text-slate-500">
+              <p>Apmaksāt:</p>
+              <div>
+                <p>Saņēmējs:</p>
+                <p className="font-semibold text-[#303846]">{bankBeneficiary || providerLogoText}</p>
+              </div>
+              <div>
+                <p>Banku konti norēķiniem:</p>
+                <p className="font-semibold text-[#303846]">
+                  {[bankAccountIban, bankName, bankSwift ? `SWIFT/BIC ${bankSwift}` : ""].filter(Boolean).join(", ")}
+                </p>
+              </div>
+            </div>
+
+            {settings.footerNote ? <p className="mt-5 text-[13px] leading-5 text-slate-500">{settings.footerNote}</p> : null}
+            {settings.showSignature ? <p className="mt-5 text-[13px] leading-5 text-slate-500">{signerTitle}: {signerName}</p> : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 function CompanyPanel({ company, currentUserId }: { company: CompanySettings; currentUserId: string }) {
   const t = useTranslations("settings");
   const notify = useNotifications();
@@ -1563,15 +2526,25 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     companyId: company.companyId,
     name: company.name,
     registrationNumber: company.registrationNumber,
+    address: company.address,
     email: company.email,
     phone: company.phone,
+    bankName: company.bankName,
+    bankAccountIban: company.bankAccountIban,
+    bankSwift: company.bankSwift,
+    bankBeneficiary: company.bankBeneficiary,
   }));
   const [draft, setDraft] = useState<CompanyDraft>(() => ({
     companyId: company.companyId,
     name: company.name,
     registrationNumber: company.registrationNumber,
+    address: company.address,
     email: company.email,
     phone: company.phone,
+    bankName: company.bankName,
+    bankAccountIban: company.bankAccountIban,
+    bankSwift: company.bankSwift,
+    bankBeneficiary: company.bankBeneficiary,
   }));
   const [members, setMembers] = useState<CompanyMember[]>(company.members);
   const [memberEmail, setMemberEmail] = useState("");
@@ -1586,6 +2559,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   const [memberModalOpen, setMemberModalOpen] = useState(false);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<EditableCompanyField>(null);
+  const [isEditingBankDetails, setIsEditingBankDetails] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isAddingMember, setIsAddingMember] = useState(false);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
@@ -1596,9 +2570,16 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   const companyFieldMeta = {
     name: { label: t("company.fields.name"), type: "text" as const, payloadKey: "companyName" },
     registrationNumber: { label: t("company.fields.registrationNumber"), type: "text" as const, payloadKey: "registrationNumber" },
+    address: { label: t("company.fields.address"), type: "text" as const, payloadKey: "address" },
     email: { label: t("company.fields.email"), type: "email" as const, payloadKey: "companyEmail" },
     phone: { label: t("company.fields.phone"), type: "tel" as const, payloadKey: "companyPhone" },
   };
+  const bankDetailsFields: Array<{ field: BankDetailsField; label: string }> = [
+    { field: "bankName", label: t("company.fields.bankName") },
+    { field: "bankAccountIban", label: t("company.fields.bankAccountIban") },
+    { field: "bankSwift", label: t("company.fields.bankSwift") },
+    { field: "bankBeneficiary", label: t("company.fields.bankBeneficiary") },
+  ];
 
   const roleLabel = (role: string) => {
     if (role === "Accountant") return t("company.roles.accountant");
@@ -1668,6 +2649,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     setDraft(details);
     setFeedback("");
     setFeedbackTone("error");
+    setIsEditingBankDetails(false);
     setEditingField(field);
   };
 
@@ -1676,6 +2658,21 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     setFeedback("");
     setFeedbackTone("error");
     setEditingField(null);
+  };
+
+  const startBankDetailsEdit = () => {
+    setDraft(details);
+    setFeedback("");
+    setFeedbackTone("error");
+    setEditingField(null);
+    setIsEditingBankDetails(true);
+  };
+
+  const cancelBankDetailsEdit = () => {
+    setDraft(details);
+    setFeedback("");
+    setFeedbackTone("error");
+    setIsEditingBankDetails(false);
   };
 
   const saveCompanyField = async () => {
@@ -1700,6 +2697,34 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
       setDetails((current) => ({ ...current, [editingField]: nextValue }));
       setDraft((current) => ({ ...current, [editingField]: nextValue }));
       setEditingField(null);
+      notify.success(t("toast.companySaved"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("errors.companySaveFailed");
+      setFeedbackTone("error");
+      setFeedback(message);
+      notify.error(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const saveBankDetails = async () => {
+    const nextDetails = {
+      bankName: draft.bankName.trim(),
+      bankAccountIban: draft.bankAccountIban.trim(),
+      bankSwift: draft.bankSwift.trim().toUpperCase(),
+      bankBeneficiary: draft.bankBeneficiary.trim(),
+    };
+
+    setIsSaving(true);
+    setFeedback("");
+
+    try {
+      await updateCompany(details.companyId, nextDetails);
+
+      setDetails((current) => ({ ...current, ...nextDetails }));
+      setDraft((current) => ({ ...current, ...nextDetails }));
+      setIsEditingBankDetails(false);
       notify.success(t("toast.companySaved"));
     } catch (error) {
       const message = error instanceof Error ? error.message : t("errors.companySaveFailed");
@@ -1838,6 +2863,82 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     return <SettingsRow label={meta.label} value={value(details[field])} onEdit={() => startEdit(field)} />;
   };
 
+  const renderBankDetailsBlock = () => {
+    if (isEditingBankDetails) {
+      return (
+        <form
+          className="grid gap-4 border-t border-slate-200 py-6 sm:grid-cols-[1fr_auto] sm:items-start"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveBankDetails();
+          }}
+        >
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-black">{t("company.bankDetails.title")}</h3>
+            <div className="mt-4 grid max-w-3xl gap-4 sm:grid-cols-2">
+              {bankDetailsFields.map((item) => (
+                <label key={item.field} className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-black">{item.label}</span>
+                  <input
+                    id={`settings-company-${item.field}`}
+                    type="text"
+                    value={draft[item.field]}
+                    disabled={isSaving}
+                    onChange={(event) => setDraft((current) => ({ ...current, [item.field]: event.target.value }))}
+                    className="h-[46px] w-full rounded-lg border border-slate-300 bg-white px-3 text-base text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
+                  />
+                </label>
+              ))}
+            </div>
+            {feedback ? (
+              <p className={`mt-2 max-w-md text-sm font-medium ${feedbackTone === "success" ? "text-emerald-700" : "text-red-600"}`}>
+                {feedback}
+              </p>
+            ) : null}
+            <Button type="submit" variant="dark" size="pill" disabled={isSaving} className="mt-4 font-bold leading-5">
+              {t("actions.save")}
+            </Button>
+          </div>
+          <Button
+            type="button"
+            variant="inlineLink"
+            size="link"
+            onClick={cancelBankDetailsEdit}
+            disabled={isSaving}
+            className="justify-self-start font-semibold leading-5 sm:justify-self-end"
+          >
+            {t("actions.cancel")}
+          </Button>
+        </form>
+      );
+    }
+
+    return (
+      <div className="grid gap-4 border-t border-slate-200 py-6 sm:grid-cols-[1fr_auto] sm:items-start">
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold text-black">{t("company.bankDetails.title")}</h3>
+          <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+            {bankDetailsFields.map((item) => (
+              <div key={item.field} className="min-w-0">
+                <dt className="text-sm font-semibold text-black">{item.label}</dt>
+                <dd className="mt-1 break-words text-base leading-6 text-slate-700">{value(details[item.field])}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <Button
+          type="button"
+          variant="inlineLink"
+          size="link"
+          onClick={startBankDetailsEdit}
+          className="justify-self-start font-semibold leading-5 sm:justify-self-end"
+        >
+          {t("actions.edit")}
+        </Button>
+      </div>
+    );
+  };
+
   return (
     <div className="py-7">
       <h2 className="text-xl font-bold leading-7 text-black">{t("company.title")}</h2>
@@ -1846,8 +2947,10 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
       <div className="mt-7">
         {renderCompanyField("name")}
         {renderCompanyField("registrationNumber")}
+        {renderCompanyField("address")}
         {renderCompanyField("email")}
         {renderCompanyField("phone")}
+        {renderBankDetailsBlock()}
       </div>
 
       <div className="mt-8 border-t border-slate-200 pt-7">
@@ -2122,7 +3225,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
 export function SettingsTabs({ user, notificationSettings, company }: SettingsTabsProps) {
   const notify = useNotifications();
   const t = useTranslations("settings");
-  const tabs = company?.canManage ? (["user", "company", "apiKey", "notifications"] satisfies SettingsTab[]) : baseTabs;
+  const tabs = company?.canManage ? (["user", "company", "apiKey", "invoiceGeneration", "notifications"] satisfies SettingsTab[]) : baseTabs;
   const [activeTab, setActiveTab] = useState<SettingsTab>("user");
   const [editingField, setEditingField] = useState<EditableField>(null);
   const [displayName, setDisplayName] = useState(user.username);
@@ -2462,6 +3565,10 @@ export function SettingsTabs({ user, notificationSettings, company }: SettingsTa
           buildings={company.buildings}
           initialKeys={company.apiKeys}
         />
+      ) : null}
+
+      {activeTab === "invoiceGeneration" && company?.canManage ? (
+        <InvoiceGenerationPanel company={company} recipientName={displayName || user.username || user.userName || user.email} />
       ) : null}
 
     </section>

@@ -409,10 +409,38 @@ let AuthService = class AuthService {
         if (input.email && decoded.email && input.email.toLowerCase() !== decoded.email.toLowerCase()) {
             throw new Error('email does not match token subject');
         }
+        const email = decoded.email ? this.normalizeEmail(decoded.email) : undefined;
+        let hydratedProfile;
+        if (email) {
+            try {
+                hydratedProfile = await this.ensureUserProfileDocument({
+                    uid: decoded.uid,
+                    email,
+                });
+                if ((0, role_constants_1.resolveAccountType)({ role: hydratedProfile.role, accountType: hydratedProfile.accountType }) === 'ManagementCompany') {
+                    await this.ensureManagementCompanyDocument({
+                        uid: decoded.uid,
+                        email,
+                    });
+                }
+            }
+            catch (error) {
+                console.error('Failed to hydrate Firebase user profile during session creation:', error);
+            }
+        }
         let role = (0, role_constants_1.resolveUserRole)({ role: decoded.role });
         let accountType = (0, role_constants_1.resolveAccountType)({ role, accountType: decoded.accountType });
         let companyId = typeof decoded.companyId === 'string' ? decoded.companyId : undefined;
         let apartmentId = typeof decoded.apartmentId === 'string' ? decoded.apartmentId : undefined;
+        if (hydratedProfile) {
+            role = role ?? (0, role_constants_1.resolveUserRole)({ role: hydratedProfile.role, accountType: hydratedProfile.accountType });
+            accountType = accountType ?? (0, role_constants_1.resolveAccountType)({
+                role: hydratedProfile.role,
+                accountType: hydratedProfile.accountType,
+            });
+            companyId = companyId ?? (typeof hydratedProfile.companyId === 'string' ? hydratedProfile.companyId : undefined);
+            apartmentId = apartmentId ?? (typeof hydratedProfile.apartmentId === 'string' ? hydratedProfile.apartmentId : undefined);
+        }
         if (!role || !accountType || !companyId || !apartmentId) {
             try {
                 const userDoc = await this.firebaseAdminService.firestore.collection('users').doc(decoded.uid).get();
@@ -461,6 +489,8 @@ let AuthService = class AuthService {
         return {
             cookie: sessionCookie,
             maxAgeSeconds: Math.floor(ttlMs / 1000),
+            userId: decoded.uid,
+            email,
             role,
             accountType,
             companyId,

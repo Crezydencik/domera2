@@ -2,25 +2,26 @@
 
 import { useTranslations } from "next-intl";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { FcGoogle } from "react-icons/fc";
 import { FiArrowRight, FiLock, FiMail } from "react-icons/fi";
 import { AuthAlert, AuthCard, AuthFooterText, AuthHeader } from "@/components/auth/auth-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { establishUserSession, signInWithEmailPassword } from "@/shared/lib/auth-client";
+import { establishUserSession, signInWithEmailPassword, signInWithGoogle } from "@/shared/lib/auth-client";
 import { ROUTES } from "@/shared/lib/routes";
 
 export default function LoginPage() {
   const t = useTranslations("auth");
   const s = useTranslations("system");
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function getLoginErrorMessage(message: string) {
@@ -34,7 +35,37 @@ export default function LoginPage() {
       return t("invalidEmailOrPassword");
     }
 
+    if (
+      normalized.includes("popup-closed-by-user") ||
+      normalized.includes("cancelled-popup-request") ||
+      normalized.includes("popup closed")
+    ) {
+      return t("googleSignInCancelled");
+    }
+
+    if (normalized.includes("firebase client config is missing")) {
+      return t("googleSignInUnavailable");
+    }
+
     return message || s("dbError");
+  }
+
+  async function completeLogin(result: Awaited<ReturnType<typeof signInWithEmailPassword>>) {
+    await establishUserSession({
+      userId: result.userId,
+      email: result.email,
+      role: result.role,
+      accountType: result.accountType,
+      companyId: result.companyId,
+      apartmentId: result.apartmentId,
+      rememberMe,
+    });
+
+    const nextPath = searchParams.get("next");
+    const redirectPath =
+      nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : ROUTES.dashboard;
+
+    window.location.replace(redirectPath);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -43,25 +74,24 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const result = await signInWithEmailPassword(email, password, rememberMe);
-
-      await establishUserSession({
-        userId: result.userId,
-        email: result.email,
-        role: result.role,
-        accountType: result.accountType,
-        companyId: result.companyId,
-        apartmentId: result.apartmentId,
-        rememberMe,
-      });
-
-      const nextPath = searchParams.get("next");
-      router.push(nextPath && nextPath.startsWith("/") ? nextPath : ROUTES.dashboard);
-      router.refresh();
+      await completeLogin(await signInWithEmailPassword(email, password, rememberMe));
     } catch (error) {
       setError(error instanceof Error ? getLoginErrorMessage(error.message) : s("dbError"));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleGoogleSignIn() {
+    setGoogleLoading(true);
+    setError(null);
+
+    try {
+      await completeLogin(await signInWithGoogle(rememberMe));
+    } catch (error) {
+      setError(error instanceof Error ? getLoginErrorMessage(error.message) : s("dbError"));
+    } finally {
+      setGoogleLoading(false);
     }
   }
 
@@ -114,9 +144,33 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <Button type="submit" variant="primary" size="lg" className="min-h-12 w-full rounded-xl" disabled={loading}>
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            className="min-h-12 w-full rounded-xl"
+            disabled={loading || googleLoading}
+          >
             {loading ? s("button.loggingIn") : s("button.login")}
             {!loading && <FiArrowRight className="h-4 w-4" aria-hidden />}
+          </Button>
+
+          <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <span className="h-px flex-1 bg-slate-200" />
+            <span>{t("or")}</span>
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          <Button
+            type="button"
+            variant="outlineDark"
+            size="lg"
+            className="min-h-12 w-full rounded-xl border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
+            disabled={loading || googleLoading}
+            onClick={handleGoogleSignIn}
+          >
+            <FcGoogle className="h-5 w-5" aria-hidden />
+            {googleLoading ? t("googleSigningIn") : t("continueWithGoogle")}
           </Button>
         </form>
       </AuthCard>

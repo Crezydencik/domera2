@@ -304,6 +304,8 @@ export class AuthController {
 
     return {
       success: true,
+      userId: session.userId,
+      email: session.email,
       role: session.role,
       accountType: session.accountType,
       companyId: session.companyId,

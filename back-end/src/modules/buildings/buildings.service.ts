@@ -16,6 +16,16 @@ import { isPlatformAdminRole } from '../../common/auth/role.constants';
 
 const DELETED_BUILDING_STORAGE_RETENTION_DAYS = 180;
 
+type BuildingDeleteBackupResult = {
+  backupStoragePath: string | null;
+  backupStoragePrefix: string | null;
+  retainedStoragePrefix: string | null;
+  retentionExpiresAt: Date;
+  copiedStorageFilesCount: number;
+  backupFailed?: boolean;
+  backupError?: string;
+};
+
 @Injectable()
 export class BuildingsService {
   constructor(
@@ -168,20 +178,49 @@ export class BuildingsService {
       ? (existing.readingConfig as Record<string, unknown>)
       : {};
 
-    const waterEnabled = Boolean(payloadConfig.waterEnabled ?? existingConfig.waterEnabled);
+    const hasExisting = existing !== undefined;
+    const hasPayloadWaterEnabled = Object.prototype.hasOwnProperty.call(payloadConfig, 'waterEnabled');
+    const hasExistingWaterEnabled = Object.prototype.hasOwnProperty.call(existingConfig, 'waterEnabled');
+
+    const waterEnabled = hasPayloadWaterEnabled
+      ? Boolean(payloadConfig.waterEnabled)
+      : hasExistingWaterEnabled
+        ? Boolean(existingConfig.waterEnabled)
+        : !hasExisting;
     const electricityEnabled = Boolean(payloadConfig.electricityEnabled ?? existingConfig.electricityEnabled);
     const heatingEnabled = Boolean(payloadConfig.heatingEnabled ?? existingConfig.heatingEnabled);
+    const defaultWaterMeterCount = !hasExisting || payloadConfig.waterEnabled === true ? 1 : 0;
+    const electricityMeterDigits = Math.min(7, Math.max(5, this.normalizeMeterCount(
+      payloadConfig.electricityMeterDigits,
+      existingConfig.electricityMeterDigits,
+      6,
+    ) || 6));
+    const electricityUserSetsDigits = Boolean(
+      payloadConfig.electricityUserSetsDigits ?? existingConfig.electricityUserSetsDigits,
+    );
+    const electricityAllowMultipleMonthlySubmissions = Boolean(
+      payloadConfig.electricityAllowMultipleMonthlySubmissions
+        ?? existingConfig.electricityAllowMultipleMonthlySubmissions,
+    );
+    const electricityFixedPriceEnabled = Boolean(
+      payloadConfig.electricityFixedPriceEnabled ?? existingConfig.electricityFixedPriceEnabled,
+    );
+    const electricityPricePerKwh = Math.max(0, Number(
+      payloadConfig.electricityPricePerKwh ?? existingConfig.electricityPricePerKwh ?? 0,
+    ) || 0);
 
     const hotWaterMetersPerResident = waterEnabled
       ? this.normalizeMeterCount(
         payloadConfig.hotWaterMetersPerResident,
         existingConfig.hotWaterMetersPerResident,
+        defaultWaterMeterCount,
       )
       : 0;
     const coldWaterMetersPerResident = waterEnabled
       ? this.normalizeMeterCount(
         payloadConfig.coldWaterMetersPerResident,
         existingConfig.coldWaterMetersPerResident,
+        defaultWaterMeterCount,
       )
       : 0;
 
@@ -191,7 +230,14 @@ export class BuildingsService {
       heatingEnabled,
       hotWaterMetersPerResident,
       coldWaterMetersPerResident,
+      electricityMeterDigits,
+      electricityUserSetsDigits,
+      electricityAllowMultipleMonthlySubmissions,
+      electricityFixedPriceEnabled,
+      electricityPricePerKwh: electricityFixedPriceEnabled ? electricityPricePerKwh : 0,
       submissionPeriod: this.normalizeSubmissionPeriod(payloadConfig, existingConfig),
+      waterSubmissionPeriod: this.normalizeSubmissionPeriodByKey(payloadConfig, existingConfig, 'waterSubmissionPeriod'),
+      electricitySubmissionPeriod: this.normalizeSubmissionPeriodByKey(payloadConfig, existingConfig, 'electricitySubmissionPeriod'),
     };
   }
 
@@ -199,12 +245,20 @@ export class BuildingsService {
     payloadConfig: Record<string, unknown>,
     existingConfig: Record<string, unknown>,
   ): { startDate: string; endDate: string; monthly: boolean } | null {
-    const hasPayload = Object.prototype.hasOwnProperty.call(payloadConfig, 'submissionPeriod');
-    const source = hasPayload ? payloadConfig.submissionPeriod : existingConfig.submissionPeriod;
+    return this.normalizeSubmissionPeriodByKey(payloadConfig, existingConfig, 'submissionPeriod');
+  }
+
+  private normalizeSubmissionPeriodByKey(
+    payloadConfig: Record<string, unknown>,
+    existingConfig: Record<string, unknown>,
+    key: string,
+  ): { startDate: string; endDate: string; monthly: boolean } | null {
+    const hasPayload = Object.prototype.hasOwnProperty.call(payloadConfig, key);
+    const source = hasPayload ? payloadConfig[key] : existingConfig[key];
 
     if (source === null) return null;
     if (!source || typeof source !== 'object') {
-      return hasPayload ? null : (existingConfig.submissionPeriod as never) ?? null;
+      return hasPayload ? null : (existingConfig[key] as never) ?? null;
     }
 
     const obj = source as Record<string, unknown>;
@@ -663,7 +717,7 @@ export class BuildingsService {
     building: Record<string, unknown>;
     deletedBy: string;
     deletedAt: Date;
-  }) {
+  }): Promise<BuildingDeleteBackupResult> {
     const retentionExpiresAt = this.addDays(params.deletedAt, DELETED_BUILDING_STORAGE_RETENTION_DAYS);
     const backupStamp = params.deletedAt.toISOString().replace(/[:.]/g, '-');
     const sourcePrefix = `companies/${this.sanitizePathSegment(params.companyId)}/buildings/${this.sanitizePathSegment(params.buildingId)}`;
@@ -1606,6 +1660,42 @@ export class BuildingsService {
       throw new BadRequestException('companyId is missing for building');
     }
 
+    if (this.isBuildingCreationRequestStatus(current.status)) {
+      const deletedAt = new Date();
+      const requestedBy = this.firstString(current.requestedBy);
+      const batch = db.batch();
+
+      batch.delete(ref);
+      batch.set(
+        db.collection('companies').doc(companyId),
+        {
+          ...this.buildCompanyBuildingLinkPatch(buildingId, 'remove', deletedAt),
+          buildingCreationRequestStatus: FieldValue.delete(),
+          buildingCreationRequestId: FieldValue.delete(),
+          buildingCreationRequestBuildingName: FieldValue.delete(),
+          buildingCreationRequestBuildingAddress: FieldValue.delete(),
+        },
+        { merge: true },
+      );
+      if (requestedBy) {
+        batch.set(
+          db.collection('users').doc(requestedBy),
+          {
+            buildingCreationRequestStatus: FieldValue.delete(),
+            buildingCreationRequestId: FieldValue.delete(),
+            buildingCreationRequestBuildingName: FieldValue.delete(),
+            buildingCreationRequestBuildingAddress: FieldValue.delete(),
+            updatedAt: deletedAt,
+          },
+          { merge: true },
+        );
+      }
+      await this.markPlatformAdminCreationRequestNotificationsRead(batch, buildingId, deletedAt);
+      await batch.commit();
+
+      return { success: true, deletedRequest: true };
+    }
+
     if (current.editLocked === true) {
       throw new ForbiddenException('This building is locked by the platform administrator');
     }
@@ -1615,13 +1705,28 @@ export class BuildingsService {
     }
 
     const deletedAt = new Date();
-    const backup = await this.backupBuildingBeforeDelete({
-      buildingId,
-      companyId,
-      building: current,
-      deletedBy: user.uid,
-      deletedAt,
-    });
+    let backup: BuildingDeleteBackupResult;
+    try {
+      backup = await this.backupBuildingBeforeDelete({
+        buildingId,
+        companyId,
+        building: current,
+        deletedBy: user.uid,
+        deletedAt,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to create delete backup for building ${buildingId}:`, message);
+      backup = {
+        backupStoragePath: null,
+        backupStoragePrefix: null,
+        retainedStoragePrefix: null,
+        retentionExpiresAt: this.addDays(deletedAt, DELETED_BUILDING_STORAGE_RETENTION_DAYS),
+        copiedStorageFilesCount: 0,
+        backupFailed: true,
+        backupError: message,
+      };
+    }
 
     const batch = db.batch();
     batch.delete(ref);
@@ -1638,6 +1743,8 @@ export class BuildingsService {
           retainedStoragePrefix: backup.retainedStoragePrefix,
           retentionDays: DELETED_BUILDING_STORAGE_RETENTION_DAYS,
           retentionExpiresAt: backup.retentionExpiresAt,
+          backupFailed: backup.backupFailed === true,
+          backupError: backup.backupError ?? null,
         },
       },
       { merge: true },
@@ -1657,6 +1764,8 @@ export class BuildingsService {
         copiedStorageFilesCount: backup.copiedStorageFilesCount,
         retentionDays: DELETED_BUILDING_STORAGE_RETENTION_DAYS,
         retentionExpiresAt: backup.retentionExpiresAt,
+        backupFailed: backup.backupFailed === true,
+        backupError: backup.backupError ?? null,
       },
       { merge: true },
     );

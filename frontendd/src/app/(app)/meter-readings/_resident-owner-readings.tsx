@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslations } from "next-intl";
 import { SectionCard } from "@/components/section-card";
+import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { apiFetch } from "@/shared/api/client";
 import { notifyMeterReadingsChanged, notifyOwnerMeterReadingStatus } from "@/shared/hooks/use-app-notifications";
 import { useNotifications } from "@/shared/hooks/use-notifications";
@@ -22,10 +24,11 @@ interface ReadingRow {
   apartment: string;
   meterKey: string;
   meterLabel: string;
-  previousValue: number;
+  previousValue: number | string;
   currentValue: number;
   consumption: number;
   submittedAt: string;
+  submittedAtTime: number;
   historyVisible: boolean;
 }
 
@@ -46,17 +49,55 @@ type MonthGroup = {
 type BuildingOption = {
   id: string;
   submissionPeriod?: SubmissionPeriodValue | null;
+  waterSubmissionPeriod?: SubmissionPeriodValue | null;
+  electricitySubmissionPeriod?: SubmissionPeriodValue | null;
   waterEnabled?: boolean;
   hotWaterMetersPerResident?: number;
   coldWaterMetersPerResident?: number;
+  electricityEnabled?: boolean;
+  electricityMeterDigits?: number;
+  electricityUserSetsDigits?: boolean;
+  electricityAllowMultipleMonthlySubmissions?: boolean;
+  electricityFixedPriceEnabled?: boolean;
+  electricityPricePerKwh?: number;
 };
 
 type MeterLabels = Record<ResidentOwnerMeterOption["key"], string>;
+type UtilityTab = "water" | "electricity";
 
 const DEFAULT_METER_LABELS: MeterLabels = {
   coldmeterwater: "Cold water",
   hotmeterwater: "Hot water",
+  electricitymeter: "Electricity",
 };
+
+function isWaterMeterKey(key: string) {
+  return key === "coldmeterwater" || key === "hotmeterwater";
+}
+
+function isElectricityMeterKey(key: string) {
+  return key === "electricitymeter";
+}
+
+function meterMatchesTab(meter: ResidentOwnerMeterOption, tab: UtilityTab) {
+  return tab === "water" ? isWaterMeterKey(meter.key) : isElectricityMeterKey(meter.key);
+}
+
+function readingMatchesTab(reading: ReadingRow, tab: UtilityTab) {
+  return tab === "water" ? isWaterMeterKey(reading.meterKey) : isElectricityMeterKey(reading.meterKey);
+}
+
+function allowedMeterKeysForBuilding(building: BuildingOption | undefined) {
+  const keys = new Set<ResidentOwnerMeterOption["key"]>();
+  if (building?.waterEnabled) {
+    keys.add("coldmeterwater");
+    keys.add("hotmeterwater");
+  }
+  if (building?.electricityEnabled) {
+    keys.add("electricitymeter");
+  }
+  return keys;
+}
 
 function text(...values: unknown[]) {
   for (const value of values) {
@@ -81,7 +122,10 @@ function formatConsumption(value: unknown) {
 }
 
 function readingConsumption(reading: ReadingRow) {
-  return formatConsumption(consumptionValue(reading.currentValue, reading.previousValue));
+  const previousValue = numberValue(reading.previousValue, Number.NaN);
+  return Number.isFinite(previousValue)
+    ? formatConsumption(consumptionValue(reading.currentValue, previousValue))
+    : formatConsumption(reading.consumption);
 }
 
 function formatDate(value: unknown) {
@@ -165,6 +209,7 @@ function meterFromGroup(
     label: meterLabels[key],
     serialNumber: text(data.serialNumber, data.meterId, "-"),
     previousValue: numberValue(data.currentValue, numberValue(data.previousValue)),
+    meterDigits: key === "electricitymeter" ? Math.min(7, Math.max(5, numberValue(data.meterDigits, 6))) : undefined,
   };
 }
 
@@ -178,6 +223,7 @@ function normalizeApartment(item: UnknownRecord, meterLabels: MeterLabels = DEFA
   const meters = [
     meterFromGroup("coldmeterwater", waterReadings.coldmeterwater, meterLabels),
     meterFromGroup("hotmeterwater", waterReadings.hotmeterwater, meterLabels),
+    meterFromGroup("electricitymeter", waterReadings.electricitymeter, meterLabels),
   ].filter((meter): meter is ResidentOwnerMeterOption => Boolean(meter));
 
   return {
@@ -196,22 +242,34 @@ function normalizeBuilding(item: UnknownRecord): BuildingOption | null {
   const readingConfig = item.readingConfig && typeof item.readingConfig === "object"
     ? item.readingConfig as UnknownRecord
     : {};
-  const submissionPeriod = readingConfig.submissionPeriod && typeof readingConfig.submissionPeriod === "object"
-    ? readingConfig.submissionPeriod as Partial<SubmissionPeriodValue>
-    : null;
+  const normalizePeriod = (value: unknown) => {
+    const periodValue = value && typeof value === "object" ? value as Partial<SubmissionPeriodValue> : null;
+    return periodValue?.startDate && periodValue?.endDate
+      ? {
+          startDate: String(periodValue.startDate),
+          endDate: String(periodValue.endDate),
+          monthly: Boolean(periodValue.monthly),
+        }
+      : null;
+  };
+  const submissionPeriod = normalizePeriod(readingConfig.submissionPeriod);
+  const waterSubmissionPeriod = normalizePeriod(readingConfig.waterSubmissionPeriod) ?? submissionPeriod;
+  const electricitySubmissionPeriod = normalizePeriod(readingConfig.electricitySubmissionPeriod);
 
   return {
     id,
     waterEnabled: Boolean(readingConfig.waterEnabled),
     hotWaterMetersPerResident: numberValue(readingConfig.hotWaterMetersPerResident),
     coldWaterMetersPerResident: numberValue(readingConfig.coldWaterMetersPerResident),
-    submissionPeriod: submissionPeriod?.startDate && submissionPeriod?.endDate
-      ? {
-          startDate: String(submissionPeriod.startDate),
-          endDate: String(submissionPeriod.endDate),
-          monthly: Boolean(submissionPeriod.monthly),
-        }
-      : null,
+    electricityEnabled: Boolean(readingConfig.electricityEnabled),
+    electricityMeterDigits: Math.min(7, Math.max(5, numberValue(readingConfig.electricityMeterDigits, 6))),
+    electricityUserSetsDigits: Boolean(readingConfig.electricityUserSetsDigits),
+    electricityAllowMultipleMonthlySubmissions: Boolean(readingConfig.electricityAllowMultipleMonthlySubmissions),
+    electricityFixedPriceEnabled: Boolean(readingConfig.electricityFixedPriceEnabled),
+    electricityPricePerKwh: Math.max(0, numberValue(readingConfig.electricityPricePerKwh)),
+    submissionPeriod,
+    waterSubmissionPeriod,
+    electricitySubmissionPeriod,
   };
 }
 
@@ -220,10 +278,10 @@ function fallbackMetersFromBuilding(
   building: BuildingOption | undefined,
   meterLabels: MeterLabels = DEFAULT_METER_LABELS,
 ): ResidentOwnerMeterOption[] {
-  if (!building?.waterEnabled) return [];
+  if (!building?.waterEnabled && !building?.electricityEnabled) return [];
 
   const meters: ResidentOwnerMeterOption[] = [];
-  if (numberValue(building.coldWaterMetersPerResident) > 0) {
+  if (building.waterEnabled && numberValue(building.coldWaterMetersPerResident) > 0) {
     meters.push({
       key: "coldmeterwater",
       id: `${apartmentId}:coldmeterwater`,
@@ -232,7 +290,7 @@ function fallbackMetersFromBuilding(
       previousValue: 0,
     });
   }
-  if (numberValue(building.hotWaterMetersPerResident) > 0) {
+  if (building.waterEnabled && numberValue(building.hotWaterMetersPerResident) > 0) {
     meters.push({
       key: "hotmeterwater",
       id: `${apartmentId}:hotmeterwater`,
@@ -241,27 +299,72 @@ function fallbackMetersFromBuilding(
       previousValue: 0,
     });
   }
+  if (building.electricityEnabled) {
+    meters.push({
+      key: "electricitymeter",
+      id: `${apartmentId}:electricitymeter`,
+      label: meterLabels.electricitymeter,
+      serialNumber: "-",
+      previousValue: 0,
+      meterDigits: building.electricityMeterDigits ?? 6,
+      userCanSetDigits: building.electricityUserSetsDigits,
+    });
+  }
 
   return meters;
 }
 
 function normalizeReading(item: UnknownRecord, meterLabels: MeterLabels = DEFAULT_METER_LABELS): ReadingRow {
   const meterKey = text(item.meterKey);
-  const previousValue = numberValue(item.previousValue);
+  const previousValue = item.previousValue === null || item.previousValue === undefined ? "-" : numberValue(item.previousValue);
   const currentValue = numberValue(item.currentValue, numberValue(item.value));
+  const submittedAtRaw = text(item.submittedAt);
+  const submittedAtDate = new Date(submittedAtRaw);
 
   return {
     id: text(item.id, item.meterId, `${text(item.apartmentId)}-${meterKey}-${text(item.submittedAt)}`),
     apartmentId: text(item.apartmentId),
     apartment: text(item.apartmentNumber, item.apartment, item.apartmentId, "-"),
     meterKey,
-    meterLabel: meterKey === "hotmeterwater" ? meterLabels.hotmeterwater : meterLabels.coldmeterwater,
+    meterLabel: meterKey === "electricitymeter"
+      ? meterLabels.electricitymeter
+      : meterKey === "hotmeterwater"
+        ? meterLabels.hotmeterwater
+        : meterLabels.coldmeterwater,
     previousValue,
     currentValue,
-    consumption: numberValue(item.consumption, consumptionValue(currentValue, previousValue)),
+    consumption: numberValue(item.consumption, typeof previousValue === "number" ? consumptionValue(currentValue, previousValue) : 0),
     submittedAt: formatDate(item.submittedAt),
+    submittedAtTime: Number.isNaN(submittedAtDate.getTime()) ? 0 : submittedAtDate.getTime(),
     historyVisible: item.historyVisible !== false,
   };
+}
+
+function normalizeInitialReadings(readings: ReadingRow[]) {
+  const seenMeterKeys = new Set<string>();
+  const firstReadingIds = new Set<string>();
+  const ordered = [...readings].sort((a, b) => {
+    const monthDiff = readingMonthKey(a).localeCompare(readingMonthKey(b));
+    if (monthDiff !== 0) return monthDiff;
+    return a.submittedAtTime - b.submittedAtTime;
+  });
+
+  for (const reading of ordered) {
+    const key = `${reading.apartmentId}:${reading.meterKey}`;
+    if (!seenMeterKeys.has(key)) {
+      seenMeterKeys.add(key);
+      firstReadingIds.add(reading.id);
+    }
+  }
+
+  return readings.map((reading) => {
+    if (!firstReadingIds.has(reading.id)) return reading;
+    return {
+      ...reading,
+      previousValue: "-",
+      consumption: 0,
+    };
+  });
 }
 
 function groupReadingsByPeriod(readings: ReadingRow[]): PeriodGroup[] {
@@ -326,36 +429,38 @@ function previousReadingForMeter(
   meter: ResidentOwnerMeterOption,
   readings: ReadingRow[],
   period: string,
+  includeCurrentPeriod = false,
 ) {
   return readings
     .filter(
       (reading) =>
         reading.meterKey === meter.key &&
-        readingMonthKey(reading) < period &&
+        (readingMonthKey(reading) < period || (includeCurrentPeriod && readingMonthKey(reading) <= period)) &&
         readingBelongsToApartment(reading, apartment),
     )
-    .sort((a, b) => readingMonthKey(b).localeCompare(readingMonthKey(a)))[0] ?? null;
-}
-
-function previousValueForMeter(
-  apartment: ResidentOwnerApartmentOption,
-  meter: ResidentOwnerMeterOption,
-  readings: ReadingRow[],
-  period: string,
-) {
-  const previousReading = previousReadingForMeter(apartment, meter, readings, period);
-  return previousReading ? previousReading.currentValue : 0;
+    .sort((a, b) => {
+      const monthDiff = readingMonthKey(b).localeCompare(readingMonthKey(a));
+      if (monthDiff !== 0) return monthDiff;
+      return b.submittedAtTime - a.submittedAtTime;
+    })[0] ?? null;
 }
 
 function apartmentWithPeriodPreviousValues(
   apartment: ResidentOwnerApartmentOption,
   readings: ReadingRow[],
   period: string,
+  includeCurrentPeriodElectricity = false,
 ) {
   return {
     ...apartment,
     meters: apartment.meters.map((meter) => {
-      const previousReading = previousReadingForMeter(apartment, meter, readings, period);
+      const previousReading = previousReadingForMeter(
+        apartment,
+        meter,
+        readings,
+        period,
+        includeCurrentPeriodElectricity && meter.key === "electricitymeter",
+      );
 
       return {
         ...meter,
@@ -383,7 +488,7 @@ function hasSubmittedCurrentMonth(
 }
 
 function sortReadingsByDate(readings: ReadingRow[]) {
-  return readings.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+  return readings.sort((a, b) => b.submittedAtTime - a.submittedAtTime);
 }
 
 export function ResidentOwnerMeterReadings() {
@@ -392,17 +497,31 @@ export function ResidentOwnerMeterReadings() {
   const meterLabels: MeterLabels = {
     coldmeterwater: t("meterLabels.coldWater"),
     hotmeterwater: t("meterLabels.hotWater"),
+    electricitymeter: t("meterLabels.electricity"),
   };
   const [apartments, setApartments] = useState<ResidentOwnerApartmentOption[]>([]);
   const [readings, setReadings] = useState<ReadingRow[]>([]);
   const [selectedApartmentId, setSelectedApartmentId] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
+  const [meterDigits, setMeterDigits] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openHistoryMonth, setOpenHistoryMonth] = useState<string | null | undefined>(undefined);
+  const [activeTab, setActiveTab] = useState<UtilityTab>("water");
+  const [advanceOpen, setAdvanceOpen] = useState(false);
+  const [advanceKwh, setAdvanceKwh] = useState("");
+  const [advanceSaving, setAdvanceSaving] = useState(false);
   const period = currentMonth();
-  const monthGroups = groupReadingsByMonth(readings.filter((reading) => reading.historyVisible));
+  const hasWaterTab = apartments.some((apartment) => apartment.meters.some((meter) => meterMatchesTab(meter, "water")));
+  const hasElectricityTab = apartments.some((apartment) => apartment.meters.some((meter) => meterMatchesTab(meter, "electricity")));
+  const availableTabs = useMemo<UtilityTab[]>(() => [
+    ...(hasWaterTab ? (["water"] as const) : []),
+    ...(hasElectricityTab ? (["electricity"] as const) : []),
+  ], [hasElectricityTab, hasWaterTab]);
+  const effectiveTab = availableTabs.includes(activeTab) ? activeTab : availableTabs[0] ?? activeTab;
+  const tabReadings = readings.filter((reading) => reading.historyVisible && readingMatchesTab(reading, effectiveTab));
+  const monthGroups = groupReadingsByMonth(tabReadings);
   const firstHistoryMonth = monthGroups[0]?.key;
 
   useEffect(() => {
@@ -414,13 +533,42 @@ export function ResidentOwnerMeterReadings() {
   const visibleApartments = selectedApartmentId
     ? apartments.filter((apartment) => apartment.id === selectedApartmentId)
     : apartments.slice(0, 1);
-  const selectedSubmissionPeriod = visibleApartments[0]?.submissionPeriod ?? null;
+  const visibleTabApartments = visibleApartments
+    .map((apartment) => ({
+      ...apartment,
+      meters: apartment.meters.filter((meter) => meterMatchesTab(meter, effectiveTab)),
+    }))
+    .filter((apartment) => apartment.meters.length > 0);
+  const selectedSubmissionPeriod = effectiveTab === "water"
+    ? visibleApartments[0]?.waterSubmissionPeriod ?? visibleApartments[0]?.submissionPeriod ?? null
+    : visibleApartments[0]?.electricitySubmissionPeriod ?? null;
   const submissionOpen = isSubmissionPeriodOpen(selectedSubmissionPeriod);
-  const currentMonthSubmitted = hasSubmittedCurrentMonth(visibleApartments[0], readings, period);
-  const missingCurrentMonthApartments = apartments.filter((apartment) => !hasSubmittedCurrentMonth(apartment, readings, period));
-  const submitApartments = visibleApartments.map((apartment) =>
-    apartmentWithPeriodPreviousValues(apartment, readings, period),
+  const electricityAllowsMultipleMonthlySubmissions = effectiveTab === "electricity"
+    && Boolean(visibleTabApartments[0]?.electricityAllowMultipleMonthlySubmissions);
+  const currentMonthSubmitted = electricityAllowsMultipleMonthlySubmissions
+    ? false
+    : hasSubmittedCurrentMonth(visibleTabApartments[0], tabReadings, period);
+  const missingCurrentMonthApartments = apartments
+    .map((apartment) => ({
+      ...apartment,
+      meters: apartment.meters.filter((meter) => meterMatchesTab(meter, effectiveTab)),
+    }))
+    .filter((apartment) => apartment.meters.length > 0 && !hasSubmittedCurrentMonth(apartment, tabReadings, period));
+  const submitApartments = visibleTabApartments.map((apartment) =>
+    apartmentWithPeriodPreviousValues(apartment, tabReadings, period, electricityAllowsMultipleMonthlySubmissions),
   );
+  const advanceApartment = visibleTabApartments[0];
+  const advancePricePerKwh = advanceApartment?.electricityFixedPriceEnabled
+    ? Math.max(0, advanceApartment.electricityPricePerKwh ?? 0)
+    : 0;
+  const advanceKwhValue = numberValue(advanceKwh, 0);
+  const advanceAmount = Number((Math.max(0, advanceKwhValue) * advancePricePerKwh).toFixed(2));
+
+  useEffect(() => {
+    if (availableTabs.length > 0 && activeTab !== effectiveTab) {
+      setActiveTab(effectiveTab);
+    }
+  }, [activeTab, availableTabs, effectiveTab]);
 
   const loadData = async (showLoading = true) => {
     try {
@@ -438,11 +586,27 @@ export function ResidentOwnerMeterReadings() {
         .filter((item): item is ResidentOwnerApartmentOption => Boolean(item))
         .map((apartment) => {
           const building = buildingOptions.get(apartment.buildingId);
+          const allowedKeys = allowedMeterKeysForBuilding(building);
+          const configuredMeters = allowedKeys.size > 0
+            ? apartment.meters.filter((meter) => allowedKeys.has(meter.key))
+            : apartment.meters;
+          const fallbackMeters = fallbackMetersFromBuilding(apartment.id, building, meterLabels);
+          const existingKeys = new Set(configuredMeters.map((meter) => meter.key));
 
           return {
             ...apartment,
-            meters: apartment.meters.length > 0 ? apartment.meters : fallbackMetersFromBuilding(apartment.id, building, meterLabels),
+            meters: [
+              ...configuredMeters,
+              ...fallbackMeters.filter((meter) => !existingKeys.has(meter.key)),
+            ],
             submissionPeriod: building?.submissionPeriod ?? apartment.submissionPeriod ?? null,
+            waterSubmissionPeriod: building?.waterSubmissionPeriod ?? building?.submissionPeriod ?? apartment.waterSubmissionPeriod ?? apartment.submissionPeriod ?? null,
+            electricitySubmissionPeriod: building?.electricitySubmissionPeriod ?? apartment.electricitySubmissionPeriod ?? null,
+            electricityAllowMultipleMonthlySubmissions: Boolean(
+              building?.electricityAllowMultipleMonthlySubmissions ?? apartment.electricityAllowMultipleMonthlySubmissions,
+            ),
+            electricityFixedPriceEnabled: Boolean(building?.electricityFixedPriceEnabled ?? apartment.electricityFixedPriceEnabled),
+            electricityPricePerKwh: building?.electricityPricePerKwh ?? apartment.electricityPricePerKwh ?? 0,
           };
         });
 
@@ -453,18 +617,26 @@ export function ResidentOwnerMeterReadings() {
         ),
       );
 
+      const activeMeterKeysByApartment = new Map(
+        normalizedApartments.map((apartment) => [
+          apartment.id,
+          new Set(apartment.meters.map((meter) => meter.key)),
+        ]),
+      );
       const normalizedReadings = readingBatches
         .flatMap((response) => response.items ?? [])
-        .map((item) => normalizeReading(item, meterLabels));
+        .map((item) => normalizeReading(item, meterLabels))
+        .filter((reading) => activeMeterKeysByApartment.get(reading.apartmentId)?.has(reading.meterKey as ResidentOwnerMeterOption["key"]));
 
       setApartments(normalizedApartments);
-      setReadings(sortReadingsByDate(normalizedReadings));
+      setReadings(sortReadingsByDate(normalizeInitialReadings(normalizedReadings)));
       setSelectedApartmentId((current) =>
         normalizedApartments.some((apartment) => apartment.id === current)
           ? current
           : normalizedApartments[0]?.id ?? "",
       );
       setValues({});
+      setMeterDigits({});
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : t("loadFailed"));
     } finally {
@@ -516,12 +688,19 @@ export function ResidentOwnerMeterReadings() {
 
     for (const { apartment, meter } of filledMeters) {
       const currentValue = numberValue(values[residentOwnerMeterValueKey(apartment.id, meter.key)], NaN);
-      const previousValue = previousValueForMeter(apartment, meter, readings, period);
+      const previousReading = previousReadingForMeter(
+        apartment,
+        meter,
+        readings,
+        period,
+        electricityAllowsMultipleMonthlySubmissions && meter.key === "electricitymeter",
+      );
+      const previousValue = previousReading ? previousReading.currentValue : 0;
       if (!Number.isFinite(currentValue)) {
         notify.error(t("mustBeNumber"));
         return;
       }
-      if (currentValue < previousValue) {
+      if (previousReading && currentValue < previousValue) {
         notify.error(t("belowPrevious", { meter: meter.label }));
         return;
       }
@@ -529,22 +708,36 @@ export function ResidentOwnerMeterReadings() {
 
     try {
       setSubmitting(true);
-      const submittedAt = toIsoDate(new Date());
+      const submittedAtDate = new Date();
+      const submittedAt = toIsoDate(submittedAtDate);
+      const submittedAtTimeBase = submittedAtDate.getTime();
       const optimisticReadings: ReadingRow[] = [];
       let optimisticIndex = 0;
 
       for (const { apartment, meter } of filledMeters) {
         const currentValue = numberValue(values[residentOwnerMeterValueKey(apartment.id, meter.key)]);
-        const previousValue = previousValueForMeter(apartment, meter, readings, period);
+        const previousReading = previousReadingForMeter(
+          apartment,
+          meter,
+          readings,
+          period,
+          electricityAllowsMultipleMonthlySubmissions && meter.key === "electricitymeter",
+        );
+        const previousValue = previousReading ? previousReading.currentValue : 0;
+        const hasPreviousValue = Boolean(previousReading);
+        const meterValueKey = residentOwnerMeterValueKey(apartment.id, meter.key);
         await apiFetch("/meter-readings", {
           method: "POST",
           body: JSON.stringify({
             apartmentId: apartment.id,
             meterId: meter.id,
             meterKey: meter.key,
+            meterDigits: meter.key === "electricitymeter"
+              ? Math.min(7, Math.max(5, meterDigits[meterValueKey] ?? meter.meterDigits ?? 6))
+              : undefined,
             previousValue,
             currentValue,
-            consumption: consumptionValue(currentValue, previousValue),
+            consumption: hasPreviousValue ? consumptionValue(currentValue, previousValue) : 0,
             buildingId: apartment.buildingId,
             month,
             year,
@@ -557,10 +750,11 @@ export function ResidentOwnerMeterReadings() {
           apartment: apartment.label,
           meterKey: meter.key,
           meterLabel: meter.label,
-          previousValue,
+          previousValue: hasPreviousValue ? previousValue : "-",
           currentValue,
-          consumption: consumptionValue(currentValue, previousValue),
+          consumption: hasPreviousValue ? consumptionValue(currentValue, previousValue) : 0,
           submittedAt,
+          submittedAtTime: submittedAtTimeBase + optimisticIndex,
           historyVisible: true,
         });
         optimisticIndex += 1;
@@ -570,9 +764,11 @@ export function ResidentOwnerMeterReadings() {
         const submittedKeys = new Set(
           optimisticReadings.map((reading) => `${reading.apartmentId}:${reading.meterKey}:${reading.submittedAt.slice(0, 7)}`),
         );
-        const keptReadings = current.filter(
-          (reading) => !submittedKeys.has(`${reading.apartmentId}:${reading.meterKey}:${reading.submittedAt.slice(0, 7)}`),
-        );
+        const keptReadings = electricityAllowsMultipleMonthlySubmissions
+          ? current
+          : current.filter(
+              (reading) => !submittedKeys.has(`${reading.apartmentId}:${reading.meterKey}:${reading.submittedAt.slice(0, 7)}`),
+            );
 
         return sortReadingsByDate([...optimisticReadings, ...keptReadings]);
       });
@@ -589,12 +785,48 @@ export function ResidentOwnerMeterReadings() {
         })),
       );
       setValues({});
+      setMeterDigits({});
       notify.success(t("submitted"));
       notifyMeterReadingsChanged();
     } catch (caughtError) {
       notify.error(caughtError instanceof Error ? caughtError.message : t("submitFailed"));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const submitAdvancePayment = async () => {
+    if (!advanceApartment) return;
+    const paidKwh = numberValue(advanceKwh, NaN);
+    if (!Number.isFinite(paidKwh) || paidKwh <= 0) {
+      notify.info(t("advanceKwhRequired"));
+      return;
+    }
+    if (advancePricePerKwh <= 0) {
+      notify.info(t("advanceTariffMissing"));
+      return;
+    }
+
+    setAdvanceSaving(true);
+    try {
+      await apiFetch("/meter-readings/electricity-payments", {
+        method: "POST",
+        body: JSON.stringify({
+          apartmentId: advanceApartment.id,
+          amount: Number((paidKwh * advancePricePerKwh).toFixed(2)),
+          paidKwh,
+          paidAt: toIsoDate(new Date()),
+          note: "",
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+      setAdvanceKwh("");
+      setAdvanceOpen(false);
+      notify.success(t("advanceSubmitted"));
+    } catch (caughtError) {
+      notify.error(caughtError instanceof Error ? caughtError.message : t("advanceSubmitFailed"));
+    } finally {
+      setAdvanceSaving(false);
     }
   };
 
@@ -608,24 +840,68 @@ export function ResidentOwnerMeterReadings() {
         ) : apartments.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-slate-600">{t("noApartments")}</div>
         ) : (
-          <ResidentOwnerSubmitForm
-            apartments={submitApartments}
-            apartmentOptions={apartments}
-            selectedApartmentId={selectedApartmentId}
-            submissionOpen={submissionOpen}
-            currentMonthSubmitted={currentMonthSubmitted}
-            closedMessage={submissionClosedMessage(
-              selectedSubmissionPeriod,
-              t("closedDefault"),
-              (start, end) => t("closedWithDates", { start, end }),
-            )}
-            values={values}
-            period={period}
-            submitting={submitting}
-            onApartmentChange={(apartmentId) => setSelectedApartmentId(apartmentId)}
-            onSubmit={submitReadings}
-            onValueChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))}
-          />
+          <div className="space-y-4">
+            {availableTabs.length > 1 ? (
+              <div className="inline-flex rounded-xl bg-slate-100 p-1">
+                {availableTabs.map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(tab);
+                      setOpenHistoryMonth(undefined);
+                    }}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                      effectiveTab === tab
+                        ? tab === "electricity"
+                          ? "bg-amber-400 text-slate-950 shadow-sm"
+                          : "bg-blue-600 text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    {tab === "electricity" ? t("electricityTab") : t("waterTab")}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <ResidentOwnerSubmitForm
+              apartments={submitApartments}
+              apartmentOptions={apartments}
+              selectedApartmentId={selectedApartmentId}
+              submissionOpen={submissionOpen}
+              currentMonthSubmitted={currentMonthSubmitted}
+              closedMessage={submissionClosedMessage(
+                selectedSubmissionPeriod,
+                t("closedDefault"),
+                (start, end) => t("closedWithDates", { start, end }),
+              )}
+              values={values}
+              meterDigits={meterDigits}
+              period={period}
+              submitting={submitting}
+              onApartmentChange={(apartmentId) => setSelectedApartmentId(apartmentId)}
+              onSubmit={submitReadings}
+              onValueChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))}
+              onMeterDigitsChange={(key, value) => setMeterDigits((current) => ({ ...current, [key]: value }))}
+            />
+            {effectiveTab === "electricity" && advanceApartment && advancePricePerKwh > 0 ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">{t("advanceTitle")}</h4>
+                    <p className="mt-1 text-sm text-slate-600">{t("advanceDescription")}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAdvanceOpen(true)}
+                    className="rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950 shadow-sm hover:bg-amber-300"
+                  >
+                    {t("advanceButton")}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         )}
 
         {!loading && !error ? (
@@ -661,13 +937,16 @@ export function ResidentOwnerMeterReadings() {
                     <div className="space-y-2 border-t border-slate-100 bg-slate-50/40 p-2.5 sm:hidden">
                       {monthGroup.periods.flatMap((periodGroup) => periodGroup.items).map((reading) => {
                         const isHotWater = reading.meterKey === "hotmeterwater";
+                        const isElectricity = reading.meterKey === "electricitymeter";
+                        const dotClass = isElectricity ? "bg-amber-400" : isHotWater ? "bg-rose-500" : "bg-blue-500";
+                        const totalClass = isElectricity ? "text-amber-600" : isHotWater ? "text-rose-600" : "text-blue-600";
 
                         return (
                           <div key={reading.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2.5">
                             <div className="flex min-w-0 items-center gap-2">
                               <span
                                 aria-hidden="true"
-                                className={`h-2 w-2 shrink-0 rounded-full ${isHotWater ? "bg-rose-500" : "bg-blue-500"}`}
+                                className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`}
                               />
                               <span className="truncate text-sm font-medium text-slate-800">{reading.meterLabel}</span>
                             </div>
@@ -676,8 +955,8 @@ export function ResidentOwnerMeterReadings() {
                                 {reading.previousValue} <span aria-hidden="true">→</span>{" "}
                                 <span className="font-bold text-slate-900">{reading.currentValue}</span>
                               </p>
-                              <p className={`mt-0.5 whitespace-nowrap tabular-nums font-bold ${isHotWater ? "text-rose-600" : "text-blue-600"}`}>
-                                +{readingConsumption(reading)} m³
+                              <p className={`mt-0.5 whitespace-nowrap tabular-nums font-bold ${totalClass}`}>
+                                +{readingConsumption(reading)} {isElectricity ? "kWh" : "m3"}
                               </p>
                             </div>
                           </div>
@@ -714,7 +993,9 @@ export function ResidentOwnerMeterReadings() {
                                     <td className="px-4 py-3 text-slate-700">{reading.meterLabel}</td>
                                     <td className="px-4 py-3 text-right tabular-nums text-slate-600">{reading.previousValue}</td>
                                     <td className="px-4 py-3 text-right tabular-nums font-semibold text-slate-900">{reading.currentValue}</td>
-                                    <td className="px-4 py-3 text-right tabular-nums text-blue-700">{readingConsumption(reading)} m3</td>
+                                    <td className={`px-4 py-3 text-right tabular-nums ${reading.meterKey === "electricitymeter" ? "text-amber-700" : "text-blue-700"}`}>
+                                      {readingConsumption(reading)} {reading.meterKey === "electricitymeter" ? "kWh" : "m3"}
+                                    </td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -734,6 +1015,59 @@ export function ResidentOwnerMeterReadings() {
           </div>
         ) : null}
       </SectionCard>
+      <Modal
+        open={advanceOpen}
+        onClose={() => setAdvanceOpen(false)}
+        title={t("advanceTitle")}
+        size="md"
+        footer={
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setAdvanceOpen(false)}
+              disabled={advanceSaving}
+              className="min-h-11 rounded-xl px-4"
+            >
+              {t("advanceCancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={submitAdvancePayment}
+              disabled={advanceSaving || advanceKwhValue <= 0}
+              className="min-h-11 rounded-xl px-4"
+            >
+              {advanceSaving ? t("advanceSaving") : t("advanceSubmit")}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">{t("advanceModalDescription")}</p>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-semibold text-slate-700">{t("advanceKwh")}</span>
+            <input
+              type="number"
+              min="0"
+              step="0.001"
+              value={advanceKwh}
+              onChange={(event) => setAdvanceKwh(event.target.value)}
+              className="h-12 w-full rounded-xl border border-amber-200 bg-white px-3 text-base font-semibold text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+            />
+          </label>
+          <div className="grid gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:grid-cols-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("advanceTariff")}</p>
+              <p className="mt-1 text-lg font-bold text-slate-900">{advancePricePerKwh.toFixed(2)} EUR/kWh</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("advanceCalculatedAmount")}</p>
+              <p className="mt-1 text-lg font-bold text-amber-700">{advanceAmount.toFixed(2)} EUR</p>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

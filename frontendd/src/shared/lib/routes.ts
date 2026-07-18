@@ -26,6 +26,7 @@ export const ROUTES = {
   apartments: "/apartments",
   residents: "/residents",
   invoices: "/invoices",
+  electricity: "/electricity",
   meterReadings: "/meter-readings",
   debts: "/debts",
   documents: "/documents",

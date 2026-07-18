@@ -9,6 +9,40 @@ export declare class MeterReadingsController {
     list(user: RequestUser, apartmentId?: string, companyId?: string): Promise<{
         items: Record<string, unknown>[];
     }>;
+    listElectricityPayments(user: RequestUser, buildingId?: string, apartmentId?: string): Promise<{
+        items: {
+            id: string;
+            apartmentId: string;
+            amount: number;
+            paidKwh: number;
+            paidAt: string;
+            note: string;
+            confirmed: boolean;
+            confirmedBy: string;
+            createdAt: unknown;
+        }[];
+    }>;
+    createElectricityPayment(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<{
+        success: boolean;
+        payment: {
+            paidAt: string;
+            id: string;
+            apartmentId: string;
+            amount: number;
+            paidKwh: number;
+            note: string;
+            confirmed: boolean;
+            confirmedBy: string;
+            companyId: string;
+            createdAt: Date;
+        };
+    }>;
+    confirmElectricityPayment(request: Request, user: RequestUser, paymentId: string, body: Record<string, unknown>): Promise<{
+        success: boolean;
+    }>;
+    removeElectricityPayment(request: Request, user: RequestUser, paymentId: string, apartmentId?: string): Promise<{
+        success: boolean;
+    }>;
     create(request: Request, user: RequestUser, body: CreateMeterReadingDto): Promise<{
         success: boolean;
         reading: {

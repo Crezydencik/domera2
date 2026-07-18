@@ -1,0 +1,36 @@
+[debug] [2026-07-18T09:27:57.084Z] ----------------------------------------------------------------------
+[debug] [2026-07-18T09:27:57.088Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\User\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js apps:list --project domera-eb224
+[debug] [2026-07-18T09:27:57.088Z] CLI Version:   14.27.0
+[debug] [2026-07-18T09:27:57.088Z] Platform:      win32
+[debug] [2026-07-18T09:27:57.089Z] Node Version:  v22.20.0
+[debug] [2026-07-18T09:27:57.089Z] Time:          Sat Jul 18 2026 12:27:57 GMT+0300 (Eastern European Summer Time)
+[debug] [2026-07-18T09:27:57.089Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-07-18T09:27:57.093Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2026-07-18T09:27:57.135Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-07-18T09:27:57.136Z] > authorizing via signed-in user (lumtach@gmail.com)
+[debug] [2026-07-18T09:27:57.141Z] Checked if tokens are valid: false, expires at: 1783984819987
+[debug] [2026-07-18T09:27:57.142Z] Checked if tokens are valid: false, expires at: 1783984819987
+[debug] [2026-07-18T09:27:57.142Z] > refreshing access token with scopes: []
+[debug] [2026-07-18T09:27:57.144Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-07-18T09:27:57.144Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-07-18T09:27:57.277Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-07-18T09:27:57.278Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-07-18T09:27:57.289Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/domera-eb224:searchApps pageSize=100
+[debug] [2026-07-18T09:27:57.532Z] <<< [apiv2][status] GET https://firebase-public.firebaseio.com/cli.json 200
+[debug] [2026-07-18T09:27:57.532Z] <<< [apiv2][body] GET https://firebase-public.firebaseio.com/cli.json {"cloudBuildErrorAfter":1594252800000,"cloudBuildWarnAfter":1590019200000,"defaultNode10After":1594252800000,"minVersion":"3.0.5","node8DeploysDisabledAfter":1613390400000,"node8RuntimeDisabledAfter":1615809600000,"node8WarnAfter":1600128000000}
+[debug] [2026-07-18T09:27:57.669Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/domera-eb224:searchApps 200
+[debug] [2026-07-18T09:28:13.837Z] ----------------------------------------------------------------------
+[debug] [2026-07-18T09:28:13.840Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\User\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js apps:sdkconfig WEB 1:310587877880:web:517209f7ba81a99a5ace0d --project domera-eb224
+[debug] [2026-07-18T09:28:13.841Z] CLI Version:   14.27.0
+[debug] [2026-07-18T09:28:13.841Z] Platform:      win32
+[debug] [2026-07-18T09:28:13.841Z] Node Version:  v22.20.0
+[debug] [2026-07-18T09:28:13.841Z] Time:          Sat Jul 18 2026 12:28:13 GMT+0300 (Eastern European Summer Time)
+[debug] [2026-07-18T09:28:13.842Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-07-18T09:28:13.849Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-07-18T09:28:13.850Z] > authorizing via signed-in user (lumtach@gmail.com)
+[debug] [2026-07-18T09:28:13.854Z] Checked if tokens are valid: true, expires at: 1784370476278
+[debug] [2026-07-18T09:28:13.854Z] Checked if tokens are valid: true, expires at: 1784370476278
+[debug] [2026-07-18T09:28:13.855Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:310587877880:web:517209f7ba81a99a5ace0d/config [none]
+[debug] [2026-07-18T09:28:15.385Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:310587877880:web:517209f7ba81a99a5ace0d/config 200
