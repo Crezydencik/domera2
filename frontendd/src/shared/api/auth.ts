@@ -1,6 +1,6 @@
 "use client";
 
-import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { GoogleAuthProvider, getRedirectResult, signInWithPopup, signInWithRedirect, type User } from "firebase/auth";
 import { apiFetch } from "@/shared/api/client";
 import { getFirebaseAuth } from "@/shared/lib/firebase-client";
 import { notifyAuthSessionChanged } from "@/shared/lib/auth-session";
@@ -32,6 +32,7 @@ type FirebaseAuthResult = {
   accountType: PublicAccountType;
   companyId?: string;
   apartmentId?: string;
+  rememberMe?: boolean;
 };
 
 type BackendAuthResponse = {
@@ -54,6 +55,8 @@ type RegisterCodeVerifyResponse = {
   verificationToken?: string;
   expiresInSeconds?: number;
 };
+
+const GOOGLE_REDIRECT_REMEMBER_ME_KEY = "domera_google_redirect_remember_me";
 
 function normalizeAccountType(value?: string | null): PublicAccountType {
   const normalized = String(value ?? "")
@@ -199,6 +202,75 @@ function mapAuthResponse(data: BackendAuthResponse, fallbackEmail: string, fallb
   };
 }
 
+function createGoogleProvider() {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  return provider;
+}
+
+function shouldUseGoogleRedirect() {
+  if (typeof window === "undefined") return false;
+
+  const userAgent = window.navigator.userAgent;
+  const isTouchLikeDevice =
+    window.matchMedia?.("(hover: none), (pointer: coarse)")?.matches ?? false;
+  const isMobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
+
+  return isTouchLikeDevice || isMobileUserAgent;
+}
+
+function isPopupBlockedError(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return message.includes("popup-blocked") || message.includes("popup_closed_by_user");
+}
+
+function storeGoogleRedirectRememberMe(rememberMe?: boolean) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(GOOGLE_REDIRECT_REMEMBER_ME_KEY, rememberMe ? "1" : "0");
+}
+
+function consumeGoogleRedirectRememberMe() {
+  if (typeof window === "undefined") return false;
+
+  const value = window.sessionStorage.getItem(GOOGLE_REDIRECT_REMEMBER_ME_KEY) === "1";
+  window.sessionStorage.removeItem(GOOGLE_REDIRECT_REMEMBER_ME_KEY);
+  return value;
+}
+
+async function createGoogleBackendSession(user: User, rememberMe?: boolean): Promise<FirebaseAuthResult> {
+  const idToken = await user.getIdToken();
+  const email = user.email?.trim().toLowerCase() ?? "";
+
+  const data = await apiFetch<BackendAuthResponse>("/auth/session", {
+    method: "POST",
+    body: JSON.stringify({
+      idToken,
+      userId: user.uid,
+      email: email || undefined,
+      rememberMe,
+    }),
+  });
+
+  return {
+    ...mapAuthResponse(
+      {
+        ...data,
+        userId: data.userId ?? user.uid,
+        email: data.email ?? email,
+      },
+      email,
+      "ManagementCompany",
+    ),
+    rememberMe,
+  };
+}
+
+async function startGoogleRedirectSignIn(rememberMe?: boolean): Promise<FirebaseAuthResult> {
+  storeGoogleRedirectRememberMe(rememberMe);
+  await signInWithRedirect(await getFirebaseAuth(), createGoogleProvider());
+  return new Promise(() => undefined);
+}
+
 export async function signInWithEmailPassword(
   email: string,
   password: string,
@@ -218,32 +290,28 @@ export async function signInWithEmailPassword(
 }
 
 export async function signInWithGoogle(rememberMe?: boolean): Promise<FirebaseAuthResult> {
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: "select_account" });
+  if (shouldUseGoogleRedirect()) {
+    return startGoogleRedirectSignIn(rememberMe);
+  }
 
-  const credential = await signInWithPopup(await getFirebaseAuth(), provider);
-  const idToken = await credential.user.getIdToken();
-  const email = credential.user.email?.trim().toLowerCase() ?? "";
+  try {
+    const credential = await signInWithPopup(await getFirebaseAuth(), createGoogleProvider());
+    return createGoogleBackendSession(credential.user, rememberMe);
+  } catch (error) {
+    if (isPopupBlockedError(error)) {
+      return startGoogleRedirectSignIn(rememberMe);
+    }
 
-  const data = await apiFetch<BackendAuthResponse>("/auth/session", {
-    method: "POST",
-    body: JSON.stringify({
-      idToken,
-      userId: credential.user.uid,
-      email: email || undefined,
-      rememberMe,
-    }),
-  });
+    throw error;
+  }
+}
 
-  return mapAuthResponse(
-    {
-      ...data,
-      userId: data.userId ?? credential.user.uid,
-      email: data.email ?? email,
-    },
-    email,
-    "ManagementCompany",
-  );
+export async function completeGoogleRedirectSignIn(): Promise<FirebaseAuthResult | null> {
+  const credential = await getRedirectResult(await getFirebaseAuth());
+  if (!credential) return null;
+
+  const rememberMe = consumeGoogleRedirectRememberMe();
+  return createGoogleBackendSession(credential.user, rememberMe);
 }
 
 export async function signUpWithEmailPassword(

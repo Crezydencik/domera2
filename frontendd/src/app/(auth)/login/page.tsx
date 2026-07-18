@@ -3,13 +3,18 @@
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FcGoogle } from "react-icons/fc";
 import { FiArrowRight, FiLock, FiMail } from "react-icons/fi";
 import { AuthAlert, AuthCard, AuthFooterText, AuthHeader } from "@/components/auth/auth-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { establishUserSession, signInWithEmailPassword, signInWithGoogle } from "@/shared/lib/auth-client";
+import {
+  completeGoogleRedirectSignIn,
+  establishUserSession,
+  signInWithEmailPassword,
+  signInWithGoogle,
+} from "@/shared/lib/auth-client";
 import { ROUTES } from "@/shared/lib/routes";
 
 export default function LoginPage() {
@@ -24,7 +29,7 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function getLoginErrorMessage(message: string) {
+  const getLoginErrorMessage = useCallback((message: string) => {
     const normalized = message.trim().toLowerCase().replace(/\.$/, "");
 
     if (
@@ -48,9 +53,9 @@ export default function LoginPage() {
     }
 
     return message || s("dbError");
-  }
+  }, [s, t]);
 
-  async function completeLogin(result: Awaited<ReturnType<typeof signInWithEmailPassword>>) {
+  const completeLogin = useCallback(async (result: Awaited<ReturnType<typeof signInWithEmailPassword>>) => {
     await establishUserSession({
       userId: result.userId,
       email: result.email,
@@ -58,7 +63,7 @@ export default function LoginPage() {
       accountType: result.accountType,
       companyId: result.companyId,
       apartmentId: result.apartmentId,
-      rememberMe,
+      rememberMe: result.rememberMe ?? rememberMe,
     });
 
     const nextPath = searchParams.get("next");
@@ -66,7 +71,39 @@ export default function LoginPage() {
       nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : ROUTES.dashboard;
 
     window.location.replace(redirectPath);
-  }
+  }, [rememberMe, searchParams]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function finishRedirectSignIn() {
+      setGoogleLoading(true);
+      setError(null);
+
+      try {
+        const result = await completeGoogleRedirectSignIn();
+        if (!mounted) return;
+
+        if (result) {
+          await completeLogin(result);
+        }
+      } catch (error) {
+        if (mounted) {
+          setError(error instanceof Error ? getLoginErrorMessage(error.message) : s("dbError"));
+        }
+      } finally {
+        if (mounted) {
+          setGoogleLoading(false);
+        }
+      }
+    }
+
+    void finishRedirectSignIn();
+
+    return () => {
+      mounted = false;
+    };
+  }, [completeLogin, getLoginErrorMessage, s]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
