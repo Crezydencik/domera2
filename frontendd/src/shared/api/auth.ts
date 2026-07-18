@@ -1,6 +1,14 @@
 "use client";
 
-import { GoogleAuthProvider, getRedirectResult, signInWithPopup, signInWithRedirect, type User } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInWithRedirect,
+  type Auth,
+  type User,
+} from "firebase/auth";
 import { apiFetch } from "@/shared/api/client";
 import { getFirebaseAuth } from "@/shared/lib/firebase-client";
 import { notifyAuthSessionChanged } from "@/shared/lib/auth-session";
@@ -57,6 +65,8 @@ type RegisterCodeVerifyResponse = {
 };
 
 const GOOGLE_REDIRECT_REMEMBER_ME_KEY = "domera_google_redirect_remember_me";
+const GOOGLE_REDIRECT_PENDING_KEY = "domera_google_redirect_pending";
+const GOOGLE_REDIRECT_FALLBACK_TIMEOUT_MS = 2_500;
 
 function normalizeAccountType(value?: string | null): PublicAccountType {
   const normalized = String(value ?? "")
@@ -226,15 +236,53 @@ function isPopupBlockedError(error: unknown) {
 
 function storeGoogleRedirectRememberMe(rememberMe?: boolean) {
   if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(GOOGLE_REDIRECT_PENDING_KEY, "1");
   window.sessionStorage.setItem(GOOGLE_REDIRECT_REMEMBER_ME_KEY, rememberMe ? "1" : "0");
 }
 
-function consumeGoogleRedirectRememberMe() {
+function hasPendingGoogleRedirect() {
+  return typeof window !== "undefined" && window.sessionStorage.getItem(GOOGLE_REDIRECT_PENDING_KEY) === "1";
+}
+
+function readGoogleRedirectRememberMe() {
   if (typeof window === "undefined") return false;
 
-  const value = window.sessionStorage.getItem(GOOGLE_REDIRECT_REMEMBER_ME_KEY) === "1";
+  return window.sessionStorage.getItem(GOOGLE_REDIRECT_REMEMBER_ME_KEY) === "1";
+}
+
+function clearGoogleRedirectState() {
+  if (typeof window === "undefined") return;
+
+  window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
   window.sessionStorage.removeItem(GOOGLE_REDIRECT_REMEMBER_ME_KEY);
-  return value;
+}
+
+function canonicalizeGoogleRedirectHost() {
+  if (typeof window === "undefined" || window.location.hostname !== "domera.lv") {
+    return false;
+  }
+
+  const nextUrl = new URL(window.location.href);
+  nextUrl.protocol = "https:";
+  nextUrl.hostname = "www.domera.lv";
+  window.location.assign(nextUrl.toString());
+  return true;
+}
+
+function waitForRedirectUser(auth: Auth) {
+  return new Promise<User | null>((resolve) => {
+    let unsubscribe: () => void = () => undefined;
+    const timeout = window.setTimeout(() => {
+      unsubscribe();
+      resolve(auth.currentUser);
+    }, GOOGLE_REDIRECT_FALLBACK_TIMEOUT_MS);
+
+    unsubscribe = onAuthStateChanged(auth, (user) => {
+      window.clearTimeout(timeout);
+      unsubscribe();
+      resolve(user);
+    });
+  });
 }
 
 async function createGoogleBackendSession(user: User, rememberMe?: boolean): Promise<FirebaseAuthResult> {
@@ -266,6 +314,10 @@ async function createGoogleBackendSession(user: User, rememberMe?: boolean): Pro
 }
 
 async function startGoogleRedirectSignIn(rememberMe?: boolean): Promise<FirebaseAuthResult> {
+  if (canonicalizeGoogleRedirectHost()) {
+    return new Promise(() => undefined);
+  }
+
   storeGoogleRedirectRememberMe(rememberMe);
   await signInWithRedirect(await getFirebaseAuth(), createGoogleProvider());
   return new Promise(() => undefined);
@@ -307,11 +359,16 @@ export async function signInWithGoogle(rememberMe?: boolean): Promise<FirebaseAu
 }
 
 export async function completeGoogleRedirectSignIn(): Promise<FirebaseAuthResult | null> {
-  const credential = await getRedirectResult(await getFirebaseAuth());
-  if (!credential) return null;
+  const auth = await getFirebaseAuth();
+  const credential = await getRedirectResult(auth);
+  const rememberMe = readGoogleRedirectRememberMe();
+  const user = credential?.user ?? (hasPendingGoogleRedirect() ? await waitForRedirectUser(auth) : null);
 
-  const rememberMe = consumeGoogleRedirectRememberMe();
-  return createGoogleBackendSession(credential.user, rememberMe);
+  if (!user) return null;
+
+  const session = await createGoogleBackendSession(user, rememberMe);
+  clearGoogleRedirectState();
+  return session;
 }
 
 export async function signUpWithEmailPassword(
