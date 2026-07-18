@@ -30,6 +30,7 @@ const backendApiBaseUrl =
   normalizeApiBaseUrl(process.env.API_BASE_URL) ??
   appendApiPath(process.env.BACKEND_URL) ??
   (process.env.NODE_ENV === "production" ? "https://domeraback.vercel.app/api" : "http://localhost:4000/api");
+const firebaseProjectId = process.env.FIREBASE_PROJECT_ID?.trim() || "domera-eb224";
 
 const nextConfig: NextConfig = {
   images: {
@@ -45,6 +46,10 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
+      {
+        source: "/__/auth/:path*",
+        destination: `https://${firebaseProjectId}.firebaseapp.com/__/auth/:path*`,
+      },
       {
         source: "/api/:path*",
         destination: `${backendApiBaseUrl}/:path*`,

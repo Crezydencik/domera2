@@ -23,7 +23,20 @@ function inferMessagingSenderId(appId?: string) {
   return match?.[1];
 }
 
-function resolveAuthDomain(projectId?: string) {
+function resolveAuthDomain(request: Request, projectId?: string) {
+  const requestHost =
+    hostFromUrl(request.headers.get("origin")) ??
+    hostFromUrl(request.headers.get("referer")) ??
+    request.headers.get("host")?.toLowerCase();
+
+  if (requestHost === "domera.lv" || requestHost === "www.domera.lv") {
+    return "www.domera.lv";
+  }
+
+  if (requestHost === "domerafront.vercel.app") {
+    return "domerafront.vercel.app";
+  }
+
   const configured = envValue("FIREBASE_AUTH_DOMAIN", "PUBLIC_FIREBASE_AUTH_DOMAIN");
   if (configured && !configured.endsWith(".firebasestorage.app")) {
     return configured;
@@ -63,7 +76,7 @@ export function GET(request: Request) {
   const apiKey = envValue("FIREBASE_WEB_API_KEY", "FIREBASE_API_KEY");
   const projectId = envValue("FIREBASE_PROJECT_ID");
   const appId = envValue("FIREBASE_WEB_APP_ID", "FIREBASE_APP_ID");
-  const authDomain = resolveAuthDomain(projectId);
+  const authDomain = resolveAuthDomain(request, projectId);
   const storageBucket = envValue("FIREBASE_STORAGE_BUCKET");
   const messagingSenderId = envValue("FIREBASE_MESSAGING_SENDER_ID") ?? inferMessagingSenderId(appId);
 
