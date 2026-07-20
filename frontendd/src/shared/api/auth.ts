@@ -1,16 +1,10 @@
 "use client";
 
 import {
-  GoogleAuthProvider,
-  getRedirectResult,
-  onAuthStateChanged,
-  signInWithPopup,
-  signInWithRedirect,
   type Auth,
   type User,
 } from "firebase/auth";
 import { apiFetch } from "@/shared/api/client";
-import { getFirebaseAuth } from "@/shared/lib/firebase-client";
 import { notifyAuthSessionChanged } from "@/shared/lib/auth-session";
 
 export type PublicAccountType = "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
@@ -68,6 +62,15 @@ const GOOGLE_REDIRECT_REMEMBER_ME_KEY = "domera_google_redirect_remember_me";
 const GOOGLE_REDIRECT_PENDING_KEY = "domera_google_redirect_pending";
 const GOOGLE_REDIRECT_FALLBACK_TIMEOUT_MS = 3_500;
 
+async function getFirebaseAuthClient() {
+  const { getFirebaseAuth } = await import("@/shared/lib/firebase-client");
+  return getFirebaseAuth();
+}
+
+async function getFirebaseAuthModule() {
+  return import("firebase/auth");
+}
+
 function normalizeAccountType(value?: string | null): PublicAccountType {
   const normalized = String(value ?? "")
     .trim()
@@ -114,17 +117,6 @@ function normalizeRole(value?: string | null): PublicUserRole {
   return "ManagementCompany";
 }
 
-function toCookieValue(accountType: PublicAccountType): string {
-  return accountType;
-}
-
-export function accountTypeToDashboardRole(accountType: PublicAccountType): string {
-  if (accountType === "PlatformAdmin") return "platformAdmin";
-  if (accountType === "Resident") return "resident";
-  if (accountType === "Landlord") return "landlord";
-  return "managementCompany";
-}
-
 function persistSessionHints(params: {
   role: PublicUserRole;
   accountType: PublicAccountType;
@@ -135,36 +127,7 @@ function persistSessionHints(params: {
   apartmentId?: string;
   rememberMe?: boolean;
 }) {
-  if (typeof document === "undefined") return;
-
-  const maxAge = params.rememberMe === false ? "" : `; max-age=${60 * 60 * 24 * 30}`;
-  const cookieSuffix = `${maxAge}; path=/; SameSite=Lax`;
-  const roleValue = params.role;
-  const accountTypeValue = toCookieValue(params.accountType);
-
-  document.cookie = `domera_session=1${cookieSuffix}`;
-  document.cookie = `domera_accountType=${accountTypeValue}${cookieSuffix}`;
-  document.cookie = `domera_role=${roleValue}${cookieSuffix}`;
-  document.cookie = `userEmail=${encodeURIComponent(params.email)}${cookieSuffix}`;
-
-  if (params.name) {
-    document.cookie = `userName=${encodeURIComponent(params.name)}${cookieSuffix}`;
-  } else {
-    document.cookie = "userName=; Max-Age=0; path=/; SameSite=Lax";
-  }
-
-  if (params.userId) {
-    document.cookie = `userId=${encodeURIComponent(params.userId)}${cookieSuffix}`;
-  }
-
-  if (params.companyId) {
-    document.cookie = `domera_companyId=${encodeURIComponent(params.companyId)}${cookieSuffix}`;
-  }
-
-  if (params.apartmentId) {
-    document.cookie = `domera_apartmentId=${encodeURIComponent(params.apartmentId)}${cookieSuffix}`;
-  }
-
+  void params;
   notifyAuthSessionChanged();
 }
 
@@ -183,16 +146,12 @@ function resolvePayloadName(payload: Record<string, unknown>): string | undefine
 }
 
 function persistBrowserName(name: string) {
-  if (typeof document === "undefined") return;
-
-  document.cookie = `userName=${encodeURIComponent(name)}; max-age=${60 * 60 * 24 * 30}; path=/; SameSite=Lax`;
+  void name;
   notifyAuthSessionChanged();
 }
 
 function persistBrowserEmail(email: string) {
-  if (typeof document === "undefined") return;
-
-  document.cookie = `userEmail=${encodeURIComponent(email)}; max-age=${60 * 60 * 24 * 30}; path=/; SameSite=Lax`;
+  void email;
   notifyAuthSessionChanged();
 }
 
@@ -212,7 +171,8 @@ function mapAuthResponse(data: BackendAuthResponse, fallbackEmail: string, fallb
   };
 }
 
-function createGoogleProvider() {
+async function createGoogleProvider() {
+  const { GoogleAuthProvider } = await getFirebaseAuthModule();
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
   return provider;
@@ -244,6 +204,10 @@ function hasPendingGoogleRedirect() {
   return typeof window !== "undefined" && window.sessionStorage.getItem(GOOGLE_REDIRECT_PENDING_KEY) === "1";
 }
 
+export function hasPendingGoogleRedirectSignIn() {
+  return hasPendingGoogleRedirect();
+}
+
 function readGoogleRedirectRememberMe() {
   if (typeof window === "undefined") return false;
 
@@ -271,17 +235,25 @@ function canonicalizeGoogleRedirectHost() {
 
 function waitForRedirectUser(auth: Auth) {
   return new Promise<User | null>((resolve) => {
+    let settled = false;
     let unsubscribe: () => void = () => undefined;
-    const timeout = window.setTimeout(() => {
-      unsubscribe();
-      resolve(auth.currentUser);
-    }, GOOGLE_REDIRECT_FALLBACK_TIMEOUT_MS);
-
-    unsubscribe = onAuthStateChanged(auth, (user) => {
+    const finish = (user: User | null) => {
+      if (settled) return;
+      settled = true;
       window.clearTimeout(timeout);
       unsubscribe();
       resolve(user);
-    });
+    };
+    const timeout = window.setTimeout(() => finish(auth.currentUser), GOOGLE_REDIRECT_FALLBACK_TIMEOUT_MS);
+
+    void getFirebaseAuthModule()
+      .then(({ onAuthStateChanged }) => {
+        if (settled) return;
+        unsubscribe = onAuthStateChanged(auth, finish);
+      })
+      .catch(() => {
+        finish(auth.currentUser);
+      });
   });
 }
 
@@ -319,7 +291,8 @@ async function startGoogleRedirectSignIn(rememberMe?: boolean): Promise<Firebase
   }
 
   storeGoogleRedirectRememberMe(rememberMe);
-  await signInWithRedirect(await getFirebaseAuth(), createGoogleProvider());
+  const { signInWithRedirect } = await getFirebaseAuthModule();
+  await signInWithRedirect(await getFirebaseAuthClient(), await createGoogleProvider());
   return new Promise(() => undefined);
 }
 
@@ -347,7 +320,8 @@ export async function signInWithGoogle(rememberMe?: boolean): Promise<FirebaseAu
   }
 
   try {
-    const credential = await signInWithPopup(await getFirebaseAuth(), createGoogleProvider());
+    const { signInWithPopup } = await getFirebaseAuthModule();
+    const credential = await signInWithPopup(await getFirebaseAuthClient(), await createGoogleProvider());
     return createGoogleBackendSession(credential.user, rememberMe);
   } catch (error) {
     if (isPopupBlockedError(error)) {
@@ -359,11 +333,17 @@ export async function signInWithGoogle(rememberMe?: boolean): Promise<FirebaseAu
 }
 
 export async function completeGoogleRedirectSignIn(): Promise<FirebaseAuthResult | null> {
-  const auth = await getFirebaseAuth();
   const hadPendingRedirect = hasPendingGoogleRedirect();
+
+  if (!hadPendingRedirect) {
+    return null;
+  }
+
+  const { getRedirectResult } = await getFirebaseAuthModule();
+  const auth = await getFirebaseAuthClient();
   const credential = await getRedirectResult(auth);
   const rememberMe = readGoogleRedirectRememberMe();
-  const user = credential?.user ?? auth.currentUser ?? await waitForRedirectUser(auth);
+  const user = credential?.user ?? (hadPendingRedirect ? auth.currentUser ?? await waitForRedirectUser(auth) : null);
 
   if (!user) {
     if (hadPendingRedirect) {
@@ -377,6 +357,17 @@ export async function completeGoogleRedirectSignIn(): Promise<FirebaseAuthResult
   const session = await createGoogleBackendSession(user, rememberMe);
   clearGoogleRedirectState();
   return session;
+}
+
+export async function signOutFirebaseAuth(): Promise<void> {
+  try {
+    const { signOut } = await getFirebaseAuthModule();
+    await signOut(await getFirebaseAuthClient());
+  } catch {
+    // Backend cookie cleanup is still the source of truth for app access.
+  } finally {
+    clearGoogleRedirectState();
+  }
 }
 
 export async function signUpWithEmailPassword(
@@ -464,11 +455,8 @@ export async function saveUserProfile(userId: string, payload: Record<string, un
     body: JSON.stringify(payload),
   });
 
-  const currentUserId = typeof document === "undefined"
-    ? ""
-    : decodeURIComponent(document.cookie.match(/(?:^|; )userId=([^;]*)/)?.[1] ?? "");
   const nextName = resolvePayloadName(payload);
-  if (nextName && currentUserId === userId) {
+  if (nextName) {
     persistBrowserName(nextName);
   }
 

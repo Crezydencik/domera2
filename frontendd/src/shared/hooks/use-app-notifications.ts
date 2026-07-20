@@ -5,11 +5,11 @@ import { useTranslations } from "next-intl";
 import { getBuildings } from "@/shared/api/buildings";
 import { apiFetch, DomeraApiError } from "@/shared/api/client";
 import { getNotificationSettings, getNotifications, markNotificationRead, removeNotification, type NotificationSettings } from "@/shared/api/notifications";
-import { useAuthSession } from "@/shared/hooks/use-auth";
 import { isElectricityEnabledBuilding } from "@/shared/lib/buildings";
 import { BUILDINGS_CHANGED_EVENT } from "@/shared/lib/buildings-events";
 import type { NotificationItem } from "@/shared/lib/data";
 import { ROUTES } from "@/shared/lib/routes";
+import { normalizeDashboardRole } from "@/shared/role-ui";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -205,7 +205,10 @@ interface UseAppNotificationsOptions {
 export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   const { previewLimit = 5 } = options;
   const t = useTranslations("appShell.header.notifications");
-  const { companyId, dashboardRole, userId } = useAuthSession();
+  const [profile, setProfile] = useState<UnknownRecord | null>(null);
+  const userId = firstString(profile?.uid, profile?.id);
+  const companyId = firstString(profile?.companyId) || undefined;
+  const dashboardRole = normalizeDashboardRole(firstString(profile?.role, profile?.accountType));
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [electricitySetupItems, setElectricitySetupItems] = useState<NotificationItem[]>([]);
   const [profileCompanyId, setProfileCompanyId] = useState<string | undefined>(undefined);
@@ -219,6 +222,22 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    apiFetch<UnknownRecord | null>("/users/me", { redirectOnAuthError: false })
+      .then((nextProfile) => {
+        if (active) setProfile(nextProfile ?? null);
+      })
+      .catch(() => {
+        if (active) setProfile(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const canLoadOwnerStatus = useCallback(
     (nextSettings: NotificationSettings) =>

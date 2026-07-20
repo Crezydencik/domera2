@@ -62,6 +62,7 @@ type CompanySettings = {
   bankSwift: string;
   bankBeneficiary: string;
   invoiceSettings: InvoiceGenerationSettings;
+  hasElectricityEnabled: boolean;
   apiKeys: CompanyApiKeyItem[];
   buildings: CompanyAccessBuilding[];
   members: CompanyMember[];
@@ -3225,7 +3226,15 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
 export function SettingsTabs({ user, notificationSettings, company }: SettingsTabsProps) {
   const notify = useNotifications();
   const t = useTranslations("settings");
-  const tabs = company?.canManage ? (["user", "company", "apiKey", "invoiceGeneration", "notifications"] satisfies SettingsTab[]) : baseTabs;
+  const tabs = company?.canManage
+    ? ([
+        "user",
+        "company",
+        "apiKey",
+        ...(company.hasElectricityEnabled ? (["invoiceGeneration"] satisfies SettingsTab[]) : []),
+        "notifications",
+      ] satisfies SettingsTab[])
+    : baseTabs;
   const [activeTab, setActiveTab] = useState<SettingsTab>("user");
   const [editingField, setEditingField] = useState<EditableField>(null);
   const [displayName, setDisplayName] = useState(user.username);
@@ -3567,7 +3576,7 @@ export function SettingsTabs({ user, notificationSettings, company }: SettingsTa
         />
       ) : null}
 
-      {activeTab === "invoiceGeneration" && company?.canManage ? (
+      {activeTab === "invoiceGeneration" && company?.canManage && company.hasElectricityEnabled ? (
         <InvoiceGenerationPanel company={company} recipientName={displayName || user.username || user.userName || user.email} />
       ) : null}
 

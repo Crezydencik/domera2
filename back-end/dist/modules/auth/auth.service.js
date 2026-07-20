@@ -394,6 +394,59 @@ let AuthService = class AuthService {
             }, { merge: true });
         }
     }
+    getSessionTtlMs(rememberMe) {
+        const standardTtlMinutes = Number(this.configService.get('FIREBASE_SESSION_TTL_MINUTES') ?? '30');
+        const rememberMeTtlMinutes = Number(this.configService.get('FIREBASE_REMEMBER_ME_SESSION_TTL_MINUTES') ?? String(14 * 24 * 60));
+        const ttlMinutes = rememberMe ? rememberMeTtlMinutes : standardTtlMinutes;
+        return Math.min(Math.max(ttlMinutes, 5), 14 * 24 * 60) * 60 * 1000;
+    }
+    async createFirebaseSessionCookie(idToken, ttlMs) {
+        try {
+            return await this.firebaseAdminService.auth.createSessionCookie(idToken, {
+                expiresIn: ttlMs,
+            });
+        }
+        catch (error) {
+            console.error('Failed to create Firebase session cookie:', error);
+            throw this.createServiceError('Failed to create Firebase session cookie. Check Firebase Admin credentials and project configuration.', 500);
+        }
+    }
+    async createSessionCookieFromTrustedLogin(input) {
+        const email = input.email ? this.normalizeEmail(input.email) : undefined;
+        const profile = input.profile;
+        let role = (0, role_constants_1.resolveUserRole)({ role: profile?.role, accountType: profile?.accountType });
+        let accountType = (0, role_constants_1.resolveAccountType)({ role, accountType: profile?.accountType });
+        let companyId = typeof profile?.companyId === 'string' ? profile.companyId : undefined;
+        let apartmentId = typeof profile?.apartmentId === 'string' ? profile.apartmentId : undefined;
+        if (this.isConfiguredPlatformAdmin({ uid: input.userId, email })) {
+            role = 'PlatformAdmin';
+            accountType = 'PlatformAdmin';
+            companyId = undefined;
+            apartmentId = undefined;
+            void this.firebaseAdminService.firestore.collection('users').doc(input.userId).set({
+                uid: input.userId,
+                email,
+                role,
+                accountType,
+                companyId: firestore_1.FieldValue.delete(),
+                updatedAt: new Date(),
+            }, { merge: true }).catch((error) => {
+                console.error('Failed to update platform admin profile during login:', error);
+            });
+        }
+        const ttlMs = this.getSessionTtlMs(input.rememberMe);
+        const sessionCookie = await this.createFirebaseSessionCookie(input.idToken, ttlMs);
+        return {
+            cookie: sessionCookie,
+            maxAgeSeconds: Math.floor(ttlMs / 1000),
+            userId: input.userId,
+            email,
+            role,
+            accountType,
+            companyId,
+            apartmentId,
+        };
+    }
     async createSessionCookie(input) {
         let decoded;
         try {
@@ -472,20 +525,8 @@ let AuthService = class AuthService {
                 updatedAt: new Date(),
             }, { merge: true });
         }
-        const standardTtlMinutes = Number(this.configService.get('FIREBASE_SESSION_TTL_MINUTES') ?? '30');
-        const rememberMeTtlMinutes = Number(this.configService.get('FIREBASE_REMEMBER_ME_SESSION_TTL_MINUTES') ?? String(14 * 24 * 60));
-        const ttlMinutes = input.rememberMe ? rememberMeTtlMinutes : standardTtlMinutes;
-        const ttlMs = Math.min(Math.max(ttlMinutes, 5), 14 * 24 * 60) * 60 * 1000;
-        let sessionCookie;
-        try {
-            sessionCookie = await this.firebaseAdminService.auth.createSessionCookie(input.idToken, {
-                expiresIn: ttlMs,
-            });
-        }
-        catch (error) {
-            console.error('Failed to create Firebase session cookie:', error);
-            throw this.createServiceError('Failed to create Firebase session cookie. Check Firebase Admin credentials and project configuration.', 500);
-        }
+        const ttlMs = this.getSessionTtlMs(input.rememberMe);
+        const sessionCookie = await this.createFirebaseSessionCookie(input.idToken, ttlMs);
         return {
             cookie: sessionCookie,
             maxAgeSeconds: Math.floor(ttlMs / 1000),
@@ -635,16 +676,19 @@ let AuthService = class AuthService {
             email: authResult.email ?? email,
         });
         if ((0, role_constants_1.resolveAccountType)({ role: profile.role, accountType: profile.accountType }) === 'ManagementCompany') {
-            await this.ensureManagementCompanyDocument({
+            void this.ensureManagementCompanyDocument({
                 uid: authResult.localId,
                 email: authResult.email ?? email,
+            }).catch((error) => {
+                console.error('Failed to hydrate management company during login:', error);
             });
         }
-        const session = await this.createSessionCookie({
+        const session = await this.createSessionCookieFromTrustedLogin({
             idToken: authResult.idToken,
             userId: authResult.localId,
             email: authResult.email ?? email,
             rememberMe: input.rememberMe,
+            profile,
         });
         void this.auditLogService.write({
             request,

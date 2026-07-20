@@ -14,7 +14,7 @@ const locales = [
 export function LandingLocaleSwitcher() {
   const locale = useLocale();
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const current = locales.find((item) => item.code === locale) ?? locales[0];
@@ -43,8 +43,7 @@ export function LandingLocaleSwitcher() {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        disabled={isPending}
-        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 disabled:opacity-60"
+        className="inline-flex min-h-11 touch-manipulation select-none items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition-colors duration-100 hover:border-blue-200 hover:bg-blue-50"
         aria-label="Change language"
         aria-expanded={open}
       >
@@ -63,7 +62,7 @@ export function LandingLocaleSwitcher() {
               key={item.code}
               type="button"
               onClick={() => switchLocale(item.code)}
-              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
+              className={`flex w-full touch-manipulation select-none items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors duration-100 ${
                 locale === item.code
                   ? "bg-blue-600 text-white"
                   : "text-slate-700 hover:bg-blue-50 hover:text-blue-700"

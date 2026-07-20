@@ -5,8 +5,6 @@ import { ROUTES } from "@/shared/lib/routes";
 import { DashboardPreview } from "./dashboard-preview";
 import { heroBenefits } from "./landing-data";
 
-const demoRequestHref = "mailto:lumtach@gmail.com?subject=Domera%20demo%20request";
-
 export async function LandingHero() {
   const t = await getTranslations("landing.hero");
 
@@ -27,20 +25,15 @@ export async function LandingHero() {
             {t("description")}
           </p>
 
-          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-9 flex flex-col gap-3 sm:flex-row text-white">
             <Link
               href={ROUTES.register}
-              className="inline-flex min-h-14 items-center  justify-center gap-3 rounded-2xl bg-blue-600 px-7 text-base font-bold text-white shadow-xl shadow-blue-600/25 transition hover:bg-blue-700"
+              prefetch={false}
+              className="inline-flex min-h-14 touch-manipulation select-none items-center justify-center gap-3 rounded-2xl bg-blue-600 px-7 text-base font-bold text-white shadow-xl shadow-blue-600/25 transition-colors duration-100 hover:bg-blue-700"
             >
               {t("primaryCta")}
               <FiArrowRight className="h-5 w-5" aria-hidden="true" />
             </Link>
-            <a
-              href={demoRequestHref}
-              className="inline-flex min-h-14 items-center justify-center rounded-2xl border border-slate-200 bg-white px-7 text-base font-bold text-slate-900 shadow-sm transition hover:border-blue-200 hover:bg-blue-50"
-            >
-              {t("secondaryCta")}
-            </a>
           </div>
 
           <div className="mt-10 grid max-w-3xl grid-cols-1 gap-x-7 gap-y-4 text-base font-medium text-slate-600 sm:grid-cols-2 lg:grid-cols-3">

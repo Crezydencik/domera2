@@ -25,7 +25,8 @@ export async function LandingHeader() {
         <div className="flex items-center gap-2 sm:gap-3">
           <Link
             href={ROUTES.login}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700 sm:px-5"
+            prefetch={false}
+            className="inline-flex min-h-11 touch-manipulation select-none items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/25 transition-colors duration-100 hover:bg-blue-700 sm:px-5"
             style={{ color: "#fff" }}
           >
             <span className="hidden sm:inline">{t("actions.loginRegister")}</span>

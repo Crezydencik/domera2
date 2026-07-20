@@ -2,8 +2,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
-import { ToastProvider } from "@/components/toast-provider";
-import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -33,10 +31,7 @@ export default async function RootLayout({
     <html lang={locale} suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable}`}>
       <body suppressHydrationWarning className="min-h-screen antialiased">
         <NextIntlClientProvider messages={messages}>
-          <ConfirmProvider>
-            {children}
-          </ConfirmProvider>
-          <ToastProvider />
+          {children}
         </NextIntlClientProvider>
       </body>
     </html>

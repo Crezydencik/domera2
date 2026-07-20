@@ -1106,30 +1106,17 @@ export default function ManagementCompanyPage() {
       setError(null);
       try {
         // Сначала получаем профиль пользователя
-        let userId: string | null = null;
         let companyId: string | null = null;
 
-        if (typeof document !== "undefined") {
-          const cookies = document.cookie.split(";").reduce((acc: Record<string, string>, cookie) => {
-            const [key, value] = cookie.trim().split("=");
-            acc[key] = decodeURIComponent(value || "");
-            return acc;
-          }, {} as Record<string, string>);
-          userId = cookies.userId || null;
-        }
-
-        if (!userId) {
-          setError("User ID not found. Please re-login.");
-          setLoading(false);
-          return;
-        }
-
         // Получаем профиль пользователя, который содержит companyId
-        const profileResponse = await apiFetch(`/users/${encodeURIComponent(userId)}`);
+        const profileResponse = await apiFetch("/users/me");
         const profile = profileResponse as Record<string, unknown>;
+        const userId = (typeof profile.uid === "string" && profile.uid) ||
+                       (typeof profile.id === "string" && profile.id) ||
+                       null;
         
         companyId = (typeof profile.companyId === "string" && profile.companyId) ||
-                   (typeof profile.uid === "string" && profile.uid) ||
+                   userId ||
                    null;
 
         if (!companyId) {

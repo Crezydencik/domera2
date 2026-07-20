@@ -67,7 +67,7 @@ function getButtonClassName({
   size: ButtonSize;
   className?: string;
 }) {
-  return `inline-flex items-center justify-center border font-medium transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:pointer-events-none disabled:opacity-50 ${variantStyles[variant]} ${sizeStyles[size]} ${className}`;
+  return `inline-flex touch-manipulation select-none items-center justify-center border font-medium transition-colors duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:pointer-events-none disabled:opacity-50 ${variantStyles[variant]} ${sizeStyles[size]} ${className}`;
 }
 
 export function Button({

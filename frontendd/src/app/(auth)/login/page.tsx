@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import {
   completeGoogleRedirectSignIn,
   establishUserSession,
+  hasPendingGoogleRedirectSignIn,
   signInWithEmailPassword,
   signInWithGoogle,
 } from "@/shared/lib/auth-client";
@@ -28,6 +29,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isAuthenticating = loading || googleLoading;
 
   const getLoginErrorMessage = useCallback((message: string) => {
     const normalized = message.trim().toLowerCase().replace(/\.$/, "");
@@ -60,7 +62,7 @@ export default function LoginPage() {
   }, [s, t]);
 
   const completeLogin = useCallback(async (result: Awaited<ReturnType<typeof signInWithEmailPassword>>) => {
-    await establishUserSession({
+    void establishUserSession({
       userId: result.userId,
       email: result.email,
       role: result.role,
@@ -75,12 +77,17 @@ export default function LoginPage() {
       nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : ROUTES.dashboard;
 
     window.location.replace(redirectPath);
+    return new Promise<never>(() => undefined);
   }, [rememberMe, searchParams]);
 
   useEffect(() => {
     let mounted = true;
 
     async function finishRedirectSignIn() {
+      if (!hasPendingGoogleRedirectSignIn()) {
+        return;
+      }
+
       setGoogleLoading(true);
       setError(null);
 
@@ -140,8 +147,8 @@ export default function LoginPage() {
     <div>
       <AuthHeader title={t("loginTitle")} subtitle={t("loginSubtitle")} />
 
-      <AuthCard>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      <AuthCard className="relative overflow-hidden">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5" aria-busy={isAuthenticating}>
           {error && <AuthAlert>{error}</AuthAlert>}
 
           <Input
@@ -190,7 +197,7 @@ export default function LoginPage() {
             variant="primary"
             size="lg"
             className="min-h-12 w-full rounded-xl"
-            disabled={loading || googleLoading}
+            disabled={isAuthenticating}
           >
             {loading ? s("button.loggingIn") : s("button.login")}
             {!loading && <FiArrowRight className="h-4 w-4" aria-hidden />}
@@ -207,13 +214,29 @@ export default function LoginPage() {
             variant="outlineDark"
             size="lg"
             className="min-h-12 w-full rounded-xl border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
-            disabled={loading || googleLoading}
+            disabled={isAuthenticating}
             onClick={handleGoogleSignIn}
           >
             <FcGoogle className="h-5 w-5" aria-hidden />
             {googleLoading ? t("googleSigningIn") : t("continueWithGoogle")}
           </Button>
         </form>
+
+        {isAuthenticating ? (
+          <div
+            className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/42 backdrop-blur-[3px]"
+            role="status"
+            aria-live="polite"
+            aria-label={loading ? s("button.loggingIn") : t("googleSigningIn")}
+          >
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-[0_18px_45px_rgba(15,23,42,0.22)]">
+              <div
+                className="h-12 w-12 animate-[spin_1.6s_linear_infinite] rounded-full border-[6px] border-blue-100 border-t-blue-600"
+                aria-hidden
+              />
+            </div>
+          </div>
+        ) : null}
       </AuthCard>
 
       <AuthFooterText>

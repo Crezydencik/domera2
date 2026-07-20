@@ -26,7 +26,6 @@ import {
   type DocumentRecord,
   type DocumentScope,
 } from "@/shared/api/documents";
-import { useAuthSession } from "@/shared/hooks/use-auth";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { isApprovedBuilding } from "@/shared/lib/buildings";
 import type { Building, DocumentItem } from "@/shared/lib/data";
@@ -217,8 +216,7 @@ export function DocumentsWorkspace({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useTranslations("documents");
   const notifications = useNotifications();
-  const session = useAuthSession();
-  const effectiveUserId = userId || session.userId;
+  const effectiveUserId = userId;
   const [documents, setDocuments] = useState<StoredDocument[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);

@@ -104,16 +104,6 @@ function firstOptionalString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
-function decodeCookieValue(value?: string): string | undefined {
-  if (!value?.trim()) return undefined;
-
-  try {
-    return decodeURIComponent(value.trim());
-  } catch {
-    return value.trim();
-  }
-}
-
 function firstDisplayString(...values: unknown[]): string {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) {
@@ -635,52 +625,18 @@ async function apiFetchSafe<T>(path: string): Promise<T | null> {
 async function getAuthenticatedContext(roleHint?: string) {
   const store = await cookies();
   const sessionCookie = store.get("__session")?.value?.trim();
-  const sessionMarker = store.get("domera_session")?.value?.trim();
-  const userId = decodeCookieValue(store.get("userId")?.value);
-  const email = decodeCookieValue(store.get("userEmail")?.value);
-  const name = decodeCookieValue(store.get("userName")?.value);
-  const roleCookie = firstOptionalString(
-    store.get("domera_role")?.value,
-    store.get("domera_accountType")?.value,
-    roleHint,
-  );
-  const companyIdCookie = decodeCookieValue(store.get("domera_companyId")?.value);
-  const apartmentIdCookie = decodeCookieValue(store.get("domera_apartmentId")?.value);
 
-  if (!sessionCookie && !sessionMarker) {
+  if (!sessionCookie) {
     redirectToExpiredLogin();
   }
 
-  const fallbackProfile: UnknownRecord = {
-    uid: userId,
-    id: userId,
-    email,
-    name,
-    role: roleCookie,
-    accountType: store.get("domera_accountType")?.value,
-    companyId: companyIdCookie,
-    apartmentId: apartmentIdCookie,
-  };
-  const fallbackRole = normalizeDashboardRole(roleCookie);
-  const fallbackContext = {
-    userId,
-    profile: fallbackProfile,
-    role: fallbackRole,
-    companyId: firstString(companyIdCookie, userId),
-    apartmentId: firstString(apartmentIdCookie),
-  };
-
   try {
-    const profile = await apiFetch<UnknownRecord>(
-      userId ? `/users/${encodeURIComponent(userId)}` : "/users/me",
-    );
-    const resolvedUserId = firstString(profile?.uid, profile?.id, userId);
+    const profile = await apiFetch<UnknownRecord>("/users/me");
+    const resolvedUserId = firstString(profile?.uid, profile?.id);
     const role = normalizeDashboardRole(
       firstString(
         profile?.role,
         profile?.accountType,
-        store.get("domera_role")?.value,
-        store.get("domera_accountType")?.value,
         roleHint,
       ),
     );
@@ -689,20 +645,23 @@ async function getAuthenticatedContext(roleHint?: string) {
       userId: resolvedUserId,
       profile,
       role,
-      companyId: firstString(profile?.companyId, store.get("domera_companyId")?.value, resolvedUserId),
-      apartmentId: firstString(profile?.apartmentId, store.get("domera_apartmentId")?.value),
+      companyId: firstString(profile?.companyId, resolvedUserId),
+      apartmentId: firstString(profile?.apartmentId),
     };
   } catch (error) {
     if (error instanceof DomeraApiError && [401, 403].includes(error.status)) {
-      if (sessionMarker) {
-        return fallbackContext;
-      }
-
       redirectToExpiredLogin();
     }
 
     if (error instanceof DomeraApiError && error.status === 404) {
-      return fallbackContext;
+      const role = normalizeDashboardRole(roleHint);
+      return {
+        userId: undefined,
+        profile: {} as UnknownRecord,
+        role,
+        companyId: undefined,
+        apartmentId: undefined,
+      };
     }
 
     throw error;
@@ -734,6 +693,24 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
   }
 
   if (role === "managementCompany") {
+    if (!companyId) {
+      return {
+        role,
+        userId,
+        profile,
+        companyId,
+        apartmentId,
+        buildings: [],
+        apartments: [],
+        residents: [],
+        invoices: [],
+        meterReadings: [],
+        documents: [],
+        notifications: [],
+        managementCompanies: [],
+      };
+    }
+
     const [buildingsResponse, apartmentsResponse, residentsResponse, invoicesResponse, meterReadingsResponse, notificationsResponse, newsResponse] =
       await Promise.all([
         apiFetchSafe<ApiListResponse>(`/buildings?companyId=${encodeURIComponent(companyId)}`),

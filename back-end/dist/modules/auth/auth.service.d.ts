@@ -14,6 +14,16 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { UsersService } from '../users/users.service';
+type SessionCookieResult = {
+    cookie: string;
+    maxAgeSeconds: number;
+    userId: string;
+    email?: string;
+    role?: string;
+    accountType?: string;
+    companyId?: string;
+    apartmentId?: string;
+};
 export declare class AuthService {
     private readonly firebaseAdminService;
     private readonly configService;
@@ -48,16 +58,10 @@ export declare class AuthService {
     private ensureManagementCompanyDocument;
     private getCompanyStorageFolders;
     private ensureCompanyStorageFolders;
-    createSessionCookie(input: SetSessionDto): Promise<{
-        cookie: string;
-        maxAgeSeconds: number;
-        userId: string;
-        email?: string;
-        role?: string;
-        accountType?: string;
-        companyId?: string;
-        apartmentId?: string;
-    }>;
+    private getSessionTtlMs;
+    private createFirebaseSessionCookie;
+    private createSessionCookieFromTrustedLogin;
+    createSessionCookie(input: SetSessionDto): Promise<SessionCookieResult>;
     requestRegisterEmailCode(request: Request, input: RegisterEmailCodeRequestDto): Promise<{
         success: boolean;
         expiresInSeconds: number;
@@ -71,31 +75,13 @@ export declare class AuthService {
         userId: string;
         email: string;
         idToken: string;
-        session: {
-            cookie: string;
-            maxAgeSeconds: number;
-            userId: string;
-            email?: string;
-            role?: string;
-            accountType?: string;
-            companyId?: string;
-            apartmentId?: string;
-        };
+        session: SessionCookieResult;
     }>;
     registerWithEmailPassword(request: Request, input: RegisterDto): Promise<{
         userId: string;
         email: string;
         idToken: string;
-        session: {
-            cookie: string;
-            maxAgeSeconds: number;
-            userId: string;
-            email?: string;
-            role?: string;
-            accountType?: string;
-            companyId?: string;
-            apartmentId?: string;
-        };
+        session: SessionCookieResult;
     }>;
     changeEmail(request: Request, user: RequestUser, input: ChangeEmailDto): Promise<{
         success: boolean;
@@ -119,16 +105,7 @@ export declare class AuthService {
         success: boolean;
         userId: string;
         email: string;
-        session: {
-            cookie: string;
-            maxAgeSeconds: number;
-            userId: string;
-            email?: string;
-            role?: string;
-            accountType?: string;
-            companyId?: string;
-            apartmentId?: string;
-        };
+        session: SessionCookieResult;
     }>;
     previewPasswordReset(request: Request, oobCode: string): Promise<{
         email: string;
@@ -141,3 +118,4 @@ export declare class AuthService {
         message: string;
     }>;
 }
+export {};

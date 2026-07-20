@@ -33,11 +33,18 @@ const role_constants_1 = require("../../common/auth/role.constants");
 const current_user_decorator_1 = require("../../common/auth/current-user.decorator");
 const firebase_auth_guard_1 = require("../../common/auth/firebase-auth.guard");
 const SESSION_COOKIE_NAME = '__session';
-const ROLE_COOKIE_NAME = 'domera_role';
-const ACCOUNT_TYPE_COOKIE_NAME = 'domera_accountType';
-const COMPANY_COOKIE_NAME = 'domera_companyId';
-const APARTMENT_COOKIE_NAME = 'domera_apartmentId';
-const SESSION_MARKER_COOKIE_NAME = 'domera_session';
+const legacyAuthCookieNames = [
+    'domera_role',
+    'domera_accountType',
+    'domera_companyId',
+    'domera_apartmentId',
+    'domera_session',
+    'authToken',
+    'userId',
+    'userEmail',
+    'userName',
+    'domera_logged_out',
+];
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -131,35 +138,23 @@ let AuthController = class AuthController {
             path: '/',
         };
         response.cookie(SESSION_COOKIE_NAME, session.cookie, cookieOptions);
-        if (session.role) {
-            response.cookie(ROLE_COOKIE_NAME, session.role, cookieOptions);
+        this.clearLegacyAuthCookies(response);
+    }
+    clearLegacyAuthCookies(response) {
+        for (const name of legacyAuthCookieNames) {
+            response.clearCookie(name, { path: '/' });
         }
-        else {
-            response.clearCookie(ROLE_COOKIE_NAME, { path: '/' });
-        }
-        if (session.accountType) {
-            response.cookie(ACCOUNT_TYPE_COOKIE_NAME, session.accountType, cookieOptions);
-        }
-        else {
-            response.clearCookie(ACCOUNT_TYPE_COOKIE_NAME, { path: '/' });
-        }
-        if (session.companyId) {
-            response.cookie(COMPANY_COOKIE_NAME, session.companyId, cookieOptions);
-        }
-        else {
-            response.clearCookie(COMPANY_COOKIE_NAME, { path: '/' });
-        }
-        if (session.apartmentId) {
-            response.cookie(APARTMENT_COOKIE_NAME, session.apartmentId, cookieOptions);
-        }
-        else {
-            response.clearCookie(APARTMENT_COOKIE_NAME, { path: '/' });
-        }
-        response.clearCookie(SESSION_MARKER_COOKIE_NAME, { path: '/' });
-        response.clearCookie('authToken', { path: '/' });
-        response.clearCookie('userId', { path: '/' });
-        response.clearCookie('userEmail', { path: '/' });
-        response.clearCookie('userName', { path: '/' });
+    }
+    clearAuthCookies(response) {
+        const cookieOptions = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            path: '/',
+        };
+        response.clearCookie(SESSION_COOKIE_NAME, cookieOptions);
+        response.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
+        this.clearLegacyAuthCookies(response);
     }
     mapServiceError(error) {
         if (error instanceof common_1.HttpException)
@@ -214,7 +209,7 @@ let AuthController = class AuthController {
                 rememberMe: true,
             });
             if (!(0, role_constants_1.isPlatformAdminRole)(result.session.role)) {
-                this.clearCookies(response);
+                this.clearAuthCookies(response);
                 response.status(common_1.HttpStatus.FORBIDDEN).type('html').send(renderDocsLoginPage({
                     next,
                     error: 'Platform administrator access required.',
@@ -248,16 +243,7 @@ let AuthController = class AuthController {
         return this.setCookies(dto, response);
     }
     clearCookies(response) {
-        response.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
-        response.clearCookie(ROLE_COOKIE_NAME, { path: '/' });
-        response.clearCookie(ACCOUNT_TYPE_COOKIE_NAME, { path: '/' });
-        response.clearCookie(COMPANY_COOKIE_NAME, { path: '/' });
-        response.clearCookie(APARTMENT_COOKIE_NAME, { path: '/' });
-        response.clearCookie(SESSION_MARKER_COOKIE_NAME, { path: '/' });
-        response.clearCookie('authToken', { path: '/' });
-        response.clearCookie('userId', { path: '/' });
-        response.clearCookie('userEmail', { path: '/' });
-        response.clearCookie('userName', { path: '/' });
+        this.clearAuthCookies(response);
         return { success: true };
     }
     clearSession(response) {

@@ -9,10 +9,9 @@ import { LocaleSwitcher } from "@/components/locale-switcher";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { apiFetch } from "@/shared/api/client";
 import { getBuildings } from "@/shared/api/buildings";
-import { establishUserSession } from "@/shared/lib/auth-client";
+import { signOutFirebaseAuth } from "@/shared/lib/auth-client";
 import { clearBrowserAuthCookies } from "@/shared/lib/auth-session";
 import { getPlatformUsers, type PlatformUser } from "@/shared/api/users";
-import { useAuthSession } from "@/shared/hooks/use-auth";
 import { useAppNotifications } from "@/shared/hooks/use-app-notifications";
 import { useNotifications as useToastNotifications } from "@/shared/hooks/use-notifications";
 import { BUILDING_CREATION_REQUESTS_CHANGED_EVENT } from "@/shared/lib/building-creation-requests-events";
@@ -38,6 +37,8 @@ type NavItem = {
 };
 
 type UserProfileSummary = {
+  id?: string;
+  uid?: string;
   companyId?: string;
   email?: string;
   firstName?: string;
@@ -51,8 +52,6 @@ type UserProfileSummary = {
   hasTenancy?: boolean;
   propertyRoles?: string[];
 };
-
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
 function resolveUserName(email: string): string {
   const namePart = email.split("@")[0]?.trim();
@@ -180,12 +179,12 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
   const profileRef = useRef<HTMLDivElement>(null);
   const confirm = useConfirm();
   const toast = useToastNotifications();
-  const session = useAuthSession();
   const [profileSummary, setProfileSummary] = useState<UserProfileSummary | null>(null);
-  const navigationCompanyId = session.companyId ?? profileSummary?.companyId ?? (role === "managementCompany" ? session.userId : undefined);
+  const profileUserId = firstText(profileSummary?.id, profileSummary?.uid);
+  const navigationCompanyId = profileSummary?.companyId ?? (role === "managementCompany" ? profileUserId : undefined);
 
- const userEmail = session.email ?? "user@domera.lv";
-const userName = resolveProfileName(profileSummary, session.name, userEmail);
+ const userEmail = profileSummary?.email ?? "user@domera.lv";
+const userName = resolveProfileName(profileSummary, undefined, userEmail);
   const userInitial = userName.slice(0, 1).toUpperCase();
   const roleLabel = role === "platformAdmin" ? "Platform administrator" : t(`roles.${role}`);
   const propertyRoleLabel = useMemo(() => {
@@ -339,11 +338,6 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
   }, [closeNotifications, notificationsOpen, profileOpen]);
 
   useEffect(() => {
-    if (!session.isAuthenticated) {
-      setProfileSummary(null);
-      return;
-    }
-
     let active = true;
 
     apiFetch<UserProfileSummary | null>("/users/me")
@@ -357,7 +351,7 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
     return () => {
       active = false;
     };
-  }, [session.isAuthenticated, session.userId]);
+  }, []);
 
   useEffect(() => {
     if (readStoredElectricityNavigation()) {
@@ -366,7 +360,7 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
   }, []);
 
   useEffect(() => {
-    if (role !== "managementCompany" || !session.isAuthenticated || !navigationCompanyId) {
+    if (role !== "managementCompany" || !navigationCompanyId) {
       return;
     }
 
@@ -405,10 +399,10 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
       window.removeEventListener("focus", refreshElectricityNavigation);
       window.removeEventListener(BUILDINGS_CHANGED_EVENT, handleBuildingsChanged);
     };
-  }, [navigationCompanyId, role, session.isAuthenticated, session.userId]);
+  }, [navigationCompanyId, role]);
 
   useEffect(() => {
-    if (role !== "platformAdmin" || !session.isAuthenticated) {
+    if (role !== "platformAdmin") {
       setHasPendingBuildingRequests(false);
       return;
     }
@@ -436,24 +430,19 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener(BUILDING_CREATION_REQUESTS_CHANGED_EVENT, refreshPendingBuildingRequests);
     };
-  }, [role, session.isAuthenticated]);
+  }, [role]);
 
   async function handleLogout() {
     setLogoutLoading(true);
 
     try {
-      await fetch(`${apiBaseUrl}/auth/clear-cookies`, {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch {
-      // Local cleanup is still enough to leave the app shell.
-    } finally {
       clearBrowserAuthCookies();
+      await signOutFirebaseAuth();
       setProfileOpen(false);
-      router.push(`${ROUTES.login}?expired=1`);
+      window.location.assign(ROUTES.logout);
+    } catch {
+      router.replace(`${ROUTES.login}?expired=1`);
       router.refresh();
-      setLogoutLoading(false);
     }
   }
 
@@ -511,14 +500,6 @@ const userName = resolveProfileName(profileSummary, session.name, userEmail);
       });
 
       await notifications.dismiss(item.id);
-
-      if (session.userId && session.email) {
-        await establishUserSession({
-          userId: session.userId,
-          email: session.email,
-          accountType: item.type === "tenant-invitation" ? "Resident" : "Landlord",
-        }).catch(() => null);
-      }
 
       toast.success(t("notifications.acceptInvitationSuccess"));
       notifications.close();

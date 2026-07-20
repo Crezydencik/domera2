@@ -45,11 +45,18 @@ import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
 import { RequestUser } from '../../common/auth/request-user.type';
 
 const SESSION_COOKIE_NAME = '__session';
-const ROLE_COOKIE_NAME = 'domera_role';
-const ACCOUNT_TYPE_COOKIE_NAME = 'domera_accountType';
-const COMPANY_COOKIE_NAME = 'domera_companyId';
-const APARTMENT_COOKIE_NAME = 'domera_apartmentId';
-const SESSION_MARKER_COOKIE_NAME = 'domera_session';
+const legacyAuthCookieNames = [
+  'domera_role',
+  'domera_accountType',
+  'domera_companyId',
+  'domera_apartmentId',
+  'domera_session',
+  'authToken',
+  'userId',
+  'userEmail',
+  'userName',
+  'domera_logged_out',
+] as const;
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
@@ -161,36 +168,26 @@ export class AuthController {
     };
 
     response.cookie(SESSION_COOKIE_NAME, session.cookie, cookieOptions);
+    this.clearLegacyAuthCookies(response);
+  }
 
-    if (session.role) {
-      response.cookie(ROLE_COOKIE_NAME, session.role, cookieOptions);
-    } else {
-      response.clearCookie(ROLE_COOKIE_NAME, { path: '/' });
+  private clearLegacyAuthCookies(response: Response) {
+    for (const name of legacyAuthCookieNames) {
+      response.clearCookie(name, { path: '/' });
     }
+  }
 
-    if (session.accountType) {
-      response.cookie(ACCOUNT_TYPE_COOKIE_NAME, session.accountType, cookieOptions);
-    } else {
-      response.clearCookie(ACCOUNT_TYPE_COOKIE_NAME, { path: '/' });
-    }
+  private clearAuthCookies(response: Response) {
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' as const : 'lax' as const,
+      path: '/',
+    };
 
-    if (session.companyId) {
-      response.cookie(COMPANY_COOKIE_NAME, session.companyId, cookieOptions);
-    } else {
-      response.clearCookie(COMPANY_COOKIE_NAME, { path: '/' });
-    }
-
-    if (session.apartmentId) {
-      response.cookie(APARTMENT_COOKIE_NAME, session.apartmentId, cookieOptions);
-    } else {
-      response.clearCookie(APARTMENT_COOKIE_NAME, { path: '/' });
-    }
-
-    response.clearCookie(SESSION_MARKER_COOKIE_NAME, { path: '/' });
-    response.clearCookie('authToken', { path: '/' });
-    response.clearCookie('userId', { path: '/' });
-    response.clearCookie('userEmail', { path: '/' });
-    response.clearCookie('userName', { path: '/' });
+    response.clearCookie(SESSION_COOKIE_NAME, cookieOptions);
+    response.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
+    this.clearLegacyAuthCookies(response);
   }
 
   private mapServiceError(error: unknown): never {
@@ -269,7 +266,7 @@ export class AuthController {
       });
 
       if (!isPlatformAdminRole(result.session.role)) {
-        this.clearCookies(response);
+        this.clearAuthCookies(response);
         response.status(HttpStatus.FORBIDDEN).type('html').send(
           renderDocsLoginPage({
             next,
@@ -333,16 +330,7 @@ export class AuthController {
     type: SuccessResponseDto,
   })
   clearCookies(@Res({ passthrough: true }) response: Response) {
-    response.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
-    response.clearCookie(ROLE_COOKIE_NAME, { path: '/' });
-    response.clearCookie(ACCOUNT_TYPE_COOKIE_NAME, { path: '/' });
-    response.clearCookie(COMPANY_COOKIE_NAME, { path: '/' });
-    response.clearCookie(APARTMENT_COOKIE_NAME, { path: '/' });
-    response.clearCookie(SESSION_MARKER_COOKIE_NAME, { path: '/' });
-    response.clearCookie('authToken', { path: '/' });
-    response.clearCookie('userId', { path: '/' });
-    response.clearCookie('userEmail', { path: '/' });
-    response.clearCookie('userName', { path: '/' });
+    this.clearAuthCookies(response);
 
     return { success: true };
   }

@@ -1,7 +1,6 @@
-import { cookies } from "next/headers";
 import type { CompanyApiKeyItem } from "@/shared/api/company";
 import type { NotificationSettings } from "@/shared/api/notifications";
-import { isApprovedBuilding } from "@/shared/lib/buildings";
+import { isApprovedBuilding, isElectricityEnabledBuilding } from "@/shared/lib/buildings";
 import { apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
 import { SettingsTabs } from "./settings-tabs";
 
@@ -186,11 +185,10 @@ function normalizeApiKeyItems(value: unknown): CompanyApiKeyItem[] {
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
   const params = (await searchParams) ?? {};
   const data = await getRoleDataBundle(params.role);
-  const cookieStore = await cookies();
   const profile = data.profile;
 
-  const userId = firstString(profile?.uid, profile?.id, data.userId, cookieStore.get("userId")?.value);
-  const email = firstString(profile?.email, cookieStore.get("userEmail")?.value, "kargini@inbox.lv");
+  const userId = firstString(profile?.uid, profile?.id, data.userId);
+  const email = firstString(profile?.email, "kargini@inbox.lv");
   const fullName = firstString(joinNameParts(profile), email.split("@")[0], "DENISS KARGINS");
   const userName = fullName.toUpperCase();
   const username = fullName;
@@ -200,6 +198,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const companyId = firstString(data.companyId, profile?.companyId, userId);
   const accountType = firstString(profile?.accountType, profile?.role);
   const canManageCompany = data.role === "managementCompany" && normalizeAccessValue(accountType) === "managementcompany";
+  const hasElectricityEnabled = data.buildings.some(isElectricityEnabledBuilding);
   let company: UnknownRecord | null = null;
   let apiKeys: CompanyApiKeyItem[] = [];
 
@@ -242,6 +241,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           bankSwift: firstString(company?.bankSwift, company?.swift, company?.bic, profile?.bankSwift, profile?.swift, profile?.bic),
           bankBeneficiary: firstString(company?.bankBeneficiary, company?.beneficiaryName, profile?.bankBeneficiary, profile?.beneficiaryName),
           invoiceSettings: normalizeInvoiceSettings(company?.invoiceSettings),
+          hasElectricityEnabled,
           apiKeys,
           buildings: data.buildings
             .filter(isApprovedBuilding)

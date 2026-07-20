@@ -24,7 +24,8 @@ export async function LandingFooter() {
 
           <Link
             href={ROUTES.register}
-            className="inline-flex min-h-14 items-center justify-center gap-3 rounded-2xl bg-white px-7 text-base font-bold text-slate-950 transition hover:bg-blue-50"
+            prefetch={false}
+            className="inline-flex min-h-14 touch-manipulation select-none items-center justify-center gap-3 rounded-2xl bg-white px-7 text-base font-bold text-slate-950 transition-colors duration-100 hover:bg-blue-50"
             style={{ color: "#020617" }}
           >
             {t("footer.cta")}

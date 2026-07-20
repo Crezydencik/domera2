@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { useAuthSession } from "@/shared/hooks/use-auth";
 import { DataTable } from "@/components/data-table";
 import { SectionCard } from "@/components/section-card";
 import { apiFetch } from "@/shared/api/client";
@@ -17,7 +16,6 @@ interface MeterReading {
 
 export default function ManagerPage() {
   const t = useTranslations("meterReadings");
-  const session = useAuthSession();
   const [meterReadings, setMeterReadings] = useState<MeterReading[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,13 +31,21 @@ export default function ManagerPage() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        if (!session.companyId) {
+        const profile = await apiFetch<Record<string, unknown> | null>("/users/me");
+        const nextCompanyId =
+          typeof profile?.companyId === "string" && profile.companyId.trim()
+            ? profile.companyId.trim()
+            : typeof profile?.uid === "string" && profile.uid.trim()
+              ? profile.uid.trim()
+              : "";
+
+        if (!nextCompanyId) {
           setError("Company ID is not available");
           setLoading(false);
           return;
         }
         const response = await apiFetch<any>(
-          `/meter-readings?companyId=${encodeURIComponent(String(session.companyId))}`
+          `/meter-readings?companyId=${encodeURIComponent(nextCompanyId)}`
         );
 
         if (Array.isArray(response.items)) {
@@ -63,10 +69,8 @@ export default function ManagerPage() {
       }
     };
 
-    if (session.isAuthenticated && session.companyId) {
-      fetchData();
-    }
-  }, [mounted, session.isAuthenticated, session.companyId]);
+    fetchData();
+  }, [mounted]);
 
   if (!mounted) {
     return null;

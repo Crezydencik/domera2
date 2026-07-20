@@ -11,8 +11,7 @@ export type BrowserAuthSession = {
   apartmentId?: string;
 };
 
-const authCookieNames = [
-  "__session",
+const legacyAuthCookieNames = [
   "domera_session",
   "domera_role",
   "domera_accountType",
@@ -21,50 +20,15 @@ const authCookieNames = [
   "userId",
   "userEmail",
   "userName",
+  "domera_logged_out",
 ] as const;
 
-function parseCookieString(value: string) {
-  return value
-    .split(";")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .reduce<Record<string, string>>((accumulator, entry) => {
-      const separatorIndex = entry.indexOf("=");
-
-      if (separatorIndex === -1) {
-        accumulator[entry] = "";
-        return accumulator;
-      }
-
-      const key = entry.slice(0, separatorIndex).trim();
-      const rawValue = entry.slice(separatorIndex + 1).trim();
-      accumulator[key] = decodeURIComponent(rawValue);
-      return accumulator;
-    }, {});
-}
+const authCookieNamesToClear = ["__session", ...legacyAuthCookieNames] as const;
 
 export function readBrowserAuthSession(): BrowserAuthSession {
-  if (typeof document === "undefined") {
-    return {
-      isAuthenticated: false,
-      role: "managementCompany",
-    };
-  }
-
-  const cookies = parseCookieString(document.cookie);
-  const sessionMarker = cookies.domera_session?.trim();
-  const userId = cookies.userId?.trim();
-  const email = cookies.userEmail?.trim();
-
   return {
-    isAuthenticated: Boolean(sessionMarker || userId || email),
-    userId: userId || undefined,
-    email: email || undefined,
-    name: cookies.userName?.trim() || undefined,
-    accountType: cookies.domera_accountType?.trim() || cookies.domera_role?.trim() || undefined,
-    role: cookies.domera_role?.trim() || cookies.domera_accountType?.trim() || "managementCompany",
-    companyId: cookies.domera_companyId?.trim() || undefined,
-    apartmentId: cookies.domera_apartmentId?.trim() || undefined,
+    isAuthenticated: false,
+    role: "managementCompany",
   };
 }
 
@@ -77,7 +41,7 @@ export function notifyAuthSessionChanged() {
 export function clearBrowserAuthCookies() {
   if (typeof document === "undefined") return;
 
-  for (const name of authCookieNames) {
+  for (const name of authCookieNamesToClear) {
     document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`;
   }
 

@@ -8,6 +8,7 @@ export const ROUTES = {
 
   // ── Auth ────────────────────────────────────────────────
   login: "/login",
+  logout: "/logout",
   register: "/register",
   registerVerify: "/register/verify",
   forgotPassword: "/forgot-password",

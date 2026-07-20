@@ -1,6 +1,5 @@
 "use client";
 
-import { motion, useMotionValueEvent, useSpring } from "framer-motion";
 import {
   Euro,
   Headphones,
@@ -9,7 +8,7 @@ import {
   Sparkles,
   WalletCards,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 
 const PRICE_PER_APARTMENT = 0.5;
@@ -30,32 +29,12 @@ function formatEuro(value: number) {
   }).format(value);
 }
 
-function useAnimatedNumber(value: number) {
-  const spring = useSpring(value, {
-    stiffness: 110,
-    damping: 24,
-    mass: 0.7,
-  });
-  const [displayValue, setDisplayValue] = useState(value);
-
-  useEffect(() => {
-    spring.set(value);
-  }, [spring, value]);
-
-  useMotionValueEvent(spring, "change", (latest) => {
-    setDisplayValue(latest);
-  });
-
-  return displayValue;
-}
-
 export function PricingSection() {
   const t = useTranslations("landing.pricing");
   const [apartmentCount, setApartmentCount] = useState(250);
   const [inputValue, setInputValue] = useState("250");
 
   const monthlyPrice = apartmentCount * PRICE_PER_APARTMENT;
-  const animatedPrice = useAnimatedNumber(monthlyPrice);
   const sliderProgress =
     ((apartmentCount - MIN_APARTMENTS) / (MAX_APARTMENTS - MIN_APARTMENTS)) * 100;
 
@@ -96,14 +75,7 @@ export function PricingSection() {
       <div
         className="relative mx-auto max-w-7xl"
       >
-        <motion.div
-          className="group relative mx-auto max-w-4xl overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white/85 p-5 shadow-[0_26px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl md:p-6 lg:p-8"
-          initial={{ opacity: 0, y: 28 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.65, delay: 0.1, ease: "easeOut" }}
-          whileHover={{ y: -4 }}
-        >
+        <div className="group relative mx-auto max-w-4xl overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white/85 p-5 shadow-[0_26px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl transition-transform duration-300 hover:-translate-y-1 md:p-6 lg:p-8">
           <div className="pointer-events-none absolute -right-16 -top-20 h-60 w-60 rounded-full bg-[#155DFC]/10 blur-3xl" />
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.8),rgba(255,255,255,0)_34%,rgba(21,93,252,0.08)_72%,rgba(255,255,255,0.65))] opacity-80 transition duration-500 group-hover:translate-x-6" />
 
@@ -149,12 +121,12 @@ export function PricingSection() {
                   {t("priceCard.title")}
                 </h3>
                 <div className="mt-4 flex flex-wrap items-end gap-x-4 gap-y-2">
-                  <motion.p
+                  <p
                     className="text-6xl font-bold leading-none tracking-normal text-slate-950 md:text-7xl"
                     aria-live="polite"
                   >
-                    {formatEuro(animatedPrice)}
-                  </motion.p>
+                    {formatEuro(monthlyPrice)}
+                  </p>
                   <p className="pb-2 text-base font-semibold text-slate-500">
                     {t("priceCard.perMonth")}
                   </p>
@@ -162,15 +134,12 @@ export function PricingSection() {
               </div>
 
               <div className="rounded-2xl bg-slate-50/80 p-4 ring-1 ring-slate-200/80">
-                <motion.p
+                <p
                   key={apartmentCount}
                   className="text-4xl font-bold leading-none text-slate-950 md:text-5xl"
-                  initial={{ opacity: 0.2, y: 12, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ duration: 0.22, ease: "easeOut" }}
                 >
                   {apartmentCount.toLocaleString("en-US")}
-                </motion.p>
+                </p>
                 <p className="mt-2 text-base font-semibold text-slate-500">
                   {t("calculator.apartments")}
                 </p>
@@ -236,7 +205,7 @@ export function PricingSection() {
               })}
             </div>
           </div>
-        </motion.div>
+        </div>
       </div>
     </section>
   );

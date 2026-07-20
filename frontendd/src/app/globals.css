@@ -40,6 +40,8 @@ label[for],
 select:not(:disabled),
 summary {
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button:disabled,

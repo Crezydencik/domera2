@@ -3,10 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { signOutFirebaseAuth } from "@/shared/lib/auth-client";
 import { clearBrowserAuthCookies } from "@/shared/lib/auth-session";
 import { ROUTES } from "@/shared/lib/routes";
-
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
 export function LogoutButton() {
   const router = useRouter();
@@ -16,17 +15,12 @@ export function LogoutButton() {
     setLoading(true);
 
     try {
-      await fetch(`${apiBaseUrl}/auth/clear-cookies`, {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch {
-      // continue with local cleanup even if the backend is unavailable
-    } finally {
       clearBrowserAuthCookies();
-      router.push(`${ROUTES.login}?expired=1`);
+      await signOutFirebaseAuth();
+      window.location.assign(ROUTES.logout);
+    } catch {
+      router.replace(`${ROUTES.login}?expired=1`);
       router.refresh();
-      setLoading(false);
     }
   }
 

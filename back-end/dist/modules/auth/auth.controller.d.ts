@@ -16,6 +16,8 @@ export declare class AuthController {
     private readonly authService;
     constructor(authService: AuthService);
     private applySessionCookies;
+    private clearLegacyAuthCookies;
+    private clearAuthCookies;
     private mapServiceError;
     getAccountCatalog(): {
         accountTypes: readonly ["ManagementCompany", "Resident", "Landlord"];
