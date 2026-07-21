@@ -16,6 +16,7 @@ export declare class MeterReadingsService {
     private hasApartmentAccess;
     private historySubmittedAtTime;
     private electricityAllowsMultipleMonthlySubmissions;
+    private hasInvoiceLinkedElectricityReadings;
     private extractApartmentReadings;
     private getAccessibleApartmentIds;
     list(user: RequestUser, apartmentId?: string, companyId?: string): Promise<{
@@ -63,17 +64,11 @@ export declare class MeterReadingsService {
     private loadBuildings;
     create(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{
         success: boolean;
-        reading: {
-            id: `${string}-${string}-${string}-${string}-${string}`;
-            apartmentId: string;
-            meterId: string;
-            submittedAt: Date;
-            previousValue: number;
+        reading: Record<string, unknown> & {
             currentValue: number;
-            consumption: number;
-            buildingId: string;
-            month: number;
-            year: number;
+            previousValue: number;
+            source?: string;
+            meterReadingSource?: string;
         };
     }>;
     update(request: Request, user: RequestUser, readingId: string, apartmentId: string, payload: Record<string, unknown>): Promise<{

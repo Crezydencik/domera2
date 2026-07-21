@@ -400,6 +400,7 @@ function toInvoice(item: UnknownRecord): Invoice {
     contractNumber: contractNumber || undefined,
     apartmentNumber: apartmentNumber || undefined,
     buildingNumber: buildingNumber || undefined,
+    meterReadingId: typeof item.meterReadingId === "string" ? item.meterReadingId : undefined,
     externalId: typeof item.externalId === "string" ? item.externalId : undefined,
     period: typeof item.period === "string" ? item.period : undefined,
     invoiceDate: item.invoiceDate ? formatDate(item.invoiceDate) : undefined,

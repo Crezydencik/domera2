@@ -81,6 +81,7 @@ export interface Invoice {
   contractNumber?: string;
   apartmentNumber?: string;
   buildingNumber?: string;
+  meterReadingId?: string;
   externalId?: string;
   period?: string;
   invoiceDate?: string;

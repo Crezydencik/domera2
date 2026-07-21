@@ -25,6 +25,7 @@ import type { DashboardRole } from "@/shared/role-ui";
 type RawRecord = Record<string, unknown>;
 
 type QueueStatus = "ready" | "uploading" | "success" | "error";
+type InvoiceKind = "electricity" | "utility";
 
 type InvoiceQueueItem = {
   id: string;
@@ -169,7 +170,12 @@ const COPY = {
     issued: "Issued",
     draft: "Draft",
     cancelled: "Cancelled",
+    invoicesElectricityGroup: "Electricity",
+    invoicesUtilityGroup: "Utilities",
+    invoiceTypeElectricity: "Electricity",
+    invoiceTypeUtility: "Utilities",
     colInvoice: "Client / home",
+    colType: "Type",
     colApartment: "Apartment",
     colResident: "Resident",
     colAmount: "Amount",
@@ -280,7 +286,12 @@ const COPY = {
     issued: "Выставлен",
     draft: "Черновик",
     cancelled: "Отменен",
+    invoicesElectricityGroup: "Электричество",
+    invoicesUtilityGroup: "Коммунальные",
+    invoiceTypeElectricity: "Электричество",
+    invoiceTypeUtility: "Коммунальные",
     colInvoice: "Клиент / дом",
+    colType: "Тип",
     colApartment: "Квартира",
     colResident: "Жилец",
     colAmount: "Сумма",
@@ -431,7 +442,12 @@ const COPY = {
     issued: "Izrakstits",
     draft: "Melnraksts",
     cancelled: "Atcelts",
+    invoicesElectricityGroup: "Elektriba",
+    invoicesUtilityGroup: "Komunalie",
+    invoiceTypeElectricity: "Elektriba",
+    invoiceTypeUtility: "Komunalie",
     colInvoice: "Klients / maja",
+    colType: "Tips",
     colApartment: "Dzivoklis",
     colResident: "Iedzivotajs",
     colAmount: "Summa",
@@ -538,6 +554,35 @@ function formatHistoryDate(value: unknown) {
 
 function pendingApprovalPdfHref(id: string) {
   return `/api/invoices/pending-approvals/${encodeURIComponent(id)}/pdf`;
+}
+
+function invoiceKind(item: Invoice): InvoiceKind {
+  if (firstString(item.meterReadingId)) return "electricity";
+
+  const marker = [
+    item.externalId,
+    item.comment,
+    item.fileName,
+    item.displayNumber,
+  ].map((value) => firstString(value).toLowerCase()).join(" ");
+
+  return /\belectricity\b|elektro|electric|электр/i.test(marker) ? "electricity" : "utility";
+}
+
+function invoiceKindLabel(kind: InvoiceKind, copy: Copy) {
+  return kind === "electricity" ? copy.invoiceTypeElectricity : copy.invoiceTypeUtility;
+}
+
+function InvoiceKindBadge({ kind, copy }: { kind: InvoiceKind; copy: Copy }) {
+  const className = kind === "electricity"
+    ? "bg-blue-50 text-blue-700"
+    : "bg-slate-100 text-slate-700";
+
+  return (
+    <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${className}`}>
+      {invoiceKindLabel(kind, copy)}
+    </span>
+  );
 }
 
 function statusLabel(status: string, copy: Copy) {
@@ -1024,7 +1069,14 @@ export function InvoicesWorkspace({
   });
   const filteredPendingApprovals = pendingApprovals.filter((item) => matchesSelectedBuilding(item.buildingId));
   const hasVisibleApprovals = filteredPendingApprovals.length > 0;
-  const invoiceRows = filteredInvoices.map((item) => {
+  const typedInvoices = filteredInvoices.map((item) => ({
+    item,
+    kind: invoiceKind(item),
+  }));
+  const invoiceColumns = canImport
+    ? [copy.colInvoice, copy.colType, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colStatus, copy.colFile]
+    : [copy.colInvoice, copy.colType, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colFile];
+  const buildInvoiceRows = (items: typeof typedInvoices) => items.map(({ item, kind }) => {
     const invoiceLabel = item.displayNumber || item.externalId || item.id;
     const invoiceTitle = item.fileName || invoiceLabel;
     const secondaryLabel = firstString(
@@ -1042,6 +1094,7 @@ export function InvoicesWorkspace({
           <p className="mt-0.5 text-xs text-slate-500">{secondaryLabel}</p>
         ) : null}
       </div>,
+      <InvoiceKindBadge key={`${item.id}-type`} kind={kind} copy={copy} />,
       item.apartment,
       item.resident,
       item.amount,
@@ -1093,7 +1146,7 @@ export function InvoicesWorkspace({
 
     return row;
   });
-  const invoiceMobileRows = filteredInvoices.map((item) => {
+  const buildInvoiceMobileRows = (items: typeof typedInvoices) => items.map(({ item, kind }) => {
     const invoiceLabel = item.displayNumber || item.externalId || item.id;
 
     return (
@@ -1106,6 +1159,7 @@ export function InvoicesWorkspace({
         pdfUrl={item.pdfUrl}
         fileName={item.fileName}
         fallbackTitle={invoiceLabel}
+        typeLabel={invoiceKindLabel(kind, copy)}
         locale={locale}
         viewLabel={copy.pdf}
         closeLabel={copy.close}
@@ -1114,6 +1168,22 @@ export function InvoicesWorkspace({
       />
     );
   });
+  const electricityInvoiceItems = typedInvoices.filter((entry) => entry.kind === "electricity");
+  const utilityInvoiceItems = typedInvoices.filter((entry) => entry.kind === "utility");
+  const invoiceSections = [
+    {
+      key: "electricity",
+      title: copy.invoicesElectricityGroup,
+      rows: buildInvoiceRows(electricityInvoiceItems),
+      mobileRows: buildInvoiceMobileRows(electricityInvoiceItems),
+    },
+    {
+      key: "utility",
+      title: copy.invoicesUtilityGroup,
+      rows: buildInvoiceRows(utilityInvoiceItems),
+      mobileRows: buildInvoiceMobileRows(utilityInvoiceItems),
+    },
+  ].filter((section) => section.rows.length > 0);
 
   const historyRows = filteredUploadHistory.map((item, index) => {
     const status = firstString(item.status, "error");
@@ -1588,20 +1658,23 @@ export function InvoicesWorkspace({
           </div>
         ) : undefined}
       >
-        {invoiceRows.length ? (
-          <>
-            <div className="grid gap-2 md:hidden">{invoiceMobileRows}</div>
-            <div className="hidden md:block">
-              <DataTable
-                columns={
-                  canImport
-                    ? [copy.colInvoice, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colStatus, copy.colFile]
-                    : [copy.colInvoice, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colFile]
-                }
-                rows={invoiceRows}
-              />
-            </div>
-          </>
+        {invoiceSections.length ? (
+          <div className="grid gap-6">
+            {invoiceSections.map((section) => (
+              <section key={section.key} className="grid gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">{section.title}</h3>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                    {section.rows.length}
+                  </span>
+                </div>
+                <div className="grid gap-2 md:hidden">{section.mobileRows}</div>
+                <div className="hidden md:block">
+                  <DataTable columns={invoiceColumns} rows={section.rows} />
+                </div>
+              </section>
+            ))}
+          </div>
         ) : (
           <div className="rounded-xl bg-slate-50 px-4 py-5 text-sm text-slate-500">{copy.emptyInvoices}</div>
         )}

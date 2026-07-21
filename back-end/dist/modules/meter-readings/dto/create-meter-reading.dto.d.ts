@@ -9,4 +9,9 @@ export declare class CreateMeterReadingDto {
     buildingId: string;
     month?: number;
     year?: number;
+    source?: string;
+    meterReadingSource?: string;
+    linkedInvoiceId?: string;
+    linkedInvoiceExternalId?: string;
+    allowMultipleMonthly?: boolean;
 }

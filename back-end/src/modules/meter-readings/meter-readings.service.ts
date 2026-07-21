@@ -133,6 +133,15 @@ export class MeterReadingsService {
     return Boolean(readingConfig.electricityAllowMultipleMonthlySubmissions);
   }
 
+  private hasInvoiceLinkedElectricityReadings(history: Record<string, unknown>[]): boolean {
+    return history.some((entry) =>
+      entry.source === 'electricity_invoice'
+      || (typeof entry.meterReadingSource === 'string' && entry.meterReadingSource === 'electricity_invoice')
+      || (typeof entry.linkedInvoiceId === 'string' && entry.linkedInvoiceId.trim().length > 0)
+      || (typeof entry.linkedInvoiceExternalId === 'string' && entry.linkedInvoiceExternalId.trim().length > 0)
+    );
+  }
+
   private extractApartmentReadings(
     apartmentId: string,
     apartment: Record<string, unknown>,
@@ -650,7 +659,12 @@ export class MeterReadingsService {
       ? Number(Math.max(0, currentValue - previousValue).toFixed(3))
       : 0;
 
-    const reading = {
+    const reading: Record<string, unknown> & {
+      currentValue: number;
+      previousValue: number;
+      source?: string;
+      meterReadingSource?: string;
+    } = {
       id: randomUUID(),
       apartmentId,
       meterId,
@@ -662,6 +676,18 @@ export class MeterReadingsService {
       month,
       year,
     };
+    if (typeof payload.source === 'string' && payload.source.trim()) {
+      reading.source = payload.source.trim();
+    }
+    if (typeof payload.meterReadingSource === 'string' && payload.meterReadingSource.trim()) {
+      reading.meterReadingSource = payload.meterReadingSource.trim();
+    }
+    if (typeof payload.linkedInvoiceId === 'string' && payload.linkedInvoiceId.trim()) {
+      reading.linkedInvoiceId = payload.linkedInvoiceId.trim();
+    }
+    if (typeof payload.linkedInvoiceExternalId === 'string' && payload.linkedInvoiceExternalId.trim()) {
+      reading.linkedInvoiceExternalId = payload.linkedInvoiceExternalId.trim();
+    }
 
     const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
     const namedKey = METER_READING_KEYS.find(
@@ -674,8 +700,10 @@ export class MeterReadingsService {
     const meterGroup = (wr[key] as Record<string, unknown> | undefined) ?? { meterId, history: [] };
     const history = Array.isArray(meterGroup.history) ? [...(meterGroup.history as Record<string, unknown>[])] : [];
 
+    const forceMultipleMonthlyElectricityReadings = key === 'electricitymeter'
+      && (payload.allowMultipleMonthly === true || reading.source === 'electricity_invoice' || reading.meterReadingSource === 'electricity_invoice');
     const allowMultipleMonthlyElectricityReadings = key === 'electricitymeter'
-      ? await this.electricityAllowsMultipleMonthlySubmissions(apartment, payload.buildingId)
+      ? forceMultipleMonthlyElectricityReadings || await this.electricityAllowsMultipleMonthlySubmissions(apartment, payload.buildingId)
       : false;
     const duplicate = !allowMultipleMonthlyElectricityReadings
       && history.some((h) => Number(h.month) === month && Number(h.year) === year);
@@ -795,7 +823,7 @@ export class MeterReadingsService {
     const history = [...(foundGroup.history as Record<string, unknown>[])];
     history[foundIndex] = { ...history[foundIndex], ...payload, id: history[foundIndex].id };
     const allowMultipleMonthlyElectricityReadings = foundKey === 'electricitymeter'
-      ? await this.electricityAllowsMultipleMonthlySubmissions(apartment)
+      ? this.hasInvoiceLinkedElectricityReadings(history) || await this.electricityAllowsMultipleMonthlySubmissions(apartment)
       : false;
     const { history: recalculatedHistory, latestReading } = buildMeterHistorySnapshot(history as never[], {
       collapseMonthly: !allowMultipleMonthlyElectricityReadings,
@@ -889,7 +917,7 @@ export class MeterReadingsService {
 
     const history = (foundGroup.history as Record<string, unknown>[]).filter((h) => String(h.id ?? '') !== readingId);
     const allowMultipleMonthlyElectricityReadings = foundKey === 'electricitymeter'
-      ? await this.electricityAllowsMultipleMonthlySubmissions(apartment)
+      ? this.hasInvoiceLinkedElectricityReadings(history) || await this.electricityAllowsMultipleMonthlySubmissions(apartment)
       : false;
     const { history: recalculatedHistory, latestReading } = buildMeterHistorySnapshot(history as never[], {
       collapseMonthly: !allowMultipleMonthlyElectricityReadings,

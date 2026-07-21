@@ -16,6 +16,7 @@ import { FirebaseAdminService } from '../../common/infrastructure/firebase/fireb
 import { RateLimitService } from '../../common/services/rate-limit.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { normalizeEmail } from '../../common/utils/invitation-token';
+import { buildMeterHistorySnapshot } from '../../common/utils/meter-reading-history';
 import { EmailService } from '../emails/email.service';
 
 type UploadedInvoiceFile = {
@@ -78,6 +79,8 @@ type ApartmentInvoiceContext = {
   data: Record<string, unknown>;
 };
 
+type InvoiceMeterReadingKey = 'coldmeterwater' | 'hotmeterwater' | 'electricitymeter';
+
 const MAX_INVOICE_PDF_BYTES = 10 * 1024 * 1024;
 const MAX_INVOICE_BATCH_FILES = 50;
 const MAX_INVOICE_ZIP_BYTES = 100 * 1024 * 1024;
@@ -87,6 +90,7 @@ const INVOICE_STATUSES = new Set(['draft', 'pending', 'issued', 'paid', 'overdue
 const UPLOAD_SOURCES = new Set<InvoiceUploadSource>(['api', 'manual', 'sftp', 'email', 'zip', 'accounting']);
 const ALLOWED_PDF_PROXY_HOSTS = new Set(['firebasestorage.googleapis.com', 'storage.googleapis.com']);
 const PUBLIC_INVOICE_LINK_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const INVOICE_METER_READING_KEYS: readonly InvoiceMeterReadingKey[] = ['coldmeterwater', 'hotmeterwater', 'electricitymeter'];
 
 type InvoicePdfPayload = {
   buffer: Buffer;
@@ -280,6 +284,34 @@ export class InvoicesService {
     }
 
     return Array.from(companyIds);
+  }
+
+  private async getCompanyApartmentContexts(companyId: string, buildingId?: string): Promise<ApartmentInvoiceContext[]> {
+    const normalizedCompanyId = this.firstString(companyId);
+    if (!normalizedCompanyId) return [];
+
+    const db = this.firebaseAdminService.firestore;
+    const [arraySnap, directSnap] = await Promise.all([
+      db.collection('apartments').where('companyIds', 'array-contains', normalizedCompanyId).get(),
+      db.collection('apartments').where('companyId', '==', normalizedCompanyId).get(),
+    ]);
+    const requestedBuildingId = this.firstString(buildingId);
+    const contexts = new Map<string, ApartmentInvoiceContext>();
+
+    for (const doc of [...arraySnap.docs, ...directSnap.docs]) {
+      const apartment = doc.data() as Record<string, unknown>;
+      if (!this.apartmentMatchesInvoiceFilters({
+        apartment,
+        companyId: normalizedCompanyId,
+        buildingId: requestedBuildingId,
+      })) {
+        continue;
+      }
+
+      contexts.set(doc.id, { id: doc.id, data: apartment });
+    }
+
+    return Array.from(contexts.values());
   }
 
   private getApiKeyBuildingIds(request: Request): string[] {
@@ -584,6 +616,77 @@ export class InvoicesService {
       .collection('invoice_public_links');
   }
 
+  private async removeLinkedMeterReading(params: {
+    apartmentId: string;
+    readingId: string;
+  }): Promise<void> {
+    const apartmentId = this.firstString(params.apartmentId);
+    const readingId = this.firstString(params.readingId);
+    if (!apartmentId || !readingId) return;
+
+    const apartmentRef = this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId);
+    const apartmentSnap = await apartmentRef.get();
+    if (!apartmentSnap.exists) return;
+
+    const apartment = apartmentSnap.data() as Record<string, unknown>;
+    const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
+    let foundKey: InvoiceMeterReadingKey | null = null;
+    let foundGroup: Record<string, unknown> | null = null;
+
+    for (const key of INVOICE_METER_READING_KEYS) {
+      const group = wr[key] as Record<string, unknown> | undefined;
+      if (!group || !Array.isArray(group.history)) continue;
+      const hasReading = (group.history as Record<string, unknown>[]).some((entry) => this.firstString(entry.id) === readingId);
+      if (!hasReading) continue;
+
+      foundKey = key;
+      foundGroup = group;
+      break;
+    }
+
+    if (!foundKey || !foundGroup) return;
+
+    const history = (foundGroup.history as Record<string, unknown>[]).filter((entry) => this.firstString(entry.id) !== readingId);
+    const preserveMultipleElectricityReadings = foundKey === 'electricitymeter'
+      && history.some((entry) =>
+        this.firstString(entry.source, entry.meterReadingSource) === 'electricity_invoice'
+        || Boolean(this.firstString(entry.linkedInvoiceId, entry.linkedInvoiceExternalId))
+      );
+    const { history: recalculatedHistory, latestReading } = buildMeterHistorySnapshot(history as never[], {
+      collapseMonthly: foundKey === 'electricitymeter' ? !preserveMultipleElectricityReadings : true,
+    });
+
+    await apartmentRef.set(
+      {
+        waterReadings: {
+          ...wr,
+          [foundKey]: {
+            ...foundGroup,
+            history: recalculatedHistory,
+            currentValue: latestReading?.currentValue ?? null,
+            previousValue: latestReading?.previousValue ?? null,
+            submittedAt: latestReading?.submittedAt ?? null,
+          },
+        },
+      },
+      { merge: true },
+    );
+  }
+
+  private getApartmentInvoiceUploadHistoryCollection(apartmentId: string): FirebaseFirestore.CollectionReference {
+    return this.firebaseAdminService.firestore
+      .collection('apartments')
+      .doc(apartmentId)
+      .collection('invoice_uploads');
+  }
+
+  private getLegacyBuildingInvoiceUploadHistoryCollection(buildingId: string): FirebaseFirestore.CollectionReference {
+    return this.firebaseAdminService.firestore
+      .collection('buildings')
+      .doc(buildingId)
+      .collection('invoice_uploads');
+  }
+
   private resolveInvoiceApartmentId(
     ref: FirebaseFirestore.DocumentReference,
     data: Record<string, unknown>,
@@ -841,8 +944,19 @@ export class InvoicesService {
     return '';
   }
 
-  private shouldQueueInvoiceApproval(request: Request): boolean {
-    return Boolean((request as InvoiceUploadRequest).apiCredential);
+  private shouldQueueInvoiceApproval(request: Request, payload?: Record<string, unknown>): boolean {
+    if ((request as InvoiceUploadRequest).apiCredential) return true;
+
+    const raw = this.firstString(
+      payload?.queueApproval,
+      payload?.queue_approval,
+      payload?.approvalRequired,
+      payload?.approval_required,
+      payload?.pendingApproval,
+      payload?.pending_approval,
+    ).toLowerCase();
+
+    return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
   }
 
   private pendingApprovalItemFromDoc(
@@ -1760,16 +1874,16 @@ export class InvoicesService {
 
   private async writeUploadHistory(input: UploadHistoryInput): Promise<void> {
     try {
+      const apartmentId = input.apartmentId?.trim();
       const buildingId = input.buildingId?.trim();
-      if (!buildingId) {
-        this.logger.warn('invoice.upload.history.write.skipped reason=missing_buildingId');
+      if (!apartmentId && !buildingId) {
+        this.logger.warn('invoice.upload.history.write.skipped reason=missing_apartmentId_and_buildingId');
         return;
       }
 
-      const collection = this.firebaseAdminService.firestore
-        .collection('buildings')
-        .doc(buildingId)
-        .collection('invoice_uploads');
+      const collection = apartmentId
+        ? this.getApartmentInvoiceUploadHistoryCollection(apartmentId)
+        : this.getLegacyBuildingInvoiceUploadHistoryCollection(buildingId!);
 
       const now = new Date();
       const payload = {
@@ -1778,8 +1892,8 @@ export class InvoicesService {
         actorUid: input.actorUid ?? null,
         actorRole: input.actorRole ?? null,
         companyId: input.companyId ?? null,
-        buildingId,
-        apartmentId: input.apartmentId ?? null,
+        buildingId: buildingId ?? null,
+        apartmentId: apartmentId ?? null,
         invoiceId: input.invoiceId ?? null,
         externalId: input.externalId ?? null,
         fileName: input.fileName ?? null,
@@ -1827,27 +1941,37 @@ export class InvoicesService {
   private async updateUploadHistoryForApproval(params: {
     approvalId: string;
     buildingId: string;
+    apartmentId?: string;
     companyId?: string;
     historyId?: string;
     historyBuildingId?: string;
+    historyApartmentId?: string;
     invoiceId?: string;
     status: 'approved' | 'cancelled';
     error?: string;
   }): Promise<void> {
     const buildingId = this.firstString(params.buildingId);
+    const apartmentId = this.firstString(params.apartmentId);
     const companyId = this.firstString(params.companyId);
     const historyId = this.firstString(params.historyId);
     const candidateBuildingIds = new Set<string>();
+    const candidateApartmentIds = new Set<string>();
     const historyBuildingId = this.firstString(params.historyBuildingId);
+    const historyApartmentId = this.firstString(params.historyApartmentId);
+    if (historyApartmentId) candidateApartmentIds.add(historyApartmentId);
+    if (apartmentId) candidateApartmentIds.add(apartmentId);
     if (historyBuildingId) candidateBuildingIds.add(historyBuildingId);
     if (buildingId) candidateBuildingIds.add(buildingId);
     if (companyId) {
+      for (const apartment of await this.getCompanyApartmentContexts(companyId, buildingId).catch(() => [])) {
+        candidateApartmentIds.add(apartment.id);
+      }
       for (const id of await this.getCompanyBuildingIds(companyId).catch(() => [])) {
         candidateBuildingIds.add(id);
       }
     }
 
-    if (candidateBuildingIds.size === 0) return;
+    if (candidateApartmentIds.size === 0 && candidateBuildingIds.size === 0) return;
 
     try {
       const now = new Date();
@@ -1922,11 +2046,7 @@ export class InvoicesService {
         }, { merge: true }));
       };
 
-      for (const currentBuildingId of candidateBuildingIds) {
-        const collection = this.firebaseAdminService.firestore
-          .collection('buildings')
-          .doc(currentBuildingId)
-          .collection('invoice_uploads');
+      const scanCollection = async (collection: FirebaseFirestore.CollectionReference) => {
 
         if (historyId) {
           queueUpdate(await collection.doc(historyId).get());
@@ -1936,6 +2056,14 @@ export class InvoicesService {
         for (const doc of snap.docs) {
           queueUpdate(doc);
         }
+      };
+
+      for (const currentApartmentId of candidateApartmentIds) {
+        await scanCollection(this.getApartmentInvoiceUploadHistoryCollection(currentApartmentId));
+      }
+
+      for (const currentBuildingId of candidateBuildingIds) {
+        await scanCollection(this.getLegacyBuildingInvoiceUploadHistoryCollection(currentBuildingId));
       }
 
       await Promise.allSettled(updates);
@@ -1945,14 +2073,17 @@ export class InvoicesService {
   }
 
   private async reconcileUploadHistoryDoc(
-    buildingId: string,
+    params: { buildingId?: string; apartmentId?: string },
     historyDoc: FirebaseFirestore.QueryDocumentSnapshot,
   ): Promise<Record<string, unknown>> {
     const data = historyDoc.data() as Record<string, unknown>;
+    const buildingId = this.firstString(data.buildingId, params.buildingId);
+    const apartmentId = this.firstString(data.apartmentId, params.apartmentId, historyDoc.ref.parent.parent?.id);
     const baseItem = {
       id: historyDoc.id,
       ...data,
-      buildingId: this.firstString(data.buildingId, buildingId) || buildingId,
+      buildingId: buildingId || undefined,
+      apartmentId: apartmentId || undefined,
       createdAt: this.firestoreDateToIso(data.createdAt),
     };
 
@@ -1973,6 +2104,10 @@ export class InvoicesService {
     ));
 
     if (approvalIds.length === 0) {
+      return baseItem;
+    }
+
+    if (!buildingId) {
       return baseItem;
     }
 
@@ -2108,6 +2243,10 @@ export class InvoicesService {
       payload.uploadHistoryBuildingId,
       payload.upload_history_building_id,
     );
+    const uploadHistoryApartmentId = this.firstString(
+      payload.uploadHistoryApartmentId,
+      payload.upload_history_apartment_id,
+    );
     const rawBatchIndex = Number(payload.batchIndex ?? payload.batch_index);
     const batchIndex = Number.isInteger(rawBatchIndex) && rawBatchIndex >= 0 ? rawBatchIndex : null;
     const historyContext: UploadHistoryInput = {
@@ -2159,6 +2298,7 @@ export class InvoicesService {
       const currency = this.normalizeCurrency(payload.currency);
       const status = this.normalizeStatus(payload.status);
       const comment = this.firstString(payload.comment);
+      const meterReadingId = this.firstString(payload.meterReadingId, payload.meter_reading_id);
       const residentContext = this.resolveResidentContext(apartment.data);
 
       Object.assign(historyContext, {
@@ -2191,6 +2331,7 @@ export class InvoicesService {
         currency,
         status,
         comment: comment || null,
+        meterReadingId: meterReadingId || null,
         externalId,
         externalIdKey: externalKey,
         source,
@@ -2211,7 +2352,7 @@ export class InvoicesService {
         uploadedByUid: user.uid,
       };
 
-      if (this.shouldQueueInvoiceApproval(request)) {
+      if (this.shouldQueueInvoiceApproval(request, payload)) {
         const approvalId = `approval_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
         invoiceRef = db.collection('buildings').doc(buildingId).collection('invoice_approvals').doc(approvalId);
         const approvalPath = invoiceRef.path;
@@ -2228,6 +2369,7 @@ export class InvoicesService {
           approvalPath,
           uploadHistoryId: uploadHistoryId || null,
           uploadHistoryBuildingId: uploadHistoryBuildingId || null,
+          uploadHistoryApartmentId: uploadHistoryApartmentId || null,
           batchId: batchId || null,
           batchIndex,
           ...baseInvoiceData,
@@ -2686,9 +2828,11 @@ export class InvoicesService {
     await this.updateUploadHistoryForApproval({
       approvalId,
       buildingId,
+      apartmentId,
       companyId,
       historyId: this.firstString(data.uploadHistoryId, data.batchId),
       historyBuildingId: this.firstString(data.uploadHistoryBuildingId, buildingId),
+      historyApartmentId: this.firstString(data.uploadHistoryApartmentId, apartmentId),
       invoiceId,
       status: 'approved',
     });
@@ -2724,6 +2868,7 @@ export class InvoicesService {
     const companyId = this.firstString(data.companyId);
     const buildingId = this.firstString(data.buildingId, approval.buildingId);
     const apartmentId = this.firstString(data.apartmentId);
+    const meterReadingId = this.firstString(data.meterReadingId, data.meter_reading_id);
     const externalId = this.firstString(data.externalId);
     const externalKey = this.firstString(data.externalIdKey)
       || (companyId && externalId ? this.hashExternalId(companyId, externalId) : '');
@@ -2750,6 +2895,12 @@ export class InvoicesService {
       ).file(storagePath).delete({ ignoreNotFound: true }).catch(() => null);
     }
 
+    if (meterReadingId && apartmentId) {
+      await this.removeLinkedMeterReading({ apartmentId, readingId: meterReadingId }).catch((error) => {
+        this.logger.warn(`invoice.approval.linked_reading_delete_failed approvalId=${approvalId} reason=${this.errorMessage(error)}`);
+      });
+    }
+
     void this.auditLogService.write({
       request,
       action: 'invoice.cancel_api_upload',
@@ -2768,9 +2919,11 @@ export class InvoicesService {
     await this.updateUploadHistoryForApproval({
       approvalId,
       buildingId,
+      apartmentId,
       companyId,
       historyId: this.firstString(data.uploadHistoryId, data.batchId),
       historyBuildingId: this.firstString(data.uploadHistoryBuildingId, buildingId),
+      historyApartmentId: this.firstString(data.uploadHistoryApartmentId, apartmentId),
       status: 'cancelled',
       error: 'Cancelled',
     });
@@ -2910,8 +3063,9 @@ export class InvoicesService {
     const apiBuildingIds = this.getApiKeyBuildingIds(request);
     let historyCompanyId = this.firstString(commonPayload.companyId, commonPayload.company_id, user.companyId);
     let historyBuildingId = this.firstString(commonPayload.buildingId, commonPayload.building_id, apiBuildingIds[0]);
+    let historyApartmentId = this.firstString(commonPayload.apartmentId, commonPayload.apartment_id);
 
-    if (!historyBuildingId || !historyCompanyId) {
+    if (!historyApartmentId || !historyBuildingId || !historyCompanyId) {
       try {
         const scopePayload = {
           ...commonPayload,
@@ -2922,6 +3076,7 @@ export class InvoicesService {
         this.assertApiKeyCanAccessBuilding(request, buildingId);
         const buildingCompanyId = await this.getBuildingCompanyId(buildingId);
 
+        historyApartmentId = this.firstString(historyApartmentId, apartment.id);
         historyBuildingId = this.firstString(historyBuildingId, buildingId);
         historyCompanyId = this.firstString(
           historyCompanyId,
@@ -2941,6 +3096,7 @@ export class InvoicesService {
     }
 
     const initialHistoryBuildingId = historyBuildingId;
+    const initialHistoryApartmentId = historyApartmentId;
 
     await this.writeUploadHistory({
       historyId: batchId,
@@ -2951,12 +3107,14 @@ export class InvoicesService {
       actorRole: user.role,
       companyId: historyCompanyId,
       buildingId: historyBuildingId,
+      apartmentId: historyApartmentId,
       fileName: requestFileName,
       error: undefined,
       metadata: {
         batchId,
         companyId: historyCompanyId || undefined,
         buildingId: historyBuildingId || undefined,
+        apartmentId: historyApartmentId || undefined,
         requestFileName,
         total: batchFiles.length,
         processed: 0,
@@ -2999,6 +3157,7 @@ export class InvoicesService {
           batchIndex: index,
           uploadHistoryId: batchId,
           uploadHistoryBuildingId: initialHistoryBuildingId,
+          uploadHistoryApartmentId: initialHistoryApartmentId,
           __skipUploadHistory: true,
         });
         const uploadResult = result as {
@@ -3006,10 +3165,12 @@ export class InvoicesService {
           approval_id?: string;
           company_id?: string;
           building_id?: string;
+          apartment_id?: string;
           message?: string;
         };
         historyCompanyId = this.firstString(historyCompanyId, uploadResult.company_id);
         historyBuildingId = this.firstString(historyBuildingId, uploadResult.building_id);
+        historyApartmentId = this.firstString(historyApartmentId, uploadResult.apartment_id);
 
         results.push({
           index,
@@ -3059,12 +3220,14 @@ export class InvoicesService {
       actorRole: user.role,
       companyId: historyCompanyId,
       buildingId: historyBuildingId,
+      apartmentId: historyApartmentId,
       fileName: requestFileName,
       error: failed > 0 ? `${failed} invoice(s) failed` : undefined,
       metadata: {
         batchId,
         companyId: historyCompanyId || undefined,
         buildingId: historyBuildingId || undefined,
+        apartmentId: historyApartmentId || undefined,
         requestFileName,
         total: results.length,
         processed,
@@ -3075,13 +3238,26 @@ export class InvoicesService {
       },
     };
     await this.writeUploadHistory(finalHistoryInput);
+    if (initialHistoryApartmentId && initialHistoryApartmentId !== historyApartmentId) {
+      await this.writeUploadHistory({
+        ...finalHistoryInput,
+        apartmentId: initialHistoryApartmentId,
+        metadata: {
+          ...(finalHistoryInput.metadata ?? {}),
+          apartmentId: initialHistoryApartmentId,
+          resolvedApartmentId: historyApartmentId || undefined,
+        },
+      });
+    }
     if (initialHistoryBuildingId && initialHistoryBuildingId !== historyBuildingId) {
       await this.writeUploadHistory({
         ...finalHistoryInput,
         buildingId: initialHistoryBuildingId,
+        apartmentId: initialHistoryApartmentId,
         metadata: {
           ...(finalHistoryInput.metadata ?? {}),
           buildingId: initialHistoryBuildingId,
+          apartmentId: initialHistoryApartmentId || undefined,
           resolvedBuildingId: historyBuildingId || undefined,
         },
       });
@@ -3132,10 +3308,10 @@ export class InvoicesService {
 
     const companyId = requestedCompanyId || staffCompanyId;
     const requestedBuildingId = this.firstString(query.buildingId, query.building_id);
+    const requestedApartmentId = this.firstString(query.apartmentId, query.apartment_id);
     const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50));
-    const db = this.firebaseAdminService.firestore;
 
-    let buildingIds: string[] = [];
+    let legacyBuildingIds: string[] = [];
     if (requestedBuildingId) {
       const buildingCompanyId = await this.getBuildingCompanyId(requestedBuildingId);
       if (buildingCompanyId !== staffCompanyId) {
@@ -3146,43 +3322,76 @@ export class InvoicesService {
         throw new ForbiddenException('Access denied for company');
       }
 
-      buildingIds = [requestedBuildingId];
+      legacyBuildingIds = [requestedBuildingId];
     } else if (companyId) {
-      buildingIds = await this.getCompanyBuildingIds(companyId);
+      legacyBuildingIds = await this.getCompanyBuildingIds(companyId);
     } else {
       return { items: [] };
     }
 
-    const snapshotResults = await Promise.allSettled(
-      buildingIds.map(async (buildingId) => ({
-        buildingId,
-        snap: await db.collection('buildings').doc(buildingId).collection('invoice_uploads').get(),
+    const apartmentContexts = await this.getStaffInvoiceApartmentContexts({
+      user,
+      companyId,
+      apartmentId: requestedApartmentId,
+      buildingId: requestedBuildingId,
+    });
+    if (requestedApartmentId) {
+      legacyBuildingIds = Array.from(new Set(
+        apartmentContexts
+          .map((apartment) => this.firstString(apartment.data.buildingId, apartment.data.houseId))
+          .filter(Boolean),
+      ));
+    }
+    const historyReadTasks: Array<Promise<{
+      apartmentId?: string;
+      buildingId?: string;
+      snap: FirebaseFirestore.QuerySnapshot;
+    }>> = [
+      ...apartmentContexts.map(async (apartment) => ({
+        apartmentId: apartment.id,
+        buildingId: this.firstString(apartment.data.buildingId, apartment.data.houseId) || undefined,
+        snap: await this.getApartmentInvoiceUploadHistoryCollection(apartment.id).get(),
       })),
+      ...legacyBuildingIds.map(async (buildingId) => ({
+        buildingId,
+        snap: await this.getLegacyBuildingInvoiceUploadHistoryCollection(buildingId).get(),
+      })),
+    ];
+    const snapshotResults = await Promise.allSettled(
+      historyReadTasks,
     );
     const snapshots = snapshotResults.flatMap((result, index) => {
       if (result.status === 'fulfilled') return [result.value];
 
       this.logger.warn(
-        `invoice.upload.history.read.failed buildingId=${buildingIds[index] ?? 'unknown'} reason=${this.errorMessage(result.reason)}`,
+        `invoice.upload.history.read.failed index=${index} reason=${this.errorMessage(result.reason)}`,
       );
       return [];
     });
 
     const reconcileResults = await Promise.allSettled(
       snapshots
-        .flatMap(({ buildingId, snap }) => snap.docs.map((historyDoc) => ({ buildingId, historyDoc })))
-        .map(async ({ buildingId, historyDoc }) => ({
+        .flatMap(({ apartmentId, buildingId, snap }) => snap.docs.map((historyDoc) => ({ apartmentId, buildingId, historyDoc })))
+        .map(async ({ apartmentId, buildingId, historyDoc }) => ({
           buildingId,
+          apartmentId,
           historyDocId: historyDoc.id,
-          item: await this.reconcileUploadHistoryDoc(buildingId, historyDoc),
+          item: await this.reconcileUploadHistoryDoc({ buildingId, apartmentId }, historyDoc),
         })),
     );
-    const rawItems: Array<Record<string, unknown>> = reconcileResults.flatMap((result) => {
-      if (result.status === 'fulfilled') return [result.value.item];
+    const rawItemsByPath = new Map<string, Record<string, unknown>>();
+    for (const result of reconcileResults) {
+      if (result.status === 'fulfilled') {
+        rawItemsByPath.set(
+          `${this.firstString(result.value.apartmentId, result.value.buildingId)}:${result.value.historyDocId}`,
+          result.value.item,
+        );
+        continue;
+      }
 
       this.logger.warn(`invoice.upload.history.reconcile.failed reason=${this.errorMessage(result.reason)}`);
-      return [];
-    });
+    }
+    const rawItems: Array<Record<string, unknown>> = Array.from(rawItemsByPath.values());
     const groupedByBatchId = new Map<string, Array<Record<string, unknown>>>();
     const ungroupedItems: Array<Record<string, unknown>> = [];
     for (const item of rawItems) {
@@ -3200,56 +3409,34 @@ export class InvoicesService {
       groupedByBatchId.set(batchId, group);
     }
 
-    const batchItems = Array.from(groupedByBatchId.entries()).map(([batchId, group]) => {
+    const batchItems: Array<Record<string, unknown>> = Array.from(groupedByBatchId.entries()).map(([batchId, group]) => {
       const aggregate = group.find((item) => {
         const metadata = item.metadata && typeof item.metadata === 'object'
           ? item.metadata as Record<string, unknown>
           : {};
-        return Array.isArray(metadata.results);
+        return this.firstString(metadata.batchId) === batchId && item.id === batchId;
+      }) ?? group[0]!;
+      const metadata = aggregate.metadata && typeof aggregate.metadata === 'object'
+        ? aggregate.metadata as Record<string, unknown>
+        : {};
+      const mergedResults = group.flatMap((item) => {
+        const itemMetadata = item.metadata && typeof item.metadata === 'object'
+          ? item.metadata as Record<string, unknown>
+          : {};
+        return Array.isArray(itemMetadata.results) ? itemMetadata.results : [];
       });
-      if (aggregate) return aggregate;
-      if (group.length === 1) return group[0]!;
-
-      const processed = group.filter((item) => ['success', 'pending'].includes(this.firstString(item.status))).length;
-      const failed = group.length - processed;
-      const waiting = group.filter((item) => this.firstString(item.status) === 'pending').length;
-      const first = group[0]!;
-      const latest = group
-        .slice()
-        .sort((left, right) => this.firestoreDateToMillis(right.createdAt) - this.firestoreDateToMillis(left.createdAt))[0]!;
 
       return {
-        ...latest,
-        id: batchId,
-        invoiceId: undefined,
-        externalId: batchId,
-        fileName: `${group.length} files`,
-        status: failed === 0
-          ? waiting > 0 ? 'pending' : 'success'
-          : 'error',
-        error: failed > 0 ? `${failed} invoice(s) failed` : undefined,
+        ...aggregate,
         metadata: {
-          batchId,
-          total: group.length,
-          processed,
-          failed,
-          waiting,
-          results: group.map((item) => ({
-            id: item.id,
-            invoiceId: item.invoiceId,
-            approvalId: item.approvalId,
-            externalId: item.externalId,
-            fileName: item.fileName,
-            status: item.status,
-            error: item.error,
-          })),
+          ...metadata,
+          results: mergedResults.length ? mergedResults : metadata.results,
         },
-        createdAt: latest.createdAt ?? first.createdAt,
-      };
+      } as Record<string, unknown>;
     });
 
     const items = [...ungroupedItems, ...batchItems]
-      .sort((left, right) => this.firestoreDateToMillis(right.createdAt) - this.firestoreDateToMillis(left.createdAt))
+      .sort((a, b) => this.firestoreDateToMillis(b.createdAt) - this.firestoreDateToMillis(a.createdAt))
       .slice(0, limit);
 
     return { items };
@@ -3390,6 +3577,7 @@ export class InvoicesService {
       amount,
       currency: this.firstString(payload.currency, 'EUR'),
       externalId: this.firstString(payload.externalId) || null,
+      meterReadingId: this.firstString(payload.meterReadingId, payload.meter_reading_id) || null,
       period: this.firstString(payload.period) || null,
       invoiceDate: this.parseOptionalDate(payload.invoiceDate) ?? new Date(),
       dueDate: this.parseOptionalDate(payload.dueDate) ?? this.parseOptionalDate(payload.invoiceDate) ?? new Date(),
@@ -3677,7 +3865,6 @@ export class InvoicesService {
     );
     if (!rl.allowed) throw new BadRequestException('Too many requests');
 
-    const db = this.firebaseAdminService.firestore;
     const invoice = await this.findInvoiceDocument(invoiceId, user);
     const ref = invoice.ref;
     const current = invoice.data;
@@ -3689,10 +3876,16 @@ export class InvoicesService {
     const storagePath = typeof current.storagePath === 'string' ? current.storagePath : '';
     const storageBucket = typeof current.storageBucket === 'string' ? current.storageBucket : '';
     const apartmentId = this.firstString(current.apartmentId, ref.parent.parent?.id);
+    const buildingId = this.firstString(current.buildingId);
+    const meterReadingId = this.firstString(current.meterReadingId, current.meter_reading_id);
     const externalId = this.firstString(current.externalId);
     const companyId = this.firstString(targetCompanyId, user.companyId);
     const externalIdKey = this.firstString(current.externalIdKey)
       || (companyId && externalId ? this.hashExternalId(companyId, externalId) : '');
+    const deleteQueryDocs = async (query: FirebaseFirestore.Query) => {
+      const snap = await query.get();
+      await Promise.all(snap.docs.map((doc) => doc.ref.delete()));
+    };
 
     await ref.delete();
 
@@ -3702,6 +3895,24 @@ export class InvoicesService {
         : Promise.resolve(),
       externalIdKey && apartmentId
         ? this.getApartmentPendingInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey).delete()
+        : Promise.resolve(),
+      apartmentId
+        ? deleteQueryDocs(this.getApartmentInvoicePublicLinksCollection(apartmentId).where('invoiceId', '==', invoiceId))
+        : Promise.resolve(),
+      apartmentId
+        ? deleteQueryDocs(this.getApartmentInvoiceUploadHistoryCollection(apartmentId).where('invoiceId', '==', invoiceId))
+        : Promise.resolve(),
+      apartmentId
+        ? deleteQueryDocs(this.getApartmentInvoiceUploadHistoryCollection(apartmentId).where('metadata.invoiceId', '==', invoiceId))
+        : Promise.resolve(),
+      buildingId
+        ? deleteQueryDocs(this.getLegacyBuildingInvoiceUploadHistoryCollection(buildingId).where('invoiceId', '==', invoiceId))
+        : Promise.resolve(),
+      buildingId
+        ? deleteQueryDocs(this.getLegacyBuildingInvoiceUploadHistoryCollection(buildingId).where('metadata.invoiceId', '==', invoiceId))
+        : Promise.resolve(),
+      meterReadingId && apartmentId
+        ? this.removeLinkedMeterReading({ apartmentId, readingId: meterReadingId })
         : Promise.resolve(),
       storagePath
         ? (storageBucket

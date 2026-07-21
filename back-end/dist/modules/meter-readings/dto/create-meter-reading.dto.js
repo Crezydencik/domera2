@@ -72,3 +72,33 @@ __decorate([
     (0, class_validator_1.Min)(2000),
     __metadata("design:type", Number)
 ], CreateMeterReadingDto.prototype, "year", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Internal reading source.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateMeterReadingDto.prototype, "source", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Internal meter reading source.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateMeterReadingDto.prototype, "meterReadingSource", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Linked invoice id.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateMeterReadingDto.prototype, "linkedInvoiceId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Linked invoice external id.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateMeterReadingDto.prototype, "linkedInvoiceExternalId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Allow multiple readings for the same month.' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateMeterReadingDto.prototype, "allowMultipleMonthly", void 0);

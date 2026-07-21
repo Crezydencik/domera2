@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateMeterReadingDto {
@@ -48,4 +48,29 @@ export class CreateMeterReadingDto {
   @IsNumber()
   @Min(2000)
   year?: number;
+
+  @ApiPropertyOptional({ description: 'Internal reading source.' })
+  @IsOptional()
+  @IsString()
+  source?: string;
+
+  @ApiPropertyOptional({ description: 'Internal meter reading source.' })
+  @IsOptional()
+  @IsString()
+  meterReadingSource?: string;
+
+  @ApiPropertyOptional({ description: 'Linked invoice id.' })
+  @IsOptional()
+  @IsString()
+  linkedInvoiceId?: string;
+
+  @ApiPropertyOptional({ description: 'Linked invoice external id.' })
+  @IsOptional()
+  @IsString()
+  linkedInvoiceExternalId?: string;
+
+  @ApiPropertyOptional({ description: 'Allow multiple readings for the same month.' })
+  @IsOptional()
+  @IsBoolean()
+  allowMultipleMonthly?: boolean;
 }

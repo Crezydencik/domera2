@@ -83,6 +83,7 @@ type ElectricityRecord = {
   type: ElectricityRecordType;
   invoiceId?: string;
   approvalId?: string;
+  meterReadingId?: string;
   apartmentId: string;
   amount: number;
   kwh: number;
@@ -537,6 +538,14 @@ function formatMoney(value: number, currency = "EUR") {
   return `${value.toFixed(2)} ${currency}`;
 }
 
+function errorToastMessage(fallback: string, error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return `${fallback}: ${error.message}`;
+  }
+
+  return fallback;
+}
+
 function pdfText(value: unknown) {
   return firstString(value)
     .normalize("NFKD")
@@ -761,6 +770,10 @@ function buildElectricityInvoicePdf(params: {
   const lines: string[] = [];
   const rows: TemplateInvoiceRow[] = [];
   const hasAdvanceLine = settings.invoiceLineItems.includes("electricityAdvance") && params.advanceAmount > 0;
+  const pageLeft = 32;
+  const pageRight = 563;
+  const contentWidth = pageRight - pageLeft;
+  const amountX = pageRight;
   if (hasAdvanceLine) {
     rows.push({
       service: "No avansa",
@@ -785,27 +798,27 @@ function buildElectricityInvoicePdf(params: {
   const total = Number(rows.reduce((sum, row) => sum + row.sum, 0).toFixed(2));
 
   if (!settings.logoHidden) {
-    lines.push(pdfTextCommand(providerName, 48, 766, 28, true));
+    lines.push(pdfTextCommand(providerName, pageLeft, 766, 28, true));
     lines.push(`${pdfStroke(accent)} 4 w 205 769 m 221 785 l 237 769 l 221 753 l h S`);
   }
-  if (providerAddress) lines.push(pdfTextCommand(providerAddress, 48, 728, 12, true));
-  lines.push(pdfTextCommand(params.apartmentLabel || params.buildingAddress || "-", 48, 704, 12, true));
-  lines.push(pdfTextCommand(`Klienta kods: ${firstString(params.company.registrationNumber, params.company.companyId, "-")}`, 48, 688, 11));
+  if (providerAddress) lines.push(pdfTextCommand(providerAddress, pageLeft, 728, 12, true));
+  lines.push(pdfTextCommand(params.apartmentLabel || params.buildingAddress || "-", pageLeft, 704, 12, true));
+  lines.push(pdfTextCommand(`Klienta kods: ${firstString(params.company.registrationNumber, params.company.companyId, "-")}`, pageLeft, 688, 11));
 
-  lines.push(pdfTextRightCommand(`${currency} ${pdfNumber(total, 2)}`, 534, 766, 30, true));
-  lines.push(pdfTextRightCommand(`Samaksat lidz ${dueDate}`, 534, 735, 12));
-  lines.push(pdfTextRightCommand(`Datums ${invoiceDate}`, 534, 718, 12));
-  lines.push(pdfRect(392, 688, 142, 7, accent));
+  lines.push(pdfTextRightCommand(`${currency} ${pdfNumber(total, 2)}`, amountX, 766, 30, true));
+  lines.push(pdfTextRightCommand(`Samaksat lidz ${dueDate}`, amountX, 735, 12));
+  lines.push(pdfTextRightCommand(`Datums ${invoiceDate}`, amountX, 718, 12));
+  lines.push(pdfRect(pageRight - 150, 688, 150, 7, accent));
 
-  lines.push(pdfTextCommand(`Rekins Nr. ${params.invoiceNumber}`, 48, 650, 22, true));
-  const tableX = 48;
+  lines.push(pdfTextCommand(`Rekins Nr. ${params.invoiceNumber}`, pageLeft, 650, 22, true));
+  const tableX = pageLeft;
   const tableY = 616;
-  const tableWidth = 486;
+  const tableWidth = contentWidth;
   const columns = settings.invoiceTableColumns;
-  const serviceWidth = columns.length >= 6 ? 150 : 210;
+  const serviceWidth = columns.length >= 6 ? 165 : 220;
   const otherWidth = columns.length > 0 ? (tableWidth - serviceWidth) / columns.length : 0;
   lines.push(pdfRect(tableX, tableY, tableWidth, 18, "#e8e8e8"));
-  lines.push(pdfTextCommand("Pakalpojums", tableX + 4, tableY + 6, 8, true));
+  lines.push(pdfTextCommand("Pakalpojums", tableX + 4, tableY + 5, 8.5, true));
   columns.forEach((column, index) => {
     const left = tableX + serviceWidth + otherWidth * index;
     const right = left + otherWidth - 4;
@@ -823,19 +836,19 @@ function buildElectricityInvoicePdf(params: {
     const numericHeader = column === "price" || column === "amount" || column === "vat" || column === "sum" || column === "recalculation" || column === "net";
     lines.push(
       column === "unit"
-        ? pdfTextCenterCommand(label[column], center, tableY + 6, 7, true)
+        ? pdfTextCenterCommand(label[column], center, tableY + 5, 8, true)
         : numericHeader
-          ? pdfTextRightCommand(label[column], right, tableY + 6, 7, true)
-          : pdfTextCommand(label[column], left + 3, tableY + 6, 7, true),
+          ? pdfTextRightCommand(label[column], right, tableY + 5, 8, true)
+          : pdfTextCommand(label[column], left + 3, tableY + 5, 8, true),
     );
   });
-  lines.push(pdfTextCommand("Elektroenergija", tableX + 4, tableY - 12, 9, true));
+  lines.push(pdfTextCommand("Elektroenergija", tableX + 4, tableY - 12, 10, true));
   let y = tableY - 30;
   rows.forEach((row) => {
     lines.push(pdfLine(tableX, y + 13, tableX + tableWidth, y + 13));
-    lines.push(pdfTextCommand(row.service, tableX + 4, y, 8));
+    lines.push(pdfTextCommand(row.service, tableX + 4, y, 9));
     if (row.unit === "kWh") {
-      lines.push(pdfTextCommand(`Cena par 1 kWh: ${pdfNumber(row.price, 5)} ${currency}; paterins: ${pdfNumber(row.quantity, 3)} kWh`, tableX + 4, y - 10, 6));
+      lines.push(pdfTextCommand(`Cena par 1 kWh: ${pdfNumber(row.price, 5)} ${currency}; paterins: ${pdfNumber(row.quantity, 3)} kWh`, tableX + 4, y - 10, 7));
     }
     columns.forEach((column, index) => {
       const left = tableX + serviceWidth + otherWidth * index;
@@ -854,10 +867,10 @@ function buildElectricityInvoicePdf(params: {
       const numericColumn = column === "price" || column === "amount" || column === "vat" || column === "sum" || column === "recalculation" || column === "net";
       lines.push(
         column === "unit"
-          ? pdfTextCenterCommand(value[column], center, y, 7)
+          ? pdfTextCenterCommand(value[column], center, y, 8)
           : numericColumn
-            ? pdfTextRightCommand(value[column], right, y, 7)
-            : pdfTextCommand(value[column], left + 3, y, 7),
+            ? pdfTextRightCommand(value[column], right, y, 8)
+            : pdfTextCommand(value[column], left + 3, y, 8),
       );
     });
     y -= row.unit === "kWh" ? 30 : 18;
@@ -870,16 +883,16 @@ function buildElectricityInvoicePdf(params: {
   lines.push(pdfTextRightCommand(pdfNumber(total, 2), tableX + tableWidth - 4, y - 6, 9, true));
 
   const note = settings.footerNote || `Veicot rekinu apmaksu, obligati noradiet rekina numuru ${params.invoiceNumber} vai klienta kodu ${firstString(params.company.registrationNumber, params.company.companyId, "-")}.`;
-  lines.push(pdfTextCommand(note, 48, y - 42, 10));
-  lines.push(pdfTextCommand("Maksajums ir uzskatams par veiktu diena, kad naudas lidzekli ienak Parvaldnieka konta.", 48, y - 58, 10));
-  lines.push(pdfLine(48, y - 88, 534, y - 88, accent, 1.2));
-  lines.push(pdfTextCommand("Apmaksat:", 48, y - 116, 9));
+  lines.push(pdfTextCommand(note, pageLeft, y - 42, 10));
+  lines.push(pdfTextCommand("Maksajums ir uzskatams par veiktu diena, kad naudas lidzekli ienak Parvaldnieka konta.", pageLeft, y - 58, 10));
+  lines.push(pdfLine(pageLeft, y - 88, pageRight, y - 88, accent, 1.2));
+  lines.push(pdfTextCommand("Apmaksat:", pageLeft, y - 116, 9));
   lines.push(pdfTextCommand("Sanemejs:", 150, y - 116, 9));
   lines.push(pdfTextCommand(beneficiary || providerName, 150, y - 132, 9, true));
   lines.push(pdfTextCommand("Banku konti norekiniem:", 330, y - 116, 9));
   lines.push(pdfTextCommand([iban, bankName, swift ? `SWIFT/BIC ${swift}` : ""].filter(Boolean).join(", "), 330, y - 132, 8, true));
   if (settings.showSignature) {
-    lines.push(pdfTextCommand(`${settings.providerSignerTitle || "Parakstitajs"}: ${settings.providerSignerName || "-"}`, 48, y - 164, 9));
+    lines.push(pdfTextCommand(`${settings.providerSignerTitle || "Parakstitajs"}: ${settings.providerSignerName || "-"}`, pageLeft, y - 164, 9));
   }
 
   return buildPdf(lines);
@@ -945,7 +958,6 @@ function electricityReadingInfoFromApartment(item: RawRecord): ElectricityReadin
 
 export function ElectricityWorkspace({
   role,
-  companyId,
   company,
   buildings,
   apartments,
@@ -953,7 +965,6 @@ export function ElectricityWorkspace({
   initialSettingsOpen = false,
 }: {
   role: DashboardRole;
-  companyId?: string;
   company?: CompanyInvoiceProfile;
   buildings: Building[];
   apartments: RawRecord[];
@@ -1098,6 +1109,7 @@ export function ElectricityWorkspace({
         id: `invoice-${invoice.id}`,
         type: "invoice" as const,
         invoiceId: invoice.id,
+        meterReadingId: invoice.meterReadingId,
         apartmentId: invoice.apartmentId ?? "",
         amount: moneyValue(invoice.amount),
         kwh: electricityInvoiceKwh(invoice),
@@ -1128,11 +1140,10 @@ export function ElectricityWorkspace({
     const to = filterToMonth || "9999-12";
     return recordMonth >= from && recordMonth <= to;
   });
-  const filteredAdvanceRecords = filteredRecords.filter((record) => record.type === "advance");
-  const pendingAmount = filteredAdvanceRecords
+  const pendingAmount = filteredRecords
     .filter((record) => !record.confirmed)
     .reduce((sum, record) => sum + record.amount, 0);
-  const confirmedAmount = filteredAdvanceRecords
+  const confirmedAmount = filteredRecords
     .filter((record) => record.confirmed)
     .reduce((sum, record) => sum + record.amount, 0);
   const selectedConfirmedAdvanceKwh = confirmedPayments
@@ -1463,63 +1474,7 @@ export function ElectricityWorkspace({
     const year = Number(yearRaw) || now.getFullYear();
     const month = Number(monthRaw) || now.getMonth() + 1;
 
-    if (selectedReadingInfo.latestReadingId) {
-      await apiFetch(`/meter-readings/${encodeURIComponent(selectedReadingInfo.latestReadingId)}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          apartmentId,
-          data: { currentValue, previousValue: null, consumption: 0, month, year },
-        }),
-        headers: { "Content-Type": "application/json" },
-      });
-    } else {
-      const meterId = selectedReadingInfo.meterId || `${apartmentId}:electricitymeter`;
-      await apiFetch("/meter-readings", {
-        method: "POST",
-        body: JSON.stringify({
-          apartmentId,
-          buildingId: selectedBuildingId,
-          meterId,
-          meterKey: "electricitymeter",
-          currentValue,
-          previousValue: currentValue,
-          meterDigits: selectedReadingInfo.meterDigits ?? selectedBuilding?.readingConfig?.electricityMeterDigits ?? 6,
-          month,
-          year,
-        }),
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    return true;
-  }
-
-  async function saveNextReading(previousValue: number, currentValue: number) {
-    const now = new Date();
-    const period = currentPeriodValue();
-    const [yearRaw, monthRaw] = period.split("-");
-    const year = Number(yearRaw) || now.getFullYear();
-    const month = Number(monthRaw) || now.getMonth() + 1;
     const meterId = selectedReadingInfo.meterId || `${apartmentId}:electricitymeter`;
-
-    if (selectedReadingInfo.latestReadingId) {
-      await apiFetch(`/meter-readings/${encodeURIComponent(selectedReadingInfo.latestReadingId)}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          apartmentId,
-          data: {
-            currentValue,
-            previousValue,
-            consumption: Number(Math.max(0, currentValue - previousValue).toFixed(3)),
-            month,
-            year,
-          },
-        }),
-        headers: { "Content-Type": "application/json" },
-      });
-      return;
-    }
-
     await apiFetch("/meter-readings", {
       method: "POST",
       body: JSON.stringify({
@@ -1528,13 +1483,49 @@ export function ElectricityWorkspace({
         meterId,
         meterKey: "electricitymeter",
         currentValue,
-        previousValue,
+        previousValue: currentValue,
+        consumption: 0,
         meterDigits: selectedReadingInfo.meterDigits ?? selectedBuilding?.readingConfig?.electricityMeterDigits ?? 6,
         month,
         year,
+        source: "electricity_start",
+        allowMultipleMonthly: true,
       }),
       headers: { "Content-Type": "application/json" },
     });
+
+    return true;
+  }
+
+  async function saveNextReading(previousValue: number, currentValue: number, linkedInvoiceExternalId: string) {
+    const now = new Date();
+    const period = currentPeriodValue();
+    const [yearRaw, monthRaw] = period.split("-");
+    const year = Number(yearRaw) || now.getFullYear();
+    const month = Number(monthRaw) || now.getMonth() + 1;
+    const meterId = selectedReadingInfo.meterId || `${apartmentId}:electricitymeter`;
+
+    const response = await apiFetch<{ reading?: { id?: string } }>("/meter-readings", {
+      method: "POST",
+      body: JSON.stringify({
+        apartmentId,
+        buildingId: selectedBuildingId,
+        meterId,
+        meterKey: "electricitymeter",
+        currentValue,
+        previousValue,
+        consumption: Number(Math.max(0, currentValue - previousValue).toFixed(3)),
+        meterDigits: selectedReadingInfo.meterDigits ?? selectedBuilding?.readingConfig?.electricityMeterDigits ?? 6,
+        month,
+        year,
+        source: "electricity_invoice",
+        meterReadingSource: "electricity_invoice",
+        linkedInvoiceExternalId,
+        allowMultipleMonthly: true,
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+    return firstString(response.reading?.id);
   }
 
   async function handleConfirmPayment(payment: ElectricityPayment) {
@@ -1641,10 +1632,9 @@ export function ElectricityWorkspace({
           notifications.success(copy.startSaved);
           return;
         }
-        await saveNextReading(numberValue(currentActualValue), numberValue(nextActualValue));
       } catch (error) {
         console.error(error);
-        notifications.error(copy.invoiceCreateFailed);
+        notifications.error(errorToastMessage(copy.invoiceCreateFailed, error));
         setSaving(false);
         return;
       }
@@ -1659,6 +1649,7 @@ export function ElectricityWorkspace({
     }
 
     setSaving(true);
+    let createdMeterReadingId = "";
     try {
       if (mode === "consumption") {
         const period = currentPeriodValue();
@@ -1673,6 +1664,9 @@ export function ElectricityWorkspace({
         });
         const externalId = `electricity-${invoiceNumber}-${apartmentId}-${period}`;
         const comment = `Electricity ${billableKwhValue.toFixed(3)} kWh (consumption ${kwhValue.toFixed(3)} kWh, advance ${Math.min(kwhValue, selectedAvailableAdvanceKwh).toFixed(3)} kWh)`;
+        if (useCurrentAsStart) {
+          createdMeterReadingId = await saveNextReading(numberValue(currentActualValue), numberValue(nextActualValue), externalId);
+        }
         const pdf = buildElectricityInvoicePdf({
           invoiceNumber,
           settings: invoiceSettings,
@@ -1694,12 +1688,13 @@ export function ElectricityWorkspace({
           fileName,
           buildingId: selectedBuildingId,
           apartmentId,
-          companyId,
           period,
           invoiceDate: paidAt,
           amount,
           currency: invoiceSettings.currency,
           externalId,
+          meterReadingId: createdMeterReadingId,
+          queueApproval: true,
           status: "pending",
           comment,
           source: "manual",
@@ -1710,6 +1705,7 @@ export function ElectricityWorkspace({
           type: "invoice",
           invoiceId: firstString(response.invoice_id),
           approvalId: firstString(response.approval_id),
+          meterReadingId: createdMeterReadingId,
           apartmentId,
           amount,
           kwh: billableKwhValue,
@@ -1742,7 +1738,12 @@ export function ElectricityWorkspace({
       notifications.success(copy.advanceCreated);
     } catch (error) {
       console.error(error);
-      notifications.error(mode === "consumption" ? copy.invoiceCreateFailed : copy.advanceCreateFailed);
+      if (createdMeterReadingId) {
+        await apiFetch(`/meter-readings/${encodeURIComponent(createdMeterReadingId)}?apartmentId=${encodeURIComponent(apartmentId)}`, {
+          method: "DELETE",
+        }).catch((rollbackError) => console.error(rollbackError));
+      }
+      notifications.error(errorToastMessage(mode === "consumption" ? copy.invoiceCreateFailed : copy.advanceCreateFailed, error));
     } finally {
       setSaving(false);
     }

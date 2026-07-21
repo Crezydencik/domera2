@@ -34,7 +34,6 @@ export default async function ElectricityPage({
   return (
     <ElectricityWorkspace
       role={data.role}
-      companyId={data.companyId}
       company={{
         companyId: firstString(company?.companyId, company?.id, data.companyId),
         name: firstString(company?.companyName, company?.name, data.profile?.companyName),

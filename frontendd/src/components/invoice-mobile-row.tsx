@@ -30,6 +30,7 @@ export function InvoiceMobileRow({
   pdfUrl,
   fileName,
   fallbackTitle,
+  typeLabel,
   locale,
   viewLabel,
   closeLabel,
@@ -43,6 +44,7 @@ export function InvoiceMobileRow({
   pdfUrl?: string;
   fileName?: string;
   fallbackTitle: string;
+  typeLabel?: string;
   locale: string;
   viewLabel: string;
   closeLabel: string;
@@ -53,9 +55,14 @@ export function InvoiceMobileRow({
 
   return (
     <article className="flex min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3" key={id}>
-      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
-        {formatInvoicePeriod(period, fallbackDate, locale)}
-      </p>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-slate-900">
+          {formatInvoicePeriod(period, fallbackDate, locale)}
+        </p>
+        {typeLabel ? (
+          <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{typeLabel}</p>
+        ) : null}
+      </div>
       <p className="shrink-0 text-sm font-semibold text-slate-900">{amount}</p>
       {pdfUrl ? (
         <InvoicePdfViewerButton

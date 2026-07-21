@@ -24,6 +24,7 @@ export declare class InvoicesController {
             amount: number;
             currency: string;
             externalId: string | null;
+            meterReadingId: string | null;
             period: string | null;
             invoiceDate: Date;
             dueDate: Date;

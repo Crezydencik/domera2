@@ -1534,13 +1534,13 @@ function ApiKeyPanel({
                       {t("apiKeys.contentTypeWarning")}
                     </p>
                     <pre className="overflow-x-auto rounded-lg bg-slate-950 px-3 py-3 text-xs leading-6 text-white">
-{`curl -X POST https://api.domera.app/api/invoices/upload \\
+{`curl -X POST https://domera.lv/api/invoices/upload \\
   -H "X-API-Key: <api_key>" \\
   -F "files=@apt-12.pdf" \\
   -F "files=@apt-15.pdf" \\
   -F "items=@items.json;type=application/json"
 
-curl -X POST https://api.domera.app/api/invoices/upload \\
+curl -X POST https://domera.lv/api/invoices/upload \\
   -H "X-API-Key: <api_key>" \\
   -F "files=@invoices.zip;type=application/zip"`}
                     </pre>
@@ -1663,7 +1663,7 @@ curl -X POST https://api.domera.app/api/invoices/upload \\
                 {openUsageSections.example ? (
                   <div className="px-4 pb-4">
                     <pre className="overflow-x-auto rounded-lg bg-slate-950 px-3 py-3 text-xs leading-6 text-white">
-{`curl -X POST https://api.domera.app/api/invoices/upload \\
+{`curl -X POST https://domera.lv/api/invoices/upload \\
   -H "X-API-Key: <api_key>" \\
   -F "file=@invoice.pdf" \\
   -F "apartmentNumber=12" \\

@@ -40,6 +40,7 @@ export declare class InvoicesService {
     private buildInvoiceId;
     private hashExternalId;
     private extractCompanyIds;
+    private getCompanyApartmentContexts;
     private getApiKeyBuildingIds;
     private apiCredentialMetadata;
     private resolveLookupBuildingId;
@@ -55,6 +56,9 @@ export declare class InvoicesService {
     private getApartmentInvoiceExternalIdsCollection;
     private getApartmentPendingInvoiceExternalIdsCollection;
     private getApartmentInvoicePublicLinksCollection;
+    private removeLinkedMeterReading;
+    private getApartmentInvoiceUploadHistoryCollection;
+    private getLegacyBuildingInvoiceUploadHistoryCollection;
     private resolveInvoiceApartmentId;
     private invoiceApartmentCompanyId;
     private parseOptionalDate;
@@ -193,6 +197,7 @@ export declare class InvoicesService {
             amount: number;
             currency: string;
             externalId: string | null;
+            meterReadingId: string | null;
             period: string | null;
             invoiceDate: Date;
             dueDate: Date;

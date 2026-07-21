@@ -45,17 +45,11 @@ export declare class MeterReadingsController {
     }>;
     create(request: Request, user: RequestUser, body: CreateMeterReadingDto): Promise<{
         success: boolean;
-        reading: {
-            id: `${string}-${string}-${string}-${string}-${string}`;
-            apartmentId: string;
-            meterId: string;
-            submittedAt: Date;
-            previousValue: number;
+        reading: Record<string, unknown> & {
             currentValue: number;
-            consumption: number;
-            buildingId: string;
-            month: number;
-            year: number;
+            previousValue: number;
+            source?: string;
+            meterReadingSource?: string;
         };
     }>;
     update(request: Request, user: RequestUser, readingId: string, body: UpdateMeterReadingDto): Promise<{

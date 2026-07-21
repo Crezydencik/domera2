@@ -10,6 +10,8 @@ export type UploadInvoiceParams = {
   amount: string | number;
   currency: string;
   externalId: string;
+  meterReadingId?: string;
+  queueApproval?: boolean;
   status: string;
   comment?: string;
   companyId?: string;
@@ -53,6 +55,8 @@ export function uploadInvoice(params: UploadInvoiceParams) {
   formData.append("amount", String(params.amount));
   formData.append("currency", params.currency);
   formData.append("externalId", params.externalId);
+  if (params.meterReadingId?.trim()) formData.append("meterReadingId", params.meterReadingId.trim());
+  if (params.queueApproval) formData.append("queueApproval", "true");
   formData.append("status", params.status);
   formData.append("source", params.source ?? "manual");
 
