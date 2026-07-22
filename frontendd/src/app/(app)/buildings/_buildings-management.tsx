@@ -93,13 +93,34 @@ function parseOccupancy(value: string) {
   };
 }
 
+function firstOptionalNumber(...values: unknown[]) {
+  for (const value of values) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+
+  return undefined;
+}
+
 function normalizeBuilding(item: Building): EditableBuilding {
   const parsed = parseOccupancy(item.occupancy);
+  const apartmentLimit = firstOptionalNumber(item.apartmentLimit, item.approvedApartmentsCount, item.apartments);
+  const linkedApartmentsCount = firstOptionalNumber(item.linkedApartmentsCount, item.actualApartmentsCount, item.apartmentsCount, parsed.apartmentsCount);
+  const occupiedApartments = firstOptionalNumber(item.occupiedApartments, parsed.occupiedApartments) ?? 0;
+  const displayApartments = apartmentLimit ?? item.apartments;
 
   return {
     ...item,
-    occupiedApartments: parsed.occupiedApartments,
-    apartments: parsed.apartmentsCount || item.apartments,
+    apartments: displayApartments,
+    apartmentsCount: displayApartments,
+    apartmentLimit,
+    approvedApartmentsCount: apartmentLimit,
+    linkedApartmentsCount,
+    actualApartmentsCount: linkedApartmentsCount,
+    occupiedApartments,
+    occupancy: displayApartments > 0 ? `${Math.max(0, occupiedApartments)} / ${displayApartments}` : item.occupancy,
   };
 }
 

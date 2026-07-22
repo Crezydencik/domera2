@@ -39,6 +39,9 @@ export declare class BuildingsController {
             apartmentLimit: number;
             approvedApartmentsCount: number;
             apartmentsCount: number;
+            apartments: number;
+            linkedApartmentsCount: number;
+            actualApartmentsCount: number;
             occupiedApartments: number;
             id: string;
         }[];
@@ -48,6 +51,9 @@ export declare class BuildingsController {
             apartmentLimit: number;
             approvedApartmentsCount: number;
             apartmentsCount: number;
+            apartments: number;
+            linkedApartmentsCount: number;
+            actualApartmentsCount: number;
             occupiedApartments: number;
             id: string;
         }[];
@@ -64,6 +70,9 @@ export declare class BuildingsController {
         apartmentLimit: number;
         approvedApartmentsCount: number;
         apartmentsCount: number;
+        apartments: number;
+        linkedApartmentsCount: number;
+        actualApartmentsCount: number;
         occupiedApartments: number;
         id: string;
     }>;

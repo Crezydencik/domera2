@@ -1395,7 +1395,11 @@ export class InvoicesService {
     const token = randomBytes(32).toString('hex');
     const tokenHash = this.hashPublicInvoiceToken(token);
     const now = new Date();
-    await this.getApartmentInvoicePublicLinksCollection(params.apartmentId).doc(tokenHash).set({
+    const expiresAt = new Date(now.getTime() + PUBLIC_INVOICE_LINK_TTL_MS);
+    const linkRef = this.getApartmentInvoicePublicLinksCollection(params.apartmentId).doc(tokenHash);
+    const publicLinkRef = this.firebaseAdminService.firestore.collection('invoice_public_links').doc(tokenHash);
+    const linkData = {
+      tokenHash,
       invoiceId: params.invoiceId,
       invoicePath: params.invoicePath,
       apartmentId: params.apartmentId,
@@ -1403,9 +1407,17 @@ export class InvoicesService {
       buildingId: params.buildingId || null,
       recipientEmail: params.recipientEmail,
       createdAt: now,
-      expiresAt: new Date(now.getTime() + PUBLIC_INVOICE_LINK_TTL_MS),
+      expiresAt,
       createdBy: 'invoice.approval',
+    };
+
+    const batch = this.firebaseAdminService.firestore.batch();
+    batch.set(linkRef, linkData);
+    batch.set(publicLinkRef, {
+      ...linkData,
+      apartmentPublicLinkPath: linkRef.path,
     });
+    await batch.commit();
 
     return this.publicInvoiceViewLink(token, params.request);
   }
@@ -3710,18 +3722,19 @@ export class InvoicesService {
       throw new NotFoundException('Invoice PDF not found');
     }
 
-    const linkSnap = await this.firebaseAdminService.firestore
-      .collectionGroup('invoice_public_links')
-      .where('tokenHash', '==', this.hashPublicInvoiceToken(normalizedToken))
-      .limit(1)
+    const tokenHash = this.hashPublicInvoiceToken(normalizedToken);
+    const directLinkSnap = await this.firebaseAdminService.firestore
+      .collection('invoice_public_links')
+      .doc(tokenHash)
       .get();
-    const legacyLinkSnap = linkSnap.empty
-      ? await this.firebaseAdminService.firestore
-        .collection('invoice_public_links')
-        .doc(this.hashPublicInvoiceToken(normalizedToken))
-        .get()
-      : null;
-    const linkDoc = linkSnap.docs[0] ?? (legacyLinkSnap?.exists ? legacyLinkSnap : undefined);
+    const groupedLinkSnap = directLinkSnap.exists
+      ? null
+      : await this.firebaseAdminService.firestore
+        .collectionGroup('invoice_public_links')
+        .where('tokenHash', '==', tokenHash)
+        .limit(1)
+        .get();
+    const linkDoc = directLinkSnap.exists ? directLinkSnap : groupedLinkSnap?.docs[0];
     if (!linkDoc?.exists) {
       throw new NotFoundException('Invoice PDF not found');
     }
@@ -3899,6 +3912,7 @@ export class InvoicesService {
       apartmentId
         ? deleteQueryDocs(this.getApartmentInvoicePublicLinksCollection(apartmentId).where('invoiceId', '==', invoiceId))
         : Promise.resolve(),
+      deleteQueryDocs(this.firebaseAdminService.firestore.collection('invoice_public_links').where('invoiceId', '==', invoiceId)),
       apartmentId
         ? deleteQueryDocs(this.getApartmentInvoiceUploadHistoryCollection(apartmentId).where('invoiceId', '==', invoiceId))
         : Promise.resolve(),

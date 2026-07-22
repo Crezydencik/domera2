@@ -102,6 +102,9 @@ export declare class BuildingsService {
             apartmentLimit: number;
             approvedApartmentsCount: number;
             apartmentsCount: number;
+            apartments: number;
+            linkedApartmentsCount: number;
+            actualApartmentsCount: number;
             occupiedApartments: number;
             id: string;
         }[];
@@ -111,6 +114,9 @@ export declare class BuildingsService {
             apartmentLimit: number;
             approvedApartmentsCount: number;
             apartmentsCount: number;
+            apartments: number;
+            linkedApartmentsCount: number;
+            actualApartmentsCount: number;
             occupiedApartments: number;
             id: string;
         }[];
@@ -127,6 +133,9 @@ export declare class BuildingsService {
         apartmentLimit: number;
         approvedApartmentsCount: number;
         apartmentsCount: number;
+        apartments: number;
+        linkedApartmentsCount: number;
+        actualApartmentsCount: number;
         occupiedApartments: number;
         id: string;
     }>;

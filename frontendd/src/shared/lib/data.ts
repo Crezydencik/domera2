@@ -34,7 +34,12 @@ export interface Building {
   address: string;
   comment?: string;
   apartments: number;
+  apartmentsCount?: number;
   apartmentLimit?: number;
+  approvedApartmentsCount?: number;
+  linkedApartmentsCount?: number;
+  actualApartmentsCount?: number;
+  occupiedApartments?: number;
   occupancy: string;
   status: string;
   reviewComment?: string;

@@ -295,14 +295,17 @@ let BuildingsService = class BuildingsService {
     }
     applyOccupancyStats(id, data, stats) {
         const apartmentLimit = this.firstNumber(data.apartmentsCount, data.apartments);
-        const apartmentsCount = stats?.apartmentsCount ?? apartmentLimit;
+        const linkedApartmentsCount = stats?.apartmentsCount ?? 0;
         const occupiedApartments = stats?.occupiedApartments ?? 0;
         return {
             id,
             ...data,
             apartmentLimit,
             approvedApartmentsCount: apartmentLimit,
-            apartmentsCount,
+            apartmentsCount: apartmentLimit,
+            apartments: apartmentLimit,
+            linkedApartmentsCount,
+            actualApartmentsCount: linkedApartmentsCount,
             occupiedApartments,
         };
     }
