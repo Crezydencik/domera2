@@ -1,27 +1,31 @@
 import { Request } from 'express';
+import { FieldValue } from 'firebase-admin/firestore';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
-import { EmailService } from '../emails/email.service';
-type ImportInput = {
-    request: Request;
-    user: RequestUser;
-    file: {
-        buffer: Buffer;
-        originalname?: string;
-        mimetype?: string;
-        size?: number;
-    };
-    buildingId?: string;
-    companyId?: string;
-};
+import { EmailService } from '../emails/services/email.service';
+import { CreateApartmentDto, UpdateApartmentDto } from './dto/create-apartment.dto';
+import { ApartmentsRepository } from './repositories/apartments.repository';
+import { ApartmentAccessService } from './services/apartment-access.service';
+import { ApartmentCodeService } from './services/apartment-code.service';
+import { ApartmentInvitationService } from './services/apartment-invitation.service';
+import { ApartmentMeterService } from './services/apartment-meter.service';
+import { ApartmentStorageService } from './services/apartment-storage.service';
+import { ImportInput } from './types/import.types';
 export declare class ApartmentsService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
     private readonly auditLogService;
     private readonly emailService;
-    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService);
+    private readonly apartmentsRepository;
+    private readonly apartmentAccessService;
+    private readonly apartmentCodeService;
+    private readonly apartmentInvitationService;
+    private readonly apartmentMeterService;
+    private readonly apartmentStorageService;
+    private readonly logger;
+    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService, apartmentsRepository: ApartmentsRepository, apartmentAccessService: ApartmentAccessService, apartmentCodeService: ApartmentCodeService, apartmentInvitationService: ApartmentInvitationService, apartmentMeterService: ApartmentMeterService, apartmentStorageService: ApartmentStorageService);
     private enforceRateLimit;
     private firstString;
     private compareApartmentOrder;
@@ -53,17 +57,9 @@ export declare class ApartmentsService {
     private buildEmptyWaterReadings;
     private buildReadableCode;
     private buildRandomDigits;
-    private resolveFrontendUrl;
-    private buildInvitationLink;
-    private buildInvitationActionHref;
-    private resolveApartmentCompanyId;
-    private createApartmentInvitation;
-    private resolveOwnerInvitationContext;
-    private createOwnerInvitationNotification;
-    private createTenantInvitationNotification;
-    private getPlatformAdminDocs;
-    private emailPlatformAdminsAboutApartmentRequest;
     private buildApartmentNumberCode;
+    private getApartmentCodeContext;
+    private buildApartmentReadableId;
     private generateApartmentReadableId;
     private getCellStringByHeader;
     private parseReadingPeriod;
@@ -100,33 +96,34 @@ export declare class ApartmentsService {
     list(request: Request, user: RequestUser, query: Record<string, unknown>): Promise<{
         items: {
             ownerActivated: boolean;
-            tenants: unknown;
             createdAt: Date | undefined;
             id: string;
         }[];
     }>;
     byId(request: Request, user: RequestUser, apartmentId: string): Promise<{
         ownerActivated: boolean;
-        tenants: unknown;
         createdAt: Date | undefined;
         id: string;
     }>;
-    create(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{
-        createdAt: Date;
-        updatedAt: Date;
+    create(request: Request, user: RequestUser, payload: CreateApartmentDto): Promise<{
+        createdAt: FieldValue;
+        updatedAt: FieldValue;
         waterReadings?: Record<string, unknown> | undefined;
-        readingConfigOverride?: {
-            useBuildingDefaults: boolean;
-            hotWaterMeters: number;
-            coldWaterMeters: number;
-        } | undefined;
+        readingConfigOverride?: import("./types/apartment.types").ReadingConfigOverride | undefined;
+        declaredResidents?: number | undefined;
+        area?: number | undefined;
+        floor?: number | undefined;
+        address?: string | undefined;
         number: string;
+        normalizedNumber: string;
         buildingId: string;
+        companyId: string;
         companyIds: string[];
+        storageApartmentId: string;
         readableId: string;
         id: string;
     }>;
-    update(request: Request, user: RequestUser, apartmentId: string, payload: Record<string, unknown>): Promise<{
+    update(request: Request, user: RequestUser, apartmentId: string, payload: UpdateApartmentDto): Promise<{
         success: boolean;
     }>;
     storageSummary(request: Request, user: RequestUser, apartmentId: string): Promise<{
@@ -197,6 +194,10 @@ export declare class ApartmentsService {
     migrateApartmentReadableIds(): Promise<{
         updated: number;
         total: number;
+        skipped: number;
+        errors: Array<{
+            apartmentId: string;
+            message: string;
+        }>;
     }>;
 }
-export {};

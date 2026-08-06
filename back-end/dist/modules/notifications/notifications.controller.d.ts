@@ -1,25 +1,15 @@
 import { Request } from 'express';
 import { RequestUser } from '../../common/auth/request-user.type';
-import { NotificationsService } from './notifications.service';
+import { NotificationsService } from './services/notifications.service';
 export declare class NotificationsController {
     private readonly notificationsService;
     constructor(notificationsService: NotificationsService);
     getSettings(request: Request, user: RequestUser): Promise<{
-        settings: {
-            general: boolean;
-            meterReminder: boolean;
-            paymentReminder: boolean;
-            language: "ru" | "lv" | "en";
-        };
+        settings: import("./types/notification.types").NotificationSettings;
     }>;
     updateSettings(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<{
         success: boolean;
-        settings: {
-            general: boolean;
-            meterReminder: boolean;
-            paymentReminder: boolean;
-            language: "ru" | "lv" | "en";
-        };
+        settings: import("./types/notification.types").NotificationSettings;
     }>;
     list(request: Request, user: RequestUser, userId: string): Promise<{
         items: ({

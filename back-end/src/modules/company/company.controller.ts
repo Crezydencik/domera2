@@ -4,7 +4,7 @@ import { ApiBearerAuth, ApiCookieAuth, ApiOperation, ApiParam, ApiTags } from '@
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
 import { RequestUser } from '../../common/auth/request-user.type';
-import { CompanyService } from './company.service';
+import { CompanyService } from './services/company.service';
 
 @ApiTags('Company')
 @Controller('company')

@@ -9,8 +9,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailModule = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
-const email_service_1 = require("./email.service");
-const email_controller_1 = require("./email.controller");
+const email_controller_1 = require("./controllers/email.controller");
+const email_service_1 = require("./services/email.service");
+const email_template_service_1 = require("./services/email-template.service");
+const email_transport_service_1 = require("./services/email-transport.service");
 let EmailModule = class EmailModule {
 };
 exports.EmailModule = EmailModule;
@@ -18,7 +20,7 @@ exports.EmailModule = EmailModule = __decorate([
     (0, common_1.Module)({
         imports: [config_1.ConfigModule],
         controllers: [email_controller_1.EmailController],
-        providers: [email_service_1.EmailService],
+        providers: [email_service_1.EmailService, email_template_service_1.EmailTemplateService, email_transport_service_1.EmailTransportService],
         exports: [email_service_1.EmailService],
     })
 ], EmailModule);

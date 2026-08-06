@@ -18,7 +18,6 @@ const apartments_module_1 = require("./modules/apartments/apartments.module");
 const auth_module_1 = require("./modules/auth/auth.module");
 const buildings_module_1 = require("./modules/buildings/buildings.module");
 const company_module_1 = require("./modules/company/company.module");
-const company_invitations_module_1 = require("./modules/company-invitations/company-invitations.module");
 const documents_module_1 = require("./modules/documents/documents.module");
 const email_module_1 = require("./modules/emails/email.module");
 const invoices_module_1 = require("./modules/invoices/invoices.module");
@@ -27,7 +26,6 @@ const meter_readings_module_1 = require("./modules/meter-readings/meter-readings
 const news_module_1 = require("./modules/news/news.module");
 const notifications_module_1 = require("./modules/notifications/notifications.module");
 const projects_module_1 = require("./modules/projects/projects.module");
-const resident_module_1 = require("./modules/resident/resident.module");
 const users_module_1 = require("./modules/users/users.module");
 let AppModule = class AppModule {
 };
@@ -47,7 +45,6 @@ exports.AppModule = AppModule = __decorate([
             buildings_module_1.BuildingsModule,
             company_module_1.CompanyModule,
             invitations_module_1.InvitationsModule,
-            company_invitations_module_1.CompanyInvitationsModule,
             documents_module_1.DocumentsModule,
             apartments_module_1.ApartmentsModule,
             invoices_module_1.InvoicesModule,
@@ -56,7 +53,6 @@ exports.AppModule = AppModule = __decorate([
             projects_module_1.ProjectsModule,
             news_module_1.NewsModule,
             users_module_1.UsersModule,
-            resident_module_1.ResidentModule,
         ],
         providers: [
             in_memory_domain_event_bus_1.InMemoryDomainEventBus,

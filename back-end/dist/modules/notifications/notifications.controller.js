@@ -17,7 +17,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const current_user_decorator_1 = require("../../common/auth/current-user.decorator");
 const firebase_auth_guard_1 = require("../../common/auth/firebase-auth.guard");
-const notifications_service_1 = require("./notifications.service");
+const notifications_service_1 = require("./services/notifications.service");
 let NotificationsController = class NotificationsController {
     constructor(notificationsService) {
         this.notificationsService = notificationsService;

@@ -1,6 +1,6 @@
 import { Request } from 'express';
 import { RequestUser } from '../../common/auth/request-user.type';
-import { CompanyService } from './company.service';
+import { CompanyService } from './services/company.service';
 export declare class CompanyController {
     private readonly companyService;
     constructor(companyService: CompanyService);

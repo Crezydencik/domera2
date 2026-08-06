@@ -1,65 +1,11 @@
 import { Request } from 'express';
-import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RequestUser } from '../../common/auth/request-user.type';
-import { RateLimitService } from '../../common/services/rate-limit.service';
-type BuildingDeleteBackupResult = {
-    backupStoragePath: string | null;
-    backupStoragePrefix: string | null;
-    retainedStoragePrefix: string | null;
-    retentionExpiresAt: Date;
-    copiedStorageFilesCount: number;
-    backupFailed?: boolean;
-    backupError?: string;
-};
+import { BuildingCreationRequestService } from './services/building-creation-request.service';
+import { BuildingCrudService } from './services/building-crud.service';
 export declare class BuildingsService {
-    private readonly firebaseAdminService;
-    private readonly rateLimitService;
-    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService);
-    private assertManagement;
-    private effectiveManagementCompanyId;
-    private assertManagementCompanyScope;
-    private assertPlatformAdmin;
-    private enforceRateLimit;
-    private firstString;
-    private firstNumber;
-    private dateSortValue;
-    private sanitizePathSegment;
-    private optionalNonNegativeNumber;
-    private normalizeStatus;
-    private isBuildingCreationRequestStatus;
-    private normalizeMeterCount;
-    private normalizeSubscriptionTermMonths;
-    private normalizeSubscriptionTermYears;
-    private normalizeReadingConfig;
-    private normalizeSubmissionPeriod;
-    private normalizeSubmissionPeriodByKey;
-    private buildReadablePrefix;
-    private buildSecureRandomToken;
-    private generateBuildingId;
-    private isApartmentOccupied;
-    private getBuildingOccupancyStats;
-    private getAllBuildingOccupancyStats;
-    private buildingHasLinkedApartments;
-    private applyOccupancyStats;
-    private getCompanySummary;
-    private getPlatformAdminDocs;
-    private platformAdminCreationRequestNotificationRef;
-    private markPlatformAdminCreationRequestNotificationsRead;
-    private buildPlatformBillingInvoiceId;
-    private buildPlatformBillingInvoiceNumber;
-    private createPlatformBillingInvoice;
-    private notifyPlatformAdminsAboutCreationRequest;
-    private getCompanyCreationAccess;
-    private getCompanyStorageFolders;
-    private getBuildingStorageFolders;
-    private addDays;
-    private toBackupJson;
-    private queryBuildingBackupDocs;
-    private getBuildingSubcollectionBackup;
-    private backupBuildingBeforeDelete;
-    private markStorageFolders;
-    private buildCompanyBuildingLinkPatch;
-    private normalizeBuildingPayload;
+    private readonly creationRequestService;
+    private readonly buildingCrudService;
+    constructor(creationRequestService: BuildingCreationRequestService, buildingCrudService: BuildingCrudService);
     getCreationAccess(request: Request, user: RequestUser, companyId: string): Promise<{
         allowed: boolean;
         requiresSubscription: boolean;
@@ -109,26 +55,6 @@ export declare class BuildingsService {
             id: string;
         }[];
     }>;
-    listAllForAdmin(request: Request, user: RequestUser): Promise<{
-        items: {
-            apartmentLimit: number;
-            approvedApartmentsCount: number;
-            apartmentsCount: number;
-            apartments: number;
-            linkedApartmentsCount: number;
-            actualApartmentsCount: number;
-            occupiedApartments: number;
-            id: string;
-        }[];
-    }>;
-    listPlatformBillingInvoices(request: Request, user: RequestUser): Promise<{
-        items: Record<string, unknown>[];
-    }>;
-    setEditLock(request: Request, user: RequestUser, buildingId: string, payload: Record<string, unknown>): Promise<{
-        success: boolean;
-        buildingId: string;
-        editLocked: boolean;
-    }>;
     byId(request: Request, user: RequestUser, buildingId: string): Promise<{
         apartmentLimit: number;
         approvedApartmentsCount: number;
@@ -153,8 +79,7 @@ export declare class BuildingsService {
         backup?: undefined;
     } | {
         success: boolean;
-        backup: BuildingDeleteBackupResult;
+        backup: import("./services/building-storage.service").BuildingDeleteBackupResult;
         deletedRequest?: undefined;
     }>;
 }
-export {};

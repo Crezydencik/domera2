@@ -17,7 +17,7 @@ import { RateLimitService } from '../../common/services/rate-limit.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { normalizeEmail } from '../../common/utils/invitation-token';
 import { buildMeterHistorySnapshot } from '../../common/utils/meter-reading-history';
-import { EmailService } from '../emails/email.service';
+import { EmailService } from '../emails/services/email.service';
 
 type UploadedInvoiceFile = {
   fieldname?: string;

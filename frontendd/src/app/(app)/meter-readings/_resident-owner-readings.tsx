@@ -29,6 +29,8 @@ interface ReadingRow {
   consumption: number;
   submittedAt: string;
   submittedAtTime: number;
+  month?: number;
+  year?: number;
   historyVisible: boolean;
 }
 
@@ -320,6 +322,8 @@ function normalizeReading(item: UnknownRecord, meterLabels: MeterLabels = DEFAUL
   const currentValue = numberValue(item.currentValue, numberValue(item.value));
   const submittedAtRaw = text(item.submittedAt);
   const submittedAtDate = new Date(submittedAtRaw);
+  const month = numberValue(item.month, Number.NaN);
+  const year = numberValue(item.year, Number.NaN);
 
   return {
     id: text(item.id, item.meterId, `${text(item.apartmentId)}-${meterKey}-${text(item.submittedAt)}`),
@@ -336,6 +340,8 @@ function normalizeReading(item: UnknownRecord, meterLabels: MeterLabels = DEFAUL
     consumption: numberValue(item.consumption, typeof previousValue === "number" ? consumptionValue(currentValue, previousValue) : 0),
     submittedAt: formatDate(item.submittedAt),
     submittedAtTime: Number.isNaN(submittedAtDate.getTime()) ? 0 : submittedAtDate.getTime(),
+    month: Number.isFinite(month) ? month : undefined,
+    year: Number.isFinite(year) ? year : undefined,
     historyVisible: item.historyVisible !== false,
   };
 }
@@ -393,7 +399,8 @@ function groupReadingsByMonth(readings: ReadingRow[]): MonthGroup[] {
   const groupedReadings = new Map<string, ReadingRow[]>();
 
   for (const reading of readings) {
-    const key = reading.submittedAt.slice(0, 7);
+    const key = readingMonthKey(reading);
+    if (!key) continue;
     const group = groupedReadings.get(key);
 
     if (group) {
@@ -403,12 +410,14 @@ function groupReadingsByMonth(readings: ReadingRow[]): MonthGroup[] {
     }
   }
 
-  return Array.from(groupedReadings.entries()).map(([key, items]) => ({
-    key,
-    label: monthLabelFromDate(`${key}-01`),
-    count: items.length,
-    periods: groupReadingsByPeriod(items),
-  }));
+  return Array.from(groupedReadings.entries())
+    .sort(([left], [right]) => right.localeCompare(left))
+    .map(([key, items]) => ({
+      key,
+      label: monthLabelFromDate(`${key}-01`),
+      count: items.length,
+      periods: groupReadingsByPeriod(items),
+    }));
 }
 
 function readingBelongsToApartment(reading: ReadingRow, apartment: ResidentOwnerApartmentOption) {
@@ -416,6 +425,10 @@ function readingBelongsToApartment(reading: ReadingRow, apartment: ResidentOwner
 }
 
 function readingMonthKey(reading: ReadingRow) {
+  if (reading.month && reading.year) {
+    return `${reading.year}-${String(reading.month).padStart(2, "0")}`;
+  }
+
   return reading.submittedAt.slice(0, 7);
 }
 
@@ -480,7 +493,7 @@ function hasSubmittedCurrentMonth(
 
   const submittedMeterKeys = new Set(
     readings
-      .filter((reading) => reading.submittedAt.slice(0, 7) === period && readingBelongsToApartment(reading, apartment))
+      .filter((reading) => readingMonthKey(reading) === period && readingBelongsToApartment(reading, apartment))
       .map((reading) => reading.meterKey),
   );
 
@@ -755,6 +768,8 @@ export function ResidentOwnerMeterReadings() {
           consumption: hasPreviousValue ? consumptionValue(currentValue, previousValue) : 0,
           submittedAt,
           submittedAtTime: submittedAtTimeBase + optimisticIndex,
+          month,
+          year,
           historyVisible: true,
         });
         optimisticIndex += 1;
@@ -762,12 +777,12 @@ export function ResidentOwnerMeterReadings() {
 
       setReadings((current) => {
         const submittedKeys = new Set(
-          optimisticReadings.map((reading) => `${reading.apartmentId}:${reading.meterKey}:${reading.submittedAt.slice(0, 7)}`),
+          optimisticReadings.map((reading) => `${reading.apartmentId}:${reading.meterKey}:${readingMonthKey(reading)}`),
         );
         const keptReadings = electricityAllowsMultipleMonthlySubmissions
           ? current
           : current.filter(
-              (reading) => !submittedKeys.has(`${reading.apartmentId}:${reading.meterKey}:${reading.submittedAt.slice(0, 7)}`),
+              (reading) => !submittedKeys.has(`${reading.apartmentId}:${reading.meterKey}:${readingMonthKey(reading)}`),
             );
 
         return sortReadingsByDate([...optimisticReadings, ...keptReadings]);

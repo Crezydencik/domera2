@@ -3,7 +3,7 @@ import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
-import { EmailService } from '../emails/email.service';
+import { EmailService } from '../emails/services/email.service';
 type UploadedInvoiceFile = {
     fieldname?: string;
     buffer: Buffer;

@@ -9,7 +9,6 @@ import { ApartmentsModule } from './modules/apartments/apartments.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BuildingsModule } from './modules/buildings/buildings.module';
 import { CompanyModule } from './modules/company/company.module';
-import { CompanyInvitationsModule } from './modules/company-invitations/company-invitations.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { EmailModule } from './modules/emails/email.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
@@ -18,7 +17,6 @@ import { MeterReadingsModule } from './modules/meter-readings/meter-readings.mod
 import { NewsModule } from './modules/news/news.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProjectsModule } from './modules/projects/projects.module';
-import { ResidentModule } from './modules/resident/resident.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
@@ -35,7 +33,6 @@ import { UsersModule } from './modules/users/users.module';
     BuildingsModule,
     CompanyModule,
     InvitationsModule,
-    CompanyInvitationsModule,
     DocumentsModule,
     ApartmentsModule,
     InvoicesModule,
@@ -44,7 +41,6 @@ import { UsersModule } from './modules/users/users.module';
     ProjectsModule,
     NewsModule,
     UsersModule,
-    ResidentModule,
   ],
   providers: [
     InMemoryDomainEventBus,

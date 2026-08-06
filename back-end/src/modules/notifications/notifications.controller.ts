@@ -11,7 +11,7 @@ import {
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
 import { RequestUser } from '../../common/auth/request-user.type';
-import { NotificationsService } from './notifications.service';
+import { NotificationsService } from './services/notifications.service';
 
 @ApiTags('Notifications')
 @Controller('notifications')
