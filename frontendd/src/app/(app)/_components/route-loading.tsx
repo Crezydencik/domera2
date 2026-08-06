@@ -1,4 +1,19 @@
-export function RouteLoading({ rows = 3 }: { rows?: number }) {
+"use client";
+
+import { useEffect, useState } from "react";
+
+export function RouteLoading({ rows = 3, delayMs = 250 }: { rows?: number; delayMs?: number }) {
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShow(true), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs]);
+
+  if (!show) {
+    return null;
+  }
+
   return (
     <div className="space-y-4">
       <div className="h-8 w-52 animate-pulse rounded-md bg-slate-200" />
