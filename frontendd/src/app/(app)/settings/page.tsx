@@ -1,7 +1,8 @@
 import type { CompanyApiKeyItem } from "@/shared/api/company";
 import type { NotificationSettings } from "@/shared/api/notifications";
 import { isApprovedBuilding, isElectricityEnabledBuilding } from "@/shared/lib/buildings";
-import { apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
+import { apiFetch } from "@/shared/server/api-client";
+import { getSettingsPageData } from "@/shared/server/page-loaders/settings.loader";
 import { SettingsTabs } from "./settings-tabs";
 
 type SettingsPageProps = {
@@ -184,7 +185,7 @@ function normalizeApiKeyItems(value: unknown): CompanyApiKeyItem[] {
 
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
   const params = (await searchParams) ?? {};
-  const data = await getRoleDataBundle(params.role);
+  const data = await getSettingsPageData(params.role);
   const profile = data.profile;
 
   const userId = firstString(profile?.uid, profile?.id, data.userId);

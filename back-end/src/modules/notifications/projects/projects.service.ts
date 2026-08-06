@@ -6,10 +6,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
-import { RateLimitService } from '../../common/services/rate-limit.service';
-import { RequestUser } from '../../common/auth/request-user.type';
-
+import { RequestUser } from '../../../common/auth/request-user.type';
+import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
+import { RateLimitService } from '../../../common/services/rate-limit.service';
 
 @Injectable()
 export class ProjectsService {

@@ -8,11 +8,11 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser } from '../../common/auth/current-user.decorator';
-import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
-import { RequestUser } from '../../common/auth/request-user.type';
-import { Roles } from '../../common/auth/roles.decorator';
-import { RolesGuard } from '../../common/auth/roles.guard';
+import { CurrentUser } from '../../../common/auth/current-user.decorator';
+import { FirebaseAuthGuard } from '../../../common/auth/firebase-auth.guard';
+import { RequestUser } from '../../../common/auth/request-user.type';
+import { Roles } from '../../../common/auth/roles.decorator';
+import { RolesGuard } from '../../../common/auth/roles.guard';
 import { ProjectsService } from './projects.service';
 
 @ApiTags('Projects')

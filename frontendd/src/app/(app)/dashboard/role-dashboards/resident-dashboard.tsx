@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 import { FiExternalLink } from "react-icons/fi";
-import type { RoleDataBundle } from "@/shared/lib/domera-api.server";
+import type { RoleDataBundle } from "@/shared/server/auth-context";
 import type { MeterReading } from "@/shared/lib/data";
 import { ROUTES } from "@/shared/lib/routes";
 

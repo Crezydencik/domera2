@@ -155,7 +155,7 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
   const pathname = rawPathname ?? ROUTES.dashboard;
   const role = normalizeDashboardRole(defaultRole);
   const [hasPendingBuildingRequests, setHasPendingBuildingRequests] = useState(false);
-  const [hasElectricityNavigation, setHasElectricityNavigation] = useState(readStoredElectricityNavigation);
+  const [hasElectricityNavigation, setHasElectricityNavigation] = useState(false);
   const optimisticElectricityUntilRef = useRef(0);
   const baseNavItems = role === "platformAdmin"
     ? navByRole[role]

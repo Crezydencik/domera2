@@ -2,7 +2,7 @@ import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SectionCard } from "@/components/section-card";
-import type { RoleDataBundle } from "@/shared/lib/domera-api.server";
+import type { RoleDataBundle } from "@/shared/server/auth-context";
 import { ROUTES } from "@/shared/lib/routes";
 
 export async function ApartmentsResidentView({ data }: { data: RoleDataBundle }) {

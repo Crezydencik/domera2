@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
+import { apiFetch } from "@/shared/server/api-client";
+import { getElectricityPageData } from "@/shared/server/page-loaders/invoices.loader";
 import { isElectricityEnabledBuilding } from "@/shared/lib/buildings";
 import { ROUTES } from "@/shared/lib/routes";
 import { ElectricityWorkspace } from "./_electricity-workspace";
@@ -20,7 +21,7 @@ export default async function ElectricityPage({
   searchParams?: Promise<{ role?: string; settings?: string; openSettings?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const data = await getRoleDataBundle(params.role);
+  const data = await getElectricityPageData(params.role);
   const company = data.companyId
     ? await apiFetch<UnknownRecord>(`/company/${encodeURIComponent(data.companyId)}`).catch(() => null)
     : null;

@@ -1,5 +1,5 @@
 import { Request } from 'express';
-import { RequestUser } from '../../common/auth/request-user.type';
+import { RequestUser } from '../../../common/auth/request-user.type';
 import { ProjectsService } from './projects.service';
 export declare class ProjectsController {
     private readonly projectsService;

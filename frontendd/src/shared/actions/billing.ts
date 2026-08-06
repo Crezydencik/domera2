@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { apiFetch } from "@/shared/lib/domera-api.server";
+import { apiFetch } from "@/shared/server/api-client";
 
 type UploadInvoiceResponse = {
   success?: boolean;

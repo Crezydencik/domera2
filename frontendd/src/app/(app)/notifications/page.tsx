@@ -1,8 +1,9 @@
 import { SectionCard } from "@/components/section-card";
-import { getRoleDataBundle } from "@/shared/lib/domera-api.server";
+import type { RoleDataBundle } from "@/shared/server/auth-context";
+import { getNotificationsPageData } from "@/shared/server/page-loaders/notifications.loader";
 import type { NotificationItem } from "@/shared/lib/data";
 
-function buildNotifications(data: Awaited<ReturnType<typeof getRoleDataBundle>>): NotificationItem[] {
+function buildNotifications(data: RoleDataBundle): NotificationItem[] {
   const overdue = data.invoices.filter((item) => item.status === "Overdue").length;
   const pending = data.invoices.filter((item) => item.status === "Pending").length;
   const missingReadings = Math.max(0, data.apartments.length - data.meterReadings.length);
@@ -37,7 +38,7 @@ export default async function NotificationsPage({
   searchParams?: Promise<{ role?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const data = await getRoleDataBundle(params.role);
+  const data = await getNotificationsPageData(params.role);
   const items = buildNotifications(data);
 
   return (

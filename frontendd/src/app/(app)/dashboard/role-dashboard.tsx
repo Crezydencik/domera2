@@ -2,7 +2,7 @@ import { ManagementCompanyDashboard } from "./role-dashboards/management-company
 import { ResidentDashboard } from "./role-dashboards/resident-dashboard";
 import { LandlordDashboard } from "./role-dashboards/landlord-dashboard";
 import { PlatformAdminDashboard } from "./role-dashboards/platform-admin-dashboard";
-import type { RoleDataBundle } from "@/shared/lib/domera-api.server";
+import type { RoleDataBundle } from "@/shared/server/auth-context";
 
 interface RoleDashboardProps {
   data: RoleDataBundle;

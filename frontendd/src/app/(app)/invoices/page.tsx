@@ -1,4 +1,5 @@
-import { DomeraApiError, apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
+import { DomeraApiError, apiFetch } from "@/shared/server/api-client";
+import { getInvoicesPageData } from "@/shared/server/page-loaders/invoices.loader";
 import { InvoicesWorkspace } from "./_invoices-workspace";
 
 type ListLoadResult = {
@@ -22,7 +23,7 @@ export default async function InvoicesPage({
   searchParams?: Promise<{ role?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const data = await getRoleDataBundle(params.role);
+  const data = await getInvoicesPageData(params.role);
   const uploadHistory =
     data.role === "managementCompany" && data.companyId
       ? await loadInvoiceList(

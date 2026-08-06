@@ -25,7 +25,7 @@ const invitations_module_1 = require("./modules/invitations/invitations.module")
 const meter_readings_module_1 = require("./modules/meter-readings/meter-readings.module");
 const news_module_1 = require("./modules/news/news.module");
 const notifications_module_1 = require("./modules/notifications/notifications.module");
-const projects_module_1 = require("./modules/projects/projects.module");
+const projects_module_1 = require("./modules/notifications/projects/projects.module");
 const users_module_1 = require("./modules/users/users.module");
 let AppModule = class AppModule {
 };

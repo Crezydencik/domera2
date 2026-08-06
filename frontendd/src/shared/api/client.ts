@@ -7,6 +7,15 @@ const appConfig = {
 };
 
 const DEFAULT_API_TIMEOUT_MS = 30_000;
+const DEFAULT_CLIENT_STALE_TIME_MS = 15_000;
+
+type ClientCacheEntry = {
+  expiresAt: number;
+  value: unknown;
+};
+
+const clientResponseCache = new Map<string, ClientCacheEntry>();
+const clientInFlightRequests = new Map<string, Promise<unknown>>();
 
 function resolveApiTimeoutMs() {
   const value = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS ?? DEFAULT_API_TIMEOUT_MS);
@@ -53,12 +62,72 @@ export class DomeraApiError extends Error {
 
 type ApiFetchInit = RequestInit & {
   redirectOnAuthError?: boolean;
+  staleTimeMs?: number;
+  skipClientCache?: boolean;
 };
+
+function getRequestMethod(init?: RequestInit) {
+  return (init?.method ?? "GET").toUpperCase();
+}
+
+function canUseClientCache(path: string, init?: ApiFetchInit) {
+  if (init?.skipClientCache) return false;
+  if (init?.signal) return false;
+  if (getRequestMethod(init) !== "GET") return false;
+  return !isPublicAuthPath(path);
+}
+
+function getClientCacheKey(path: string, init?: ApiFetchInit) {
+  const headers = new Headers(init?.headers);
+  const headerPairs = Array.from(headers.entries()).sort(([left], [right]) => left.localeCompare(right));
+  return JSON.stringify({
+    path,
+    redirectOnAuthError: init?.redirectOnAuthError ?? true,
+    headers: headerPairs,
+  });
+}
+
+function toRequestInit(init?: ApiFetchInit): RequestInit {
+  const fetchInit = { ...(init ?? {}) };
+  delete fetchInit.redirectOnAuthError;
+  delete fetchInit.staleTimeMs;
+  delete fetchInit.skipClientCache;
+  return fetchInit;
+}
+
+export function invalidateDomeraClientQueries(pathPrefix?: string) {
+  if (!pathPrefix) {
+    clientResponseCache.clear();
+    return;
+  }
+
+  for (const [key] of clientResponseCache) {
+    if (key.includes(`"path":"${pathPrefix}`)) {
+      clientResponseCache.delete(key);
+    }
+  }
+}
 
 export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
   const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const url = `${appConfig.apiBaseUrl}${path}`;
-  const { redirectOnAuthError = true, ...fetchInit } = init ?? {};
+  const redirectOnAuthError = init?.redirectOnAuthError ?? true;
+  const staleTimeMs = init?.staleTimeMs ?? DEFAULT_CLIENT_STALE_TIME_MS;
+  const fetchInit = toRequestInit(init);
+  const method = getRequestMethod(fetchInit);
+  const useClientCache = canUseClientCache(path, init);
+  const cacheKey = useClientCache ? getClientCacheKey(path, init) : "";
+  const cached = cacheKey ? clientResponseCache.get(cacheKey) : undefined;
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value as T;
+  }
+
+  const inFlight = cacheKey ? clientInFlightRequests.get(cacheKey) : undefined;
+  if (inFlight) {
+    return inFlight as Promise<T>;
+  }
+
   const headers = new Headers(fetchInit.headers);
   const controller = fetchInit.signal ? null : new AbortController();
   const timeout = controller
@@ -69,46 +138,71 @@ export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T>
     headers.set("Content-Type", "application/json");
   }
 
-  let response: Response;
+  const requestPromise = (async () => {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...fetchInit,
+        headers,
+        credentials: "include",
+        cache: "no-store",
+        signal: fetchInit.signal ?? controller?.signal,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new DomeraApiError(`Request timed out for ${path} (${url})`, 0);
+      }
+
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DomeraApiError(`Network request failed for ${path} (${url}): ${message}`, 0);
+    } finally {
+      if (timeout) {
+        window.clearTimeout(timeout);
+      }
+    }
+
+    const payload = (await response.json().catch(() => null)) as T | Record<string, unknown> | null;
+
+    if (!response.ok) {
+      const errorPayload = (payload && typeof payload === "object" ? payload : {}) as {
+        message?: string | string[];
+        error?: string;
+      };
+
+      const messageValue = Array.isArray(errorPayload.message)
+        ? errorPayload.message.join(", ")
+        : errorPayload.message || errorPayload.error || `Request failed for ${path}`;
+
+      if (redirectOnAuthError && (response.status === 401 || response.status === 403) && !isPublicAuthPath(path)) {
+        redirectToLogin();
+      }
+
+      throw new DomeraApiError(String(messageValue), response.status);
+    }
+
+    if (useClientCache && staleTimeMs > 0) {
+      clientResponseCache.set(cacheKey, {
+        expiresAt: Date.now() + staleTimeMs,
+        value: payload,
+      });
+    }
+
+    if (method !== "GET" && method !== "HEAD") {
+      invalidateDomeraClientQueries();
+    }
+
+    return payload as T;
+  })();
+
+  if (cacheKey) {
+    clientInFlightRequests.set(cacheKey, requestPromise);
+  }
+
   try {
-    response = await fetch(url, {
-      ...fetchInit,
-      headers,
-      credentials: "include",
-      cache: "no-store",
-      signal: fetchInit.signal ?? controller?.signal,
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new DomeraApiError(`Request timed out for ${path} (${url})`, 0);
-    }
-
-    const message = error instanceof Error ? error.message : String(error);
-    throw new DomeraApiError(`Network request failed for ${path} (${url}): ${message}`, 0);
+    return await requestPromise;
   } finally {
-    if (timeout) {
-      window.clearTimeout(timeout);
+    if (cacheKey) {
+      clientInFlightRequests.delete(cacheKey);
     }
   }
-
-  const payload = (await response.json().catch(() => null)) as T | Record<string, unknown> | null;
-
-  if (!response.ok) {
-    const errorPayload = (payload && typeof payload === "object" ? payload : {}) as {
-      message?: string | string[];
-      error?: string;
-    };
-
-    const messageValue = Array.isArray(errorPayload.message)
-      ? errorPayload.message.join(", ")
-      : errorPayload.message || errorPayload.error || `Request failed for ${path}`;
-
-    if (redirectOnAuthError && (response.status === 401 || response.status === 403) && !isPublicAuthPath(path)) {
-      redirectToLogin();
-    }
-
-    throw new DomeraApiError(String(messageValue), response.status);
-  }
-
-  return payload as T;
 }

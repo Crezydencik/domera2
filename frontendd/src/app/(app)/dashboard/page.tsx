@@ -1,5 +1,5 @@
 import { RoleDashboard } from "./role-dashboard";
-import { getRoleDataBundle } from "@/shared/lib/domera-api.server";
+import { getDashboardPageData } from "@/shared/server/page-loaders/dashboard.loader";
 
 export default async function DashboardPage({
   searchParams,
@@ -7,7 +7,7 @@ export default async function DashboardPage({
   searchParams?: Promise<{ role?: string; buildingId?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const data = await getRoleDataBundle(params.role);
+  const data = await getDashboardPageData(params.role);
 
   return <RoleDashboard data={data} selectedBuildingId={params.buildingId} />;
 }

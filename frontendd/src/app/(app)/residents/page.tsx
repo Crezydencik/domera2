@@ -1,6 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { SectionCard } from "@/components/section-card";
-import { getRoleDataBundle } from "@/shared/lib/domera-api.server";
+import { getResidentsPageData } from "@/shared/server/page-loaders/residents.loader";
 import { ResidentsDirectory } from "./_residents-directory";
 
 export default async function ResidentsPage({
@@ -10,7 +10,7 @@ export default async function ResidentsPage({
 }) {
   const t = await getTranslations("residents");
   const params = (await searchParams) ?? {};
-  const data = await getRoleDataBundle(params.role);
+  const data = await getResidentsPageData(params.role);
 
   return (
     <div className="space-y-6 max-sm:-mx-2">

@@ -9,7 +9,7 @@ import { SectionCard } from "@/components/section-card";
 import { ApartmentsManagementActionsMenu, type ManagementActionApartment, type ManagementActionBuildingOption } from "./_management-actions-menu";
 import { ApartmentsManagementRowActions, type ApartmentResidentOption } from "./_management-row-actions";
 import { RegistryBuildingFilter, type RegistryBuildingOption } from "./_registry-building-filter";
-import type { RoleDataBundle } from "@/shared/lib/domera-api.server";
+import type { RoleDataBundle } from "@/shared/server/auth-context";
 import { isApprovedBuilding } from "@/shared/lib/buildings";
 import { ROUTES } from "@/shared/lib/routes";
 

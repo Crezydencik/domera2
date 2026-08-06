@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import ManagementCompanyPage from "./management-company/page";
 import OwnerLandlordPage from "./owner-landlord/page";
-import { getCurrentProfile } from "@/shared/lib/domera-api.server";
+import { getCurrentProfile } from "@/shared/server/auth-context";
 import { normalizeDashboardRole } from "@/shared/role-ui";
 
 function firstHeader(headerStore: Headers, name: string) {

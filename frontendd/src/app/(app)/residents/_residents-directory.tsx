@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/components/data-table";
 import { isApprovedBuilding } from "@/shared/lib/buildings";
-import type { RoleDataBundle } from "@/shared/lib/domera-api.server";
+import type { RoleDataBundle } from "@/shared/server/auth-context";
 
 type UnknownRecord = Record<string, unknown>;
 

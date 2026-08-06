@@ -1,5 +1,5 @@
 import { SectionCard } from "@/components/section-card";
-import { getRoleDataBundle } from "@/shared/lib/domera-api.server";
+import { getDebtsPageData } from "@/shared/server/page-loaders/invoices.loader";
 
 export default async function DebtsPage({
   searchParams,
@@ -7,7 +7,7 @@ export default async function DebtsPage({
   searchParams?: Promise<{ role?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const data = await getRoleDataBundle(params.role);
+  const data = await getDebtsPageData(params.role);
   const debts = data.invoices.filter((item) => item.status !== "Paid").slice(0, 6);
 
   return (

@@ -1,7 +1,7 @@
 import { Request } from 'express';
-import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
-import { RateLimitService } from '../../common/services/rate-limit.service';
-import { RequestUser } from '../../common/auth/request-user.type';
+import { RequestUser } from '../../../common/auth/request-user.type';
+import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
+import { RateLimitService } from '../../../common/services/rate-limit.service';
 export declare class ProjectsService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;

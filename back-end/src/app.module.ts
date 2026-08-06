@@ -16,7 +16,7 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
 import { MeterReadingsModule } from './modules/meter-readings/meter-readings.module';
 import { NewsModule } from './modules/news/news.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
-import { ProjectsModule } from './modules/projects/projects.module';
+import { ProjectsModule } from './modules/notifications/projects/projects.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({

@@ -1,8 +1,5 @@
 import "server-only";
 
-import { cache } from "react";
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import type {
   Building,
   BuildingReadingConfig,
@@ -12,82 +9,14 @@ import type {
   NotificationItem,
   Resident,
 } from "./data";
-import { DashboardRole, normalizeDashboardRole } from "../role-ui";
-import { ROUTES } from "./routes";
-import { buildCookieHeaderFromStore } from "./cookie-header.server";
-
-function resolveServerApiBaseUrl() {
-  const configured = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
-  if (configured?.startsWith("http://") || configured?.startsWith("https://")) {
-    return configured;
-  }
-
-  return "http://127.0.0.1:4000/api";
-}
-
-const appConfig = {
-  name: "Domera",
-  apiBaseUrl: resolveServerApiBaseUrl(),
-  demoCompanyId: process.env.NEXT_PUBLIC_DEMO_COMPANY_ID ?? "demo-company",
-  demoApartmentId: process.env.NEXT_PUBLIC_DEMO_APARTMENT_ID ?? "demo-apartment",
-};
-
-const SERVER_API_TIMEOUT_MS = Number(process.env.SERVER_API_TIMEOUT_MS ?? 15000);
+import { apiFetchSafe } from "@/shared/server/api-client";
+import { getAuthenticatedContext, type AuthenticatedContext, type RoleDataBundle } from "@/shared/server/auth-context";
 
 type UnknownRecord = Record<string, unknown>;
 type ApiListResponse = { items?: UnknownRecord[] };
 type ResidentHomeResponse = { apartments?: UnknownRecord[]; buildings?: UnknownRecord[]; managementCompanies?: UnknownRecord[] };
-type ServerApiFetchInit = RequestInit & {
-  revalidate?: number;
-  tags?: string[];
-};
 
-function redirectToExpiredLogin(): never {
-  redirect(`${ROUTES.login}?expired=1`);
-}
-
-export interface RoleDataBundle {
-  role: DashboardRole;
-  userId?: string;
-  profile?: UnknownRecord;
-  companyId?: string;
-  apartmentId?: string;
-  buildings: Building[];
-  apartments: UnknownRecord[];
-  residents: Resident[];
-  invoices: Invoice[];
-  meterReadings: MeterReading[];
-  documents: DocumentItem[];
-  notifications: NotificationItem[];
-  managementCompanies: UnknownRecord[];
-}
-
-export class DomeraApiError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-  ) {
-    super(message);
-    this.name = "DomeraApiError";
-  }
-}
-
-async function parseJsonResponse<T>(response: Response, path: string): Promise<T> {
-  if (response.status === 204 || response.status === 205) {
-    return {} as T;
-  }
-
-  const raw = await response.text();
-  if (!raw.trim()) {
-    return {} as T;
-  }
-
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    throw new DomeraApiError(`Invalid JSON response for ${path}`, response.status || 500);
-  }
-}
+export type { RoleDataBundle } from "@/shared/server/auth-context";
 
 function firstString(...values: unknown[]): string {
   for (const value of values) {
@@ -228,7 +157,7 @@ function formatDate(value: unknown): string {
   return "—";
 }
 
-function toBuilding(item: UnknownRecord): Building {
+export function toBuilding(item: UnknownRecord): Building {
   const apartmentIds = Array.isArray(item.apartmentIds)
     ? item.apartmentIds.filter((entry): entry is string => typeof entry === "string")
     : [];
@@ -311,7 +240,7 @@ function toBuilding(item: UnknownRecord): Building {
   };
 }
 
-function toResident(
+export function toResident(
   item: UnknownRecord,
   context?: { apartment?: string; building?: string; role?: string; fallbackId?: string },
 ): Resident {
@@ -355,7 +284,7 @@ function buildInvoicePdfHref(id: string, item: UnknownRecord) {
     : pdfUrl || undefined;
 }
 
-function toInvoice(item: UnknownRecord): Invoice {
+export function toInvoice(item: UnknownRecord): Invoice {
   const currency = firstString(item.currency, "EUR");
   const id = firstString(item.id, item.invoiceId);
   const accountNumber = firstDisplayString(
@@ -422,7 +351,7 @@ function toInvoice(item: UnknownRecord): Invoice {
   };
 }
 
-function toMeterReading(item: UnknownRecord): MeterReading {
+export function toMeterReading(item: UnknownRecord): MeterReading {
   const currentValue = firstNumber(item.currentValue, item.value);
   const previousValue = firstNumber(item.previousValue);
   const consumption = firstNumber(item.consumption, currentValue - previousValue);
@@ -452,7 +381,7 @@ function toMeterReading(item: UnknownRecord): MeterReading {
   };
 }
 
-function toNotification(item: UnknownRecord): NotificationItem {
+export function toNotification(item: UnknownRecord): NotificationItem {
   return {
     id: firstString(item.id),
     title: firstString(item.title, item.subject, "Update"),
@@ -461,7 +390,7 @@ function toNotification(item: UnknownRecord): NotificationItem {
   };
 }
 
-function toDocument(item: UnknownRecord): DocumentItem {
+export function toDocument(item: UnknownRecord): DocumentItem {
   return {
     id: firstString(item.id),
     title: firstString(item.title, item.name, "Company update"),
@@ -583,114 +512,248 @@ function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] 
   return output;
 }
 
-export async function apiFetch<T>(path: string, init?: ServerApiFetchInit): Promise<T> {
-  const store = await cookies();
-  const cookieHeader = buildCookieHeaderFromStore(store);
-  const url = `${appConfig.apiBaseUrl}${path}`;
-  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
-  const headers = new Headers(init?.headers);
-  const { revalidate, tags, ...fetchInit } = init ?? {};
-  const method = typeof fetchInit.method === "string" ? fetchInit.method.toUpperCase() : "GET";
-  const canUseNextCache = method === "GET" || method === "HEAD";
-  const controller = init?.signal ? null : new AbortController();
-  const timeout = controller
-    ? setTimeout(() => controller.abort(), Math.max(1000, SERVER_API_TIMEOUT_MS))
-    : null;
+export function emptyRoleDataBundle(context: AuthenticatedContext): RoleDataBundle {
+  return {
+    role: context.role,
+    userId: context.userId,
+    profile: context.profile,
+    companyId: context.companyId,
+    apartmentId: context.apartmentId,
+    buildings: [],
+    apartments: [],
+    residents: [],
+    invoices: [],
+    meterReadings: [],
+    documents: [],
+    notifications: [],
+    managementCompanies: [],
+  };
+}
 
-  if (!isFormData && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
+export async function getResidentHomeData(context: AuthenticatedContext): Promise<RoleDataBundle> {
+  const bundle = emptyRoleDataBundle(context);
+  const residentHome = await apiFetchSafe<ResidentHomeResponse>("/resident/apartments");
+  const liveApartments = Array.isArray(residentHome?.apartments) && residentHome.apartments.length
+    ? residentHome.apartments
+    : context.apartmentId && context.apartmentId !== "вЂ”"
+      ? [{ id: context.apartmentId, apartmentId: context.apartmentId }]
+      : [];
+
+  liveApartments.sort(compareApartmentOrder);
+
+  return {
+    ...bundle,
+    buildings: Array.isArray(residentHome?.buildings) ? residentHome.buildings.map(toBuilding) : [],
+    apartments: liveApartments,
+    residents: deriveResidentsFromApartments(liveApartments),
+    managementCompanies: Array.isArray(residentHome?.managementCompanies) ? residentHome.managementCompanies : [],
+  };
+}
+
+export async function getManagementRegistryData(
+  context: AuthenticatedContext,
+  options: {
+    includeBuildings?: boolean;
+    includeApartments?: boolean;
+    includeResidents?: boolean;
+    includeDocuments?: boolean;
+    includeInvoices?: boolean;
+    includeMeterReadings?: boolean;
+    includeNotifications?: boolean;
+  },
+): Promise<RoleDataBundle> {
+  const bundle = emptyRoleDataBundle(context);
+
+  if (!context.companyId) {
+    return bundle;
   }
 
-  if (cookieHeader && !headers.has("Cookie")) {
-    headers.set("Cookie", cookieHeader);
+  const companyId = encodeURIComponent(context.companyId);
+  const [buildingsResponse, apartmentsResponse, residentsResponse, documentsResponse, invoicesResponse, meterReadingsResponse, notificationsResponse] = await Promise.all([
+    options.includeBuildings ? apiFetchSafe<ApiListResponse>(`/buildings?companyId=${companyId}`) : Promise.resolve(null),
+    options.includeApartments ? apiFetchSafe<ApiListResponse>(`/apartments?companyId=${companyId}`) : Promise.resolve(null),
+    options.includeResidents ? apiFetchSafe<ApiListResponse>(`/users?companyId=${companyId}`) : Promise.resolve(null),
+    options.includeDocuments ? apiFetchSafe<ApiListResponse>(`/news?companyId=${companyId}`) : Promise.resolve(null),
+    options.includeInvoices ? apiFetchSafe<ApiListResponse>(`/invoices?companyId=${companyId}`) : Promise.resolve(null),
+    options.includeMeterReadings ? apiFetchSafe<ApiListResponse>(`/meter-readings?companyId=${companyId}`) : Promise.resolve(null),
+    options.includeNotifications && context.userId
+      ? apiFetchSafe<ApiListResponse>(`/notifications?userId=${encodeURIComponent(context.userId)}`)
+      : Promise.resolve(null),
+  ]);
+
+  const liveApartments = sortApartmentsByNumber(
+    Array.isArray(apartmentsResponse?.items) ? apartmentsResponse.items : [],
+  );
+  const liveResidents = Array.isArray(residentsResponse?.items)
+    ? residentsResponse.items.map((item) => toResident(item))
+    : [];
+  const supplementalResidents = options.includeApartments ? deriveResidentsFromApartments(liveApartments) : [];
+  const mergedResidents = Array.from(
+    new Map([...supplementalResidents, ...liveResidents].map((resident) => [resident.id, resident])).values(),
+  );
+
+  return {
+    ...bundle,
+    buildings: Array.isArray(buildingsResponse?.items) ? buildingsResponse.items.map(toBuilding) : [],
+    apartments: liveApartments,
+    residents: mergedResidents,
+    invoices: Array.isArray(invoicesResponse?.items) ? invoicesResponse.items.map(toInvoice) : [],
+    meterReadings: Array.isArray(meterReadingsResponse?.items)
+      ? meterReadingsResponse.items.map(toMeterReading)
+      : [],
+    documents: Array.isArray(documentsResponse?.items) ? documentsResponse.items.map(toDocument) : [],
+    notifications: Array.isArray(notificationsResponse?.items)
+      ? notificationsResponse.items.map(toNotification)
+      : [],
+  };
+}
+
+export async function getBuildingsPageData(roleHint?: string): Promise<RoleDataBundle> {
+  const context = await getAuthenticatedContext(roleHint);
+
+  if (context.role !== "managementCompany") {
+    return emptyRoleDataBundle(context);
   }
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      ...fetchInit,
-      headers,
-      signal: fetchInit.signal ?? controller?.signal,
-      cache: canUseNextCache && revalidate !== undefined ? undefined : "no-store",
-      next: canUseNextCache && (revalidate !== undefined || tags?.length)
-        ? {
-            ...(revalidate !== undefined ? { revalidate } : {}),
-            ...(tags?.length ? { tags } : {}),
-          }
-        : undefined,
+  return getManagementRegistryData(context, { includeBuildings: true });
+}
+
+export async function getApartmentsPageData(roleHint?: string): Promise<RoleDataBundle> {
+  const context = await getAuthenticatedContext(roleHint);
+
+  if (context.role === "managementCompany") {
+    return getManagementRegistryData(context, {
+      includeBuildings: true,
+      includeApartments: true,
+      includeResidents: true,
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new DomeraApiError(`Fetch failed for ${path} (${url}): ${message}`, 500);
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
   }
 
-  if (!response.ok) {
-    throw new DomeraApiError(`Request failed for ${path}`, response.status);
-  }
-
-  return parseJsonResponse<T>(response, path);
+  return getResidentHomeData(context);
 }
 
-async function apiFetchSafe<T>(path: string): Promise<T | null> {
-  try {
-    return await apiFetch<T>(path);
-  } catch {
-    return null;
+export async function getResidentsPageData(roleHint?: string): Promise<RoleDataBundle> {
+  const context = await getAuthenticatedContext(roleHint);
+
+  if (context.role === "managementCompany") {
+    return getManagementRegistryData(context, {
+      includeBuildings: true,
+      includeApartments: true,
+      includeResidents: true,
+    });
   }
+
+  return getResidentHomeData(context);
 }
 
-export const getCurrentProfile = cache(async () => {
-  return apiFetch<UnknownRecord>("/users/me");
-});
+export async function getDocumentsPageData(roleHint?: string): Promise<RoleDataBundle> {
+  const context = await getAuthenticatedContext(roleHint);
 
-async function getAuthenticatedContext(roleHint?: string) {
-  const store = await cookies();
-  const sessionCookie = store.get("__session")?.value?.trim();
-
-  if (!sessionCookie) {
-    redirectToExpiredLogin();
+  if (context.role === "managementCompany") {
+    return getManagementRegistryData(context, {
+      includeBuildings: true,
+      includeApartments: true,
+      includeDocuments: true,
+    });
   }
 
-  try {
-    const profile = await getCurrentProfile();
-    const resolvedUserId = firstString(profile?.uid, profile?.id);
-    const role = normalizeDashboardRole(
-      firstString(
-        profile?.role,
-        profile?.accountType,
-        roleHint,
-      ),
-    );
+  const [residentData, documentsResponse] = await Promise.all([
+    getResidentHomeData(context),
+    apiFetchSafe<ApiListResponse>("/documents"),
+  ]);
 
-    return {
-      userId: resolvedUserId,
-      profile,
-      role,
-      companyId: firstString(profile?.companyId, resolvedUserId),
-      apartmentId: firstString(profile?.apartmentId),
-    };
-  } catch (error) {
-    if (error instanceof DomeraApiError && [401, 403].includes(error.status)) {
-      redirectToExpiredLogin();
-    }
+  return {
+    ...residentData,
+    documents: Array.isArray(documentsResponse?.items) ? documentsResponse.items.map(toDocument) : [],
+  };
+}
 
-    if (error instanceof DomeraApiError && error.status === 404) {
-      const role = normalizeDashboardRole(roleHint);
-      return {
-        userId: undefined,
-        profile: {} as UnknownRecord,
-        role,
-        companyId: undefined,
-        apartmentId: undefined,
-      };
-    }
+export async function getSettingsPageData(roleHint?: string): Promise<RoleDataBundle> {
+  const context = await getAuthenticatedContext(roleHint);
 
-    throw error;
+  if (context.role !== "managementCompany") {
+    return emptyRoleDataBundle(context);
   }
+
+  return getManagementRegistryData(context, {
+    includeBuildings: true,
+    includeResidents: true,
+  });
+}
+
+export async function getDebtsPageData(roleHint?: string): Promise<RoleDataBundle> {
+  const context = await getAuthenticatedContext(roleHint);
+
+  if (context.role === "managementCompany") {
+    return getManagementRegistryData(context, { includeInvoices: true });
+  }
+
+  const bundle = emptyRoleDataBundle(context);
+  const invoicesResponse = await apiFetchSafe<ApiListResponse>("/invoices");
+
+  return {
+    ...bundle,
+    invoices: Array.isArray(invoicesResponse?.items) ? invoicesResponse.items.map(toInvoice) : [],
+  };
+}
+
+export async function getInvoicesPageData(roleHint?: string): Promise<RoleDataBundle> {
+  const context = await getAuthenticatedContext(roleHint);
+
+  if (context.role === "managementCompany") {
+    return getManagementRegistryData(context, {
+      includeBuildings: true,
+      includeApartments: true,
+      includeInvoices: true,
+    });
+  }
+
+  const [residentData, invoicesResponse] = await Promise.all([
+    getResidentHomeData(context),
+    apiFetchSafe<ApiListResponse>("/invoices"),
+  ]);
+
+  return {
+    ...residentData,
+    invoices: Array.isArray(invoicesResponse?.items) ? invoicesResponse.items.map(toInvoice) : [],
+  };
+}
+
+export async function getElectricityPageData(roleHint?: string): Promise<RoleDataBundle> {
+  return getInvoicesPageData(roleHint);
+}
+
+export async function getNotificationsPageData(roleHint?: string): Promise<RoleDataBundle> {
+  const context = await getAuthenticatedContext(roleHint);
+
+  if (context.role === "managementCompany") {
+    return getManagementRegistryData(context, {
+      includeApartments: true,
+      includeInvoices: true,
+      includeMeterReadings: true,
+      includeNotifications: true,
+    });
+  }
+
+  const [residentData, invoicesResponse, meterReadingsResponse, notificationsResponse] = await Promise.all([
+    getResidentHomeData(context),
+    apiFetchSafe<ApiListResponse>("/invoices"),
+    apiFetchSafe<ApiListResponse>("/meter-readings"),
+    context.userId
+      ? apiFetchSafe<ApiListResponse>(`/notifications?userId=${encodeURIComponent(context.userId)}`)
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    ...residentData,
+    invoices: Array.isArray(invoicesResponse?.items) ? invoicesResponse.items.map(toInvoice) : [],
+    meterReadings: Array.isArray(meterReadingsResponse?.items)
+      ? meterReadingsResponse.items.map(toMeterReading)
+      : [],
+    notifications: Array.isArray(notificationsResponse?.items)
+      ? notificationsResponse.items.map(toNotification)
+      : [],
+  };
 }
 
 export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBundle> {

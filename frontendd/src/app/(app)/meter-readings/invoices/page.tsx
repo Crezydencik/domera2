@@ -1,7 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { DataTable } from "@/components/data-table";
 import { SectionCard } from "@/components/section-card";
-import { getRoleDataBundle } from "@/shared/lib/domera-api.server";
+import { getDebtsPageData } from "@/shared/server/page-loaders/invoices.loader";
 
 const statusMap: Record<string, string> = { Paid: "paid", Overdue: "overdue", Pending: "pending" };
 
@@ -12,7 +12,7 @@ export default async function InvoicesPage({
 }) {
   const t = await getTranslations("invoices");
   const params = (await searchParams) ?? {};
-  const data = await getRoleDataBundle(params.role);
+  const data = await getDebtsPageData(params.role);
 
   return (
     <div className="space-y-6">

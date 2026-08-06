@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { FiShield, FiUsers } from "react-icons/fi";
-import type { RoleDataBundle } from "@/shared/lib/domera-api.server";
+import type { RoleDataBundle } from "@/shared/server/auth-context";
 import { ROUTES } from "@/shared/lib/routes";
 
 export function PlatformAdminDashboard({ data }: { data: RoleDataBundle }) {

@@ -7,7 +7,8 @@ import { InvoiceMobileRow } from "@/components/invoice-mobile-row";
 import { InvoicePdfViewerButton } from "@/components/invoice-pdf-viewer-button";
 import { InvoiceResendEmailButton } from "@/components/invoice-resend-email-button";
 import { SectionCard } from "@/components/section-card";
-import { apiFetch, getRoleDataBundle } from "@/shared/lib/domera-api.server";
+import { apiFetch } from "@/shared/server/api-client";
+import { getApartmentDetailsPageData } from "@/shared/server/page-loaders/apartment-details.loader";
 import { ROUTES } from "@/shared/lib/routes";
 import { ApartmentDocumentsBlock } from "./apartment-documents-block";
 import { ApartmentFullInfoDialog } from "./apartment-full-info-dialog";
@@ -185,7 +186,7 @@ export default async function ApartmentDetailsPage({
   const ui = await getTranslations("ui");
   const locale = await getLocale();
   const { apartmentId } = await params;
-  const data = await getRoleDataBundle();
+  const data = await getApartmentDetailsPageData();
   const normalizedId = decodeURIComponent(apartmentId);
 
   let baseApartment = data.apartments.find((item) => {

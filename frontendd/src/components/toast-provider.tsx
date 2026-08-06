@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -19,7 +19,16 @@ function getServerTheme() {
 }
 
 export function ToastProvider() {
+  const [mounted, setMounted] = useState(false);
   const theme = useSyncExternalStore(subscribeTheme, getTheme, getServerTheme);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return null;
+  }
 
   return (
     <ToastContainer

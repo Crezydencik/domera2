@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { getTranslations } from "next-intl/server";
 import { RoleAwareSidebar } from "@/app/(app)/_components/role-aware-sidebar";
-import { getCurrentProfile } from "@/shared/lib/domera-api.server";
+import { getCurrentProfile } from "@/shared/server/auth-context";
 import { normalizeDashboardRole } from "@/shared/role-ui";
 
 interface SidebarProps {
