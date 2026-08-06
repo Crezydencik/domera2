@@ -5,7 +5,7 @@ import {
   type User,
 } from "firebase/auth";
 import { apiFetch } from "@/shared/api/client";
-import { notifyAuthSessionChanged } from "@/shared/lib/auth-session";
+import { persistBrowserAuthSessionHints } from "@/shared/lib/auth-session";
 
 export type PublicAccountType = "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
 
@@ -127,8 +127,7 @@ function persistSessionHints(params: {
   apartmentId?: string;
   rememberMe?: boolean;
 }) {
-  void params;
-  notifyAuthSessionChanged();
+  persistBrowserAuthSessionHints(params);
 }
 
 function resolvePayloadName(payload: Record<string, unknown>): string | undefined {
@@ -146,13 +145,11 @@ function resolvePayloadName(payload: Record<string, unknown>): string | undefine
 }
 
 function persistBrowserName(name: string) {
-  void name;
-  notifyAuthSessionChanged();
+  persistBrowserAuthSessionHints({ name });
 }
 
 function persistBrowserEmail(email: string) {
-  void email;
-  notifyAuthSessionChanged();
+  persistBrowserAuthSessionHints({ email });
 }
 
 function mapAuthResponse(data: BackendAuthResponse, fallbackEmail: string, fallbackAccountType: PublicAccountType): FirebaseAuthResult {

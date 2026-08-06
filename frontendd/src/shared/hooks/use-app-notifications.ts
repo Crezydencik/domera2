@@ -200,12 +200,13 @@ export function notifyOwnerMeterReadingStatus(missingApartmentCount: number, apa
 
 interface UseAppNotificationsOptions {
   previewLimit?: number;
+  initialProfile?: UnknownRecord | null;
 }
 
 export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
-  const { previewLimit = 5 } = options;
+  const { previewLimit = 5, initialProfile } = options;
   const t = useTranslations("appShell.header.notifications");
-  const [profile, setProfile] = useState<UnknownRecord | null>(null);
+  const [profile, setProfile] = useState<UnknownRecord | null>(initialProfile ?? null);
   const userId = firstString(profile?.uid, profile?.id);
   const companyId = firstString(profile?.companyId) || undefined;
   const dashboardRole = normalizeDashboardRole(firstString(profile?.role, profile?.accountType));
@@ -224,6 +225,11 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
+    if (initialProfile !== undefined) {
+      setProfile(initialProfile ?? null);
+      return;
+    }
+
     let active = true;
 
     apiFetch<UnknownRecord | null>("/users/me", { redirectOnAuthError: false })
@@ -237,7 +243,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [initialProfile]);
 
   const canLoadOwnerStatus = useCallback(
     (nextSettings: NotificationSettings) =>
@@ -381,7 +387,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   }, [refresh]);
 
   useEffect(() => {
-    if (!userId || companyId) {
+    if (!userId || companyId || dashboardRole === "managementCompany") {
       setProfileCompanyId(undefined);
       return;
     }
@@ -400,7 +406,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
     return () => {
       active = false;
     };
-  }, [companyId, userId]);
+  }, [companyId, dashboardRole, userId]);
 
   useEffect(() => {
     const handleChange = () => {

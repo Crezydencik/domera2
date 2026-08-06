@@ -69,6 +69,10 @@ type UnknownRecord = Record<string, unknown>;
 type ExportFormat = "csv" | "excel" | "xml";
 type UtilityTab = "water" | "electricity";
 
+interface ManagementCompanyPageProps {
+  initialCompanyId?: string;
+}
+
 function text(...values: unknown[]) {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -421,7 +425,7 @@ function toExcelHtml(rows: string[][]) {
   return `\uFEFF<html><head><meta charset="utf-8" /></head><body><table>${tableRows}</table></body></html>`;
 }
 
-export default function ManagementCompanyPage() {
+export default function ManagementCompanyPage({ initialCompanyId }: ManagementCompanyPageProps) {
   const t = useTranslations("meterread");
   const locale = useLocale();
   const notify = useNotifications();
@@ -1106,18 +1110,20 @@ export default function ManagementCompanyPage() {
       setError(null);
       try {
         // Сначала получаем профиль пользователя
-        let companyId: string | null = null;
+        let companyId: string | null = initialCompanyId?.trim() || null;
 
         // Получаем профиль пользователя, который содержит companyId
-        const profileResponse = await apiFetch("/users/me");
-        const profile = profileResponse as Record<string, unknown>;
-        const userId = (typeof profile.uid === "string" && profile.uid) ||
-                       (typeof profile.id === "string" && profile.id) ||
-                       null;
-        
-        companyId = (typeof profile.companyId === "string" && profile.companyId) ||
-                   userId ||
-                   null;
+        if (!companyId) {
+          const profileResponse = await apiFetch("/users/me");
+          const profile = profileResponse as Record<string, unknown>;
+          const userId = (typeof profile.uid === "string" && profile.uid) ||
+                         (typeof profile.id === "string" && profile.id) ||
+                         null;
+
+          companyId = (typeof profile.companyId === "string" && profile.companyId) ||
+                     userId ||
+                     null;
+        }
 
         if (!companyId) {
           setError("Company ID not found in your profile. Please verify your account setup.");
@@ -1352,7 +1358,7 @@ export default function ManagementCompanyPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [initialCompanyId]);
 
   const buildings = managedBuildings.length > 0
     ? managedBuildings.map((building) => building.id)

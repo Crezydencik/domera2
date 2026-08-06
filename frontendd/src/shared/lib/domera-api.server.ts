@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import type {
@@ -36,6 +37,10 @@ const SERVER_API_TIMEOUT_MS = Number(process.env.SERVER_API_TIMEOUT_MS ?? 15000)
 type UnknownRecord = Record<string, unknown>;
 type ApiListResponse = { items?: UnknownRecord[] };
 type ResidentHomeResponse = { apartments?: UnknownRecord[]; buildings?: UnknownRecord[]; managementCompanies?: UnknownRecord[] };
+type ServerApiFetchInit = RequestInit & {
+  revalidate?: number;
+  tags?: string[];
+};
 
 function redirectToExpiredLogin(): never {
   redirect(`${ROUTES.login}?expired=1`);
@@ -578,12 +583,15 @@ function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] 
   return output;
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiFetch<T>(path: string, init?: ServerApiFetchInit): Promise<T> {
   const store = await cookies();
   const cookieHeader = buildCookieHeaderFromStore(store);
   const url = `${appConfig.apiBaseUrl}${path}`;
   const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const headers = new Headers(init?.headers);
+  const { revalidate, tags, ...fetchInit } = init ?? {};
+  const method = typeof fetchInit.method === "string" ? fetchInit.method.toUpperCase() : "GET";
+  const canUseNextCache = method === "GET" || method === "HEAD";
   const controller = init?.signal ? null : new AbortController();
   const timeout = controller
     ? setTimeout(() => controller.abort(), Math.max(1000, SERVER_API_TIMEOUT_MS))
@@ -600,10 +608,16 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   let response: Response;
   try {
     response = await fetch(url, {
-      ...init,
+      ...fetchInit,
       headers,
-      signal: init?.signal ?? controller?.signal,
-      cache: "no-store",
+      signal: fetchInit.signal ?? controller?.signal,
+      cache: canUseNextCache && revalidate !== undefined ? undefined : "no-store",
+      next: canUseNextCache && (revalidate !== undefined || tags?.length)
+        ? {
+            ...(revalidate !== undefined ? { revalidate } : {}),
+            ...(tags?.length ? { tags } : {}),
+          }
+        : undefined,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -629,6 +643,10 @@ async function apiFetchSafe<T>(path: string): Promise<T | null> {
   }
 }
 
+export const getCurrentProfile = cache(async () => {
+  return apiFetch<UnknownRecord>("/users/me");
+});
+
 async function getAuthenticatedContext(roleHint?: string) {
   const store = await cookies();
   const sessionCookie = store.get("__session")?.value?.trim();
@@ -638,7 +656,7 @@ async function getAuthenticatedContext(roleHint?: string) {
   }
 
   try {
-    const profile = await apiFetch<UnknownRecord>("/users/me");
+    const profile = await getCurrentProfile();
     const resolvedUserId = firstString(profile?.uid, profile?.id);
     const role = normalizeDashboardRole(
       firstString(

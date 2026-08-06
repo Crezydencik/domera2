@@ -26,6 +26,7 @@ interface RoleAwareSidebarProps {
   title: string;
   description: string;
   defaultRole: DashboardRole;
+  initialProfile?: Record<string, unknown> | null;
   children: ReactNode;
 }
 
@@ -106,7 +107,7 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
   });
 }
 
-  export function RoleAwareSidebar({ brand, title, defaultRole, children }: RoleAwareSidebarProps) {
+  export function RoleAwareSidebar({ brand, title, defaultRole, initialProfile, children }: RoleAwareSidebarProps) {
     const tm = useTranslations("appShell.header.pageTitles");
   const navByRole: Record<DashboardRole, NavItem[]> = {
     platformAdmin: [
@@ -172,14 +173,16 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [acceptingNotificationId, setAcceptingNotificationId] = useState<string | null>(null);
-  const notifications = useAppNotifications({ previewLimit: 5 });
+  const notifications = useAppNotifications({ previewLimit: 5, initialProfile });
   const notificationsOpen = notifications.isOpen;
   const closeNotifications = notifications.close;
   const notificationsRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const confirm = useConfirm();
   const toast = useToastNotifications();
-  const [profileSummary, setProfileSummary] = useState<UserProfileSummary | null>(null);
+  const [profileSummary, setProfileSummary] = useState<UserProfileSummary | null>(
+    (initialProfile as UserProfileSummary | null | undefined) ?? null,
+  );
   const profileUserId = firstText(profileSummary?.id, profileSummary?.uid);
   const navigationCompanyId = profileSummary?.companyId ?? (role === "managementCompany" ? profileUserId : undefined);
 
@@ -338,6 +341,11 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
   }, [closeNotifications, notificationsOpen, profileOpen]);
 
   useEffect(() => {
+    if (initialProfile !== undefined) {
+      setProfileSummary((initialProfile as UserProfileSummary | null) ?? null);
+      return;
+    }
+
     let active = true;
 
     apiFetch<UserProfileSummary | null>("/users/me")
@@ -351,7 +359,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
     return () => {
       active = false;
     };
-  }, []);
+  }, [initialProfile]);
 
   useEffect(() => {
     if (readStoredElectricityNavigation()) {
