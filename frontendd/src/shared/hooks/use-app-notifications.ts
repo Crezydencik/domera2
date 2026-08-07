@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { getBuildings } from "@/shared/api/buildings";
 import { apiFetch, DomeraApiError } from "@/shared/api/client";
 import { getNotificationSettings, getNotifications, markNotificationRead, removeNotification, type NotificationSettings } from "@/shared/api/notifications";
+import { SUPPORT_CHANGED_EVENT } from "@/shared/api/support";
 import { isElectricityEnabledBuilding } from "@/shared/lib/buildings";
 import { BUILDINGS_CHANGED_EVENT } from "@/shared/lib/buildings-events";
 import type { NotificationItem } from "@/shared/lib/data";
@@ -417,6 +418,22 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
     window.addEventListener(METER_READINGS_CHANGED_EVENT, handleChange);
     return () => window.removeEventListener(METER_READINGS_CHANGED_EVENT, handleChange);
   }, [loadOwnerStatus, refresh]);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    const refreshNotifications = () => void refresh();
+    const intervalId = window.setInterval(refreshNotifications, 30000);
+
+    window.addEventListener("focus", refreshNotifications);
+    window.addEventListener(SUPPORT_CHANGED_EVENT, refreshNotifications);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshNotifications);
+      window.removeEventListener(SUPPORT_CHANGED_EVENT, refreshNotifications);
+    };
+  }, [refresh, userId]);
 
   useEffect(() => {
     void loadElectricitySetupNotifications();

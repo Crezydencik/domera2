@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { ROUTES } from "@/shared/lib/routes";
-import { isAllowedPath, isAuthRoute, isProtectedPath, resolveDashboardRole } from "@/shared/api/access";
+import { isAuthRoute, isProtectedPath, resolveDashboardRole } from "@/shared/api/access";
 
 const legacyAuthCookieNames = [
   "domera_session",
@@ -112,15 +112,6 @@ function firstString(...values: unknown[]) {
   return undefined;
 }
 
-function firstCookie(request: NextRequest, ...names: string[]) {
-  for (const name of names) {
-    const value = request.cookies.get(name)?.value?.trim();
-    if (value) return value;
-  }
-
-  return undefined;
-}
-
 function setRequestHeader(requestHeaders: Headers, name: string, value: unknown) {
   const text = firstString(value);
   if (text && /^[\x20-\x7e]+$/.test(text)) requestHeaders.set(name, text);
@@ -149,17 +140,23 @@ export default function proxy(request: NextRequest) {
   const isAuthenticated = Boolean(sessionCookie);
   const shouldClearAuth = request.nextUrl.searchParams.get("expired") === "1";
   const trustedRole = firstString(sessionPayload.role, sessionPayload.accountType);
-  const roleHint = firstString(trustedRole, firstCookie(request, "domera_role", "domera_accountType"));
+  const roleHint = trustedRole;
   const resolvedRole = resolveDashboardRole(roleHint);
   const requestHeaders = new Headers(request.headers);
+
+  requestHeaders.delete("x-domera-role");
+  requestHeaders.delete("x-domera-user-id");
+  requestHeaders.delete("x-domera-email");
+  requestHeaders.delete("x-domera-company-id");
+  requestHeaders.delete("x-domera-apartment-id");
 
   if (roleHint) {
     requestHeaders.set("x-domera-role", resolvedRole);
   }
-  setRequestHeader(requestHeaders, "x-domera-user-id", firstString(sessionPayload.uid, sessionPayload.user_id, firstCookie(request, "userId")));
-  setRequestHeader(requestHeaders, "x-domera-email", firstString(sessionPayload.email, firstCookie(request, "userEmail")));
-  setRequestHeader(requestHeaders, "x-domera-company-id", firstString(sessionPayload.companyId, firstCookie(request, "domera_companyId")));
-  setRequestHeader(requestHeaders, "x-domera-apartment-id", firstString(sessionPayload.apartmentId, firstCookie(request, "domera_apartmentId")));
+  setRequestHeader(requestHeaders, "x-domera-user-id", firstString(sessionPayload.uid, sessionPayload.user_id));
+  setRequestHeader(requestHeaders, "x-domera-email", firstString(sessionPayload.email));
+  setRequestHeader(requestHeaders, "x-domera-company-id", firstString(sessionPayload.companyId));
+  setRequestHeader(requestHeaders, "x-domera-apartment-id", firstString(sessionPayload.apartmentId));
 
   if (pathname === ROUTES.logout) {
     return withSecurityHeaders(NextResponse.next({
@@ -188,11 +185,6 @@ export default function proxy(request: NextRequest) {
     return withSecurityHeaders(NextResponse.redirect(dashboardUrl));
   }
 
-  if (trustedRole && isProtectedPath(pathname) && !isAllowedPath(pathname, resolvedRole)) {
-    const dashboardUrl = new URL(ROUTES.dashboard, request.url);
-    return withSecurityHeaders(NextResponse.redirect(dashboardUrl));
-  }
-
   const response = NextResponse.next({
     request: {
       headers: requestHeaders,
@@ -203,5 +195,27 @@ export default function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next|.*\\..*).*)"],
+  matcher: [
+    "/login/:path*",
+    "/logout",
+    "/register/:path*",
+    "/forgot-password/:path*",
+    "/reset-password/:path*",
+    "/accept-invitation/:path*",
+    "/dashboard/:path*",
+    "/platform-users/:path*",
+    "/approvals/:path*",
+    "/admin-buildings/:path*",
+    "/platform-billing/:path*",
+    "/buildings/:path*",
+    "/apartments/:path*",
+    "/residents/:path*",
+    "/invoices/:path*",
+    "/electricity/:path*",
+    "/meter-readings/:path*",
+    "/debts/:path*",
+    "/documents/:path*",
+    "/notifications/:path*",
+    "/settings/:path*",
+  ],
 };

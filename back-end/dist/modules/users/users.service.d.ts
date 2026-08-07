@@ -7,6 +7,7 @@ export declare class UsersService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
     private readonly buildingsService;
+    private readonly propertyMembershipCache;
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, buildingsService: BuildingsService);
     private assertAuth;
     private isStaff;
@@ -16,7 +17,11 @@ export declare class UsersService {
     private toOptionalString;
     private normalizedEmail;
     private resolveProfileNames;
+    private propertyMembershipCacheKey;
+    private trimPropertyMembershipCache;
+    private invalidatePropertyMembershipCache;
     private resolvePropertyMembership;
+    private resolvePropertyMembershipUncached;
     syncLinkedApartmentProfiles(userId: string, previousData: Record<string, unknown>, nextData: Record<string, unknown>): Promise<void>;
     private normalizeProfilePayload;
     private enforceRateLimit;

@@ -1,0 +1,841 @@
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head headCacheNode={{rsc:{...}, ...}}>
+                    <__next_viewport_boundary__>
+                    <MetadataWrapper>
+                      <div
+                        hidden={true}
+-                       bis_skin_checked="1"
+                      >
+                    ...
+                  ...
+                    <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<SegmentViewNode>} forbidden={undefined} ...>
+                      <RedirectBoundary>
+                        <RedirectErrorBoundary router={{...}}>
+                          <InnerLayoutRouter url="/" tree={[...]} params={{}} cacheNode={{rsc:{...}, ...}} ...>
+                            <SegmentViewNode type="page" pagePath="page.tsx">
+                              <SegmentTrieNode>
+                              <HomePage>
+                                <div
+                                  className="min-h-screen bg-white text-slate-950"
+-                                 bis_skin_checked="1"
+                                >
+                                  <LandingHeader>
+                                    <header className="fixed inse...">
+                                      <div
+                                        className="mx-auto flex max-w-7xl items-center justify-between gap-4 rounded-[..."
+-                                       bis_skin_checked="1"
+                                      >
+                                        <LinkComponent>
+                                        <nav>
+                                        <div
+                                          className="flex items-center gap-2 sm:gap-3"
+-                                         bis_skin_checked="1"
+                                        >
+                                          <LinkComponent>
+                                          <LandingLocaleSwitcher>
+                                            <div
+                                              ref={{current:null}}
+                                              className="relative"
+-                                             bis_skin_checked="1"
+                                            >
+                                  <main>
+                                    <LandingHero>
+                                      <section className="relative o...">
+                                        <div
+                                          className="mx-auto grid max-w-7xl items-center gap-12 px-6 pb-20 md:pb-24 lg..."
+-                                         bis_skin_checked="1"
+                                        >
+                                          <div
+-                                           bis_skin_checked="1"
+                                          >
+                                            <h1>
+                                            <p>
+                                            <div
+                                              className="mt-9 flex flex-col gap-3 sm:flex-row text-white"
+-                                             bis_skin_checked="1"
+                                            >
+                                            <div
+                                              className="mt-10 grid max-w-3xl grid-cols-1 gap-x-7 gap-y-4 text-base fo..."
+-                                             bis_skin_checked="1"
+                                            >
+                                              <div
+                                                className="flex items-center gap-3"
+-                                               bis_skin_checked="1"
+                                              >
+                                              <div
+                                                className="flex items-center gap-3"
+-                                               bis_skin_checked="1"
+                                              >
+                                              <div
+                                                className="flex items-center gap-3"
+-                                               bis_skin_checked="1"
+                                              >
+                                              <div
+                                                className="flex items-center gap-3"
+-                                               bis_skin_checked="1"
+                                              >
+                                              <div
+                                                className="flex items-center gap-3"
+-                                               bis_skin_checked="1"
+                                              >
+                                          <DashboardPreview>
+                                            <div
+                                              className="relative mx-auto w-full max-w-2xl lg:max-w-none"
+-                                             bis_skin_checked="1"
+                                            >
+                                              <div
+                                                className="absolute -left-5 top-14 z-20 hidden rounded-[1.4rem] border..."
+-                                               bis_skin_checked="1"
+                                              >
+                                              <div
+                                                className="absolute -bottom-4 -right-3 z-20 hidden rounded-[1.4rem] bo..."
+-                                               bis_skin_checked="1"
+                                              >
+                                              <div
+                                                className="overflow-hidden rounded-[1.75rem] border border-slate-200 b..."
+-                                               bis_skin_checked="1"
+                                              >
+                                                <div
+                                                  className="flex items-center justify-between border-b border-slate-1..."
+-                                                 bis_skin_checked="1"
+                                                >
+                                                  <div
+                                                    className="flex items-center gap-3"
+-                                                   bis_skin_checked="1"
+                                                  >
+                                                    <div
+-                                                     bis_skin_checked="1"
+                                                    >
+                                                  <div
+                                                    className="hidden h-9 min-w-72 items-center gap-2 rounded-xl borde..."
+-                                                   bis_skin_checked="1"
+                                                  >
+                                                  <div
+                                                    className="flex items-center gap-3 text-slate-500"
+-                                                   bis_skin_checked="1"
+                                                  >
+                                                <div
+                                                  className="grid min-h-[390px] grid-cols-1 md:grid-cols-[130px_1fr]"
+-                                                 bis_skin_checked="1"
+                                                >
+                                                  <aside className="hidden bor...">
+                                                    <div
+                                                      className="space-y-2"
+-                                                     bis_skin_checked="1"
+                                                    >
+                                                      <div
+                                                        className="flex items-center gap-2 rounded-xl px-2 py-2 text-[..."
+-                                                       bis_skin_checked="1"
+                                                      >
+                                                      <div
+                                                        className="flex items-center gap-2 rounded-xl px-2 py-2 text-[..."
+-                                                       bis_skin_checked="1"
+                                                      >
+                                                      <div
+                                                        className="flex items-center gap-2 rounded-xl px-2 py-2 text-[..."
+-                                                       bis_skin_checked="1"
+                                                      >
+                                                      <div
+                                                        className="flex items-center gap-2 rounded-xl px-2 py-2 text-[..."
+-                                                       bis_skin_checked="1"
+                                                      >
+                                                      <div
+                                                        className="flex items-center gap-2 rounded-xl px-2 py-2 text-[..."
+-                                                       bis_skin_checked="1"
+                                                      >
+                                                    <div
+                                                      className="mt-24 rounded-2xl border border-blue-100 bg-blue-50 p..."
+-                                                     bis_skin_checked="1"
+                                                    >
+                                                  <main className="p-4 sm:p-5">
+                                                    <div
+                                                      className="mb-4 flex flex-wrap items-center justify-between gap-3"
+-                                                     bis_skin_checked="1"
+                                                    >
+                                                      <div
+-                                                       bis_skin_checked="1"
+                                                      >
+                                                      ...
+                                                    <div
+                                                      className="grid gap-3 sm:grid-cols-3"
+-                                                     bis_skin_checked="1"
+                                                    >
+                                                      <div
+                                                        className="rounded-2xl border border-slate-100 bg-white p-4 sh..."
+-                                                       bis_skin_checked="1"
+                                                      >
+                                                      <div
+                                                        className="rounded-2xl border border-slate-100 bg-white p-4 sh..."
+-                                                       bis_skin_checked="1"
+                                                      >
+                                                      <div
+                                                        className="rounded-2xl border border-slate-100 bg-white p-4 sh..."
+-                                                       bis_skin_checked="1"
+                                                      >
+                                                    <div
+                                                      className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_0.85fr]"
+-                                                     bis_skin_checked="1"
+                                                    >
+                                                      <section className="rounded-2x...">
+                                                        <div
+                                                          className="mb-2 flex items-center justify-between"
+-                                                         bis_skin_checked="1"
+                                                        >
+                                                        <div
+                                                          className="h-32"
+-                                                         bis_skin_checked="1"
+                                                        >
+                                                      <section className="rounded-2x...">
+                                                        <p>
+                                                        <div
+                                                          className="mt-3 flex items-center justify-center"
+-                                                         bis_skin_checked="1"
+                                                        >
+                                                          <DonutChart>
+                                                            <div
+                                                              className="relative h-28 w-28 rounded-full bg-[conic-gra..."
+-                                                             bis_skin_checked="1"
+                                                            >
+                                                              <div
+                                                                className="flex h-full w-full flex-col items-center ju..."
+-                                                               bis_skin_checked="1"
+                                                              >
+                                                    <div
+                                                      className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]"
+-                                                     bis_skin_checked="1"
+                                                    >
+                                                      <section className="rounded-2x...">
+                                                        <div
+                                                          className="mb-3 flex items-center justify-between"
+-                                                         bis_skin_checked="1"
+                                                        >
+                                                        <div
+                                                          className="space-y-2"
+-                                                         bis_skin_checked="1"
+                                                        >
+                                                          <div
+                                                            className="grid grid-cols-[1fr_32px_58px_58px] items-cente..."
+-                                                           bis_skin_checked="1"
+                                                          >
+                                                          <div
+                                                            className="grid grid-cols-[1fr_32px_58px_58px] items-cente..."
+-                                                           bis_skin_checked="1"
+                                                          >
+                                                          <div
+                                                            className="grid grid-cols-[1fr_32px_58px_58px] items-cente..."
+-                                                           bis_skin_checked="1"
+                                                          >
+                                                          <div
+                                                            className="grid grid-cols-[1fr_32px_58px_58px] items-cente..."
+-                                                           bis_skin_checked="1"
+                                                          >
+                                                      <section className="rounded-2x...">
+                                                        <p>
+                                                        <div
+                                                          className="space-y-2"
+-                                                         bis_skin_checked="1"
+                                                        >
+                                                          <div
+                                                            className="flex items-center justify-between gap-2 text-[1..."
+-                                                           bis_skin_checked="1"
+                                                          >
+                                                          <div
+                                                            className="flex items-center justify-between gap-2 text-[1..."
+-                                                           bis_skin_checked="1"
+                                                          >
+                                                          <div
+                                                            className="flex items-center justify-between gap-2 text-[1..."
+-                                                           bis_skin_checked="1"
+                                                          >
+                                    <WhyDomeraSection>
+                                      <section className="bg-white p...">
+                                        <div
+                                          className="mx-auto max-w-7xl"
+-                                         bis_skin_checked="1"
+                                        >
+                                          <div
+                                            className="mx-auto max-w-4xl text-center"
+-                                           bis_skin_checked="1"
+                                          >
+                                            <div
+                                              className="inline-flex items-center gap-2 rounded-full border border-sla..."
+-                                             bis_skin_checked="1"
+                                            >
+                                            ...
+                                          <div
+                                            className="mt-20 grid gap-6 md:grid-cols-2 xl:grid-cols-4"
+-                                           bis_skin_checked="1"
+                                          >
+                                            <article className="min-h-[260...">
+                                              <span>
+                                              <div
+                                                className="mt-9 text-4xl font-bold leading-none text-slate-950"
+-                                               bis_skin_checked="1"
+                                              >
++                                               90%
+                                              ...
+                                            <article className="min-h-[260...">
+                                              <span>
+                                              <div
+                                                className="mt-9 text-4xl font-bold leading-none text-slate-950"
+-                                               bis_skin_checked="1"
+                                              >
++                                               24/7
+                                              ...
+                                            <article className="min-h-[260...">
+                                              <span>
+                                              <div
+                                                className="mt-9 text-4xl font-bold leading-none text-slate-950"
+-                                               bis_skin_checked="1"
+                                              >
++                                               100%
+                                              ...
+                                            <article className="min-h-[260...">
+                                              <span>
+                                              <div
+                                                className="mt-9 text-4xl font-bold leading-none text-slate-950"
+-                                               bis_skin_checked="1"
+                                              >
++                                               AES-256
+                                              ...
+                                    <FeaturesSection>
+                                      <section id="features" className="border-y b...">
+                                        <div
+                                          className="mx-auto max-w-7xl px-6"
+-                                         bis_skin_checked="1"
+                                        >
+                                          <SectionHeading>
+                                            <div
+                                              className="mx-auto max-w-3xl text-center"
+-                                             bis_skin_checked="1"
+                                            >
+                                          <div
+                                            className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3"
+-                                           bis_skin_checked="1"
+                                          >
+                                    <PlatformSection>
+                                      <section id="platform" className="bg-white p...">
+                                        <div
+                                          className="mx-auto max-w-7xl px-6"
+-                                         bis_skin_checked="1"
+                                        >
+                                          <div
+                                            className="grid items-start gap-12 lg:grid-cols-[0.92fr_1.08fr]"
+-                                           bis_skin_checked="1"
+                                          >
+                                            <div
+                                              className="lg:sticky lg:top-32"
+-                                             bis_skin_checked="1"
+                                            >
+                                              <SectionHeading>
+                                                <div
+                                                  className="max-w-2xl"
+-                                                 bis_skin_checked="1"
+                                                >
+                                              <div
+                                                className="mt-8 flex flex-wrap gap-3"
+-                                               bis_skin_checked="1"
+                                              >
+                                                <div
+                                                  className="inline-flex items-center gap-2 rounded-full border border..."
+-                                                 bis_skin_checked="1"
+                                                >
+                                                <div
+                                                  className="inline-flex items-center gap-2 rounded-full border border..."
+-                                                 bis_skin_checked="1"
+                                                >
+                                                <div
+                                                  className="inline-flex items-center gap-2 rounded-full border border..."
+-                                                 bis_skin_checked="1"
+                                                >
+                                            <div
+                                              className="space-y-5"
+-                                             bis_skin_checked="1"
+                                            >
+                                              <div
+                                                className="grid gap-4 sm:grid-cols-2"
+-                                               bis_skin_checked="1"
+                                              >
+                                                <div
+                                                  className="rounded-2xl border border-slate-200 bg-slate-50 p-6"
+-                                                 bis_skin_checked="1"
+                                                >
+                                                <div
+                                                  className="rounded-2xl border border-slate-200 bg-slate-50 p-6"
+-                                                 bis_skin_checked="1"
+                                                >
+                                                <div
+                                                  className="rounded-2xl border border-slate-200 bg-slate-50 p-6"
+-                                                 bis_skin_checked="1"
+                                                >
+                                                <div
+                                                  className="rounded-2xl border border-slate-200 bg-slate-50 p-6"
+-                                                 bis_skin_checked="1"
+                                                >
+                                              <div
+                                                className="rounded-3xl border border-slate-200 bg-slate-950 p-6 text-w..."
+-                                               bis_skin_checked="1"
+                                              >
+                                                <div
+                                                  className="mb-8 flex items-center justify-between gap-4"
+-                                                 bis_skin_checked="1"
+                                                >
+                                                  <div
+-                                                   bis_skin_checked="1"
+                                                  >
+                                                  ...
+                                                <div
+                                                  className="grid gap-4 md:grid-cols-3"
+-                                                 bis_skin_checked="1"
+                                                >
+                                                  <article className="rounded-2x...">
+                                                    <div
+                                                      className="flex items-center justify-between gap-3"
+-                                                     bis_skin_checked="1"
+                                                    >
+                                                    ...
+                                                  <article className="rounded-2x...">
+                                                    <div
+                                                      className="flex items-center justify-between gap-3"
+-                                                     bis_skin_checked="1"
+                                                    >
+                                                    ...
+                                                  <article className="rounded-2x...">
+                                                    <div
+                                                      className="flex items-center justify-between gap-3"
+-                                                     bis_skin_checked="1"
+                                                    >
+                                                    ...
+                                    <SolutionsSection>
+                                      <section id="solutions" className="bg-slate-5...">
+                                        <div
+                                          className="mx-auto max-w-7xl px-6"
+-                                         bis_skin_checked="1"
+                                        >
+                                          <SectionHeading>
+                                            <div
+                                              className="mx-auto max-w-3xl text-center"
+-                                             bis_skin_checked="1"
+                                            >
+                                          <div
+                                            className="mt-14 grid gap-6 lg:grid-cols-3"
+-                                           bis_skin_checked="1"
+                                          >
+                                            <article className="rounded-3x...">
+                                              <span>
+                                              <h3>
+                                              <p>
+                                              <div
+                                                className="mt-8 h-2 rounded-full bg-slate-100"
+-                                               bis_skin_checked="1"
+                                              >
+                                                <div
+                                                  className="h-full w-2/3 rounded-full bg-blue-600"
+-                                                 bis_skin_checked="1"
+                                                >
+                                            <article className="rounded-3x...">
+                                              <span>
+                                              <h3>
+                                              <p>
+                                              <div
+                                                className="mt-8 h-2 rounded-full bg-slate-100"
+-                                               bis_skin_checked="1"
+                                              >
+                                                <div
+                                                  className="h-full w-2/3 rounded-full bg-blue-600"
+-                                                 bis_skin_checked="1"
+                                                >
+                                            <article className="rounded-3x...">
+                                              <span>
+                                              <h3>
+                                              <p>
+                                              <div
+                                                className="mt-8 h-2 rounded-full bg-slate-100"
+-                                               bis_skin_checked="1"
+                                              >
+                                                <div
+                                                  className="h-full w-2/3 rounded-full bg-blue-600"
+-                                                 bis_skin_checked="1"
+                                                >
+                                    <PricingSection>
+                                      <section id="pricing" className="relative o...">
+                                        <div
+                                          className="relative mx-auto max-w-7xl"
+-                                         bis_skin_checked="1"
+                                        >
+                                          <div
+                                            className="group relative mx-auto max-w-4xl overflow-hidden rounded-[2rem]..."
+-                                           bis_skin_checked="1"
+                                          >
+                                            <div
+                                              className="pointer-events-none absolute -right-16 -top-20 h-60 w-60 roun..."
+-                                             bis_skin_checked="1"
+                                            >
+                                            <div
+                                              className="pointer-events-none absolute inset-0 bg-[linear-gradient(120d..."
+-                                             bis_skin_checked="1"
+                                            >
+                                            <div
+                                              className="relative mx-auto flex max-w-3xl flex-col"
+-                                             bis_skin_checked="1"
+                                            >
+                                              <div
+                                                className="text-center"
+-                                               bis_skin_checked="1"
+                                              >
+                                              <div
+                                                className="my-6 h-px w-full bg-gradient-to-r from-transparent via-slat..."
+-                                               bis_skin_checked="1"
+                                              >
+                                              <div
+                                                className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-..."
+-                                               bis_skin_checked="1"
+                                              >
+                                                <div
+                                                  className="flex items-center gap-3"
+-                                                 bis_skin_checked="1"
+                                                >
+                                                  <span>
+                                                  <div
+-                                                   bis_skin_checked="1"
+                                                  >
+                                                ...
+                                              <div
+                                                className="mt-7 grid gap-4 rounded-[1.5rem] border border-slate-200 bg..."
+-                                               bis_skin_checked="1"
+                                              >
+                                                <div
+-                                                 bis_skin_checked="1"
+                                                >
+                                                  <p>
+                                                  <h3>
+                                                  <div
+                                                    className="mt-4 flex flex-wrap items-end gap-x-4 gap-y-2"
+-                                                   bis_skin_checked="1"
+                                                  >
+                                                <div
+                                                  className="rounded-2xl bg-slate-50/80 p-4 ring-1 ring-slate-200/80"
+-                                                 bis_skin_checked="1"
+                                                >
+                                                  <p>
+                                                  <p>
+                                                  <div
+                                                    className="mt-4 rounded-xl border border-slate-200 bg-white px-4 p..."
+-                                                   bis_skin_checked="1"
+                                                  >
++                                                   250 квартир × €0.50
+                                              <div
+                                                className="mt-6 w-full space-y-4"
+-                                               bis_skin_checked="1"
+                                              >
+                                                <input>
+                                                <div
+                                                  className="flex flex-col justify-center gap-3 sm:flex-row sm:items-c..."
+-                                                 bis_skin_checked="1"
+                                                >
+                                                <div
+                                                  className="flex items-center justify-between text-xs font-bold upper..."
+-                                                 bis_skin_checked="1"
+                                                >
+                                              <div
+                                                className="mt-6 grid w-full gap-2 sm:grid-cols-2"
+-                                               bis_skin_checked="1"
+                                              >
+                                                <div
+                                                  className="flex items-center gap-3 rounded-2xl bg-white/70 px-3 py-2..."
+-                                                 bis_skin_checked="1"
+                                                >
+                                                <div
+                                                  className="flex items-center gap-3 rounded-2xl bg-white/70 px-3 py-2..."
+-                                                 bis_skin_checked="1"
+                                                >
+                                                <div
+                                                  className="flex items-center gap-3 rounded-2xl bg-white/70 px-3 py-2..."
+-                                                 bis_skin_checked="1"
+                                                >
+                                                <div
+                                                  className="flex items-center gap-3 rounded-2xl bg-white/70 px-3 py-2..."
+-                                                 bis_skin_checked="1"
+                                                >
+                                                <div
+                                                  className="flex items-center gap-3 rounded-2xl bg-white/70 px-3 py-2..."
+-                                                 bis_skin_checked="1"
+                                                >
+                                    <FaqSection>
+                                      <section id="faq" className="border-t b...">
+                                        <div
+                                          className="mx-auto max-w-4xl px-6"
+-                                         bis_skin_checked="1"
+                                        >
+                                          <SectionHeading>
+                                            <div
+                                              className="mx-auto max-w-3xl text-center"
+-                                             bis_skin_checked="1"
+                                            >
+                                          <div
+                                            className="mt-12 space-y-3"
+-                                           bis_skin_checked="1"
+                                          >
+                                  <LandingFooter>
+                                    <footer className="bg-slate-9...">
+                                      <div
+                                        className="mx-auto max-w-7xl px-6 py-16"
+-                                       bis_skin_checked="1"
+                                      >
+                                        <div
+                                          className="grid gap-10 lg:grid-cols-[1fr_auto] lg:items-center"
+-                                         bis_skin_checked="1"
+                                        >
+                                          <div
+-                                           bis_skin_checked="1"
+                                          >
+                                          ...
+                                        <div
+                                          className="mt-12 flex flex-col gap-6 border-t border-white/10 pt-8 md:flex-r..."
+-                                         bis_skin_checked="1"
+                                        >
+                                          <nav>
+                                          <div
+                                            className="flex flex-wrap gap-x-5 gap-y-3 text-sm text-slate-400"
+-                                           bis_skin_checked="1"
+                                          >
+                            ...
+                          ...
+                  ...
+ 
+    at <unknown> (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:3439:25)
+    at runWithFiberInDEV (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:74)
+    at emitPendingHydrationWarnings (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:3438:13)
+    at completeWork (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6885:102)
+    at runWithFiberInDEV (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:131)
+    at completeUnitOfWork (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9622:23)
+    at performUnitOfWork (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9557:28)
+    at workLoopConcurrentByScheduler (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9551:58)
+    at renderRootConcurrent (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9534:71)
+    at performWorkOnRoot (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9061:150)
+    at performWorkOnRootViaSchedulerTask (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10255:9)
+    at performWorkUntilDeadline (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:2647:64)
+    at run (chrome-extension://egjidjbpglichdcondbcbdnbeeppgdph/inpage.js:1:1898085)
+    at runIfPresent (chrome-extension://egjidjbpglichdcondbcbdnbeeppgdph/inpage.js:1:1898212)
+    at onGlobalMessage (chrome-extension://egjidjbpglichdcondbcbdnbeeppgdph/inpage.js:1:1897412) (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:3439:25)
+[browser] Image with src "https://firebasestorage.googleapis.com/v0/b/domera-eb224.firebasestorage.app/o/System%2FDomera_loga.png?alt=media&token=53ccefaa-c38f-490b-9138-010da531327e" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: "auto"' or 'height: "auto"' to maintain the aspect ratio. (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_1ybzpk2._.js:2477:13)
+Failed to proxy http://localhost:4000/api/buildings?companyId=NrbajE5R6g90LSW3fDzt AggregateError: 
+    at ignore-listed frames {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:4000
+        at <unknown> (Error: connect ECONNREFUSED ::1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 4000
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:4000
+        at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 4000
+    }
+  ]
+}
+AggregateError: 
+    at ignore-listed frames {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:4000
+        at <unknown> (Error: connect ECONNREFUSED ::1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 4000
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:4000
+        at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 4000
+    }
+  ]
+}
+Failed to proxy http://localhost:4000/api/buildings?companyId=NrbajE5R6g90LSW3fDzt AggregateError: 
+    at ignore-listed frames {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:4000
+        at <unknown> (Error: connect ECONNREFUSED ::1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 4000
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:4000
+        at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 4000
+    }
+  ]
+}
+AggregateError: 
+    at ignore-listed frames {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:4000
+        at <unknown> (Error: connect ECONNREFUSED ::1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 4000
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:4000
+        at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 4000
+    }
+  ]
+}
+Failed to proxy http://localhost:4000/api/buildings?companyId=NrbajE5R6g90LSW3fDzt AggregateError: 
+    at ignore-listed frames {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:4000
+        at <unknown> (Error: connect ECONNREFUSED ::1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 4000
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:4000
+        at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 4000
+    }
+  ]
+}
+AggregateError: 
+    at ignore-listed frames {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:4000
+        at <unknown> (Error: connect ECONNREFUSED ::1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 4000
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:4000
+        at <unknown> (Error: connect ECONNREFUSED 127.0.0.1:4000) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 4000
+    }
+  ]
+}
+TypeError: fetch failed
+    at ignore-listed frames {
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'EACCES',
+    [errors]: [
+      [Error], [Error],
+      [Error], [Error],
+      [Error], [Error],
+      [Error], [Error]
+    ]
+  }
+}
+Node.js fs rename failed after 101 retries with error Error: EPERM: operation not permitted, rename 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\server-reference-manifest.js.tmp.ojesq1y1ez' -> 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\server-reference-manifest.js'
+⨯ Error: EPERM: operation not permitted, rename 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\server-reference-manifest.js.tmp.ojesq1y1ez' -> 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\server-reference-manifest.js'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\server-reference-manifest.js.tmp.ojesq1y1ez',
+  dest: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\server-reference-manifest.js'
+}
+Node.js fs rename failed after 101 retries with error Error: EPERM: operation not permitted, rename 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\middleware-build-manifest.js.tmp.nju7tq02mm' -> 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\middleware-build-manifest.js'
+⨯ Error: EPERM: operation not permitted, rename 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\middleware-build-manifest.js.tmp.nju7tq02mm' -> 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\middleware-build-manifest.js'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\middleware-build-manifest.js.tmp.nju7tq02mm',
+  dest: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\middleware-build-manifest.js'
+}
+Node.js fs rename failed after 101 retries with error Error: EPERM: operation not permitted, rename 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\next-font-manifest.js.tmp.96b3tvpt2ul' -> 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\next-font-manifest.js'
+Error: EPERM: operation not permitted, rename 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\next-font-manifest.js.tmp.96b3tvpt2ul' -> 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\next-font-manifest.js'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\next-font-manifest.js.tmp.96b3tvpt2ul',
+  dest: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\next-font-manifest.js'
+}
+⨯ unhandledRejection: Error: EPERM: operation not permitted, rename 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\next-font-manifest.js.tmp.96b3tvpt2ul' -> 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\next-font-manifest.js'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\next-font-manifest.js.tmp.96b3tvpt2ul',
+  dest: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\next-font-manifest.js'
+}
+⨯ unhandledRejection:  Error: EPERM: operation not permitted, rename 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\next-font-manifest.js.tmp.96b3tvpt2ul' -> 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\next-font-manifest.js'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\next-font-manifest.js.tmp.96b3tvpt2ul',
+  dest: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\next-font-manifest.js'
+}
+[browser] Uncaught Error: EPERM: operation not permitted, rename 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\middleware-build-manifest.js.tmp.nju7tq02mm' -> 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\middleware-build-manifest.js'
+[browser] Image with src "https://firebasestorage.googleapis.com/v0/b/domera-eb224.firebasestorage.app/o/System%2FDomera_loga.png?alt=media&token=53ccefaa-c38f-490b-9138-010da531327e" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: "auto"' or 'height: "auto"' to maintain the aspect ratio. (file://C:/Users/User/Documents/It projekt/domera/domera3/frontendd/.next/dev/static/chunks/node_modules_next_dist_1ybzpk2._.js:2477:13)
+⚠ Found a change in next.config.ts. Restarting the server to apply the changes...
+Node.js fs rename failed after 101 retries with error Error: EPERM: operation not permitted, rename 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\server-reference-manifest.js.tmp.szjzfxb9yq8' -> 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\server-reference-manifest.js'
+Error: EPERM: operation not permitted, rename 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\server-reference-manifest.js.tmp.szjzfxb9yq8' -> 'C:\Users\User\Documents\It projekt\domera\domera3\frontendd\.next\dev\server\server-reference-manifest.js'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\server-reference-manifest.js.tmp.szjzfxb9yq8',
+  dest: 'C:\\Users\\User\\Documents\\It projekt\\domera\\domera3\\frontendd\\.next\\dev\\server\\server-reference-manifest.js'
+}

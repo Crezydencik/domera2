@@ -20,8 +20,32 @@ import { FirebaseAdminService } from '../../common/infrastructure/firebase/fireb
 import { RateLimitService } from '../../common/services/rate-limit.service';
 import { BuildingsService } from '../buildings/buildings.service';
 
+type PropertyMembership = {
+  hasOwnership: boolean;
+  hasTenancy: boolean;
+  propertyRoles: string[];
+};
+
+type CacheEntry<T> = {
+  expiresAt: number;
+  promise: Promise<T>;
+};
+
+function positiveNumberEnv(name: string, fallback: number) {
+  const value = Number(process.env[name] ?? fallback);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+const PROPERTY_MEMBERSHIP_CACHE_TTL_MS = positiveNumberEnv('USER_PROPERTY_MEMBERSHIP_CACHE_TTL_MS', 60_000);
+const PROPERTY_MEMBERSHIP_CACHE_MAX_ENTRIES = Math.max(
+  50,
+  positiveNumberEnv('USER_PROPERTY_MEMBERSHIP_CACHE_MAX_ENTRIES', 1_000),
+);
+
 @Injectable()
 export class UsersService {
+  private readonly propertyMembershipCache = new Map<string, CacheEntry<PropertyMembership>>();
+
   constructor(
     private readonly firebaseAdminService: FirebaseAdminService,
     private readonly rateLimitService: RateLimitService,
@@ -83,7 +107,74 @@ export class UsersService {
     };
   }
 
-  private async resolvePropertyMembership(userId: string, email?: string) {
+  private propertyMembershipCacheKey(userId: string, email?: string) {
+    return `${this.toOptionalString(userId) ?? ''}:${this.normalizedEmail(email)}`;
+  }
+
+  private trimPropertyMembershipCache(now: number) {
+    for (const [key, entry] of this.propertyMembershipCache) {
+      if (entry.expiresAt <= now) {
+        this.propertyMembershipCache.delete(key);
+      }
+    }
+
+    while (this.propertyMembershipCache.size > PROPERTY_MEMBERSHIP_CACHE_MAX_ENTRIES) {
+      const oldestKey = this.propertyMembershipCache.keys().next().value as string | undefined;
+      if (!oldestKey) return;
+      this.propertyMembershipCache.delete(oldestKey);
+    }
+  }
+
+  private invalidatePropertyMembershipCache(userId: string, ...emails: string[]) {
+    const normalizedUserId = this.toOptionalString(userId) ?? '';
+    for (const key of this.propertyMembershipCache.keys()) {
+      if (key.startsWith(`${normalizedUserId}:`)) {
+        this.propertyMembershipCache.delete(key);
+      }
+    }
+
+    for (const email of emails) {
+      const key = this.propertyMembershipCacheKey(userId, email);
+      this.propertyMembershipCache.delete(key);
+    }
+  }
+
+  private async resolvePropertyMembership(userId: string, email?: string): Promise<PropertyMembership> {
+    if (PROPERTY_MEMBERSHIP_CACHE_TTL_MS <= 0) {
+      return this.resolvePropertyMembershipUncached(userId, email);
+    }
+
+    const normalizedUserId = this.toOptionalString(userId);
+    const normalizedEmail = this.normalizedEmail(email);
+    if (!normalizedUserId && !normalizedEmail) {
+      return this.resolvePropertyMembershipUncached(userId, email);
+    }
+
+    const now = Date.now();
+    const key = this.propertyMembershipCacheKey(userId, email);
+    const cached = this.propertyMembershipCache.get(key);
+    if (cached && cached.expiresAt > now) {
+      return cached.promise;
+    }
+
+    this.trimPropertyMembershipCache(now);
+
+    const entry: CacheEntry<PropertyMembership> = {
+      expiresAt: now + PROPERTY_MEMBERSHIP_CACHE_TTL_MS,
+      promise: this.resolvePropertyMembershipUncached(userId, email),
+    };
+
+    this.propertyMembershipCache.set(key, entry);
+
+    try {
+      return await entry.promise;
+    } catch (error) {
+      this.propertyMembershipCache.delete(key);
+      throw error;
+    }
+  }
+
+  private async resolvePropertyMembershipUncached(userId: string, email?: string): Promise<PropertyMembership> {
     const normalizedUserId = this.toOptionalString(userId);
     const normalizedEmail = this.normalizedEmail(email);
     const roles = new Set<'owner' | 'tenant'>();
@@ -298,6 +389,8 @@ export class UsersService {
         }
       }),
     );
+
+    this.invalidatePropertyMembershipCache(normalizedUserId, previousEmail, nextEmail);
   }
 
   private normalizeProfilePayload(

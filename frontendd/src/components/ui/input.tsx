@@ -2,7 +2,7 @@
 
 import { forwardRef, useState } from "react";
 import type { ReactNode } from "react";
-import { FiEye, FiEyeOff } from "react-icons/fi";
+import { Eye, EyeOff } from "lucide-react";
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -35,10 +35,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const inputId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
 
     const baseClasses =
-      "w-full rounded-xl border bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:ring-2";
+      "w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm shadow-slate-950/[0.02] placeholder:text-slate-400 outline-none transition focus:ring-2";
     const stateClasses = error
       ? "border-red-400 focus:border-red-400 focus:ring-red-100"
-      : "border-slate-200 focus:border-blue-500 focus:ring-blue-100";
+      : "border-slate-300 focus:border-slate-500 focus:ring-slate-200";
     const paddingLeft = leftIcon ? "pl-10" : "";
     const paddingRight = showToggle ? "pr-10" : "";
 
@@ -74,16 +74,16 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
               aria-label={show ? "Hide password" : "Show password"}
             >
               {show ? (
-                <FiEyeOff className="h-4 w-4" aria-hidden />
+                <EyeOff className="h-4 w-4" aria-hidden />
               ) : (
-                <FiEye className="h-4 w-4" aria-hidden />
+                <Eye className="h-4 w-4" aria-hidden />
               )}
             </button>
           )}
         </div>
 
         {error && <p className="text-xs text-red-500">{error}</p>}
-        {hint && !error && <p className="text-xs text-slate-400">{hint}</p>}
+        {hint && !error && <p className="text-xs leading-5 text-slate-500">{hint}</p>}
       </div>
     );
   },

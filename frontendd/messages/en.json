@@ -534,7 +534,18 @@
       "submittedThisMonth": "Submitted in period: {coverage}%",
       "month": "Month: {month}",
       "submissionPeriod": "Submission period: {period}",
-      "openReadings": "Open readings"
+      "openReadings": "Open readings",
+      "emptyPortfolio": {
+        "title": "Create your first managed object",
+        "description": "Add a building to unlock apartments, residents, meter readings, invoices and documents for this workspace.",
+        "features": {
+          "registry": "Create buildings and keep their apartment registry in one place",
+          "people": "Invite owners, tenants and residents after the first object is ready",
+          "billing": "Collect meter readings and prepare invoices from connected apartments",
+          "documents": "Store documents and support communication by managed object"
+        },
+        "action": "Create object"
+      }
     },
     "landlord": {
       "viewLabel": "Landlord view",

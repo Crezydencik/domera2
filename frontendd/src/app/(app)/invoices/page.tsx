@@ -1,5 +1,6 @@
 import { DomeraApiError, apiFetch } from "@/shared/server/api-client";
 import { getInvoicesPageData } from "@/shared/server/page-loaders/invoices.loader";
+import { requireManagementCompanyBuildings } from "@/shared/server/management-building-access";
 import { InvoicesWorkspace } from "./_invoices-workspace";
 
 type ListLoadResult = {
@@ -24,6 +25,7 @@ export default async function InvoicesPage({
 }) {
   const params = (await searchParams) ?? {};
   const data = await getInvoicesPageData(params.role);
+  requireManagementCompanyBuildings(data);
   const uploadHistory =
     data.role === "managementCompany" && data.companyId
       ? await loadInvoiceList(

@@ -4,6 +4,10 @@ const { spawn, spawnSync } = require('child_process');
 
 const rootDir = path.join(__dirname, '..');
 const entry = path.join(rootDir, 'dist', 'main.js');
+const requiredFiles = [
+  entry,
+  path.join(rootDir, 'dist', 'common', 'infrastructure', 'firebase', 'firebase-admin.service.js'),
+];
 const pidFile = path.join(rootDir, '.dev-server.pid');
 const timeoutMs = 5000;
 const intervalMs = 100;
@@ -85,7 +89,7 @@ function start() {
 }
 
 function waitForEntry() {
-  if (fs.existsSync(entry)) {
+  if (requiredFiles.every((file) => fs.existsSync(file))) {
     start();
     return;
   }

@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { DomeraApiError, apiFetch } from "@/shared/server/api-client";
 import type { Building, DocumentItem, Invoice, MeterReading, NotificationItem, Resident } from "@/shared/lib/data";
 import { type DashboardRole, normalizeDashboardRole } from "@/shared/role-ui";
@@ -40,11 +40,62 @@ function firstString(...values: unknown[]): string {
   return "вЂ”";
 }
 
+function firstOptionalString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function buildHeaderProfile(headerStore: Headers, roleHint?: string): UnknownRecord | null {
+  const uid = firstOptionalString(headerStore.get("x-domera-user-id"));
+  const role = firstOptionalString(headerStore.get("x-domera-role"), roleHint);
+  const email = firstOptionalString(headerStore.get("x-domera-email"));
+  const companyId = firstOptionalString(headerStore.get("x-domera-company-id"));
+  const apartmentId = firstOptionalString(headerStore.get("x-domera-apartment-id"));
+
+  if (!uid || !role) {
+    return null;
+  }
+
+  return {
+    id: uid,
+    uid,
+    role,
+    accountType: role,
+    email,
+    companyId,
+    apartmentId,
+  };
+}
+
+function contextFromProfile(profile: UnknownRecord, roleHint?: string) {
+  const resolvedUserId = firstString(profile?.uid, profile?.id);
+  const role = normalizeDashboardRole(
+    firstString(
+      profile?.role,
+      profile?.accountType,
+      roleHint,
+    ),
+  );
+
+  return {
+    userId: resolvedUserId,
+    profile,
+    role,
+    companyId: firstString(profile?.companyId, resolvedUserId),
+    apartmentId: firstString(profile?.apartmentId),
+  };
+}
+
 export const getCurrentProfile = cache(async () => {
   return apiFetch<UnknownRecord>("/users/me");
 });
 
-export async function getAuthenticatedContext(roleHint?: string) {
+export async function getAuthenticatedContext(roleHint?: string, options?: { requireFreshProfile?: boolean }) {
   const store = await cookies();
   const sessionCookie = store.get("__session")?.value?.trim();
 
@@ -52,24 +103,16 @@ export async function getAuthenticatedContext(roleHint?: string) {
     redirectToExpiredLogin();
   }
 
+  if (!options?.requireFreshProfile) {
+    const headerProfile = buildHeaderProfile(await headers(), roleHint);
+    if (headerProfile) {
+      return contextFromProfile(headerProfile, roleHint);
+    }
+  }
+
   try {
     const profile = await getCurrentProfile();
-    const resolvedUserId = firstString(profile?.uid, profile?.id);
-    const role = normalizeDashboardRole(
-      firstString(
-        profile?.role,
-        profile?.accountType,
-        roleHint,
-      ),
-    );
-
-    return {
-      userId: resolvedUserId,
-      profile,
-      role,
-      companyId: firstString(profile?.companyId, resolvedUserId),
-      apartmentId: firstString(profile?.apartmentId),
-    };
+    return contextFromProfile(profile, roleHint);
   } catch (error) {
     if (error instanceof DomeraApiError && [401, 403].includes(error.status)) {
       redirectToExpiredLogin();

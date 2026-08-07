@@ -1,47 +1,20 @@
-import { headers } from "next/headers";
 import { getTranslations } from "next-intl/server";
 import { RoleAwareSidebar } from "@/app/(app)/_components/role-aware-sidebar";
 import { getCurrentProfile } from "@/shared/server/auth-context";
-import { normalizeDashboardRole } from "@/shared/role-ui";
+import { normalizeDashboardRole, type DashboardRole } from "@/shared/role-ui";
 
 interface SidebarProps {
   children: React.ReactNode;
+  initialProfile?: Record<string, unknown> | null;
+  initialRole?: DashboardRole;
 }
 
-function firstHeader(headerStore: Headers, name: string) {
-  const value = headerStore.get(name)?.trim();
-  return value || undefined;
-}
-
-function buildHeaderProfile(headerStore: Headers): Record<string, unknown> | null {
-  const uid = firstHeader(headerStore, "x-domera-user-id");
-  const role = firstHeader(headerStore, "x-domera-role");
-  const email = firstHeader(headerStore, "x-domera-email");
-  const companyId = firstHeader(headerStore, "x-domera-company-id");
-  const apartmentId = firstHeader(headerStore, "x-domera-apartment-id");
-
-  if (!uid && !role && !email && !companyId && !apartmentId) {
-    return null;
-  }
-
-  return {
-    id: uid,
-    uid,
-    role,
-    accountType: role,
-    email,
-    companyId,
-    apartmentId,
-  };
-}
-
-export async function Sidebar({ children }: SidebarProps) {
+export async function Sidebar({ children, initialProfile, initialRole }: SidebarProps) {
   const t = await getTranslations("appShell");
-  const headerStore = await headers();
-  let profile = buildHeaderProfile(headerStore);
-  let roleHint = headerStore.get("x-domera-role");
+  let profile = initialProfile ?? null;
+  let roleHint: unknown = initialRole;
 
-  if (!roleHint) {
+  if (!profile && !roleHint) {
     const fallbackProfile = await getCurrentProfile().catch(() => null);
     profile = fallbackProfile;
     roleHint =
@@ -52,7 +25,15 @@ export async function Sidebar({ children }: SidebarProps) {
           : null;
   }
 
-  const defaultRole = normalizeDashboardRole(roleHint);
+  const defaultRole = normalizeDashboardRole(
+    typeof roleHint === "string"
+      ? roleHint
+      : typeof profile?.role === "string"
+        ? profile.role
+        : typeof profile?.accountType === "string"
+          ? profile.accountType
+          : undefined,
+  );
 
   return (
     <RoleAwareSidebar

@@ -1,13 +1,35 @@
 import type { NextRequest } from "next/server";
 import { buildRequestCookieHeader } from "@/shared/lib/cookie-header.server";
 
-function resolveApiBaseUrl() {
-  const configured = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
-  if (configured?.startsWith("http://") || configured?.startsWith("https://")) {
-    return configured;
+function trimTrailingSlashes(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+function normalizeApiBaseUrl(value?: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimTrailingSlashes(trimmed);
   }
 
-  return "http://127.0.0.1:4000/api";
+  return undefined;
+}
+
+function appendApiPath(value?: string) {
+  const baseUrl = normalizeApiBaseUrl(value);
+  if (!baseUrl) return undefined;
+
+  return baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
+}
+
+function resolveApiBaseUrl() {
+  return (
+    normalizeApiBaseUrl(process.env.API_BASE_URL) ??
+    normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL) ??
+    appendApiPath(process.env.BACKEND_URL) ??
+    (process.env.NODE_ENV === "production" ? "https://domeraback.vercel.app/api" : "http://127.0.0.1:4000/api")
+  );
 }
 
 export async function GET(

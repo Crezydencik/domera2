@@ -3,6 +3,8 @@
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;
+  --font-geist-sans: Arial, Helvetica, sans-serif;
+  --font-geist-mono: "Courier New", Consolas, monospace;
 }
 
 html {
@@ -14,9 +16,15 @@ body {
   min-height: 100%;
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   color: var(--foreground);
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  background:
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.08), transparent 24rem),
+    linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 * {

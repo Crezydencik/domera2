@@ -52,7 +52,7 @@ interface FilterBarProps {
 }
 
 const inputBase =
-  "rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500";
+  "min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm shadow-slate-950/[0.02] transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200";
 
 export function FilterBar({ fields, values, onChange, actions, actionsClassName, mobileActionsInline, footer }: FilterBarProps) {
   const visibleFields = fields.filter((f) => f.visible !== false);
@@ -116,7 +116,7 @@ export function FilterBar({ fields, values, onChange, actions, actionsClassName,
         {actions && <div className={resolvedActionsClassName}>{actions}</div>}
       </div>
 
-      {footer && <div className="text-xs uppercase tracking-wide text-slate-500">{footer}</div>}
+      {footer && <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{footer}</div>}
     </div>
   );
 }

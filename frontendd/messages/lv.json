@@ -612,7 +612,18 @@
       "submittedThisMonth": "Iesnieguši periodā: {coverage}%",
       "month": "Mēnesis: {month}",
       "submissionPeriod": "Iesniegšanas periods: {period}",
-      "openReadings": "Atvērt rādījumus"
+      "openReadings": "Atvērt rādījumus",
+      "emptyPortfolio": {
+        "title": "Izveidojiet pirmo pārvaldāmo objektu",
+        "description": "Pievienojiet māju, lai šai darba videi atvērtu dzīvokļus, iedzīvotājus, skaitītāju rādījumus, rēķinus un dokumentus.",
+        "features": {
+          "registry": "Izveidojiet mājas un uzturiet dzīvokļu reģistru vienuviet",
+          "people": "Uzaiciniet īpašniekus, īrniekus un iedzīvotājus pēc pirmā objekta izveides",
+          "billing": "Apkopojiet skaitītāju rādījumus un sagatavojiet rēķinus piesaistītajiem dzīvokļiem",
+          "documents": "Glabājiet dokumentus un atbalsta saziņu pie katra objekta"
+        },
+        "action": "Izveidot objektu"
+      }
     },
     "landlord": {
       "viewLabel": "Īpašnieka skats",

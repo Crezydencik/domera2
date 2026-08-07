@@ -25,14 +25,14 @@ let UsersController = class UsersController {
     me(request, user) {
         return this.usersService.me(request, user);
     }
+    byEmail(request, user, email) {
+        return this.usersService.byEmail(request, user, email);
+    }
     setBuildingCreationAccess(request, user, userId, body) {
         return this.usersService.setBuildingCreationAccess(request, user, userId, body);
     }
     byId(request, user, userId) {
         return this.usersService.byId(request, user, userId);
-    }
-    byEmail(request, user, email) {
-        return this.usersService.byEmail(request, user, email);
     }
     listByCompany(request, user, companyId) {
         return this.usersService.listByCompany(request, user, companyId);
@@ -54,6 +54,17 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "me", null);
+__decorate([
+    (0, common_1.Get)('by-email/search'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get user by email' }),
+    (0, swagger_1.ApiQuery)({ name: 'email', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Query)('email')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "byEmail", null);
 __decorate([
     (0, common_1.Patch)(':userId/building-creation-access'),
     (0, swagger_1.ApiOperation)({ summary: 'Grant or revoke building creation access for a management company user' }),
@@ -77,17 +88,6 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, String]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "byId", null);
-__decorate([
-    (0, common_1.Get)('by-email/search'),
-    (0, swagger_1.ApiOperation)({ summary: 'Get user by email' }),
-    (0, swagger_1.ApiQuery)({ name: 'email', required: true, type: String }),
-    __param(0, (0, common_1.Req)()),
-    __param(1, (0, current_user_decorator_1.CurrentUser)()),
-    __param(2, (0, common_1.Query)('email')),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object, String]),
-    __metadata("design:returntype", void 0)
-], UsersController.prototype, "byEmail", null);
 __decorate([
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: 'Get users by company, or all users for platform administrators' }),

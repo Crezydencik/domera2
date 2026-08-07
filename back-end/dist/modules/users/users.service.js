@@ -15,11 +15,18 @@ const role_constants_1 = require("../../common/auth/role.constants");
 const firebase_admin_service_1 = require("../../common/infrastructure/firebase/firebase-admin.service");
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
 const buildings_service_1 = require("../buildings/buildings.service");
+function positiveNumberEnv(name, fallback) {
+    const value = Number(process.env[name] ?? fallback);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+const PROPERTY_MEMBERSHIP_CACHE_TTL_MS = positiveNumberEnv('USER_PROPERTY_MEMBERSHIP_CACHE_TTL_MS', 60_000);
+const PROPERTY_MEMBERSHIP_CACHE_MAX_ENTRIES = Math.max(50, positiveNumberEnv('USER_PROPERTY_MEMBERSHIP_CACHE_MAX_ENTRIES', 1_000));
 let UsersService = class UsersService {
     constructor(firebaseAdminService, rateLimitService, buildingsService) {
         this.firebaseAdminService = firebaseAdminService;
         this.rateLimitService = rateLimitService;
         this.buildingsService = buildingsService;
+        this.propertyMembershipCache = new Map();
     }
     assertAuth(user) {
         if (!user?.uid)
@@ -71,7 +78,64 @@ let UsersService = class UsersService {
             fullName,
         };
     }
+    propertyMembershipCacheKey(userId, email) {
+        return `${this.toOptionalString(userId) ?? ''}:${this.normalizedEmail(email)}`;
+    }
+    trimPropertyMembershipCache(now) {
+        for (const [key, entry] of this.propertyMembershipCache) {
+            if (entry.expiresAt <= now) {
+                this.propertyMembershipCache.delete(key);
+            }
+        }
+        while (this.propertyMembershipCache.size > PROPERTY_MEMBERSHIP_CACHE_MAX_ENTRIES) {
+            const oldestKey = this.propertyMembershipCache.keys().next().value;
+            if (!oldestKey)
+                return;
+            this.propertyMembershipCache.delete(oldestKey);
+        }
+    }
+    invalidatePropertyMembershipCache(userId, ...emails) {
+        const normalizedUserId = this.toOptionalString(userId) ?? '';
+        for (const key of this.propertyMembershipCache.keys()) {
+            if (key.startsWith(`${normalizedUserId}:`)) {
+                this.propertyMembershipCache.delete(key);
+            }
+        }
+        for (const email of emails) {
+            const key = this.propertyMembershipCacheKey(userId, email);
+            this.propertyMembershipCache.delete(key);
+        }
+    }
     async resolvePropertyMembership(userId, email) {
+        if (PROPERTY_MEMBERSHIP_CACHE_TTL_MS <= 0) {
+            return this.resolvePropertyMembershipUncached(userId, email);
+        }
+        const normalizedUserId = this.toOptionalString(userId);
+        const normalizedEmail = this.normalizedEmail(email);
+        if (!normalizedUserId && !normalizedEmail) {
+            return this.resolvePropertyMembershipUncached(userId, email);
+        }
+        const now = Date.now();
+        const key = this.propertyMembershipCacheKey(userId, email);
+        const cached = this.propertyMembershipCache.get(key);
+        if (cached && cached.expiresAt > now) {
+            return cached.promise;
+        }
+        this.trimPropertyMembershipCache(now);
+        const entry = {
+            expiresAt: now + PROPERTY_MEMBERSHIP_CACHE_TTL_MS,
+            promise: this.resolvePropertyMembershipUncached(userId, email),
+        };
+        this.propertyMembershipCache.set(key, entry);
+        try {
+            return await entry.promise;
+        }
+        catch (error) {
+            this.propertyMembershipCache.delete(key);
+            throw error;
+        }
+    }
+    async resolvePropertyMembershipUncached(userId, email) {
         const normalizedUserId = this.toOptionalString(userId);
         const normalizedEmail = this.normalizedEmail(email);
         const roles = new Set();
@@ -251,6 +315,7 @@ let UsersService = class UsersService {
                 await doc.ref.set(update, { merge: true });
             }
         }));
+        this.invalidatePropertyMembershipCache(normalizedUserId, previousEmail, nextEmail);
     }
     normalizeProfilePayload(currentUser, targetUserId, currentData, payload) {
         const nextPayload = { ...payload };

@@ -1,4 +1,5 @@
 import { getDocumentsPageData } from "@/shared/server/page-loaders/documents.loader";
+import { requireManagementCompanyBuildings } from "@/shared/server/management-building-access";
 import { DocumentsWorkspace } from "./documents-workspace";
 
 export default async function DocumentsPage({
@@ -8,6 +9,7 @@ export default async function DocumentsPage({
 }) {
   const params = (await searchParams) ?? {};
   const data = await getDocumentsPageData(params.role);
+  requireManagementCompanyBuildings(data);
 
   return (
     <DocumentsWorkspace

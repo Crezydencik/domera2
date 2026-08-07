@@ -26,6 +26,7 @@ const meter_readings_module_1 = require("./modules/meter-readings/meter-readings
 const news_module_1 = require("./modules/news/news.module");
 const notifications_module_1 = require("./modules/notifications/notifications.module");
 const projects_module_1 = require("./modules/notifications/projects/projects.module");
+const support_module_1 = require("./modules/support/support.module");
 const users_module_1 = require("./modules/users/users.module");
 let AppModule = class AppModule {
 };
@@ -52,6 +53,7 @@ exports.AppModule = AppModule = __decorate([
             notifications_module_1.NotificationsModule,
             projects_module_1.ProjectsModule,
             news_module_1.NewsModule,
+            support_module_1.SupportModule,
             users_module_1.UsersModule,
         ],
         providers: [

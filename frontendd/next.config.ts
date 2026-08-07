@@ -29,8 +29,35 @@ function appendApiPath(value?: string) {
 const backendApiBaseUrl =
   normalizeApiBaseUrl(process.env.API_BASE_URL) ??
   appendApiPath(process.env.BACKEND_URL) ??
-  (process.env.NODE_ENV === "production" ? "https://domeraback.vercel.app/api" : "http://localhost:4000/api");
+  (process.env.NODE_ENV === "production" ? "https://domeraback.vercel.app/api" : "http://127.0.0.1:4000/api");
 const firebaseProjectId = process.env.FIREBASE_PROJECT_ID?.trim() || "domera-eb224";
+
+const securityHeaders = [
+  {
+    key: "X-Content-Type-Options",
+    value: "nosniff",
+  },
+  {
+    key: "Referrer-Policy",
+    value: "strict-origin-when-cross-origin",
+  },
+  {
+    key: "X-Frame-Options",
+    value: "DENY",
+  },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=()",
+  },
+  ...(process.env.NODE_ENV === "production"
+    ? [
+        {
+          key: "Strict-Transport-Security",
+          value: "max-age=31536000; includeSubDomains; preload",
+        },
+      ]
+    : []),
+];
 
 const nextConfig: NextConfig = {
   images: {
@@ -53,6 +80,14 @@ const nextConfig: NextConfig = {
       {
         source: "/api/:path*",
         destination: `${backendApiBaseUrl}/:path*`,
+      },
+    ];
+  },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders,
       },
     ];
   },

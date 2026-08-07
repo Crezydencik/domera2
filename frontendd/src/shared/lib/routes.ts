@@ -32,6 +32,7 @@ export const ROUTES = {
   debts: "/debts",
   documents: "/documents",
   notifications: "/notifications",
+  support: "/support",
   settings: "/settings",
 } as const;
 

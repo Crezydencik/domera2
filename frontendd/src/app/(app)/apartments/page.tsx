@@ -1,4 +1,5 @@
 import { getApartmentsPageData } from "@/shared/server/page-loaders/apartments.loader";
+import { requireManagementCompanyBuildings } from "@/shared/server/management-building-access";
 import { ApartmentsManagementView } from "./_management-view";
 import { ApartmentsResidentView } from "./_resident-view";
 
@@ -9,6 +10,7 @@ export default async function ApartmentsPage({
 }) {
   const params = (await searchParams) ?? {};
   const data = await getApartmentsPageData(params.role);
+  requireManagementCompanyBuildings(data);
 
   if (data.role === "managementCompany") {
     return <ApartmentsManagementView data={data} />;

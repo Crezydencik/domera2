@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
-import { FiExternalLink } from "react-icons/fi";
+import { FiCheckCircle, FiExternalLink, FiPlus } from "react-icons/fi";
 import { BuildingReadingsSelector } from "./building-readings-selector";
 import type { RoleDataBundle } from "@/shared/server/auth-context";
 import { isApprovedBuilding } from "@/shared/lib/buildings";
@@ -90,10 +90,65 @@ function resolveSubmissionWindow(period: SubmissionPeriod | undefined, fallbackD
   };
 }
 
+type EmptyPortfolioStateProps = {
+  title: string;
+  description: string;
+  features: string[];
+  actionLabel: string;
+};
+
+function EmptyPortfolioState({ title, description, features, actionLabel }: EmptyPortfolioStateProps) {
+  return (
+    <div className="flex min-h-[calc(100vh-11rem)] items-center justify-center px-2 py-10">
+      <section className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm shadow-slate-950/[0.04]">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-sky-50 text-sky-700 ring-1 ring-sky-100">
+          <FiPlus className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <h2 className="mt-4 text-xl font-semibold text-slate-950">{title}</h2>
+        <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">{description}</p>
+
+        <div className="mx-auto mt-5 grid max-w-xl gap-2 text-left sm:grid-cols-2">
+          {features.map((feature) => (
+            <div key={feature} className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <FiCheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+              <span className="text-sm leading-5 text-slate-700">{feature}</span>
+            </div>
+          ))}
+        </div>
+
+        <Link
+          href={ROUTES.buildings}
+          className="mt-6 inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-200"
+        >
+          <FiPlus className="h-4 w-4" aria-hidden="true" />
+          {actionLabel}
+        </Link>
+      </section>
+    </div>
+  );
+}
+
 export async function ManagementCompanyDashboard({ data, selectedBuildingId }: { data: RoleDataBundle; selectedBuildingId?: string }) {
   const t = await getTranslations("dashboard.managementCompany");
   const locale = await getLocale();
   const approvedBuildings = data.buildings.filter(isApprovedBuilding);
+
+  if (approvedBuildings.length === 0) {
+    return (
+      <EmptyPortfolioState
+        title={t("emptyPortfolio.title")}
+        description={t("emptyPortfolio.description")}
+        features={[
+          t("emptyPortfolio.features.registry"),
+          t("emptyPortfolio.features.people"),
+          t("emptyPortfolio.features.billing"),
+          t("emptyPortfolio.features.documents"),
+        ]}
+        actionLabel={t("emptyPortfolio.action")}
+      />
+    );
+  }
+
   const buildingOptions = approvedBuildings.map((building) => ({
     id: building.id,
     label: building.address && building.address !== "—" ? building.address : building.name,

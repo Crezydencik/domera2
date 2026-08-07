@@ -21,6 +21,9 @@ export declare class UsersController {
         propertyRoles: string[];
         id: string;
     }>;
+    byEmail(request: Request, user: RequestUser, email: string): Promise<{
+        id: string;
+    } | null>;
     setBuildingCreationAccess(request: Request, user: RequestUser, userId: string, body: Record<string, unknown>): Promise<{
         userId: string;
         success: boolean;
@@ -30,9 +33,6 @@ export declare class UsersController {
         billingInvoiceId: string | undefined;
     }>;
     byId(request: Request, user: RequestUser, userId: string): Promise<{
-        id: string;
-    } | null>;
-    byEmail(request: Request, user: RequestUser, email: string): Promise<{
         id: string;
     } | null>;
     listByCompany(request: Request, user: RequestUser, companyId: string): Promise<{

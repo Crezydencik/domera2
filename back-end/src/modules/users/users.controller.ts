@@ -27,6 +27,17 @@ export class UsersController {
     return this.usersService.me(request, user);
   }
 
+  @Get('by-email/search')
+  @ApiOperation({ summary: 'Get user by email' })
+  @ApiQuery({ name: 'email', required: true, type: String })
+  byEmail(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Query('email') email: string,
+  ) {
+    return this.usersService.byEmail(request, user, email);
+  }
+
   @Patch(':userId/building-creation-access')
   @ApiOperation({ summary: 'Grant or revoke building creation access for a management company user' })
   @ApiParam({ name: 'userId', required: true, type: String })
@@ -48,17 +59,6 @@ export class UsersController {
     @Param('userId') userId: string,
   ) {
     return this.usersService.byId(request, user, userId);
-  }
-
-  @Get('by-email/search')
-  @ApiOperation({ summary: 'Get user by email' })
-  @ApiQuery({ name: 'email', required: true, type: String })
-  byEmail(
-    @Req() request: Request,
-    @CurrentUser() user: RequestUser,
-    @Query('email') email: string,
-  ) {
-    return this.usersService.byEmail(request, user, email);
   }
 
   @Get()

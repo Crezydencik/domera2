@@ -9,6 +9,7 @@ import { InvoiceResendEmailButton } from "@/components/invoice-resend-email-butt
 import { SectionCard } from "@/components/section-card";
 import { apiFetch } from "@/shared/server/api-client";
 import { getApartmentDetailsPageData } from "@/shared/server/page-loaders/apartment-details.loader";
+import { requireManagementCompanyBuildings } from "@/shared/server/management-building-access";
 import { ROUTES } from "@/shared/lib/routes";
 import { ApartmentDocumentsBlock } from "./apartment-documents-block";
 import { ApartmentFullInfoDialog } from "./apartment-full-info-dialog";
@@ -187,6 +188,7 @@ export default async function ApartmentDetailsPage({
   const locale = await getLocale();
   const { apartmentId } = await params;
   const data = await getApartmentDetailsPageData();
+  requireManagementCompanyBuildings(data);
   const normalizedId = decodeURIComponent(apartmentId);
 
   let baseApartment = data.apartments.find((item) => {

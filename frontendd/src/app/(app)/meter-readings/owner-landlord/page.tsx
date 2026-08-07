@@ -1,7 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
+import { ROUTES } from "@/shared/lib/routes";
 
-import { ResidentOwnerMeterReadings } from "../_resident-owner-readings";
-
-export default function OwnerLandlordPage() {
-  return <ResidentOwnerMeterReadings />;
+export default function OwnerLandlordMeterReadingsRoute() {
+  redirect(ROUTES.meterReadings);
 }

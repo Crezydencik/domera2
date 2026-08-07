@@ -1,8 +1,8 @@
 import { headers } from "next/headers";
-import ManagementCompanyPage from "./management-company/page";
-import OwnerLandlordPage from "./owner-landlord/page";
-import { getCurrentProfile } from "@/shared/server/auth-context";
-import { normalizeDashboardRole } from "@/shared/role-ui";
+import ManagementCompanyPage from "./_management-company-page";
+import OwnerLandlordPage from "./_owner-landlord-page";
+import { getMeterReadingsPageData } from "@/shared/server/page-loaders/meter-readings.loader";
+import { requireManagementCompanyBuildings } from "@/shared/server/management-building-access";
 
 function firstHeader(headerStore: Headers, name: string) {
   const value = headerStore.get(name)?.trim();
@@ -11,31 +11,10 @@ function firstHeader(headerStore: Headers, name: string) {
 
 export default async function MeterReadingsPage() {
   const headerStore = await headers();
-  let profile: Record<string, unknown> | null = null;
-  let roleHint = firstHeader(headerStore, "x-domera-role");
-  let companyId = firstHeader(headerStore, "x-domera-company-id") ?? firstHeader(headerStore, "x-domera-user-id");
+  const data = await getMeterReadingsPageData(firstHeader(headerStore, "x-domera-role"));
+  requireManagementCompanyBuildings(data);
 
-  if (!roleHint || !companyId) {
-    profile = await getCurrentProfile().catch(() => null);
-    roleHint =
-      typeof profile?.role === "string" && profile.role.trim()
-        ? profile.role
-        : typeof profile?.accountType === "string" && profile.accountType.trim()
-          ? profile.accountType
-          : undefined;
-    companyId =
-      typeof profile?.companyId === "string" && profile.companyId.trim()
-        ? profile.companyId.trim()
-        : typeof profile?.uid === "string" && profile.uid.trim()
-          ? profile.uid.trim()
-          : typeof profile?.id === "string" && profile.id.trim()
-            ? profile.id.trim()
-            : companyId;
-  }
-
-  const role = normalizeDashboardRole(roleHint);
-
-  return role === "resident" || role === "landlord"
+  return data.role === "resident" || data.role === "landlord"
     ? <OwnerLandlordPage />
-    : <ManagementCompanyPage initialCompanyId={companyId} />;
+    : <ManagementCompanyPage initialCompanyId={data.companyId} initialData={data.managementInitialData} />;
 }

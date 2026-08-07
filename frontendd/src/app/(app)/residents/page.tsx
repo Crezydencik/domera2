@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { SectionCard } from "@/components/section-card";
 import { getResidentsPageData } from "@/shared/server/page-loaders/residents.loader";
+import { requireManagementCompanyBuildings } from "@/shared/server/management-building-access";
 import { ResidentsDirectory } from "./_residents-directory";
 
 export default async function ResidentsPage({
@@ -11,6 +12,7 @@ export default async function ResidentsPage({
   const t = await getTranslations("residents");
   const params = (await searchParams) ?? {};
   const data = await getResidentsPageData(params.role);
+  requireManagementCompanyBuildings(data);
 
   return (
     <div className="space-y-6 max-sm:-mx-2">

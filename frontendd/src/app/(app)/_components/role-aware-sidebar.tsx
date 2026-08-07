@@ -4,7 +4,29 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { FiAlertCircle, FiBell, FiCheckCircle, FiChevronDown, FiLogOut, FiMenu, FiSettings, FiUser, FiX } from "react-icons/fi";
+import {
+  AlertCircle,
+  Bell,
+  Building2,
+  CheckCircle,
+  ChevronDown,
+  ClipboardCheck,
+  FileText,
+  Gauge,
+  Home,
+  LayoutDashboard,
+  LifeBuoy,
+  LogOut,
+  Menu,
+  PanelLeft,
+  ReceiptText,
+  Settings,
+  User,
+  Users,
+  X,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { apiFetch } from "@/shared/api/client";
@@ -15,7 +37,7 @@ import { getPlatformUsers, type PlatformUser } from "@/shared/api/users";
 import { useAppNotifications } from "@/shared/hooks/use-app-notifications";
 import { useNotifications as useToastNotifications } from "@/shared/hooks/use-notifications";
 import { BUILDING_CREATION_REQUESTS_CHANGED_EVENT } from "@/shared/lib/building-creation-requests-events";
-import { isElectricityEnabledBuilding } from "@/shared/lib/buildings";
+import { isApprovedBuilding, isElectricityEnabledBuilding } from "@/shared/lib/buildings";
 import { BUILDINGS_CHANGED_EVENT, readStoredElectricityNavigation, type BuildingsChangedDetail } from "@/shared/lib/buildings-events";
 import { ROUTES } from "@/shared/lib/routes";
 import { type DashboardRole, normalizeDashboardRole } from "@/shared/role-ui";
@@ -33,9 +55,34 @@ interface RoleAwareSidebarProps {
 type NavItem = {
   href: string;
   label: string;
-  icon: string;
+  icon: string | LucideIcon;
   showIndicator?: boolean;
 };
+
+const navIconByHref: Partial<Record<string, LucideIcon>> = {
+  [ROUTES.dashboard]: LayoutDashboard,
+  [ROUTES.platformUsers]: Users,
+  [ROUTES.approvals]: ClipboardCheck,
+  [ROUTES.adminBuildings]: Building2,
+  [ROUTES.platformBilling]: ReceiptText,
+  [ROUTES.buildings]: Building2,
+  [ROUTES.apartments]: Home,
+  [ROUTES.residents]: Users,
+  [ROUTES.meterReadings]: Gauge,
+  [ROUTES.electricity]: Zap,
+  [ROUTES.invoices]: ReceiptText,
+  [ROUTES.documents]: FileText,
+  [ROUTES.support]: LifeBuoy,
+  [ROUTES.settings]: Settings,
+};
+
+const managementBuildingRequiredRoutes = new Set<string>([
+  ROUTES.apartments,
+  ROUTES.residents,
+  ROUTES.meterReadings,
+  ROUTES.invoices,
+  ROUTES.documents,
+]);
 
 type UserProfileSummary = {
   id?: string;
@@ -116,6 +163,7 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
       { href: ROUTES.approvals, label: "Approvals", icon: "✓" },
       { href: ROUTES.adminBuildings, label: "Buildings", icon: "B" },
       { href: ROUTES.platformBilling, label: "Invoices / Documents", icon: "I" },
+      { href: ROUTES.support, label: "Support", icon: "S" },
       { href: ROUTES.settings, label: tm("settings"), icon: "S" },
     ],
     
@@ -155,6 +203,7 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
   const pathname = rawPathname ?? ROUTES.dashboard;
   const role = normalizeDashboardRole(defaultRole);
   const [hasPendingBuildingRequests, setHasPendingBuildingRequests] = useState(false);
+  const [hasManagementBuildings, setHasManagementBuildings] = useState(role !== "managementCompany");
   const [hasElectricityNavigation, setHasElectricityNavigation] = useState(false);
   const optimisticElectricityUntilRef = useRef(0);
   const baseNavItems = role === "platformAdmin"
@@ -166,12 +215,21 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
             : item,
         )
     : navByRole[role];
-  const navItems = role === "managementCompany" && !hasElectricityNavigation
-    ? baseNavItems.filter((item) => item.href !== ROUTES.electricity)
-    : baseNavItems;
+  const navItems = baseNavItems.filter((item) => {
+    if (role === "managementCompany" && !hasManagementBuildings && managementBuildingRequiredRoutes.has(item.href)) {
+      return false;
+    }
+
+    if (role === "managementCompany" && !hasElectricityNavigation && item.href === ROUTES.electricity) {
+      return false;
+    }
+
+    return true;
+  });
   const [profileOpen, setProfileOpen] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [acceptingNotificationId, setAcceptingNotificationId] = useState<string | null>(null);
   const notifications = useAppNotifications({ previewLimit: 5, initialProfile });
   const notificationsOpen = notifications.isOpen;
@@ -227,6 +285,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
       { href: ROUTES.debts, key: "debts" },
       { href: ROUTES.documents, key: "documents" },
       { href: ROUTES.notifications, key: "notificationsPage" },
+      { href: ROUTES.support, key: "support" },
       { href: ROUTES.settings, key: "settings" },
     ];
 
@@ -250,6 +309,10 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
       return "Invoices / Documents";
     }
 
+    if (matchedRoute?.key === "support") {
+      return "Support";
+    }
+
     return matchedRoute ? t(`pageTitles.${matchedRoute.key}`) : title;
   }, [pathname, t, title]);
 
@@ -259,6 +322,20 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
     }
 
     return pathname.startsWith(href);
+  }
+
+  function prefetchRoute(href: string) {
+    if (href !== pathname) {
+      router.prefetch(href);
+    }
+  }
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed((value) => {
+      const nextValue = !value;
+      window.localStorage.setItem("domera-sidebar-collapsed", nextValue ? "1" : "0");
+      return nextValue;
+    });
   }
 
   function getInvitationToken(actionHref?: string) {
@@ -316,6 +393,10 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
   }
 
   useEffect(() => {
+    setSidebarCollapsed(window.localStorage.getItem("domera-sidebar-collapsed") === "1");
+  }, []);
+
+  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
         notificationsOpen &&
@@ -369,6 +450,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
 
   useEffect(() => {
     if (role !== "managementCompany" || !navigationCompanyId) {
+      setHasManagementBuildings(role !== "managementCompany");
       return;
     }
 
@@ -378,12 +460,18 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
       getBuildings(navigationCompanyId, { redirectOnAuthError: false })
         .then((response) => {
           if (!active) return;
-          const hasEnabled = (response.items ?? []).some((building) => isElectricityEnabledBuilding(building));
+          const buildings = response.items ?? [];
+          const approvedBuildings = buildings.filter((building) => isApprovedBuilding(building));
+          const hasEnabled = buildings.some((building) => isElectricityEnabledBuilding(building));
           const optimisticActive = Date.now() < optimisticElectricityUntilRef.current;
+          setHasManagementBuildings(approvedBuildings.length > 0);
           setHasElectricityNavigation(hasEnabled || optimisticActive || readStoredElectricityNavigation());
         })
         .catch(() => {
-          if (active) setHasElectricityNavigation(false);
+          if (active) {
+            setHasManagementBuildings(false);
+            setHasElectricityNavigation(false);
+          }
         });
     };
 
@@ -457,7 +545,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
   function getNotificationTone(item: NotificationItem) {
     if (item.type === "owner-invitation" || item.type === "tenant-invitation") {
       return {
-        icon: FiCheckCircle,
+        icon: CheckCircle,
         container: "bg-white text-slate-950 shadow-sm",
         iconBox: "bg-emerald-500 text-white",
         action: "hover:bg-emerald-50/40 focus-within:ring-2 focus-within:ring-emerald-100",
@@ -465,7 +553,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
     }
 
     return {
-      icon: FiAlertCircle,
+      icon: AlertCircle,
       container: "bg-white text-slate-950 shadow-sm",
       iconBox: "bg-blue-500 text-white",
       action: "hover:bg-blue-50/40 focus-within:ring-2 focus-within:ring-blue-100",
@@ -521,13 +609,13 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-screen bg-[#f4f7fb] text-slate-900">
       <div className="flex min-h-screen flex-col lg:flex-row">
 
         {/* Mobile backdrop */}
         {mobileMenuOpen && (
           <div
-            className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+            className="fixed inset-0 z-30 bg-slate-950/45 backdrop-blur-sm lg:hidden"
             onClick={() => setMobileMenuOpen(false)}
           />
         )}
@@ -535,18 +623,19 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
         {/* Sidebar */}
         <aside
           className={`
-            fixed top-0 left-0 z-40 h-dvh w-72 overflow-hidden bg-white border-r border-slate-200 flex flex-col
-            transition-transform duration-300 ease-in-out
+            fixed top-0 left-0 z-40 flex h-dvh w-72 flex-col overflow-hidden border-r border-slate-200 bg-white/95 shadow-2xl shadow-slate-950/10 backdrop-blur
+            transition-[transform,width] duration-300 ease-in-out
             ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
-            lg:translate-x-0
+            ${sidebarCollapsed ? "lg:w-20" : "lg:w-72"}
+            lg:translate-x-0 lg:shadow-none
           `}
         >
           {/* Sidebar header */}
-          <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 sm:px-5">
+          <div className={`flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 sm:px-5 ${sidebarCollapsed ? "lg:justify-center lg:px-3" : ""}`}>
             <img
               src="https://firebasestorage.googleapis.com/v0/b/domera-eb224.firebasestorage.app/o/System%2FDomera_loga.png?alt=media&token=53ccefaa-c38f-490b-9138-010da531327e"
-              alt="Domera Logo"
-              className="h-7 min-w-0 max-w-[calc(100%_-_4.5rem)] object-contain sm:h-8 sm:max-w-[11rem]"
+              alt={brand}
+              className={`h-7 min-w-0 max-w-[calc(100%_-_4.5rem)] object-contain sm:h-8 sm:max-w-[11rem] ${sidebarCollapsed ? "lg:hidden" : ""}`}
             />
             <div className="flex items-center gap-2">
               {/* Locale switcher — mobile only */}
@@ -555,57 +644,95 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
               </div>
               <button
                 type="button"
+                onClick={toggleSidebarCollapsed}
+                className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 lg:flex"
+                aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                <PanelLeft className="h-5 w-5" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 lg:hidden"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 lg:hidden"
                 aria-label="Close menu"
               >
-                <FiX className="h-4 w-4" aria-hidden="true" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
           </div>
 
           {/* Nav */}
-          <div className="min-h-0 flex-1 overflow-hidden px-3 py-4">
-            <nav className="space-y-0.5">
-              {navItems.map((item) => (
+          <div className={`min-h-0 flex-1 overflow-y-auto px-3 py-4 ${sidebarCollapsed ? "lg:px-2" : ""}`}>
+            <nav className="space-y-1">
+              {navItems.map((item) => {
+                const NavIcon = navIconByHref[item.href] ?? LayoutDashboard;
+
+                return (
                 <Link
                   key={item.href}
                   href={item.href}
+                  title={sidebarCollapsed ? item.label : undefined}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                  onFocus={() => prefetchRoute(item.href)}
+                  onMouseEnter={() => prefetchRoute(item.href)}
+                  className={`relative flex min-h-10 items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${sidebarCollapsed ? "lg:justify-center lg:px-0" : ""} ${
                     isActive(item.href)
-                      ? "bg-sky-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      ? "border border-sky-100 bg-sky-100/70 text-sky-700 shadow-sm shadow-sky-950/[0.03]"
+                      : "border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950"
                   }`}
                 >
-                  <span className="flex min-w-0 items-center gap-3">
-                    <span className="w-4 shrink-0 text-center text-base leading-none opacity-80">{item.icon}</span>
-                    <span className="truncate">{item.label}</span>
+                  <span className={`flex min-w-0 items-center gap-3 ${sidebarCollapsed ? "lg:justify-center" : ""}`}>
+                    <NavIcon className="h-4 w-4 shrink-0 opacity-80" aria-hidden="true" />
+                    <span className={`truncate ${sidebarCollapsed ? "lg:hidden" : ""}`}>{item.label}</span>
                   </span>
                   {item.showIndicator ? (
                     <span
-                      className="h-2 w-2 shrink-0 rounded-full bg-red-500 ring-2 ring-white"
+                      className={`h-2 w-2 shrink-0 rounded-full bg-red-500 ring-2 ring-white ${sidebarCollapsed ? "lg:absolute lg:right-2 lg:top-2" : ""}`}
                       aria-label="Pending building request"
                     />
                   ) : null}
                 </Link>
-              ))}
+                );
+              })}
             </nav>
           </div>
+
+          {role === "managementCompany" ? (
+            <div className={`border-t border-slate-100 px-3 py-3 ${sidebarCollapsed ? "lg:px-2" : ""}`}>
+              <Link
+                href={ROUTES.support}
+                title={sidebarCollapsed ? "Support" : undefined}
+                onClick={() => setMobileMenuOpen(false)}
+                onFocus={() => prefetchRoute(ROUTES.support)}
+                onMouseEnter={() => prefetchRoute(ROUTES.support)}
+                className={`relative flex min-h-10 items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${sidebarCollapsed ? "lg:justify-center lg:px-0" : ""} ${
+                  isActive(ROUTES.support)
+                    ? "border border-sky-100 bg-sky-100/70 text-sky-700 shadow-sm shadow-sky-950/[0.03]"
+                    : "border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                }`}
+              >
+                <span className={`flex min-w-0 items-center gap-3 ${sidebarCollapsed ? "lg:justify-center" : ""}`}>
+                  <LifeBuoy className="h-4 w-4 shrink-0 opacity-80" aria-hidden="true" />
+                  <span className={`truncate ${sidebarCollapsed ? "lg:hidden" : ""}`}>Support</span>
+                </span>
+              </Link>
+            </div>
+          ) : null}
         </aside>
 
-        <div className="min-w-0 flex-1 lg:ml-72">
-          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white px-4 py-0 lg:px-6">
+        <div className={`min-w-0 flex-1 transition-[margin] duration-300 ${sidebarCollapsed ? "lg:ml-20" : "lg:ml-72"}`}>
+          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-0 shadow-sm shadow-slate-950/[0.03] backdrop-blur lg:px-6">
             {/* Single-row header */}
             <div className="flex h-14 items-center gap-3">
               {/* Hamburger — mobile only */}
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(true)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 lg:hidden"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-950 lg:hidden"
                 aria-label="Open menu"
               >
-                <FiMenu className="h-5 w-5" aria-hidden="true" />
+                <Menu className="h-5 w-5" aria-hidden="true" />
               </button>
 
               {/* Title */}
@@ -632,7 +759,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
                     className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-950 shadow-sm transition hover:border-slate-300 hover:bg-white"
                     aria-label={t("notifications.openAria")}
                   >
-                    <FiBell className="h-5 w-5" aria-hidden="true" />
+                    <Bell className="h-5 w-5" aria-hidden="true" />
                     {notifications.count > 0 && (
                       <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-slate-50" />
                     )}
@@ -690,7 +817,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
                                 className="mt-0.5 shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                                 aria-label={t("notifications.dismissAria")}
                               >
-                                <FiX className="h-4 w-4" aria-hidden="true" />
+                                <X className="h-4 w-4" aria-hidden="true" />
                               </button>
                             </div>
                             );
@@ -725,7 +852,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
                         <span className="block truncate text-[11px] leading-4 text-slate-500">{propertyRoleLabel}</span>
                       ) : null}
                     </span>
-                    <FiChevronDown
+                    <ChevronDown
                       className={`hidden h-4 w-4 shrink-0 text-slate-500 transition sm:block ${profileOpen ? "rotate-180" : ""}`}
                       aria-hidden="true"
                     />
@@ -749,7 +876,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
                           onClick={() => setProfileOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                         >
-                          <FiUser className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <User className="h-4 w-4 shrink-0" aria-hidden="true" />
                           <span>{t("profile.viewProfile")}</span>
                         </Link>
                         <Link
@@ -757,7 +884,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
                           onClick={() => setProfileOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                         >
-                          <FiSettings className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
                           <span>{t("profile.accountSettings")}</span>
                         </Link>
                       </div>
@@ -769,7 +896,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
                           disabled={logoutLoading}
                           className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950 disabled:pointer-events-none disabled:opacity-60"
                         >
-                          <FiLogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
                           <span>{logoutLoading ? t("profile.signingOut") : t("profile.signOut")}</span>
                         </button>
                       </div>
@@ -780,7 +907,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
             </div>
           </header>
 
-          <main className="p-4 lg:p-6">{children}</main>
+          <main className="mx-auto w-full max-w-[1600px] p-4 lg:p-6">{children}</main>
         </div>
       </div>
     </div>

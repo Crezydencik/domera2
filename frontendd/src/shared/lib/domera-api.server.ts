@@ -9,6 +9,7 @@ import type {
   NotificationItem,
   Resident,
 } from "./data";
+import { isApprovedBuilding } from "@/shared/lib/buildings";
 import { apiFetchSafe } from "@/shared/server/api-client";
 import { getAuthenticatedContext, type AuthenticatedContext, type RoleDataBundle } from "@/shared/server/auth-context";
 
@@ -72,6 +73,48 @@ function compareApartmentOrder(left: UnknownRecord, right: UnknownRecord): numbe
 
 function sortApartmentsByNumber(items: UnknownRecord[]): UnknownRecord[] {
   return [...items].sort(compareApartmentOrder);
+}
+
+function getApartmentBuildingId(item: UnknownRecord): string {
+  return firstDisplayString(item.buildingId, item.houseId);
+}
+
+function getApartmentId(item: UnknownRecord): string {
+  return firstDisplayString(item.id, item.apartmentId);
+}
+
+function filterApartmentsByBuildings(items: UnknownRecord[], buildings: Building[]): UnknownRecord[] {
+  const activeBuildingIds = new Set(buildings.map((building) => building.id).filter(Boolean));
+  if (activeBuildingIds.size === 0) return [];
+
+  return items.filter((item) => {
+    const buildingId = getApartmentBuildingId(item);
+    return Boolean(buildingId && activeBuildingIds.has(buildingId));
+  });
+}
+
+function filterInvoicesByActiveObjects(items: Invoice[], buildings: Building[], apartments: UnknownRecord[]): Invoice[] {
+  const activeBuildingIds = new Set(buildings.map((building) => building.id).filter(Boolean));
+  const activeApartmentIds = new Set(apartments.map(getApartmentId).filter(Boolean));
+  if (activeBuildingIds.size === 0) return [];
+
+  return items.filter((item) => {
+    if (item.buildingId) return activeBuildingIds.has(item.buildingId);
+    if (item.apartmentId) return activeApartmentIds.has(item.apartmentId);
+    return activeApartmentIds.size > 0;
+  });
+}
+
+function filterReadingsByActiveObjects(items: MeterReading[], buildings: Building[], apartments: UnknownRecord[]): MeterReading[] {
+  const activeBuildingIds = new Set(buildings.map((building) => building.id).filter(Boolean));
+  const activeApartmentIds = new Set(apartments.map(getApartmentId).filter(Boolean));
+  if (activeBuildingIds.size === 0) return [];
+
+  return items.filter((item) => {
+    if (item.buildingId) return activeBuildingIds.has(item.buildingId);
+    if (item.apartmentId) return activeApartmentIds.has(item.apartmentId);
+    return activeApartmentIds.has(item.apartment);
+  });
 }
 
 function joinNameParts(...values: unknown[]): string | undefined {
@@ -568,9 +611,15 @@ export async function getManagementRegistryData(
     return bundle;
   }
 
+  const needsBuildingsForFiltering = Boolean(
+    options.includeBuildings ||
+    options.includeApartments ||
+    options.includeInvoices ||
+    options.includeMeterReadings,
+  );
   const companyId = encodeURIComponent(context.companyId);
   const [buildingsResponse, apartmentsResponse, residentsResponse, documentsResponse, invoicesResponse, meterReadingsResponse, notificationsResponse] = await Promise.all([
-    options.includeBuildings ? apiFetchSafe<ApiListResponse>(`/buildings?companyId=${companyId}`) : Promise.resolve(null),
+    needsBuildingsForFiltering ? apiFetchSafe<ApiListResponse>(`/buildings?companyId=${companyId}`) : Promise.resolve(null),
     options.includeApartments ? apiFetchSafe<ApiListResponse>(`/apartments?companyId=${companyId}`) : Promise.resolve(null),
     options.includeResidents ? apiFetchSafe<ApiListResponse>(`/users?companyId=${companyId}`) : Promise.resolve(null),
     options.includeDocuments ? apiFetchSafe<ApiListResponse>(`/news?companyId=${companyId}`) : Promise.resolve(null),
@@ -581,8 +630,13 @@ export async function getManagementRegistryData(
       : Promise.resolve(null),
   ]);
 
+  const liveBuildings = Array.isArray(buildingsResponse?.items) ? buildingsResponse.items.map(toBuilding) : [];
+  const approvedLiveBuildings = liveBuildings.filter(isApprovedBuilding);
   const liveApartments = sortApartmentsByNumber(
-    Array.isArray(apartmentsResponse?.items) ? apartmentsResponse.items : [],
+    filterApartmentsByBuildings(
+      Array.isArray(apartmentsResponse?.items) ? apartmentsResponse.items : [],
+      approvedLiveBuildings,
+    ),
   );
   const liveResidents = Array.isArray(residentsResponse?.items)
     ? residentsResponse.items.map((item) => toResident(item))
@@ -592,15 +646,24 @@ export async function getManagementRegistryData(
     new Map([...supplementalResidents, ...liveResidents].map((resident) => [resident.id, resident])).values(),
   );
 
+  const liveInvoices = filterInvoicesByActiveObjects(
+    Array.isArray(invoicesResponse?.items) ? invoicesResponse.items.map(toInvoice) : [],
+    approvedLiveBuildings,
+    liveApartments,
+  );
+  const liveMeterReadings = filterReadingsByActiveObjects(
+    Array.isArray(meterReadingsResponse?.items) ? meterReadingsResponse.items.map(toMeterReading) : [],
+    approvedLiveBuildings,
+    liveApartments,
+  );
+
   return {
     ...bundle,
-    buildings: Array.isArray(buildingsResponse?.items) ? buildingsResponse.items.map(toBuilding) : [],
+    buildings: liveBuildings,
     apartments: liveApartments,
     residents: mergedResidents,
-    invoices: Array.isArray(invoicesResponse?.items) ? invoicesResponse.items.map(toInvoice) : [],
-    meterReadings: Array.isArray(meterReadingsResponse?.items)
-      ? meterReadingsResponse.items.map(toMeterReading)
-      : [],
+    invoices: liveInvoices,
+    meterReadings: liveMeterReadings,
     documents: Array.isArray(documentsResponse?.items) ? documentsResponse.items.map(toDocument) : [],
     notifications: Array.isArray(notificationsResponse?.items)
       ? notificationsResponse.items.map(toNotification)
@@ -811,8 +874,12 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
       ]);
 
     const liveBuildings = Array.isArray(buildingsResponse?.items) ? buildingsResponse.items.map(toBuilding) : [];
+    const approvedLiveBuildings = liveBuildings.filter(isApprovedBuilding);
     const liveApartments = sortApartmentsByNumber(
-      Array.isArray(apartmentsResponse?.items) ? apartmentsResponse.items : [],
+      filterApartmentsByBuildings(
+        Array.isArray(apartmentsResponse?.items) ? apartmentsResponse.items : [],
+        approvedLiveBuildings,
+      ),
     );
     const liveResidents = Array.isArray(residentsResponse?.items) ? residentsResponse.items.map((item) => toResident(item)) : [];
     const supplementalResidents = deriveResidentsFromApartments(liveApartments);
@@ -820,9 +887,13 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
     const mergedResidents = Array.from(
       new Map([...supplementalResidents, ...liveResidents].map((resident) => [resident.id, resident])).values(),
     );
-    const liveInvoices = Array.isArray(invoicesResponse?.items) ? invoicesResponse.items.map(toInvoice) : [];
+    const liveInvoices = filterInvoicesByActiveObjects(
+      Array.isArray(invoicesResponse?.items) ? invoicesResponse.items.map(toInvoice) : [],
+      approvedLiveBuildings,
+      liveApartments,
+    );
     const liveMeterReadings = Array.isArray(meterReadingsResponse?.items)
-      ? meterReadingsResponse.items.map(toMeterReading)
+      ? filterReadingsByActiveObjects(meterReadingsResponse.items.map(toMeterReading), approvedLiveBuildings, liveApartments)
       : [];
     const liveNotifications = Array.isArray(notificationsResponse?.items)
       ? notificationsResponse.items.map(toNotification)

@@ -69,7 +69,7 @@ export function resolveDashboardRole(value?: string | null) {
 }
 
 export function isAuthRoute(pathname: string) {
-  return authRoutes.has(pathname);
+  return Array.from(authRoutes).some((route) => matchesPath(pathname, route));
 }
 
 export function matchesPath(pathname: string, route: string) {

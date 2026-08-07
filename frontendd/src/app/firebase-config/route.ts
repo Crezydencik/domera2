@@ -7,6 +7,8 @@ const ALLOWED_HOSTS = new Set([
   "auth.domera.lv",
   "localhost:3000",
   "localhost:3001",
+  "127.0.0.1:3000",
+  "127.0.0.1:3001",
 ]);
 
 function envValue(...names: string[]) {
@@ -55,6 +57,30 @@ function hostFromUrl(value: string | null) {
   }
 }
 
+function configuredAllowedHosts() {
+  return new Set(
+    [
+      process.env.FIREBASE_CONFIG_ALLOWED_HOSTS,
+      process.env.VERCEL_URL,
+      process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    ]
+      .filter(Boolean)
+      .join(",")
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .map((host) => host.replace(/^https?:\/\//, ""))
+      .filter(Boolean),
+  );
+}
+
+function isAllowedHost(host?: string) {
+  if (!host) return false;
+  if (ALLOWED_HOSTS.has(host)) return true;
+  if (configuredAllowedHosts().has(host)) return true;
+  if (process.env.NODE_ENV !== "production" && /^(\d{1,3}\.){3}\d{1,3}:300\d$/.test(host)) return true;
+  return false;
+}
+
 function isAllowedConfigRequest(request: Request) {
   const accept = request.headers.get("accept") ?? "";
   if (!accept.includes("application/json") && !accept.includes("*/*")) {
@@ -63,9 +89,9 @@ function isAllowedConfigRequest(request: Request) {
 
   const originHost = hostFromUrl(request.headers.get("origin"));
   const refererHost = hostFromUrl(request.headers.get("referer"));
-  const host = originHost ?? refererHost;
+  const host = originHost ?? refererHost ?? request.headers.get("host")?.toLowerCase();
 
-  return Boolean(host && ALLOWED_HOSTS.has(host));
+  return isAllowedHost(host);
 }
 
 export function GET(request: Request) {

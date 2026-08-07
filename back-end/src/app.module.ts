@@ -17,6 +17,7 @@ import { MeterReadingsModule } from './modules/meter-readings/meter-readings.mod
 import { NewsModule } from './modules/news/news.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProjectsModule } from './modules/notifications/projects/projects.module';
+import { SupportModule } from './modules/support/support.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
@@ -40,6 +41,7 @@ import { UsersModule } from './modules/users/users.module';
     NotificationsModule,
     ProjectsModule,
     NewsModule,
+    SupportModule,
     UsersModule,
   ],
   providers: [

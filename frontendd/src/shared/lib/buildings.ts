@@ -1,9 +1,27 @@
 export function isApprovedBuildingStatus(status: unknown): boolean {
   const normalized = String(status ?? "").trim().toLowerCase();
-  return normalized !== "pending" && normalized !== "rejected" && normalized !== "cancelled" && normalized !== "canceled";
+
+  return [
+    "active",
+    "approved",
+    "healthy",
+    "confirmed",
+    "активно",
+    "активный",
+    "одобрено",
+    "подтверждено",
+    "aktīvs",
+    "aktiva",
+    "apstiprināts",
+    "apstiprinata",
+  ].includes(normalized);
 }
 
-export function isApprovedBuilding<T extends { status?: unknown }>(building: T): boolean {
+export function isApprovedBuilding<T extends { status?: unknown; editLocked?: unknown }>(building: T): boolean {
+  if (building.editLocked === true) {
+    return false;
+  }
+
   return isApprovedBuildingStatus(building.status);
 }
 

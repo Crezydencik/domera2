@@ -6,7 +6,7 @@ const appConfig = {
   apiBaseUrl: "/api",
 };
 
-const DEFAULT_API_TIMEOUT_MS = 30_000;
+const DEFAULT_API_TIMEOUT_MS = process.env.NODE_ENV === "production" ? 30_000 : 8_000;
 const DEFAULT_CLIENT_STALE_TIME_MS = 15_000;
 
 type ClientCacheEntry = {
