@@ -1854,7 +1854,7 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData }:
       const xmlRows = exportRows
         .map((row) => `    <R>
       <DzNumurs>${xmlCell(row.apartment)}</DzNumurs>
-      <DzForeignKey>${xmlCell(row.apartmentId)}</DzForeignKey>
+      <DzForeignKey>${xmlCell(row.apartment)}</DzForeignKey>
       <SkdNrM>${xmlCell(row.serialNumber)}</SkdNrM>
       <BeigMNor>${xmlCell(row.currentValue)}</BeigMNor>
       <Tips>${xmlCell(row.meterType)}</Tips>
