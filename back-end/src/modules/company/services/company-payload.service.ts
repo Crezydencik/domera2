@@ -1,6 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { FieldValue } from 'firebase-admin/firestore';
 
+export type CompanyMemberPermissions = {
+  viewCompanyInfo: boolean;
+  editCompanyInfo: boolean;
+  manageMembers: boolean;
+  manageApiKeys: boolean;
+  manageInvoiceSettings: boolean;
+};
+
 @Injectable()
 export class CompanyPayloadService {
   firstString(...values: unknown[]): string {
@@ -14,6 +22,103 @@ export class CompanyPayloadService {
 
   toOptionalTrimmedString(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  }
+
+  defaultCompanyMemberPermissions(
+    overrides?: Partial<CompanyMemberPermissions>,
+  ): CompanyMemberPermissions {
+    return {
+      viewCompanyInfo: true,
+      editCompanyInfo: false,
+      manageMembers: false,
+      manageApiKeys: false,
+      manageInvoiceSettings: false,
+      ...overrides,
+    };
+  }
+
+  normalizeCompanyMemberPermissions(value: unknown): CompanyMemberPermissions {
+    const source = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
+
+    return this.defaultCompanyMemberPermissions({
+      viewCompanyInfo: source.viewCompanyInfo !== false,
+      editCompanyInfo: source.editCompanyInfo === true,
+      manageMembers: source.manageMembers === true,
+      manageApiKeys: source.manageApiKeys === true,
+      manageInvoiceSettings: source.manageInvoiceSettings === true,
+    });
+  }
+
+  normalizeCompanyMemberPermissionMap(value: unknown): Record<string, CompanyMemberPermissions> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([memberId, permissions]) => [this.firstString(memberId), this.normalizeCompanyMemberPermissions(permissions)] as const)
+        .filter(([memberId]) => Boolean(memberId)),
+    );
+  }
+
+  getCompanyMemberPermissions(company: Record<string, unknown>, memberId: string): CompanyMemberPermissions {
+    const permissionMap = this.normalizeCompanyMemberPermissionMap(company.memberPermissions);
+    return permissionMap[memberId] ?? this.defaultCompanyMemberPermissions();
+  }
+
+  normalizeLegacyCompanyMembers(companyId: string, company: Record<string, unknown>) {
+    const manager = Array.isArray(company.manager)
+      ? company.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const userIds = Array.isArray(company.userIds)
+      ? company.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const employees = Array.isArray(company.employees)
+      ? company.employees.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const memberPermissions = this.normalizeCompanyMemberPermissionMap(company.memberPermissions);
+    const uniqueManagerIds = Array.from(new Set(manager));
+    const uniqueUserIds = Array.from(new Set(userIds));
+    const uniqueEmployees = Array.from(new Set(employees));
+    const primaryManagerId =
+      uniqueManagerIds[0] ??
+      uniqueUserIds.find((memberId) => !uniqueEmployees.includes(memberId)) ??
+      companyId;
+
+    const normalizedManager = [primaryManagerId];
+    const normalizedEmployees = Array.from(
+      new Set([
+        ...uniqueEmployees.filter((memberId) => memberId !== primaryManagerId),
+        ...uniqueManagerIds.filter((memberId) => memberId !== primaryManagerId),
+        ...uniqueUserIds.filter((memberId) => memberId !== primaryManagerId),
+      ]),
+    );
+    const normalizedUserIds = Array.from(new Set([primaryManagerId, ...uniqueUserIds, ...normalizedEmployees]));
+    const normalizedPermissions = Object.fromEntries(
+      Object.entries({
+        ...memberPermissions,
+        ...Object.fromEntries(
+          normalizedEmployees.map((memberId) => [
+            memberId,
+            memberPermissions[memberId] ?? this.defaultCompanyMemberPermissions(),
+          ]),
+        ),
+      }).filter(([memberId]) => normalizedEmployees.includes(memberId)),
+    );
+
+    const changed =
+      JSON.stringify(normalizedManager) !== JSON.stringify(manager) ||
+      JSON.stringify(normalizedEmployees) !== JSON.stringify(employees) ||
+      JSON.stringify(normalizedUserIds) !== JSON.stringify(userIds) ||
+      JSON.stringify(normalizedPermissions) !== JSON.stringify(memberPermissions);
+
+    return {
+      changed,
+      manager: normalizedManager,
+      employees: normalizedEmployees,
+      userIds: normalizedUserIds,
+      memberPermissions: normalizedPermissions,
+    };
   }
 
   normalizeStaffContacts(value: unknown): Array<Record<string, unknown>> {
@@ -209,6 +314,12 @@ export class CompanyPayloadService {
         ? existing.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         : [];
 
+    const normalizedEmployees = Array.isArray(payload.employees)
+      ? payload.employees.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : Array.isArray(existing?.employees)
+        ? existing.employees.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        : [];
+
     const normalizedBuildings = Array.isArray(payload.buildings)
       ? payload.buildings
         .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
@@ -251,6 +362,8 @@ export class CompanyPayloadService {
               ? existing.companyId
               : undefined,
         userIds: normalizedUserIds,
+        employees: normalizedEmployees,
+        memberPermissions: this.normalizeCompanyMemberPermissionMap(payload.memberPermissions ?? existing?.memberPermissions),
         buildings: normalizedBuildings,
         name: FieldValue.delete(),
         email: FieldValue.delete(),

@@ -101,13 +101,13 @@ export class CompanyApiKeyService {
     this.accessService.assertAuthenticated(user);
     const normalizedCompanyId = companyId?.trim();
     if (!normalizedCompanyId) throw new BadRequestException('companyId is required');
-    this.accessService.assertCanManageApiKeys(user, normalizedCompanyId);
 
     await this.accessService.enforceRateLimit(request, 'company:api-keys:list', `${user.uid}:${normalizedCompanyId}`, 60);
 
     const db = this.firebaseAdminService.firestore;
     const companySnap = await db.collection('companies').doc(normalizedCompanyId).get();
     if (!companySnap.exists) throw new NotFoundException('Company not found');
+    this.accessService.assertCanManageApiKeys(user, normalizedCompanyId, companySnap.data() as Record<string, unknown>);
 
     const buildingContexts = await this.getCompanyBuildingContexts(normalizedCompanyId);
     const snapshots = await Promise.all(
@@ -132,13 +132,13 @@ export class CompanyApiKeyService {
     this.accessService.assertAuthenticated(user);
     const normalizedCompanyId = companyId?.trim();
     if (!normalizedCompanyId) throw new BadRequestException('companyId is required');
-    this.accessService.assertCanManageApiKeys(user, normalizedCompanyId);
 
     await this.accessService.enforceRateLimit(request, 'company:api-keys:create', `${user.uid}:${normalizedCompanyId}`, 10);
 
     const db = this.firebaseAdminService.firestore;
     const companySnap = await db.collection('companies').doc(normalizedCompanyId).get();
     if (!companySnap.exists) throw new NotFoundException('Company not found');
+    this.accessService.assertCanManageApiKeys(user, normalizedCompanyId, companySnap.data() as Record<string, unknown>);
 
     const label = typeof payload.label === 'string' && payload.label.trim()
       ? payload.label.trim().slice(0, 80)
@@ -241,9 +241,12 @@ export class CompanyApiKeyService {
     if (!normalizedCompanyId || !normalizedKeyId) {
       throw new BadRequestException('companyId and keyId are required');
     }
-    this.accessService.assertCanManageApiKeys(user, normalizedCompanyId);
 
     await this.accessService.enforceRateLimit(request, 'company:api-keys:revoke', `${user.uid}:${normalizedCompanyId}`, 30);
+
+    const companySnap = await this.firebaseAdminService.firestore.collection('companies').doc(normalizedCompanyId).get();
+    if (!companySnap.exists) throw new NotFoundException('Company not found');
+    this.accessService.assertCanManageApiKeys(user, normalizedCompanyId, companySnap.data() as Record<string, unknown>);
 
     const buildingContexts = await this.getCompanyBuildingContexts(normalizedCompanyId);
     const refs = buildingContexts.map((building) => this.getBuildingApiKeyCollection(building.id).doc(normalizedKeyId));

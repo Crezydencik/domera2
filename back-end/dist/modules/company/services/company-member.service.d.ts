@@ -3,7 +3,7 @@ import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { EmailService } from '../../emails/services/email.service';
 import { CompanyAccessService } from './company-access.service';
-import { CompanyPayloadService } from './company-payload.service';
+import { CompanyMemberPermissions, CompanyPayloadService } from './company-payload.service';
 type CompanyMemberRole = 'ManagementCompany' | 'Accountant';
 export declare class CompanyMemberService {
     private readonly firebaseAdminService;
@@ -57,12 +57,19 @@ export declare class CompanyMemberService {
             role: CompanyMemberRole;
             accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
             companyId: string;
+            permissions: CompanyMemberPermissions;
+            memberType: string;
         };
         invitation?: undefined;
     }>;
     remove(request: Request, user: RequestUser, companyId: string, memberId: string): Promise<{
         success: boolean;
         memberId: string;
+    }>;
+    updatePermissions(request: Request, user: RequestUser, companyId: string, memberId: string, payload: Record<string, unknown>): Promise<{
+        success: boolean;
+        memberId: string;
+        permissions: CompanyMemberPermissions;
     }>;
 }
 export {};

@@ -23,7 +23,9 @@ import {
   removeCompanyMember,
   revokeCompanyApiKey,
   type CompanyApiKeyItem,
+  type CompanyMemberPermissions,
   updateCompany,
+  updateCompanyMemberPermissions,
 } from "@/shared/api/company";
 import { type NotificationSettings, updateNotificationSettings } from "@/shared/api/notifications";
 import { useNotifications } from "@/shared/hooks/use-notifications";
@@ -66,6 +68,11 @@ type CompanySettings = {
   apiKeys: CompanyApiKeyItem[];
   buildings: CompanyAccessBuilding[];
   members: CompanyMember[];
+  permissions: CompanyMemberPermissionFlags;
+};
+
+type CompanyMemberPermissionFlags = CompanyMemberPermissions & {
+  isMainManager: boolean;
 };
 
 type InvoiceGenerationSettings = {
@@ -113,6 +120,8 @@ type CompanyMember = {
   showContactToResidents?: boolean;
   createAccount?: boolean;
   role: string;
+  memberType?: "manager" | "employee" | "contact";
+  permissions?: CompanyMemberPermissions;
 };
 
 type SettingsTabsProps = {
@@ -2523,6 +2532,9 @@ function InvoiceGenerationPanel({ company, recipientName }: { company: CompanySe
 function CompanyPanel({ company, currentUserId }: { company: CompanySettings; currentUserId: string }) {
   const t = useTranslations("settings");
   const notify = useNotifications();
+  const companyPermissions = company.permissions;
+  const canEditCompanyInfo = companyPermissions.editCompanyInfo;
+  const canManageMembers = companyPermissions.manageMembers;
   const [details, setDetails] = useState<CompanyDraft>(() => ({
     companyId: company.companyId,
     name: company.name,
@@ -2557,7 +2569,16 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   const [memberShowContactToResidents, setMemberShowContactToResidents] = useState(false);
   const [memberCreateAccount, setMemberCreateAccount] = useState(true);
   const [memberRole, setMemberRole] = useState<CompanyMemberRole>("ManagementCompany");
+  const [memberPermissionsDraft, setMemberPermissionsDraft] = useState<CompanyMemberPermissions>({
+    viewCompanyInfo: true,
+    editCompanyInfo: false,
+    manageMembers: false,
+    manageApiKeys: false,
+    manageInvoiceSettings: false,
+  });
   const [memberModalOpen, setMemberModalOpen] = useState(false);
+  const [permissionsModalMember, setPermissionsModalMember] = useState<CompanyMember | null>(null);
+  const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<EditableCompanyField>(null);
   const [isEditingBankDetails, setIsEditingBankDetails] = useState(false);
@@ -2587,6 +2608,24 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     return t("company.roles.managementCompany");
   };
 
+  const memberTypeLabel = (member: CompanyMember) => {
+    if (member.memberType === "manager") return t("company.roles.manager");
+    if (member.memberType === "employee") return t("company.roles.employee");
+    return roleLabel(member.role);
+  };
+
+  const permissionSummary = (permissions?: CompanyMemberPermissions) => {
+    const flags = permissions ?? memberPermissionsDraft;
+    const labels = [
+      flags.editCompanyInfo ? t("company.permissions.editCompanyInfo") : "",
+      flags.manageMembers ? t("company.permissions.manageMembers") : "",
+      flags.manageApiKeys ? t("company.permissions.manageApiKeys") : "",
+      flags.manageInvoiceSettings ? t("company.permissions.manageInvoiceSettings") : "",
+    ].filter(Boolean);
+
+    return labels.length > 0 ? labels.join(", ") : t("company.permissions.viewOnly");
+  };
+
   const accountMembers = members.filter((member) => member.createAccount !== false);
   const residentContacts = members.filter((member) => member.createAccount === false);
 
@@ -2600,10 +2639,18 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     setMemberShowContactToResidents(false);
     setMemberCreateAccount(true);
     setMemberRole("ManagementCompany");
+    setMemberPermissionsDraft({
+      viewCompanyInfo: true,
+      editCompanyInfo: false,
+      manageMembers: false,
+      manageApiKeys: false,
+      manageInvoiceSettings: false,
+    });
     setEditingContactId(null);
   };
 
   const openMemberModal = () => {
+    if (!canManageMembers) return;
     resetMemberForm();
     setFeedback("");
     setFeedbackTone("error");
@@ -2613,6 +2660,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   };
 
   const openResidentContactModal = () => {
+    if (!canEditCompanyInfo) return;
     resetMemberForm();
     setFeedback("");
     setFeedbackTone("error");
@@ -2623,6 +2671,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   };
 
   const openEditResidentContactModal = (contact: CompanyMember) => {
+    if (!canEditCompanyInfo) return;
     setFeedback("");
     setFeedbackTone("error");
     setEditingContactId(contact.id);
@@ -2647,6 +2696,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   };
 
   const startEdit = (field: Exclude<EditableCompanyField, null>) => {
+    if (!canEditCompanyInfo) return;
     setDraft(details);
     setFeedback("");
     setFeedbackTone("error");
@@ -2662,6 +2712,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   };
 
   const startBankDetailsEdit = () => {
+    if (!canEditCompanyInfo) return;
     setDraft(details);
     setFeedback("");
     setFeedbackTone("error");
@@ -2677,6 +2728,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   };
 
   const saveCompanyField = async () => {
+    if (!canEditCompanyInfo) return;
     if (!editingField) return;
 
     const nextValue = draft[editingField].trim();
@@ -2710,6 +2762,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   };
 
   const saveBankDetails = async () => {
+    if (!canEditCompanyInfo) return;
     const nextDetails = {
       bankName: draft.bankName.trim(),
       bankAccountIban: draft.bankAccountIban.trim(),
@@ -2738,6 +2791,8 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   };
 
   const addMember = async () => {
+    if (memberCreateAccount && !canManageMembers) return;
+    if (!memberCreateAccount && !canEditCompanyInfo) return;
     const email = memberEmail.trim().toLowerCase();
     const firstName = memberFirstName.trim();
     const lastName = memberLastName.trim();
@@ -2774,6 +2829,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
         showContactToResidents: memberShowContactToResidents,
         createAccount: memberCreateAccount,
         role: memberRole,
+        permissions: memberPermissionsDraft,
       });
       const nextMember = result.member ?? {};
       const id = typeof nextMember.id === "string" ? nextMember.id : email || `${firstName}-${lastName}-${Date.now()}`;
@@ -2803,6 +2859,8 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
             showContactToResidents: savedShowContactToResidents,
             createAccount: savedCreateAccount,
             role: savedRole,
+            memberType: savedCreateAccount ? "employee" : "contact",
+            permissions: savedCreateAccount ? memberPermissionsDraft : undefined,
           },
         ];
       });
@@ -2820,6 +2878,8 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   };
 
   const removeMember = async (member: CompanyMember) => {
+    if (member.createAccount !== false && !canManageMembers) return;
+    if (member.createAccount === false && !canEditCompanyInfo) return;
     const memberId = member.id.trim();
     if (!memberId || memberId === currentUserId || memberId === details.companyId) return;
     if (!window.confirm(t("company.members.removeConfirm", { name: member.name || member.email }))) return;
@@ -2838,6 +2898,39 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
       notify.error(message);
     } finally {
       setRemovingMemberId(null);
+    }
+  };
+
+  const openPermissionsModal = (member: CompanyMember) => {
+    if (!canManageMembers || member.memberType !== "employee") return;
+    setPermissionsModalMember(member);
+    setMemberPermissionsDraft(member.permissions ?? {
+      viewCompanyInfo: true,
+      editCompanyInfo: false,
+      manageMembers: false,
+      manageApiKeys: false,
+      manageInvoiceSettings: false,
+    });
+  };
+
+  const saveMemberPermissions = async () => {
+    if (!permissionsModalMember || !canManageMembers) return;
+
+    setIsSavingPermissions(true);
+    try {
+      await updateCompanyMemberPermissions(details.companyId, permissionsModalMember.id, memberPermissionsDraft);
+      setMembers((current) => current.map((item) =>
+        item.id === permissionsModalMember.id
+          ? { ...item, permissions: memberPermissionsDraft }
+          : item,
+      ));
+      setPermissionsModalMember(null);
+      notify.success(t("toast.memberPermissionsSaved"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("errors.memberPermissionsSaveFailed");
+      notify.error(message);
+    } finally {
+      setIsSavingPermissions(false);
     }
   };
 
@@ -2861,7 +2954,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
       );
     }
 
-    return <SettingsRow label={meta.label} value={value(details[field])} onEdit={() => startEdit(field)} />;
+    return <SettingsRow label={meta.label} value={value(details[field])} onEdit={canEditCompanyInfo ? () => startEdit(field) : undefined} />;
   };
 
   const renderBankDetailsBlock = () => {
@@ -2927,15 +3020,17 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
             ))}
           </dl>
         </div>
-        <Button
-          type="button"
-          variant="inlineLink"
-          size="link"
-          onClick={startBankDetailsEdit}
-          className="justify-self-start font-semibold leading-5 sm:justify-self-end"
-        >
-          {t("actions.edit")}
-        </Button>
+        {canEditCompanyInfo ? (
+          <Button
+            type="button"
+            variant="inlineLink"
+            size="link"
+            onClick={startBankDetailsEdit}
+            className="justify-self-start font-semibold leading-5 sm:justify-self-end"
+          >
+            {t("actions.edit")}
+          </Button>
+        ) : null}
       </div>
     );
   };
@@ -2960,15 +3055,21 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
             <h3 className="text-lg font-bold text-black">{t("company.members.title")}</h3>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{t("company.members.description")}</p>
           </div>
-          <Button type="button" variant="dark" size="pill" onClick={openMemberModal} className="h-11 px-6 font-bold">
-            {t("company.members.add")}
-          </Button>
+          {canManageMembers ? (
+            <Button type="button" variant="dark" size="pill" onClick={openMemberModal} className="h-11 px-6 font-bold">
+              {t("company.members.add")}
+            </Button>
+          ) : null}
         </div>
 
         <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
           {accountMembers.length > 0 ? (
             accountMembers.map((member) => {
-              const canRemove = member.id !== currentUserId && member.id !== details.companyId;
+              const canRemove =
+                canManageMembers &&
+                member.id !== currentUserId &&
+                member.id !== details.companyId &&
+                member.memberType !== "manager";
               const isRemoving = removingMemberId === member.id;
 
               return (
@@ -2989,8 +3090,24 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
                     </span>
                   ) : null}
                   <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                    {roleLabel(member.role)}
+                    {memberTypeLabel(member)}
                   </span>
+                  {member.memberType === "employee" ? (
+                    <span className="max-w-[24rem] truncate text-xs text-slate-500" title={permissionSummary(member.permissions)}>
+                      {permissionSummary(member.permissions)}
+                    </span>
+                  ) : null}
+                  {canManageMembers && member.memberType === "employee" ? (
+                    <Button
+                      type="button"
+                      variant="inlineLink"
+                      size="link"
+                      onClick={() => openPermissionsModal(member)}
+                      className="text-xs font-semibold"
+                    >
+                      {t("company.members.permissionsButton")}
+                    </Button>
+                  ) : null}
                   {canRemove ? (
                     <Button
                       type="button"
@@ -3019,9 +3136,11 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
             <h3 className="text-lg font-bold text-black">{t("company.residentContacts.title")}</h3>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{t("company.residentContacts.description")}</p>
           </div>
-          <Button type="button" variant="dark" size="pill" onClick={openResidentContactModal} className="h-11 px-6 font-bold">
-            {t("company.residentContacts.add")}
-          </Button>
+          {canEditCompanyInfo ? (
+            <Button type="button" variant="dark" size="pill" onClick={openResidentContactModal} className="h-11 px-6 font-bold">
+              {t("company.residentContacts.add")}
+            </Button>
+          ) : null}
         </div>
 
         <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
@@ -3042,26 +3161,30 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
                     <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
                       {t("company.members.publicContact")}
                     </span>
-                    <Button
-                      type="button"
-                      variant="inlineLink"
-                      size="link"
-                      disabled={isRemoving}
-                      onClick={() => openEditResidentContactModal(contact)}
-                      className="text-xs font-semibold"
-                    >
-                      {t("actions.edit")}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="inlineLink"
-                      size="link"
-                      disabled={isRemoving}
-                      onClick={() => void removeMember(contact)}
-                      className="text-xs font-semibold text-red-600 hover:text-red-700"
-                    >
-                      {isRemoving ? t("company.members.removing") : t("company.members.remove")}
-                    </Button>
+                    {canEditCompanyInfo ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="inlineLink"
+                          size="link"
+                          disabled={isRemoving}
+                          onClick={() => openEditResidentContactModal(contact)}
+                          className="text-xs font-semibold"
+                        >
+                          {t("actions.edit")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="inlineLink"
+                          size="link"
+                          disabled={isRemoving}
+                          onClick={() => void removeMember(contact)}
+                          className="text-xs font-semibold text-red-600 hover:text-red-700"
+                        >
+                          {isRemoving ? t("company.members.removing") : t("company.members.remove")}
+                        </Button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               );
@@ -3200,6 +3323,31 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
               <span>{t("company.members.showContactToResidents")}</span>
             </label>
           ) : null}
+          {memberCreateAccount ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+              <p className="text-sm font-semibold text-black">{t("company.members.permissionsTitle")}</p>
+              <div className="mt-3 space-y-3">
+                {([
+                  ["editCompanyInfo", t("company.permissions.editCompanyInfo")],
+                  ["manageMembers", t("company.permissions.manageMembers")],
+                  ["manageApiKeys", t("company.permissions.manageApiKeys")],
+                  ["manageInvoiceSettings", t("company.permissions.manageInvoiceSettings")],
+                ] as const).map(([key, label]) => (
+                  <label key={key} className="flex items-start gap-3 text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={memberPermissionsDraft[key]}
+                      disabled={isAddingMember}
+                      onChange={(event) => setMemberPermissionsDraft((current) => ({ ...current, [key]: event.target.checked }))}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-black focus:ring-black"
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-slate-500">{t("company.permissions.viewOnlyHint")}</p>
+            </div>
+          ) : null}
           {feedback && feedbackTone === "error" ? (
             <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{feedback}</p>
           ) : null}
@@ -3219,6 +3367,46 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
           </div>
         </form>
       </Modal>
+      <Modal
+        open={permissionsModalMember !== null}
+        onClose={() => (isSavingPermissions ? undefined : setPermissionsModalMember(null))}
+        title={t("company.members.permissionsTitle")}
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            {permissionsModalMember ? permissionsModalMember.name || permissionsModalMember.email : ""}
+          </p>
+          {([
+            ["editCompanyInfo", t("company.permissions.editCompanyInfo")],
+            ["manageMembers", t("company.permissions.manageMembers")],
+            ["manageApiKeys", t("company.permissions.manageApiKeys")],
+            ["manageInvoiceSettings", t("company.permissions.manageInvoiceSettings")],
+          ] as const).map(([key, label]) => (
+            <label key={key} className="flex items-start gap-3 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={memberPermissionsDraft[key]}
+                disabled={isSavingPermissions}
+                onChange={(event) => setMemberPermissionsDraft((current) => ({ ...current, [key]: event.target.checked }))}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-black focus:ring-black"
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            {t("company.permissions.viewOnlyHint")}
+          </p>
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" disabled={isSavingPermissions} onClick={() => setPermissionsModalMember(null)}>
+              {t("actions.cancel")}
+            </Button>
+            <Button type="button" variant="dark" disabled={isSavingPermissions} onClick={() => void saveMemberPermissions()} className="font-bold">
+              {t("actions.save")}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -3226,12 +3414,14 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
 export function SettingsTabs({ user, notificationSettings, company }: SettingsTabsProps) {
   const notify = useNotifications();
   const t = useTranslations("settings");
-  const tabs = company?.canManage
+  const tabs = company
     ? ([
         "user",
-        "company",
-        "apiKey",
-        ...(company.hasElectricityEnabled ? (["invoiceGeneration"] satisfies SettingsTab[]) : []),
+        ...(company.permissions.viewCompanyInfo ? (["company"] satisfies SettingsTab[]) : []),
+        ...(company.permissions.manageApiKeys ? (["apiKey"] satisfies SettingsTab[]) : []),
+        ...(company.permissions.manageInvoiceSettings && company.hasElectricityEnabled
+          ? (["invoiceGeneration"] satisfies SettingsTab[])
+          : []),
         "notifications",
       ] satisfies SettingsTab[])
     : baseTabs;
@@ -3565,9 +3755,9 @@ export function SettingsTabs({ user, notificationSettings, company }: SettingsTa
 
       {activeTab === "notifications" ? <NotificationsPanel initialSettings={notificationSettings} /> : null}
 
-      {activeTab === "company" && company?.canManage ? <CompanyPanel company={company} currentUserId={user.userId} /> : null}
+      {activeTab === "company" && company?.permissions.viewCompanyInfo ? <CompanyPanel company={company} currentUserId={user.userId} /> : null}
 
-      {activeTab === "apiKey" && company?.canManage ? (
+      {activeTab === "apiKey" && company?.permissions.manageApiKeys ? (
         <ApiKeyPanel
           companyId={company.companyId}
           createdByName={displayName}
@@ -3576,7 +3766,7 @@ export function SettingsTabs({ user, notificationSettings, company }: SettingsTa
         />
       ) : null}
 
-      {activeTab === "invoiceGeneration" && company?.canManage && company.hasElectricityEnabled ? (
+      {activeTab === "invoiceGeneration" && company?.permissions.manageInvoiceSettings && company.hasElectricityEnabled ? (
         <InvoiceGenerationPanel company={company} recipientName={displayName || user.username || user.userName || user.email} />
       ) : null}
 

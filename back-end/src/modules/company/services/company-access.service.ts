@@ -2,10 +2,14 @@ import { BadRequestException, ForbiddenException, Injectable, UnauthorizedExcept
 import { Request } from 'express';
 import { RequestUser } from '../../../common/auth/request-user.type';
 import { RateLimitService } from '../../../common/services/rate-limit.service';
+import { CompanyPayloadService } from './company-payload.service';
 
 @Injectable()
 export class CompanyAccessService {
-  constructor(private readonly rateLimitService: RateLimitService) {}
+  constructor(
+    private readonly rateLimitService: RateLimitService,
+    private readonly payloadService: CompanyPayloadService,
+  ) {}
 
   assertAuthenticated(user: RequestUser | undefined): asserts user is RequestUser {
     if (!user?.uid) throw new UnauthorizedException('Authentication required');
@@ -25,42 +29,108 @@ export class CompanyAccessService {
     if (!rl.allowed) throw new BadRequestException('Too many requests');
   }
 
-  assertCanManageApiKeys(user: RequestUser, companyId: string): void {
-    if (user.role !== 'ManagementCompany') {
-      throw new ForbiddenException('Only the main management company account can manage API keys');
+  private listMemberIds(value: unknown): string[] {
+    return Array.isArray(value)
+      ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      : [];
+  }
+
+  isMainCompanyManager(user: RequestUser, companyId: string, company: Record<string, unknown>): boolean {
+    if (user.role === 'PlatformAdmin') return true;
+
+    const manager = this.listMemberIds(company.manager);
+    const userIds = this.listMemberIds(company.userIds);
+    const employees = this.listMemberIds(company.employees);
+
+    return (
+      user.uid === companyId ||
+      manager.includes(user.uid) ||
+      (userIds.includes(user.uid) && !employees.includes(user.uid))
+    );
+  }
+
+  getCompanyPermissions(user: RequestUser, companyId: string, company: Record<string, unknown>) {
+    if (user.role === 'PlatformAdmin' || this.isMainCompanyManager(user, companyId, company)) {
+      return {
+        isMainManager: true,
+        viewCompanyInfo: true,
+        editCompanyInfo: true,
+        manageMembers: true,
+        manageApiKeys: true,
+        manageInvoiceSettings: true,
+      };
     }
 
-    const effectiveCompanyId = user.companyId || user.uid;
-    if (effectiveCompanyId !== companyId) {
-      throw new ForbiddenException('Access denied for company');
-    }
+    const permissions = this.payloadService.getCompanyMemberPermissions(company, user.uid);
+    return {
+      isMainManager: false,
+      ...permissions,
+    };
   }
 
   assertCompanyAccess(user: RequestUser, companyId: string, company: Record<string, unknown>): void {
     if (user.role === 'PlatformAdmin') return;
 
-    const manager = Array.isArray(company.manager)
-      ? company.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : [];
-    const userIds = Array.isArray(company.userIds)
-      ? company.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : [];
+    const manager = this.listMemberIds(company.manager);
+    const userIds = this.listMemberIds(company.userIds);
+    const employees = this.listMemberIds(company.employees);
     const effectiveCompanyId = user.companyId || (user.role === 'ManagementCompany' ? user.uid : '');
 
-    if (effectiveCompanyId === companyId || manager.includes(user.uid) || userIds.includes(user.uid)) {
+    if (
+      effectiveCompanyId === companyId ||
+      manager.includes(user.uid) ||
+      userIds.includes(user.uid) ||
+      employees.includes(user.uid)
+    ) {
       return;
     }
 
     throw new ForbiddenException('Access denied for company');
   }
 
-  assertMainCompanyManager(user: RequestUser, companyId: string, message: string): void {
-    if (user.role !== 'ManagementCompany') {
+  assertMainCompanyManagerForCompany(
+    user: RequestUser,
+    companyId: string,
+    company: Record<string, unknown>,
+    message: string,
+  ): void {
+    if (user.role !== 'ManagementCompany' && user.role !== 'PlatformAdmin') {
       throw new ForbiddenException(message);
     }
-    const effectiveCompanyId = user.companyId || user.uid;
-    if (effectiveCompanyId !== companyId) {
+    if (!this.isMainCompanyManager(user, companyId, company)) {
       throw new ForbiddenException('Access denied for company');
+    }
+  }
+
+  assertCanEditCompanyInfo(user: RequestUser, companyId: string, company: Record<string, unknown>): void {
+    this.assertCompanyAccess(user, companyId, company);
+    const permissions = this.getCompanyPermissions(user, companyId, company);
+    if (!permissions.editCompanyInfo) {
+      throw new ForbiddenException('You do not have permission to edit company information');
+    }
+  }
+
+  assertCanManageMembers(user: RequestUser, companyId: string, company: Record<string, unknown>): void {
+    this.assertCompanyAccess(user, companyId, company);
+    const permissions = this.getCompanyPermissions(user, companyId, company);
+    if (!permissions.manageMembers) {
+      throw new ForbiddenException('You do not have permission to manage company members');
+    }
+  }
+
+  assertCanManageApiKeys(user: RequestUser, companyId: string, company: Record<string, unknown>): void {
+    this.assertCompanyAccess(user, companyId, company);
+    const permissions = this.getCompanyPermissions(user, companyId, company);
+    if (!permissions.manageApiKeys) {
+      throw new ForbiddenException('You do not have permission to manage API keys');
+    }
+  }
+
+  assertCanManageInvoiceSettings(user: RequestUser, companyId: string, company: Record<string, unknown>): void {
+    this.assertCompanyAccess(user, companyId, company);
+    const permissions = this.getCompanyPermissions(user, companyId, company);
+    if (!permissions.manageInvoiceSettings) {
+      throw new ForbiddenException('You do not have permission to manage invoice settings');
     }
   }
 }

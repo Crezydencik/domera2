@@ -42,6 +42,7 @@ let CompanyCrudService = class CompanyCrudService {
             manager: Array.from(new Set([...(Array.isArray(normalizedPayload.manager) ? normalizedPayload.manager : []), userId])),
             companyId: userId,
             userIds: [userId],
+            employees: [],
             buildings: Array.isArray(normalizedPayload.buildings) ? normalizedPayload.buildings : [],
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -59,7 +60,26 @@ let CompanyCrudService = class CompanyCrudService {
         const snap = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
         if (!snap.exists)
             throw new common_1.NotFoundException('Company not found');
-        const data = snap.data();
+        const rawData = snap.data();
+        const legacyMembers = this.payloadService.normalizeLegacyCompanyMembers(companyId, rawData);
+        const data = legacyMembers.changed
+            ? {
+                ...rawData,
+                manager: legacyMembers.manager,
+                employees: legacyMembers.employees,
+                userIds: legacyMembers.userIds,
+                memberPermissions: legacyMembers.memberPermissions,
+            }
+            : rawData;
+        if (legacyMembers.changed) {
+            await this.firebaseAdminService.firestore.collection('companies').doc(companyId).set({
+                manager: legacyMembers.manager,
+                employees: legacyMembers.employees,
+                userIds: legacyMembers.userIds,
+                memberPermissions: legacyMembers.memberPermissions,
+                updatedAt: new Date(),
+            }, { merge: true });
+        }
         this.accessService.assertCompanyAccess(user, companyId, data);
         const publicContactsSnap = await this.firebaseAdminService.firestore
             .collection('users')
@@ -94,7 +114,13 @@ let CompanyCrudService = class CompanyCrudService {
             };
         })
             .filter((contact) => contact.fullName || contact.email || contact.phone);
-        return { id: snap.id, ...data, staffContacts, publicContacts: [...publicContacts, ...publicStaffContacts] };
+        return {
+            id: snap.id,
+            ...data,
+            staffContacts,
+            currentUserPermissions: this.accessService.getCompanyPermissions(user, companyId, data),
+            publicContacts: [...publicContacts, ...publicStaffContacts],
+        };
     }
     async update(request, user, companyId, payload) {
         this.accessService.assertAuthenticated(user);
@@ -105,8 +131,33 @@ let CompanyCrudService = class CompanyCrudService {
         const snap = await ref.get();
         if (!snap.exists)
             throw new common_1.NotFoundException('Company not found');
-        const current = snap.data();
+        const rawCurrent = snap.data();
+        const legacyMembers = this.payloadService.normalizeLegacyCompanyMembers(companyId, rawCurrent);
+        const current = legacyMembers.changed
+            ? {
+                ...rawCurrent,
+                manager: legacyMembers.manager,
+                employees: legacyMembers.employees,
+                userIds: legacyMembers.userIds,
+                memberPermissions: legacyMembers.memberPermissions,
+            }
+            : rawCurrent;
+        if (legacyMembers.changed) {
+            await ref.set({
+                manager: legacyMembers.manager,
+                employees: legacyMembers.employees,
+                userIds: legacyMembers.userIds,
+                memberPermissions: legacyMembers.memberPermissions,
+                updatedAt: new Date(),
+            }, { merge: true });
+        }
         this.accessService.assertCompanyAccess(user, companyId, current);
+        if (Object.prototype.hasOwnProperty.call(payload, 'invoiceSettings')) {
+            this.accessService.assertCanManageInvoiceSettings(user, companyId, current);
+        }
+        else {
+            this.accessService.assertCanEditCompanyInfo(user, companyId, current);
+        }
         const normalizedPayload = this.payloadService.normalizeCompanyPayload(payload, current);
         await ref.set({ ...normalizedPayload, updatedAt: new Date() }, { merge: true });
         return { success: true };

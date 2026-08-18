@@ -28,6 +28,7 @@ export const allowedRoutesByRole: Record<DashboardRole, string[]> = {
     ROUTES.approvals,
     ROUTES.adminBuildings,
     ROUTES.platformBilling,
+    ROUTES.support,
     ROUTES.settings,
   ],
   managementCompany: [
@@ -41,6 +42,7 @@ export const allowedRoutesByRole: Record<DashboardRole, string[]> = {
     ROUTES.debts,
     ROUTES.documents,
     ROUTES.notifications,
+    ROUTES.support,
     ROUTES.settings,
   ],
   resident: [

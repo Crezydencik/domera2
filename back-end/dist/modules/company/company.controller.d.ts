@@ -9,6 +9,7 @@ export declare class CompanyController {
         manager: string[];
         companyId: string;
         userIds: string[];
+        employees: never[];
         buildings: string[];
         createdAt: Date;
         updatedAt: Date;
@@ -16,6 +17,14 @@ export declare class CompanyController {
     }>;
     byId(request: Request, user: RequestUser, companyId: string): Promise<{
         staffContacts: Record<string, unknown>[];
+        currentUserPermissions: {
+            isMainManager: boolean;
+            viewCompanyInfo: boolean;
+            editCompanyInfo: boolean;
+            manageMembers: boolean;
+            manageApiKeys: boolean;
+            manageInvoiceSettings: boolean;
+        };
         publicContacts: {
             id: string;
             fullName: string;
@@ -114,11 +123,18 @@ export declare class CompanyController {
             role: "ManagementCompany" | "Accountant";
             accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
             companyId: string;
+            permissions: import("./services/company-payload.service").CompanyMemberPermissions;
+            memberType: string;
         };
         invitation?: undefined;
     }>;
     removeMember(request: Request, user: RequestUser, companyId: string, memberId: string): Promise<{
         success: boolean;
         memberId: string;
+    }>;
+    updateMemberPermissions(request: Request, user: RequestUser, companyId: string, memberId: string, body: Record<string, unknown>): Promise<{
+        success: boolean;
+        memberId: string;
+        permissions: import("./services/company-payload.service").CompanyMemberPermissions;
     }>;
 }

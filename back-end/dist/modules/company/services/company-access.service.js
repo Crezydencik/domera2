@@ -12,9 +12,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CompanyAccessService = void 0;
 const common_1 = require("@nestjs/common");
 const rate_limit_service_1 = require("../../../common/services/rate-limit.service");
+const company_payload_service_1 = require("./company-payload.service");
 let CompanyAccessService = class CompanyAccessService {
-    constructor(rateLimitService) {
+    constructor(rateLimitService, payloadService) {
         this.rateLimitService = rateLimitService;
+        this.payloadService = payloadService;
     }
     assertAuthenticated(user) {
         if (!user?.uid)
@@ -25,42 +27,93 @@ let CompanyAccessService = class CompanyAccessService {
         if (!rl.allowed)
             throw new common_1.BadRequestException('Too many requests');
     }
-    assertCanManageApiKeys(user, companyId) {
-        if (user.role !== 'ManagementCompany') {
-            throw new common_1.ForbiddenException('Only the main management company account can manage API keys');
+    listMemberIds(value) {
+        return Array.isArray(value)
+            ? value.filter((entry) => typeof entry === 'string' && entry.trim().length > 0)
+            : [];
+    }
+    isMainCompanyManager(user, companyId, company) {
+        if (user.role === 'PlatformAdmin')
+            return true;
+        const manager = this.listMemberIds(company.manager);
+        const userIds = this.listMemberIds(company.userIds);
+        const employees = this.listMemberIds(company.employees);
+        return (user.uid === companyId ||
+            manager.includes(user.uid) ||
+            (userIds.includes(user.uid) && !employees.includes(user.uid)));
+    }
+    getCompanyPermissions(user, companyId, company) {
+        if (user.role === 'PlatformAdmin' || this.isMainCompanyManager(user, companyId, company)) {
+            return {
+                isMainManager: true,
+                viewCompanyInfo: true,
+                editCompanyInfo: true,
+                manageMembers: true,
+                manageApiKeys: true,
+                manageInvoiceSettings: true,
+            };
         }
-        const effectiveCompanyId = user.companyId || user.uid;
-        if (effectiveCompanyId !== companyId) {
-            throw new common_1.ForbiddenException('Access denied for company');
-        }
+        const permissions = this.payloadService.getCompanyMemberPermissions(company, user.uid);
+        return {
+            isMainManager: false,
+            ...permissions,
+        };
     }
     assertCompanyAccess(user, companyId, company) {
         if (user.role === 'PlatformAdmin')
             return;
-        const manager = Array.isArray(company.manager)
-            ? company.manager.filter((value) => typeof value === 'string' && value.trim().length > 0)
-            : [];
-        const userIds = Array.isArray(company.userIds)
-            ? company.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
-            : [];
+        const manager = this.listMemberIds(company.manager);
+        const userIds = this.listMemberIds(company.userIds);
+        const employees = this.listMemberIds(company.employees);
         const effectiveCompanyId = user.companyId || (user.role === 'ManagementCompany' ? user.uid : '');
-        if (effectiveCompanyId === companyId || manager.includes(user.uid) || userIds.includes(user.uid)) {
+        if (effectiveCompanyId === companyId ||
+            manager.includes(user.uid) ||
+            userIds.includes(user.uid) ||
+            employees.includes(user.uid)) {
             return;
         }
         throw new common_1.ForbiddenException('Access denied for company');
     }
-    assertMainCompanyManager(user, companyId, message) {
-        if (user.role !== 'ManagementCompany') {
+    assertMainCompanyManagerForCompany(user, companyId, company, message) {
+        if (user.role !== 'ManagementCompany' && user.role !== 'PlatformAdmin') {
             throw new common_1.ForbiddenException(message);
         }
-        const effectiveCompanyId = user.companyId || user.uid;
-        if (effectiveCompanyId !== companyId) {
+        if (!this.isMainCompanyManager(user, companyId, company)) {
             throw new common_1.ForbiddenException('Access denied for company');
+        }
+    }
+    assertCanEditCompanyInfo(user, companyId, company) {
+        this.assertCompanyAccess(user, companyId, company);
+        const permissions = this.getCompanyPermissions(user, companyId, company);
+        if (!permissions.editCompanyInfo) {
+            throw new common_1.ForbiddenException('You do not have permission to edit company information');
+        }
+    }
+    assertCanManageMembers(user, companyId, company) {
+        this.assertCompanyAccess(user, companyId, company);
+        const permissions = this.getCompanyPermissions(user, companyId, company);
+        if (!permissions.manageMembers) {
+            throw new common_1.ForbiddenException('You do not have permission to manage company members');
+        }
+    }
+    assertCanManageApiKeys(user, companyId, company) {
+        this.assertCompanyAccess(user, companyId, company);
+        const permissions = this.getCompanyPermissions(user, companyId, company);
+        if (!permissions.manageApiKeys) {
+            throw new common_1.ForbiddenException('You do not have permission to manage API keys');
+        }
+    }
+    assertCanManageInvoiceSettings(user, companyId, company) {
+        this.assertCompanyAccess(user, companyId, company);
+        const permissions = this.getCompanyPermissions(user, companyId, company);
+        if (!permissions.manageInvoiceSettings) {
+            throw new common_1.ForbiddenException('You do not have permission to manage invoice settings');
         }
     }
 };
 exports.CompanyAccessService = CompanyAccessService;
 exports.CompanyAccessService = CompanyAccessService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [rate_limit_service_1.RateLimitService])
+    __metadata("design:paramtypes", [rate_limit_service_1.RateLimitService,
+        company_payload_service_1.CompanyPayloadService])
 ], CompanyAccessService);

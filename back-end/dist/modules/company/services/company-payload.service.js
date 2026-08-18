@@ -22,6 +22,82 @@ let CompanyPayloadService = class CompanyPayloadService {
     toOptionalTrimmedString(value) {
         return typeof value === 'string' && value.trim() ? value.trim() : undefined;
     }
+    defaultCompanyMemberPermissions(overrides) {
+        return {
+            viewCompanyInfo: true,
+            editCompanyInfo: false,
+            manageMembers: false,
+            manageApiKeys: false,
+            manageInvoiceSettings: false,
+            ...overrides,
+        };
+    }
+    normalizeCompanyMemberPermissions(value) {
+        const source = value && typeof value === 'object' && !Array.isArray(value)
+            ? value
+            : {};
+        return this.defaultCompanyMemberPermissions({
+            viewCompanyInfo: source.viewCompanyInfo !== false,
+            editCompanyInfo: source.editCompanyInfo === true,
+            manageMembers: source.manageMembers === true,
+            manageApiKeys: source.manageApiKeys === true,
+            manageInvoiceSettings: source.manageInvoiceSettings === true,
+        });
+    }
+    normalizeCompanyMemberPermissionMap(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value))
+            return {};
+        return Object.fromEntries(Object.entries(value)
+            .map(([memberId, permissions]) => [this.firstString(memberId), this.normalizeCompanyMemberPermissions(permissions)])
+            .filter(([memberId]) => Boolean(memberId)));
+    }
+    getCompanyMemberPermissions(company, memberId) {
+        const permissionMap = this.normalizeCompanyMemberPermissionMap(company.memberPermissions);
+        return permissionMap[memberId] ?? this.defaultCompanyMemberPermissions();
+    }
+    normalizeLegacyCompanyMembers(companyId, company) {
+        const manager = Array.isArray(company.manager)
+            ? company.manager.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const userIds = Array.isArray(company.userIds)
+            ? company.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const employees = Array.isArray(company.employees)
+            ? company.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const memberPermissions = this.normalizeCompanyMemberPermissionMap(company.memberPermissions);
+        const uniqueManagerIds = Array.from(new Set(manager));
+        const uniqueUserIds = Array.from(new Set(userIds));
+        const uniqueEmployees = Array.from(new Set(employees));
+        const primaryManagerId = uniqueManagerIds[0] ??
+            uniqueUserIds.find((memberId) => !uniqueEmployees.includes(memberId)) ??
+            companyId;
+        const normalizedManager = [primaryManagerId];
+        const normalizedEmployees = Array.from(new Set([
+            ...uniqueEmployees.filter((memberId) => memberId !== primaryManagerId),
+            ...uniqueManagerIds.filter((memberId) => memberId !== primaryManagerId),
+            ...uniqueUserIds.filter((memberId) => memberId !== primaryManagerId),
+        ]));
+        const normalizedUserIds = Array.from(new Set([primaryManagerId, ...uniqueUserIds, ...normalizedEmployees]));
+        const normalizedPermissions = Object.fromEntries(Object.entries({
+            ...memberPermissions,
+            ...Object.fromEntries(normalizedEmployees.map((memberId) => [
+                memberId,
+                memberPermissions[memberId] ?? this.defaultCompanyMemberPermissions(),
+            ])),
+        }).filter(([memberId]) => normalizedEmployees.includes(memberId)));
+        const changed = JSON.stringify(normalizedManager) !== JSON.stringify(manager) ||
+            JSON.stringify(normalizedEmployees) !== JSON.stringify(employees) ||
+            JSON.stringify(normalizedUserIds) !== JSON.stringify(userIds) ||
+            JSON.stringify(normalizedPermissions) !== JSON.stringify(memberPermissions);
+        return {
+            changed,
+            manager: normalizedManager,
+            employees: normalizedEmployees,
+            userIds: normalizedUserIds,
+            memberPermissions: normalizedPermissions,
+        };
+    }
     normalizeStaffContacts(value) {
         return Array.isArray(value)
             ? value.filter((item) => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
@@ -184,6 +260,11 @@ let CompanyPayloadService = class CompanyPayloadService {
             : Array.isArray(existing?.userIds)
                 ? existing.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
                 : [];
+        const normalizedEmployees = Array.isArray(payload.employees)
+            ? payload.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : Array.isArray(existing?.employees)
+                ? existing.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
+                : [];
         const normalizedBuildings = Array.isArray(payload.buildings)
             ? payload.buildings
                 .filter((value) => typeof value === 'string' && value.trim().length > 0)
@@ -222,6 +303,8 @@ let CompanyPayloadService = class CompanyPayloadService {
                     ? existing.companyId
                     : undefined,
             userIds: normalizedUserIds,
+            employees: normalizedEmployees,
+            memberPermissions: this.normalizeCompanyMemberPermissionMap(payload.memberPermissions ?? existing?.memberPermissions),
             buildings: normalizedBuildings,
             name: firestore_1.FieldValue.delete(),
             email: firestore_1.FieldValue.delete(),

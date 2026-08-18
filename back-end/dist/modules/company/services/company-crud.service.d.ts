@@ -15,6 +15,7 @@ export declare class CompanyCrudService {
         manager: string[];
         companyId: string;
         userIds: string[];
+        employees: never[];
         buildings: string[];
         createdAt: Date;
         updatedAt: Date;
@@ -22,6 +23,14 @@ export declare class CompanyCrudService {
     }>;
     byId(request: Request, user: RequestUser, companyId: string): Promise<{
         staffContacts: Record<string, unknown>[];
+        currentUserPermissions: {
+            isMainManager: boolean;
+            viewCompanyInfo: boolean;
+            editCompanyInfo: boolean;
+            manageMembers: boolean;
+            manageApiKeys: boolean;
+            manageInvoiceSettings: boolean;
+        };
         publicContacts: {
             id: string;
             fullName: string;

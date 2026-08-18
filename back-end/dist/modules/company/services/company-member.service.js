@@ -65,11 +65,18 @@ let CompanyMemberService = class CompanyMemberService {
         const manager = Array.isArray(params.company.manager)
             ? params.company.manager.filter((value) => typeof value === 'string' && value.trim().length > 0)
             : [];
+        const employees = Array.isArray(params.company.employees)
+            ? params.company.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const memberPermissions = this.payloadService.normalizeCompanyMemberPermissionMap(params.company.memberPermissions);
         await companyRef.set({
             userIds: userIds.includes(params.targetUid) ? userIds : [...userIds, params.targetUid],
-            manager: params.role === 'ManagementCompany' && !manager.includes(params.targetUid)
-                ? [...manager, params.targetUid]
-                : manager,
+            manager,
+            employees: employees.includes(params.targetUid) ? employees : [...employees, params.targetUid],
+            memberPermissions: {
+                ...memberPermissions,
+                [params.targetUid]: params.permissions,
+            },
             updatedAt: new Date(),
         }, { merge: true });
         return {
@@ -85,6 +92,8 @@ let CompanyMemberService = class CompanyMemberService {
             role: params.role,
             accountType,
             companyId: params.companyId,
+            permissions: params.permissions,
+            memberType: 'employee',
         };
     }
     async sendMemberRegistrationInvitation(params) {
@@ -103,6 +112,7 @@ let CompanyMemberService = class CompanyMemberService {
             ...(params.phone ? { phone: params.phone } : {}),
             ...(params.position ? { position: params.position, jobTitle: params.position } : {}),
             showContactToResidents: params.showContactToResidents,
+            memberPermissions: params.permissions,
             role: params.role,
             accountType: (0, role_constants_1.resolveAccountType)({ role: params.role }) ?? 'ManagementCompany',
             inviteType: 'company-member',
@@ -130,7 +140,6 @@ let CompanyMemberService = class CompanyMemberService {
         this.accessService.assertAuthenticated(user);
         if (!companyId?.trim())
             throw new common_1.BadRequestException('companyId is required');
-        this.accessService.assertMainCompanyManager(user, companyId, 'Only the main management company account can add members');
         const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
         const role = payload.role === 'Accountant' || payload.role === 'ManagementCompany' ? payload.role : null;
         const firstName = typeof payload.firstName === 'string' ? payload.firstName.trim() : '';
@@ -154,6 +163,8 @@ let CompanyMemberService = class CompanyMemberService {
         if (!companySnap.exists)
             throw new common_1.NotFoundException('Company not found');
         const company = companySnap.data();
+        this.accessService.assertCanManageMembers(user, companyId, company);
+        const permissions = this.payloadService.normalizeCompanyMemberPermissions(payload.permissions);
         if (!createAccount) {
             const fullName = [firstName, lastName].filter(Boolean).join(' ');
             const staffContacts = this.payloadService.normalizeStaffContacts(company.staffContacts);
@@ -203,6 +214,7 @@ let CompanyMemberService = class CompanyMemberService {
                 position,
                 showContactToResidents,
                 role: resolvedRole,
+                permissions,
             });
             return {
                 success: true,
@@ -221,6 +233,7 @@ let CompanyMemberService = class CompanyMemberService {
             position,
             showContactToResidents,
             role: resolvedRole,
+            permissions,
         });
         return {
             success: true,
@@ -235,7 +248,6 @@ let CompanyMemberService = class CompanyMemberService {
         if (!normalizedCompanyId || !normalizedMemberId) {
             throw new common_1.BadRequestException('companyId and memberId are required');
         }
-        this.accessService.assertMainCompanyManager(user, normalizedCompanyId, 'Only the main management company account can remove members');
         if (normalizedMemberId === user.uid || normalizedMemberId === normalizedCompanyId) {
             throw new common_1.ForbiddenException('The main company account cannot be removed here');
         }
@@ -246,8 +258,13 @@ let CompanyMemberService = class CompanyMemberService {
         if (!companySnap.exists)
             throw new common_1.NotFoundException('Company not found');
         const company = companySnap.data();
+        this.accessService.assertCanManageMembers(user, normalizedCompanyId, company);
         const staffContacts = this.payloadService.normalizeStaffContacts(company.staffContacts);
-        const nextStaffContacts = staffContacts.filter((contact) => this.payloadService.firstString(contact.id) !== normalizedMemberId);
+        const nextStaffContacts = staffContacts.filter((contact) => {
+            const contactId = this.payloadService.firstString(contact.id);
+            const contactEmail = this.payloadService.firstString(contact.email).toLowerCase();
+            return contactId !== normalizedMemberId && contactEmail !== normalizedMemberId.toLowerCase();
+        });
         if (nextStaffContacts.length !== staffContacts.length) {
             await companyRef.set({
                 staffContacts: nextStaffContacts,
@@ -261,10 +278,32 @@ let CompanyMemberService = class CompanyMemberService {
         const manager = Array.isArray(company.manager)
             ? company.manager.filter((value) => typeof value === 'string' && value.trim().length > 0)
             : [];
-        if (!userIds.includes(normalizedMemberId) && !manager.includes(normalizedMemberId)) {
+        const employees = Array.isArray(company.employees)
+            ? company.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const memberPermissions = this.payloadService.normalizeCompanyMemberPermissionMap(company.memberPermissions);
+        let resolvedMemberId = normalizedMemberId;
+        if (!userIds.includes(resolvedMemberId) && !manager.includes(resolvedMemberId)) {
+            const candidateIds = Array.from(new Set([...userIds, ...manager]));
+            if (candidateIds.length > 0) {
+                const candidateSnaps = await Promise.all(candidateIds.map((candidateId) => db.collection('users').doc(candidateId).get()));
+                const matchedMember = candidateSnaps.find((snap) => {
+                    if (!snap.exists)
+                        return false;
+                    const member = snap.data();
+                    const email = this.payloadService.firstString(member.email).toLowerCase();
+                    const uid = this.payloadService.firstString(member.uid);
+                    return snap.id === normalizedMemberId || uid === normalizedMemberId || email === normalizedMemberId.toLowerCase();
+                });
+                if (matchedMember) {
+                    resolvedMemberId = matchedMember.id;
+                }
+            }
+        }
+        if (!userIds.includes(resolvedMemberId) && !manager.includes(resolvedMemberId)) {
             throw new common_1.NotFoundException('Company member not found');
         }
-        const memberRef = db.collection('users').doc(normalizedMemberId);
+        const memberRef = db.collection('users').doc(resolvedMemberId);
         const memberSnap = await memberRef.get();
         if (memberSnap.exists) {
             const member = memberSnap.data();
@@ -280,11 +319,54 @@ let CompanyMemberService = class CompanyMemberService {
             }, { merge: true });
         }
         await companyRef.set({
-            userIds: userIds.filter((value) => value !== normalizedMemberId),
-            manager: manager.filter((value) => value !== normalizedMemberId),
+            userIds: userIds.filter((value) => value !== resolvedMemberId),
+            manager: manager.filter((value) => value !== resolvedMemberId),
+            employees: employees.filter((value) => value !== resolvedMemberId),
+            memberPermissions: Object.fromEntries(Object.entries(memberPermissions).filter(([key]) => key !== resolvedMemberId)),
             updatedAt: new Date(),
         }, { merge: true });
-        return { success: true, memberId: normalizedMemberId };
+        return { success: true, memberId: resolvedMemberId };
+    }
+    async updatePermissions(request, user, companyId, memberId, payload) {
+        this.accessService.assertAuthenticated(user);
+        const normalizedCompanyId = companyId?.trim();
+        const normalizedMemberId = memberId?.trim();
+        if (!normalizedCompanyId || !normalizedMemberId) {
+            throw new common_1.BadRequestException('companyId and memberId are required');
+        }
+        if (normalizedMemberId === normalizedCompanyId) {
+            throw new common_1.ForbiddenException('The main company account permissions cannot be changed here');
+        }
+        await this.accessService.enforceRateLimit(request, 'company:update-member-permissions', `${user.uid}:${normalizedCompanyId}`, 20);
+        const companyRef = this.firebaseAdminService.firestore.collection('companies').doc(normalizedCompanyId);
+        const companySnap = await companyRef.get();
+        if (!companySnap.exists)
+            throw new common_1.NotFoundException('Company not found');
+        const company = companySnap.data();
+        this.accessService.assertCanManageMembers(user, normalizedCompanyId, company);
+        const userIds = Array.isArray(company.userIds)
+            ? company.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const employees = Array.isArray(company.employees)
+            ? company.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        if (!userIds.includes(normalizedMemberId) && !employees.includes(normalizedMemberId)) {
+            throw new common_1.NotFoundException('Company member not found');
+        }
+        const memberPermissions = this.payloadService.normalizeCompanyMemberPermissionMap(company.memberPermissions);
+        const nextPermissions = this.payloadService.normalizeCompanyMemberPermissions(payload.permissions);
+        await companyRef.set({
+            memberPermissions: {
+                ...memberPermissions,
+                [normalizedMemberId]: nextPermissions,
+            },
+            updatedAt: new Date(),
+        }, { merge: true });
+        return {
+            success: true,
+            memberId: normalizedMemberId,
+            permissions: nextPermissions,
+        };
     }
 };
 exports.CompanyMemberService = CompanyMemberService;

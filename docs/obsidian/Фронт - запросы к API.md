@@ -14,14 +14,21 @@
 - `buildings.ts` - дома.
 - `apartments.ts` - квартиры, владельцы, жильцы, импорт, audit logs.
 - `meters.ts` - показания счетчиков.
-- `billing.ts` - счета и долги.
+- `billing.ts` - счета, загрузки, pending approvals, PDF и email resend.
 - `notifications.ts` - уведомления и настройки уведомлений.
 - `company.ts` - компания и участники компании.
 - `invitations.ts` - приглашения.
 - `residents.ts` - жильцы через `/users`.
+- `users.ts` - платформенные пользователи и building creation access.
 - `projects.ts` - проекты.
 - `news.ts` - новости.
-- `documents.ts` - документы, сейчас фактически через `/news`.
+- `documents.ts` - отдельный documents API.
+- `support.ts` - support feedback и переписка по обращениям.
+
+Что уже важно учитывать:
+- не все запросы идут только из `frontendd/src/shared/api`: часть server-side чтения идет через `frontendd/src/shared/server/api-client`;
+- есть Next API proxy-маршруты вроде `frontendd/src/app/api/invoices/[invoiceId]/pdf/route.ts`;
+- публичные просмотры счетов и PDF используют токены и отдельные маршруты вне обычного кабинета.
 
 Server-side данные:
 - `frontendd/src/shared/lib/domera-api.server.ts`

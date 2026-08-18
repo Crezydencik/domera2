@@ -242,7 +242,10 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
     (initialProfile as UserProfileSummary | null | undefined) ?? null,
   );
   const profileUserId = firstText(profileSummary?.id, profileSummary?.uid);
-  const navigationCompanyId = profileSummary?.companyId ?? (role === "managementCompany" ? profileUserId : undefined);
+  const navigationCompanyId = firstText(
+    profileSummary?.companyId,
+    role === "managementCompany" ? profileUserId : undefined,
+  );
 
  const userEmail = profileSummary?.email ?? "user@domera.lv";
 const userName = resolveProfileName(profileSummary, undefined, userEmail);

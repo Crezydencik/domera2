@@ -1,5 +1,13 @@
 import { apiFetch } from "@/shared/api/client";
 
+export type CompanyMemberPermissions = {
+  viewCompanyInfo: boolean;
+  editCompanyInfo: boolean;
+  manageMembers: boolean;
+  manageApiKeys: boolean;
+  manageInvoiceSettings: boolean;
+};
+
 export type CompanyApiKeyItem = {
   id: string;
   label: string;
@@ -41,6 +49,7 @@ export function addCompanyMember(
     showContactToResidents?: boolean;
     createAccount?: boolean;
     role: "ManagementCompany" | "Accountant";
+    permissions?: Partial<CompanyMemberPermissions>;
   },
 ) {
   return apiFetch<{
@@ -52,6 +61,20 @@ export function addCompanyMember(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function updateCompanyMemberPermissions(
+  companyId: string,
+  memberId: string,
+  permissions: Partial<CompanyMemberPermissions>,
+) {
+  return apiFetch<{ success?: boolean; memberId?: string; permissions?: CompanyMemberPermissions }>(
+    `/company/${encodeURIComponent(companyId)}/members/${encodeURIComponent(memberId)}/permissions`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ permissions }),
+    },
+  );
 }
 
 export function removeCompanyMember(companyId: string, memberId: string) {

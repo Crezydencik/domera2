@@ -107,4 +107,18 @@ export class CompanyController {
   ) {
     return this.companyService.removeMember(request, user, companyId, memberId);
   }
+
+  @Patch(':companyId/members/:memberId/permissions')
+  @ApiOperation({ summary: 'Update a management company member permissions' })
+  @ApiParam({ name: 'companyId', required: true, type: String })
+  @ApiParam({ name: 'memberId', required: true, type: String })
+  updateMemberPermissions(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('companyId') companyId: string,
+    @Param('memberId') memberId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.companyService.updateMemberPermissions(request, user, companyId, memberId, body);
+  }
 }

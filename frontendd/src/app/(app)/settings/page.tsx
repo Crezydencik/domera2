@@ -1,4 +1,4 @@
-import type { CompanyApiKeyItem } from "@/shared/api/company";
+import type { CompanyApiKeyItem, CompanyMemberPermissions } from "@/shared/api/company";
 import type { NotificationSettings } from "@/shared/api/notifications";
 import { isApprovedBuilding, isElectricityEnabledBuilding } from "@/shared/lib/buildings";
 import { apiFetch } from "@/shared/server/api-client";
@@ -14,6 +14,7 @@ type InvoiceSettingsLanguage = "ru" | "lv" | "en";
 type InvoiceNumberPart = "companyCode" | "apartmentNumber" | "month" | "year" | "date" | "sequence";
 type InvoiceLineItem = "electricityAdvance" | "electricityPayment" | "other";
 type InvoiceTableColumn = "period" | "price" | "amount" | "unit" | "vat" | "sum" | "recalculation" | "net";
+type CompanyMemberType = "manager" | "employee" | "contact";
 
 const invoiceNumberPartOptions: InvoiceNumberPart[] = ["companyCode", "apartmentNumber", "month", "year", "date", "sequence"];
 const invoiceLineItemOptions: InvoiceLineItem[] = ["electricityAdvance", "electricityPayment", "other"];
@@ -183,6 +184,12 @@ function normalizeApiKeyItems(value: unknown): CompanyApiKeyItem[] {
     .filter((item) => item.id);
 }
 
+function resolveCompanyMemberType(memberId: string, companyId: string, managerIds: string[], employeeIds: string[]): CompanyMemberType {
+  if (memberId === companyId || managerIds.includes(memberId)) return "manager";
+  if (employeeIds.includes(memberId)) return "employee";
+  return "employee";
+}
+
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
   const params = (await searchParams) ?? {};
   const data = await getSettingsPageData(params.role);
@@ -198,12 +205,15 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const notificationSettings = normalizeNotificationSettings(profile?.notificate ?? profile?.notificationSettings);
   const companyId = firstString(data.companyId, profile?.companyId, userId);
   const accountType = firstString(profile?.accountType, profile?.role);
-  const canManageCompany = data.role === "managementCompany" && normalizeAccessValue(accountType) === "managementcompany";
+  const normalizedAccountType = normalizeAccessValue(accountType);
+  const canViewCompany =
+    data.role === "managementCompany" &&
+    (normalizedAccountType === "" || normalizedAccountType === "managementcompany");
   const hasElectricityEnabled = data.buildings.some(isElectricityEnabledBuilding);
   let company: UnknownRecord | null = null;
   let apiKeys: CompanyApiKeyItem[] = [];
 
-  if (canManageCompany && companyId) {
+  if (canViewCompany && companyId) {
     const [companyResult, apiKeysResult] = await Promise.all([
       apiFetch<UnknownRecord>(`/company/${encodeURIComponent(companyId)}`).catch(() => null),
       apiFetch<{ items?: unknown[] }>(`/company/${encodeURIComponent(companyId)}/api-keys`).catch(() => ({ items: [] })),
@@ -216,6 +226,28 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const staffContacts = Array.isArray(company?.staffContacts)
     ? company.staffContacts.filter((item): item is UnknownRecord => Boolean(item) && typeof item === "object" && !Array.isArray(item))
     : [];
+  const currentUserPermissions =
+    company?.currentUserPermissions && typeof company.currentUserPermissions === "object"
+      ? company.currentUserPermissions as Partial<CompanyMemberPermissions> & { isMainManager?: boolean }
+      : {};
+  const memberPermissions =
+    company?.memberPermissions && typeof company.memberPermissions === "object"
+      ? company.memberPermissions as Record<string, Partial<CompanyMemberPermissions>>
+      : {};
+  const managerIds = Array.isArray(company?.manager)
+    ? company.manager.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  const employeeIds = Array.isArray(company?.employees)
+    ? company.employees.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+
+  const normalizeMemberPermissionFlags = (value?: Partial<CompanyMemberPermissions>): CompanyMemberPermissions => ({
+    viewCompanyInfo: value?.viewCompanyInfo !== false,
+    editCompanyInfo: value?.editCompanyInfo === true,
+    manageMembers: value?.manageMembers === true,
+    manageApiKeys: value?.manageApiKeys === true,
+    manageInvoiceSettings: value?.manageInvoiceSettings === true,
+  });
 
   return (
     <div className="w-full">
@@ -230,7 +262,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         }}
         notificationSettings={notificationSettings}
         company={{
-          canManage: canManageCompany,
+          canManage: currentUserPermissions.editCompanyInfo === true,
           companyId,
           name: firstString(company?.companyName, company?.name, profile?.companyName, fullName),
           registrationNumber: firstString(company?.registrationNumber, profile?.registrationNumber),
@@ -243,7 +275,15 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           bankBeneficiary: firstString(company?.bankBeneficiary, company?.beneficiaryName, profile?.bankBeneficiary, profile?.beneficiaryName),
           invoiceSettings: normalizeInvoiceSettings(company?.invoiceSettings),
           hasElectricityEnabled,
-          apiKeys,
+          apiKeys: currentUserPermissions.manageApiKeys === true ? apiKeys : [],
+          permissions: {
+            isMainManager: currentUserPermissions.isMainManager === true,
+            viewCompanyInfo: currentUserPermissions.viewCompanyInfo !== false,
+            editCompanyInfo: currentUserPermissions.editCompanyInfo === true,
+            manageMembers: currentUserPermissions.manageMembers === true,
+            manageApiKeys: currentUserPermissions.manageApiKeys === true,
+            manageInvoiceSettings: currentUserPermissions.manageInvoiceSettings === true,
+          },
           buildings: data.buildings
             .filter(isApprovedBuilding)
             .map((building) => ({
@@ -262,6 +302,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               showContactToResidents: item.showContactToResidents === true,
               createAccount: true,
               role: item.role,
+              memberType: resolveCompanyMemberType(item.id, companyId, managerIds, employeeIds),
+              permissions: normalizeMemberPermissionFlags(memberPermissions[item.id]),
             }))
             .concat(staffContacts.map((item) => ({
               id: firstString(item.id, item.email),
@@ -273,6 +315,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               showContactToResidents: item.showContactToResidents === true,
               createAccount: item.createAccount !== true ? false : true,
               role: firstString(item.role, "ManagementCompany"),
+              memberType: "contact",
+              permissions: normalizeMemberPermissionFlags(),
             }))),
         }}
       />

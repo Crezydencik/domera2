@@ -407,11 +407,28 @@ let InvitationsService = class InvitationsService {
                 const manager = Array.isArray(company.manager)
                     ? company.manager.filter((value) => typeof value === 'string' && value.trim().length > 0)
                     : [];
+                const employees = Array.isArray(company.employees)
+                    ? company.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
+                    : [];
+                const memberPermissions = company.memberPermissions && typeof company.memberPermissions === 'object' && !Array.isArray(company.memberPermissions)
+                    ? company.memberPermissions
+                    : {};
                 await companyRef.set({
                     userIds: userIds.includes(uid) ? userIds : [...userIds, uid],
-                    manager: invitationRole === 'ManagementCompany' && !manager.includes(uid)
-                        ? [...manager, uid]
-                        : manager,
+                    manager,
+                    employees: employees.includes(uid) ? employees : [...employees, uid],
+                    memberPermissions: {
+                        ...memberPermissions,
+                        [uid]: invitation.memberPermissions && typeof invitation.memberPermissions === 'object'
+                            ? invitation.memberPermissions
+                            : {
+                                viewCompanyInfo: true,
+                                editCompanyInfo: false,
+                                manageMembers: false,
+                                manageApiKeys: false,
+                                manageInvoiceSettings: false,
+                            },
+                    },
                     updatedAt: new Date(),
                 }, { merge: true });
             }

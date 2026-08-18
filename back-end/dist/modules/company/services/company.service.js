@@ -44,6 +44,9 @@ let CompanyService = class CompanyService {
     removeMember(request, user, companyId, memberId) {
         return this.memberService.remove(request, user, companyId, memberId);
     }
+    updateMemberPermissions(request, user, companyId, memberId, payload) {
+        return this.memberService.updatePermissions(request, user, companyId, memberId, payload);
+    }
 };
 exports.CompanyService = CompanyService;
 exports.CompanyService = CompanyService = __decorate([

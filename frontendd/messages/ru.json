@@ -1771,7 +1771,9 @@
       },
       "roles": {
         "managementCompany": "Сотрудник УК",
-        "accountant": "Бухгалтер"
+        "accountant": "Бухгалтер",
+        "manager": "Руководитель",
+        "employee": "Сотрудник"
       },
       "members": {
         "title": "Члены компании",
@@ -1791,8 +1793,18 @@
         "adding": "Добавляем...",
         "remove": "Удалить",
         "removing": "Удаляем...",
+        "permissionsTitle": "Права сотрудника",
+        "permissionsButton": "Права и доступы",
         "removeConfirm": "Удалить {name} из компании?",
         "empty": "Участники пока не добавлены."
+      },
+      "permissions": {
+        "editCompanyInfo": "Редактировать информацию о компании",
+        "manageMembers": "Управлять сотрудниками",
+        "manageApiKeys": "Управлять API-ключами",
+        "manageInvoiceSettings": "Управлять настройками счетов",
+        "viewOnly": "Только просмотр",
+        "viewOnlyHint": "Если права не выданы, сотрудник может только просматривать данные компании. Он не сможет менять информацию о компании или управлять другими сотрудниками."
       },
       "residentContacts": {
         "title": "Контакты для жильцов",
@@ -1947,6 +1959,7 @@
       "memberAdded": "Участник добавлен.",
       "memberInvitationSent": "Приглашение на регистрацию отправлено.",
       "memberRemoved": "Участник удалён.",
+      "memberPermissionsSaved": "Права сотрудника сохранены.",
       "notificationSettingsSaved": "Настройки уведомлений сохранены."
     },
     "errors": {
@@ -1967,6 +1980,7 @@
       "contactFieldsRequired": "Введите имя контакта и e-mail или телефон.",
       "memberAddFailed": "Не удалось добавить участника.",
       "memberRemoveFailed": "Не удалось удалить участника.",
+      "memberPermissionsSaveFailed": "Не удалось сохранить права сотрудника.",
       "notificationSettingsSaveFailed": "Не удалось сохранить настройки уведомлений."
     }
   }

@@ -1777,7 +1777,9 @@
       },
       "roles": {
         "managementCompany": "Company staff",
-        "accountant": "Accountant"
+        "accountant": "Accountant",
+        "manager": "Manager",
+        "employee": "Employee"
       },
       "members": {
         "title": "Company members",
@@ -1797,8 +1799,18 @@
         "adding": "Adding...",
         "remove": "Remove",
         "removing": "Removing...",
+        "permissionsTitle": "Employee permissions",
+        "permissionsButton": "Permissions and access",
         "removeConfirm": "Remove {name} from the company?",
         "empty": "No members have been added yet."
+      },
+      "permissions": {
+        "editCompanyInfo": "Edit company information",
+        "manageMembers": "Manage employees",
+        "manageApiKeys": "Manage API keys",
+        "manageInvoiceSettings": "Manage invoice settings",
+        "viewOnly": "View only",
+        "viewOnlyHint": "If no permissions are granted, the employee can only view company data. They cannot edit company information or manage other employees."
       },
       "residentContacts": {
         "title": "Contacts for residents",
@@ -1953,6 +1965,7 @@
       "memberAdded": "Member added.",
       "memberInvitationSent": "Registration invitation sent.",
       "memberRemoved": "Member removed.",
+      "memberPermissionsSaved": "Employee permissions saved.",
       "notificationSettingsSaved": "Notification settings saved."
     },
     "errors": {
@@ -1973,6 +1986,7 @@
       "contactFieldsRequired": "Enter contact name and email or phone.",
       "memberAddFailed": "Failed to add member.",
       "memberRemoveFailed": "Failed to remove member.",
+      "memberPermissionsSaveFailed": "Failed to save employee permissions.",
       "notificationSettingsSaveFailed": "Failed to save notification settings."
     }
   }
