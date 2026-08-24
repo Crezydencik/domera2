@@ -1563,6 +1563,19 @@
     "periodDateMode": "Pēc datumiem",
     "periodFreeModeHint": "Iedzīvotāji var iesniegt rādījumus jebkurā laikā.",
     "periodMonthlyHint": "Periods automātiski atkārtosies no {startDay}. līdz {endDay}. datumam katru mēnesi.",
+    "periodRemindersTitle": "Atgādinājumu sūtīšana",
+    "periodRemindersEnabled": "Sūtīt e-pasta atgādinājumus",
+    "periodReminderOnStart": "Iesniegšanas pirmajā dienā",
+    "periodReminderOnEnd": "Pirms beigām",
+    "periodReminderOnClose": "Iesniegšanas pēdējā dienā, ja rādījumi nav iesniegti",
+    "periodReminderStartTime": "Pirmā atgādinājuma laiks",
+    "periodReminderEndTime": "Noslēguma atgādinājuma laiks",
+    "periodReminderCloseTime": "Aizvēršanas dienas atgādinājuma laiks",
+    "periodReminderOffsetDays": "Dienas",
+    "periodReminderEndOffsetPrefix": "",
+    "periodReminderEndOffsetSuffix": "dienas pirms beigām, ja rādījumi nav iesniegti",
+    "periodReminderItemColumn": "Atgādinājums",
+    "periodReminderTimeColumn": "Laiks",
     "deletePeriod": "Dzēst periodu",
     "deletingPeriod": "Dzēš...",
     "colApartment": "Dzīvoklis",
@@ -1629,6 +1642,7 @@
       "company": "Uzņēmums",
       "apiKey": "API atslēga",
       "invoiceGeneration": "Rēķinu ģenerēšana",
+      "emailTemplates": "E-pasta veidnes",
       "notifications": "Paziņojumi",
       "contacts": "Kontakti",
       "billing": "Norēķinu konti",
@@ -1797,6 +1811,7 @@
         "empty": "Dalībnieki vēl nav pievienoti."
       },
       "permissions": {
+        "viewApiKeys": "Skatīt rēķinu importa API atslēgas",
         "editCompanyInfo": "Rediģēt uzņēmuma informāciju",
         "manageMembers": "Pārvaldīt darbiniekus",
         "manageApiKeys": "Pārvaldīt API atslēgas",
@@ -1815,6 +1830,28 @@
         "edit": "Rediģēt kontaktu",
         "save": "Saglabāt kontaktu",
         "empty": "Iedzīvotājiem redzami kontakti vēl nav pievienoti."
+      }
+    },
+    "emailTemplates": {
+      "title": "E-pasta veidnes",
+      "description": "Apskatiet īstās Domera e-pasta veidnes, nesūtot ziņas saņēmējiem.",
+      "language": "E-pasta valoda",
+      "accentColor": "E-pasta krāsa",
+      "subject": "E-pasta tēma",
+      "preview": "E-pasta priekšskatījums",
+      "loading": "Ielādē veidni...",
+      "emptyPreview": "Izvēlieties veidni, lai redzētu priekšskatījumu.",
+      "loadFailed": "Neizdevās ielādēt e-pasta veidni.",
+      "types": {
+        "registrationCode": "Reģistrācijas kods",
+        "passwordReset": "Paroles atiestatīšana",
+        "ownerInvitation": "Īpašnieka uzaicinājums",
+        "tenantInvitation": "Īrnieka uzaicinājums",
+        "tenantInvitedByOwner": "Īrnieku uzaicināja īpašnieks",
+        "invoiceGenerated": "Rēķins izveidots",
+        "meterReadingReminder": "Skaitītāju rādījumu atgādinājums",
+        "meterReadingClosingReminder": "Atgādinājums par iesniegšanas beigām",
+        "notification": "Vispārīgs paziņojums"
       }
     },
     "apiKeys": {

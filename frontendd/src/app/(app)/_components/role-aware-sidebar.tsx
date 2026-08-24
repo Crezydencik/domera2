@@ -37,7 +37,7 @@ import { getPlatformUsers, type PlatformUser } from "@/shared/api/users";
 import { useAppNotifications } from "@/shared/hooks/use-app-notifications";
 import { useNotifications as useToastNotifications } from "@/shared/hooks/use-notifications";
 import { BUILDING_CREATION_REQUESTS_CHANGED_EVENT } from "@/shared/lib/building-creation-requests-events";
-import { isApprovedBuilding, isElectricityEnabledBuilding } from "@/shared/lib/buildings";
+import { isElectricityEnabledBuilding } from "@/shared/lib/buildings";
 import { BUILDINGS_CHANGED_EVENT, readStoredElectricityNavigation, type BuildingsChangedDetail } from "@/shared/lib/buildings-events";
 import { ROUTES } from "@/shared/lib/routes";
 import { type DashboardRole, normalizeDashboardRole } from "@/shared/role-ui";
@@ -75,14 +75,6 @@ const navIconByHref: Partial<Record<string, LucideIcon>> = {
   [ROUTES.support]: LifeBuoy,
   [ROUTES.settings]: Settings,
 };
-
-const managementBuildingRequiredRoutes = new Set<string>([
-  ROUTES.apartments,
-  ROUTES.residents,
-  ROUTES.meterReadings,
-  ROUTES.invoices,
-  ROUTES.documents,
-]);
 
 type UserProfileSummary = {
   id?: string;
@@ -203,7 +195,6 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
   const pathname = rawPathname ?? ROUTES.dashboard;
   const role = normalizeDashboardRole(defaultRole);
   const [hasPendingBuildingRequests, setHasPendingBuildingRequests] = useState(false);
-  const [hasManagementBuildings, setHasManagementBuildings] = useState(role !== "managementCompany");
   const [hasElectricityNavigation, setHasElectricityNavigation] = useState(false);
   const optimisticElectricityUntilRef = useRef(0);
   const baseNavItems = role === "platformAdmin"
@@ -216,10 +207,6 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
         )
     : navByRole[role];
   const navItems = baseNavItems.filter((item) => {
-    if (role === "managementCompany" && !hasManagementBuildings && managementBuildingRequiredRoutes.has(item.href)) {
-      return false;
-    }
-
     if (role === "managementCompany" && !hasElectricityNavigation && item.href === ROUTES.electricity) {
       return false;
     }
@@ -453,7 +440,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
 
   useEffect(() => {
     if (role !== "managementCompany" || !navigationCompanyId) {
-      setHasManagementBuildings(role !== "managementCompany");
+      setHasElectricityNavigation(false);
       return;
     }
 
@@ -464,15 +451,12 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
         .then((response) => {
           if (!active) return;
           const buildings = response.items ?? [];
-          const approvedBuildings = buildings.filter((building) => isApprovedBuilding(building));
           const hasEnabled = buildings.some((building) => isElectricityEnabledBuilding(building));
           const optimisticActive = Date.now() < optimisticElectricityUntilRef.current;
-          setHasManagementBuildings(approvedBuildings.length > 0);
           setHasElectricityNavigation(hasEnabled || optimisticActive || readStoredElectricityNavigation());
         })
         .catch(() => {
           if (active) {
-            setHasManagementBuildings(false);
             setHasElectricityNavigation(false);
           }
         });

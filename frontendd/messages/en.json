@@ -1571,6 +1571,19 @@
     "periodDateMode": "By dates",
     "periodFreeModeHint": "Residents can submit readings at any time.",
     "periodMonthlyHint": "The period repeats monthly from day {startDay} to day {endDay}.",
+    "periodRemindersTitle": "Reminder sending",
+    "periodRemindersEnabled": "Send email reminders",
+    "periodReminderOnStart": "On the first submission day",
+    "periodReminderOnEnd": "Before closing",
+    "periodReminderOnClose": "On the last submission day if readings are missing",
+    "periodReminderStartTime": "First reminder time",
+    "periodReminderEndTime": "Final reminder time",
+    "periodReminderCloseTime": "Closing date reminder time",
+    "periodReminderOffsetDays": "Days",
+    "periodReminderEndOffsetPrefix": "",
+    "periodReminderEndOffsetSuffix": "days before the end if readings are missing",
+    "periodReminderItemColumn": "Reminder",
+    "periodReminderTimeColumn": "Time",
     "deletePeriod": "Delete period",
     "deletingPeriod": "Deleting...",
     "colApartment": "Apartment",
@@ -1637,6 +1650,7 @@
       "company": "Company",
       "apiKey": "API key",
       "invoiceGeneration": "Invoice generation",
+      "emailTemplates": "Email templates",
       "notifications": "Notifications",
       "contacts": "Contacts",
       "billing": "Billing accounts",
@@ -1805,6 +1819,7 @@
         "empty": "No members have been added yet."
       },
       "permissions": {
+        "viewApiKeys": "View invoice import API keys",
         "editCompanyInfo": "Edit company information",
         "manageMembers": "Manage employees",
         "manageApiKeys": "Manage API keys",
@@ -1823,6 +1838,28 @@
         "edit": "Edit contact",
         "save": "Save contact",
         "empty": "No resident contacts have been added yet."
+      }
+    },
+    "emailTemplates": {
+      "title": "Email templates",
+      "description": "Preview the real Domera email templates without sending messages to recipients.",
+      "language": "Email language",
+      "accentColor": "Email color",
+      "subject": "Email subject",
+      "preview": "Email preview",
+      "loading": "Loading template...",
+      "emptyPreview": "Select a template to see the preview.",
+      "loadFailed": "Failed to load email template.",
+      "types": {
+        "registrationCode": "Registration code",
+        "passwordReset": "Password reset",
+        "ownerInvitation": "Owner invitation",
+        "tenantInvitation": "Tenant invitation",
+        "tenantInvitedByOwner": "Tenant invited by owner",
+        "invoiceGenerated": "Invoice generated",
+        "meterReadingReminder": "Meter reading reminder",
+        "meterReadingClosingReminder": "Submission ending reminder",
+        "notification": "General notification"
       }
     },
     "apiKeys": {

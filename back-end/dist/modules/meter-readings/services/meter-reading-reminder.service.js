@@ -47,7 +47,10 @@ let MeterReadingReminderService = class MeterReadingReminderService {
             submissionLink: '',
             buildingName,
             apartmentNumber: 'Apt 1',
+            periodLabel: '01.05.2026 - 27.05.2026',
             deadline: '27.05.2026',
+            reminderStage: 'close',
+            daysUntilDeadline: 0,
         });
         return { success: true, message: 'Test reminder sent to ' + companyEmail };
     }

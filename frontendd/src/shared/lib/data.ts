@@ -15,17 +15,33 @@ export interface BuildingReadingConfig {
     startDate: string;
     endDate: string;
     monthly: boolean;
+    reminders?: SubmissionReminderConfig;
   } | null;
   waterSubmissionPeriod?: {
     startDate: string;
     endDate: string;
     monthly: boolean;
+    reminders?: SubmissionReminderConfig;
   } | null;
   electricitySubmissionPeriod?: {
     startDate: string;
     endDate: string;
     monthly: boolean;
+    reminders?: SubmissionReminderConfig;
   } | null;
+}
+
+export interface SubmissionReminderConfig {
+  enabled: boolean;
+  onStart: boolean;
+  onEnd: boolean;
+  onClose: boolean;
+  startTime: string;
+  endTime: string;
+  closeTime: string;
+  startOffsetDays: number;
+  endOffsetDays: number;
+  closeOffsetDays: number;
 }
 
 export interface Building {

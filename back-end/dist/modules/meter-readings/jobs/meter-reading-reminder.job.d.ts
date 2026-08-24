@@ -5,6 +5,21 @@ export declare class MeterReadingReminderJob {
     private readonly emailService;
     private readonly logger;
     constructor(firebaseAdminService: FirebaseAdminService, emailService: EmailService);
-    sendPeriodStartReminders(): Promise<void>;
-    sendPeriodEndReminders(): Promise<void>;
+    sendConfiguredReminders(): Promise<void>;
+    private periodsForBuilding;
+    private normalizePeriod;
+    private buildingCompanyName;
+    private firstString;
+    private reminderStage;
+    private normalizeReminders;
+    private normalizeOffsetDays;
+    private normalizeTime;
+    private isReminderDue;
+    private shiftDate;
+    private isPeriodDateToday;
+    private deadlineLabel;
+    private periodLabel;
+    private periodDateLabel;
+    private daysUntilDeadline;
+    private hasCurrentMonthReading;
 }

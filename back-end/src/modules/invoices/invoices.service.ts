@@ -1477,6 +1477,7 @@ export class InvoicesService {
     await this.emailService.sendInvoiceGenerated({
       to: recipientEmail,
       tenantName: this.firstString(params.invoiceData.residentName, params.apartment.residentName, params.apartment.ownerName),
+      brandName: this.firstString(params.invoiceData.companyName, params.apartment.companyName, params.apartment.managementCompanyName),
       apartmentNumber: this.firstString(params.invoiceData.apartmentNumber, params.apartment.number, params.apartment.apartmentNumber),
       buildingName: this.firstString(params.invoiceData.buildingName, params.apartment.buildingName),
       invoiceNumber: this.firstString(params.invoiceData.invoiceNumber, params.invoiceData.externalId, params.invoiceId),

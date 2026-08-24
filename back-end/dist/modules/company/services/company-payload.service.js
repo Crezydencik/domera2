@@ -25,6 +25,7 @@ let CompanyPayloadService = class CompanyPayloadService {
     defaultCompanyMemberPermissions(overrides) {
         return {
             viewCompanyInfo: true,
+            viewApiKeys: false,
             editCompanyInfo: false,
             manageMembers: false,
             manageApiKeys: false,
@@ -38,6 +39,7 @@ let CompanyPayloadService = class CompanyPayloadService {
             : {};
         return this.defaultCompanyMemberPermissions({
             viewCompanyInfo: source.viewCompanyInfo !== false,
+            viewApiKeys: source.viewApiKeys === true || source.manageApiKeys === true,
             editCompanyInfo: source.editCompanyInfo === true,
             manageMembers: source.manageMembers === true,
             manageApiKeys: source.manageApiKeys === true,

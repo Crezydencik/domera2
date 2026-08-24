@@ -20,6 +20,7 @@ export declare class CompanyController {
         currentUserPermissions: {
             isMainManager: boolean;
             viewCompanyInfo: boolean;
+            viewApiKeys: boolean;
             editCompanyInfo: boolean;
             manageMembers: boolean;
             manageApiKeys: boolean;

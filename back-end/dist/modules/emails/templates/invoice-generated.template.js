@@ -7,6 +7,7 @@ exports.invoiceGeneratedTemplates = {
         subject: `Invoice ${params.invoiceNumber} is ready - Domera`,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'en',
+            brandName: params.brandName,
             title: `Invoice ${params.invoiceNumber}`,
             badge: params.buildingName || 'Domera',
             children: `
@@ -26,6 +27,7 @@ exports.invoiceGeneratedTemplates = {
         subject: `Счёт ${params.invoiceNumber} готов - Domera`,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'ru',
+            brandName: params.brandName,
             title: `Счёт ${params.invoiceNumber}`,
             badge: params.buildingName || 'Domera',
             children: `
@@ -45,6 +47,7 @@ exports.invoiceGeneratedTemplates = {
         subject: `Rēķins ${params.invoiceNumber} ir gatavs - Domera`,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'lv',
+            brandName: params.brandName,
             title: `Rēķins ${params.invoiceNumber}`,
             badge: params.buildingName || 'Domera',
             children: `

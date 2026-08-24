@@ -17,6 +17,7 @@ export declare function renderEmailLayout(params: {
     title: string;
     children: string;
     badge?: string;
+    brandName?: string;
     footer?: string;
 }): string;
 export declare function paragraph(content: string): string;

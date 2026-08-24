@@ -3,6 +3,7 @@ import { button, detailRows, note, paragraph, renderEmailLayout } from './email-
 
 export interface InvoiceGeneratedParams {
   tenantName?: string;
+  brandName?: string;
   apartmentNumber?: string;
   buildingName?: string;
   invoiceNumber: string;
@@ -19,6 +20,7 @@ export const invoiceGeneratedTemplates: Record<
     subject: `Invoice ${params.invoiceNumber} is ready - Domera`,
     html: renderEmailLayout({
       language: 'en',
+      brandName: params.brandName,
       title: `Invoice ${params.invoiceNumber}`,
       badge: params.buildingName || 'Domera',
       children: `
@@ -39,6 +41,7 @@ export const invoiceGeneratedTemplates: Record<
     subject: `Счёт ${params.invoiceNumber} готов - Domera`,
     html: renderEmailLayout({
       language: 'ru',
+      brandName: params.brandName,
       title: `Счёт ${params.invoiceNumber}`,
       badge: params.buildingName || 'Domera',
       children: `
@@ -59,6 +62,7 @@ export const invoiceGeneratedTemplates: Record<
     subject: `Rēķins ${params.invoiceNumber} ir gatavs - Domera`,
     html: renderEmailLayout({
       language: 'lv',
+      brandName: params.brandName,
       title: `Rēķins ${params.invoiceNumber}`,
       badge: params.buildingName || 'Domera',
       children: `

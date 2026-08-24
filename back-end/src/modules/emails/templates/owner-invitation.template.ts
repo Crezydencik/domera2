@@ -3,6 +3,7 @@ import { button, detailRows, note, paragraph, renderEmailLayout } from './email-
 
 export interface OwnerInvitationParams {
   companyName: string;
+  brandName?: string;
   ownerName?: string;
   ownerEmail?: string;
   invitationLink: string;
@@ -45,6 +46,7 @@ export const ownerInvitationTemplates: Record<
     subject: `Join ${params.companyName} on Domera`,
     html: renderEmailLayout({
       language: 'en',
+      brandName: params.brandName || params.companyName,
       title: 'Property owner invitation',
       badge: params.companyName,
       children: `
@@ -65,6 +67,7 @@ export const ownerInvitationTemplates: Record<
     subject: `Присоединитесь к Domera`,
     html: renderEmailLayout({
       language: 'ru',
+      brandName: params.brandName || params.companyName,
       title: 'Приглашение собственника',
       badge: params.companyName,
       children: `
@@ -85,6 +88,7 @@ export const ownerInvitationTemplates: Record<
     subject: `Pievienojieties Domera`,
     html: renderEmailLayout({
       language: 'lv',
+      brandName: params.brandName || params.companyName,
       title: 'Īpašnieka uzaicinājums',
       badge: params.companyName,
       children: `

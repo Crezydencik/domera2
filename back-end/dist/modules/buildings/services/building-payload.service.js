@@ -160,9 +160,50 @@ let BuildingPayloadService = class BuildingPayloadService {
         const startDate = typeof obj.startDate === 'string' ? obj.startDate.trim() : '';
         const endDate = typeof obj.endDate === 'string' ? obj.endDate.trim() : '';
         const monthly = Boolean(obj.monthly);
+        const existingPeriod = existingConfig[key] && typeof existingConfig[key] === 'object'
+            ? existingConfig[key]
+            : {};
         if (!startDate && !endDate)
             return null;
-        return { startDate, endDate, monthly };
+        return {
+            startDate,
+            endDate,
+            monthly,
+            reminders: this.normalizeSubmissionReminders(obj.reminders, existingPeriod.reminders),
+        };
+    }
+    normalizeSubmissionReminders(source, existing) {
+        const obj = source && typeof source === 'object' ? source : {};
+        const existingObj = existing && typeof existing === 'object' ? existing : {};
+        return {
+            enabled: obj.enabled !== undefined ? Boolean(obj.enabled) : existingObj.enabled !== false,
+            onStart: obj.onStart !== undefined ? Boolean(obj.onStart) : existingObj.onStart !== false,
+            onEnd: obj.onEnd !== undefined ? Boolean(obj.onEnd) : existingObj.onEnd !== false,
+            onClose: obj.onClose !== undefined ? Boolean(obj.onClose) : existingObj.onClose !== false,
+            startTime: this.normalizeTime(obj.startTime, existingObj.startTime, '08:00'),
+            endTime: this.normalizeTime(obj.endTime, existingObj.endTime, '18:00'),
+            closeTime: this.normalizeTime(obj.closeTime, existingObj.closeTime, '18:00'),
+            startOffsetDays: 0,
+            endOffsetDays: this.normalizeOffsetDays(obj.endOffsetDays, existingObj.endOffsetDays, 1),
+            closeOffsetDays: this.normalizeOffsetDays(obj.closeOffsetDays, existingObj.closeOffsetDays, 0),
+        };
+    }
+    normalizeOffsetDays(...values) {
+        for (const value of values) {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed)) {
+                return Math.min(31, Math.max(0, Math.floor(parsed)));
+            }
+        }
+        return 0;
+    }
+    normalizeTime(...values) {
+        for (const value of values) {
+            if (typeof value === 'string' && /^\d{2}:\d{2}$/.test(value.trim())) {
+                return value.trim();
+            }
+        }
+        return '08:00';
     }
     buildReadablePrefix(name) {
         const ascii = name

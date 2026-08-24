@@ -161,6 +161,11 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
+], SendTenantInvitedByOwnerEmailDto.prototype, "brandName", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
 ], SendTenantInvitedByOwnerEmailDto.prototype, "buildingName", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
@@ -212,6 +217,11 @@ __decorate([
 ], SendInvoiceGeneratedEmailDto.prototype, "buildingName", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendInvoiceGeneratedEmailDto.prototype, "brandName", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsEnum)(['en', 'ru', 'lv']),
     __metadata("design:type", String)
 ], SendInvoiceGeneratedEmailDto.prototype, "language", void 0);
@@ -247,13 +257,33 @@ __decorate([
 ], SendMeterReadingReminderEmailDto.prototype, "buildingName", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendMeterReadingReminderEmailDto.prototype, "brandName", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Array)
 ], SendMeterReadingReminderEmailDto.prototype, "meters", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
+], SendMeterReadingReminderEmailDto.prototype, "periodLabel", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
 ], SendMeterReadingReminderEmailDto.prototype, "deadline", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['start', 'end', 'close']),
+    __metadata("design:type", String)
+], SendMeterReadingReminderEmailDto.prototype, "reminderStage", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], SendMeterReadingReminderEmailDto.prototype, "daysUntilDeadline", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsEnum)(['en', 'ru', 'lv']),
@@ -284,6 +314,11 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], SendNotificationEmailDto.prototype, "actionLink", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendNotificationEmailDto.prototype, "brandName", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

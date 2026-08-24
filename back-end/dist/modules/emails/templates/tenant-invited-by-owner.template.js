@@ -7,6 +7,7 @@ exports.tenantInvitedByOwnerTemplates = {
         subject: 'Tenant invitation to Domera',
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'en',
+            brandName: params.brandName,
             title: 'You are invited as a tenant',
             badge: 'Tenant access',
             children: `
@@ -32,6 +33,7 @@ exports.tenantInvitedByOwnerTemplates = {
         subject: 'Приглашение арендатора в Domera',
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'ru',
+            brandName: params.brandName,
             title: 'Вас пригласили как арендатора',
             badge: 'Доступ арендатора',
             children: `
@@ -57,6 +59,7 @@ exports.tenantInvitedByOwnerTemplates = {
         subject: 'Īrnieka uzaicinājums Domera',
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'lv',
+            brandName: params.brandName,
             title: 'Jūs esat uzaicināts kā īrnieks',
             badge: 'Īrnieka piekļuve',
             children: `

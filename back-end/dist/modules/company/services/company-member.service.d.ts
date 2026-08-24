@@ -14,6 +14,7 @@ export declare class CompanyMemberService {
     private resolveFrontendUrl;
     private attachMemberToCompany;
     private sendMemberRegistrationInvitation;
+    private sendExistingMemberAccessNotification;
     add(request: Request, user: RequestUser, companyId: string, payload: Record<string, unknown>): Promise<{
         success: boolean;
         mode: string;

@@ -1,6 +1,7 @@
 import { EmailTemplate, EmailLanguage } from '../email.types';
 export interface TenantInvitedByOwnerParams {
     tenantName?: string;
+    brandName?: string;
     ownerName: string;
     buildingName?: string;
     apartmentNumber?: string;

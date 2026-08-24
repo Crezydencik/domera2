@@ -24,6 +24,7 @@ export declare class CompanyService {
         currentUserPermissions: {
             isMainManager: boolean;
             viewCompanyInfo: boolean;
+            viewApiKeys: boolean;
             editCompanyInfo: boolean;
             manageMembers: boolean;
             manageApiKeys: boolean;

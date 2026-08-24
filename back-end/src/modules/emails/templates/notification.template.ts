@@ -6,6 +6,7 @@ export interface NotificationParams {
   message: string;
   actionLabel?: string;
   actionLink?: string;
+  brandName?: string;
   footer?: string;
 }
 
@@ -24,6 +25,7 @@ export const notificationTemplates: Record<
       language: 'en',
       title: params.title,
       badge: 'Notification',
+      brandName: params.brandName,
       children: `
         <div style="${emailStyles.paragraph}">${params.message}</div>
         ${action(params)}
@@ -38,6 +40,7 @@ export const notificationTemplates: Record<
       language: 'ru',
       title: params.title,
       badge: 'Уведомление',
+      brandName: params.brandName,
       children: `
         <div style="${emailStyles.paragraph}">${params.message}</div>
         ${action(params)}
@@ -52,6 +55,7 @@ export const notificationTemplates: Record<
       language: 'lv',
       title: params.title,
       badge: 'Paziņojums',
+      brandName: params.brandName,
       children: `
         <div style="${emailStyles.paragraph}">${params.message}</div>
         ${action(params)}

@@ -4,13 +4,14 @@ exports.tenantInvitationTemplates = void 0;
 const email_layout_template_1 = require("./email-layout.template");
 exports.tenantInvitationTemplates = {
     en: (params) => ({
-        subject: `Tenant invitation to Domera - ${params.companyName}`,
+        subject: `Tenant invitation to apartment - ${params.companyName}`,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'en',
+            brandName: params.brandName || params.companyName,
             title: 'You are invited as a tenant',
             badge: 'Tenant access',
             children: `
-        ${(0, email_layout_template_1.paragraph)(`${params.companyName} has invited you to Domera as a tenant. After accepting the invitation, you will get access to your apartment information and tenant services in one place.`)}
+        ${(0, email_layout_template_1.paragraph)(`The management company has invited you to apartment${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} as a tenant. After accepting the invitation, you will get access to apartment information and tenant services in one place.`)}
         ${(0, email_layout_template_1.detailRows)([
                 { label: 'Company', value: params.companyName },
                 { label: 'Role', value: 'Tenant' },
@@ -29,13 +30,14 @@ exports.tenantInvitationTemplates = {
         }),
     }),
     ru: (params) => ({
-        subject: `Приглашение арендатора в Domera - ${params.companyName}`,
+        subject: `Приглашение арендатора к квартире - ${params.companyName}`,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'ru',
+            brandName: params.brandName || params.companyName,
             title: 'Вас пригласили как арендатора',
             badge: 'Доступ арендатора',
             children: `
-        ${(0, email_layout_template_1.paragraph)(`${params.companyName} приглашает вас в Domera в качестве арендатора. После принятия приглашения вы получите доступ к информации по квартире и сервисам для арендатора.`)}
+        ${(0, email_layout_template_1.paragraph)(`Управляющая компания пригласила вас к квартире${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} как арендатора. После принятия приглашения вы получите доступ к информации по квартире и сервисам для арендатора.`)}
         ${(0, email_layout_template_1.detailRows)([
                 { label: 'Компания', value: params.companyName },
                 { label: 'Роль', value: 'Арендатор' },
@@ -54,13 +56,14 @@ exports.tenantInvitationTemplates = {
         }),
     }),
     lv: (params) => ({
-        subject: `Īrnieka uzaicinājums Domera - ${params.companyName}`,
+        subject: `Īrnieka uzaicinājums dzīvoklim - ${params.companyName}`,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'lv',
+            brandName: params.brandName || params.companyName,
             title: 'Jūs esat uzaicināts kā īrnieks',
             badge: 'Īrnieka piekļuve',
             children: `
-        ${(0, email_layout_template_1.paragraph)(`${params.companyName} aicina jūs pievienoties Domera kā īrnieku. Pēc uzaicinājuma pieņemšanas jums būs piekļuve dzīvokļa informācijai un īrnieka pakalpojumiem vienuviet.`)}
+        ${(0, email_layout_template_1.paragraph)(`Pārvaldības uzņēmums uzaicināja jūs dzīvoklim${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} kā īrnieku. Pēc uzaicinājuma pieņemšanas jums būs piekļuve dzīvokļa informācijai un īrnieka pakalpojumiem vienuviet.`)}
         ${(0, email_layout_template_1.detailRows)([
                 { label: 'Uzņēmums', value: params.companyName },
                 { label: 'Loma', value: 'Īrnieks' },

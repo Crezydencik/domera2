@@ -3,6 +3,7 @@ import { bulletList, button, detailRows, infoBox, note, paragraph, renderEmailLa
 
 export interface TenantInvitationParams {
   companyName: string;
+  brandName?: string;
   buildingName?: string;
   apartmentNumber?: string;
   invitationLink: string;
@@ -14,13 +15,14 @@ export const tenantInvitationTemplates: Record<
   (params: TenantInvitationParams) => EmailTemplate
 > = {
   en: (params: TenantInvitationParams) => ({
-    subject: `Tenant invitation to Domera - ${params.companyName}`,
+    subject: `Tenant invitation to apartment - ${params.companyName}`,
     html: renderEmailLayout({
       language: 'en',
+      brandName: params.brandName || params.companyName,
       title: 'You are invited as a tenant',
       badge: 'Tenant access',
       children: `
-        ${paragraph(`${params.companyName} has invited you to Domera as a tenant. After accepting the invitation, you will get access to your apartment information and tenant services in one place.`)}
+        ${paragraph(`The management company has invited you to apartment${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} as a tenant. After accepting the invitation, you will get access to apartment information and tenant services in one place.`)}
         ${detailRows([
           { label: 'Company', value: params.companyName },
           { label: 'Role', value: 'Tenant' },
@@ -40,13 +42,14 @@ export const tenantInvitationTemplates: Record<
   }),
 
   ru: (params: TenantInvitationParams) => ({
-    subject: `Приглашение арендатора в Domera - ${params.companyName}`,
+    subject: `Приглашение арендатора к квартире - ${params.companyName}`,
     html: renderEmailLayout({
       language: 'ru',
+      brandName: params.brandName || params.companyName,
       title: 'Вас пригласили как арендатора',
       badge: 'Доступ арендатора',
       children: `
-        ${paragraph(`${params.companyName} приглашает вас в Domera в качестве арендатора. После принятия приглашения вы получите доступ к информации по квартире и сервисам для арендатора.`)}
+        ${paragraph(`Управляющая компания пригласила вас к квартире${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} как арендатора. После принятия приглашения вы получите доступ к информации по квартире и сервисам для арендатора.`)}
         ${detailRows([
           { label: 'Компания', value: params.companyName },
           { label: 'Роль', value: 'Арендатор' },
@@ -66,13 +69,14 @@ export const tenantInvitationTemplates: Record<
   }),
 
   lv: (params: TenantInvitationParams) => ({
-    subject: `Īrnieka uzaicinājums Domera - ${params.companyName}`,
+    subject: `Īrnieka uzaicinājums dzīvoklim - ${params.companyName}`,
     html: renderEmailLayout({
       language: 'lv',
+      brandName: params.brandName || params.companyName,
       title: 'Jūs esat uzaicināts kā īrnieks',
       badge: 'Īrnieka piekļuve',
       children: `
-        ${paragraph(`${params.companyName} aicina jūs pievienoties Domera kā īrnieku. Pēc uzaicinājuma pieņemšanas jums būs piekļuve dzīvokļa informācijai un īrnieka pakalpojumiem vienuviet.`)}
+        ${paragraph(`Pārvaldības uzņēmums uzaicināja jūs dzīvoklim${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} kā īrnieku. Pēc uzaicinājuma pieņemšanas jums būs piekļuve dzīvokļa informācijai un īrnieka pakalpojumiem vienuviet.`)}
         ${detailRows([
           { label: 'Uzņēmums', value: params.companyName },
           { label: 'Loma', value: 'Īrnieks' },

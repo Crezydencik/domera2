@@ -103,7 +103,7 @@ let CompanyApiKeyService = class CompanyApiKeyService {
         const companySnap = await db.collection('companies').doc(normalizedCompanyId).get();
         if (!companySnap.exists)
             throw new common_1.NotFoundException('Company not found');
-        this.accessService.assertCanManageApiKeys(user, normalizedCompanyId, companySnap.data());
+        this.accessService.assertCanViewApiKeys(user, normalizedCompanyId, companySnap.data());
         const buildingContexts = await this.getCompanyBuildingContexts(normalizedCompanyId);
         const snapshots = await Promise.all(buildingContexts.map(async (building) => ({
             building,

@@ -53,6 +53,42 @@ function firstDisplayString(...values: unknown[]): string {
   return "";
 }
 
+function normalizeSubmissionReminders(source: UnknownRecord | null) {
+  const reminders = source?.reminders && typeof source.reminders === "object"
+    ? source.reminders as UnknownRecord
+    : null;
+  if (!reminders) return undefined;
+
+  return {
+    enabled: reminders.enabled !== false,
+    onStart: reminders.onStart !== false,
+    onEnd: reminders.onEnd !== false,
+    onClose: reminders.onClose !== false,
+    startTime: firstDisplayString(reminders.startTime) || "08:00",
+    endTime: firstDisplayString(reminders.endTime) || "18:00",
+    closeTime: firstDisplayString(reminders.closeTime) || "18:00",
+    startOffsetDays: normalizeOffsetDays(reminders.startOffsetDays, 0),
+    endOffsetDays: normalizeOffsetDays(reminders.endOffsetDays, 1),
+    closeOffsetDays: normalizeOffsetDays(reminders.closeOffsetDays, 0),
+  };
+}
+
+function normalizeOffsetDays(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(31, Math.max(0, Math.floor(parsed))) : fallback;
+}
+
+function normalizeSubmissionPeriod(source: unknown) {
+  if (!source || typeof source !== "object") return null;
+  const period = source as UnknownRecord;
+  return {
+    startDate: firstDisplayString(period.startDate),
+    endDate: firstDisplayString(period.endDate),
+    monthly: Boolean(period.monthly),
+    reminders: normalizeSubmissionReminders(period),
+  };
+}
+
 function compareApartmentOrder(left: UnknownRecord, right: UnknownRecord): number {
   const leftLabel = firstDisplayString(left.number, left.apartmentNumber, left.id, left.apartmentId);
   const rightLabel = firstDisplayString(right.number, right.apartmentNumber, right.id, right.apartmentId);
@@ -219,27 +255,9 @@ export function toBuilding(item: UnknownRecord): Building {
         electricityAllowMultipleMonthlySubmissions: Boolean(rawReadingConfig.electricityAllowMultipleMonthlySubmissions),
         electricityFixedPriceEnabled: Boolean(rawReadingConfig.electricityFixedPriceEnabled),
         electricityPricePerKwh: Math.max(0, firstNumber(rawReadingConfig.electricityPricePerKwh)),
-        submissionPeriod: rawReadingConfig.submissionPeriod && typeof rawReadingConfig.submissionPeriod === "object"
-          ? {
-              startDate: firstDisplayString((rawReadingConfig.submissionPeriod as UnknownRecord).startDate),
-              endDate: firstDisplayString((rawReadingConfig.submissionPeriod as UnknownRecord).endDate),
-              monthly: Boolean((rawReadingConfig.submissionPeriod as UnknownRecord).monthly),
-            }
-          : null,
-        waterSubmissionPeriod: rawReadingConfig.waterSubmissionPeriod && typeof rawReadingConfig.waterSubmissionPeriod === "object"
-          ? {
-              startDate: firstDisplayString((rawReadingConfig.waterSubmissionPeriod as UnknownRecord).startDate),
-              endDate: firstDisplayString((rawReadingConfig.waterSubmissionPeriod as UnknownRecord).endDate),
-              monthly: Boolean((rawReadingConfig.waterSubmissionPeriod as UnknownRecord).monthly),
-            }
-          : null,
-        electricitySubmissionPeriod: rawReadingConfig.electricitySubmissionPeriod && typeof rawReadingConfig.electricitySubmissionPeriod === "object"
-          ? {
-              startDate: firstDisplayString((rawReadingConfig.electricitySubmissionPeriod as UnknownRecord).startDate),
-              endDate: firstDisplayString((rawReadingConfig.electricitySubmissionPeriod as UnknownRecord).endDate),
-              monthly: Boolean((rawReadingConfig.electricitySubmissionPeriod as UnknownRecord).monthly),
-            }
-          : null,
+        submissionPeriod: normalizeSubmissionPeriod(rawReadingConfig.submissionPeriod),
+        waterSubmissionPeriod: normalizeSubmissionPeriod(rawReadingConfig.waterSubmissionPeriod),
+        electricitySubmissionPeriod: normalizeSubmissionPeriod(rawReadingConfig.electricitySubmissionPeriod),
       }
     : undefined;
 

@@ -208,7 +208,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const normalizedAccountType = normalizeAccessValue(accountType);
   const canViewCompany =
     data.role === "managementCompany" &&
-    (normalizedAccountType === "" || normalizedAccountType === "managementcompany");
+    (normalizedAccountType === "" || normalizedAccountType === "managementcompany" || normalizedAccountType === "accountant");
   const hasElectricityEnabled = data.buildings.some(isElectricityEnabledBuilding);
   let company: UnknownRecord | null = null;
   let apiKeys: CompanyApiKeyItem[] = [];
@@ -243,6 +243,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 
   const normalizeMemberPermissionFlags = (value?: Partial<CompanyMemberPermissions>): CompanyMemberPermissions => ({
     viewCompanyInfo: value?.viewCompanyInfo !== false,
+    viewApiKeys: value?.viewApiKeys === true || value?.manageApiKeys === true,
     editCompanyInfo: value?.editCompanyInfo === true,
     manageMembers: value?.manageMembers === true,
     manageApiKeys: value?.manageApiKeys === true,
@@ -275,10 +276,11 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           bankBeneficiary: firstString(company?.bankBeneficiary, company?.beneficiaryName, profile?.bankBeneficiary, profile?.beneficiaryName),
           invoiceSettings: normalizeInvoiceSettings(company?.invoiceSettings),
           hasElectricityEnabled,
-          apiKeys: currentUserPermissions.manageApiKeys === true ? apiKeys : [],
+          apiKeys: currentUserPermissions.viewApiKeys === true || currentUserPermissions.manageApiKeys === true ? apiKeys : [],
           permissions: {
             isMainManager: currentUserPermissions.isMainManager === true,
             viewCompanyInfo: currentUserPermissions.viewCompanyInfo !== false,
+            viewApiKeys: currentUserPermissions.viewApiKeys === true || currentUserPermissions.manageApiKeys === true,
             editCompanyInfo: currentUserPermissions.editCompanyInfo === true,
             manageMembers: currentUserPermissions.manageMembers === true,
             manageApiKeys: currentUserPermissions.manageApiKeys === true,

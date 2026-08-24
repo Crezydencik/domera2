@@ -22,6 +22,7 @@ let EmailTemplateService = class EmailTemplateService {
         const language = this.normalizeLanguage(dto.language);
         return templates.ownerInvitationTemplates[language]({
             companyName: dto.companyName,
+            brandName: dto.companyName,
             ownerName: dto.ownerName,
             ownerEmail: dto.ownerEmail || dto.to,
             invitationLink: dto.invitationLink,
@@ -33,6 +34,7 @@ let EmailTemplateService = class EmailTemplateService {
         const language = this.normalizeLanguage(dto.language);
         return templates.tenantInvitationTemplates[language]({
             companyName: dto.companyName,
+            brandName: dto.companyName,
             buildingName: dto.buildingName,
             apartmentNumber: dto.apartmentNumber,
             invitationLink: dto.invitationLink,
@@ -43,6 +45,7 @@ let EmailTemplateService = class EmailTemplateService {
         const language = this.normalizeLanguage(dto.language);
         return templates.tenantInvitedByOwnerTemplates[language]({
             tenantName: dto.tenantName,
+            brandName: dto.brandName,
             ownerName: dto.ownerName,
             buildingName: dto.buildingName,
             apartmentNumber: dto.apartmentNumber,
@@ -53,6 +56,7 @@ let EmailTemplateService = class EmailTemplateService {
         const language = this.normalizeLanguage(dto.language);
         return templates.invoiceGeneratedTemplates[language]({
             tenantName: dto.tenantName,
+            brandName: dto.brandName,
             apartmentNumber: dto.apartmentNumber,
             buildingName: dto.buildingName,
             invoiceNumber: dto.invoiceNumber,
@@ -65,11 +69,15 @@ let EmailTemplateService = class EmailTemplateService {
         const language = this.normalizeLanguage(dto.language);
         return templates.meterReadingReminderTemplates[language]({
             tenantName: dto.tenantName,
+            brandName: dto.brandName,
             apartmentNumber: dto.apartmentNumber,
             buildingName: dto.buildingName,
             meters: dto.meters || [],
             submissionLink: dto.submissionLink,
+            periodLabel: dto.periodLabel,
             deadline: dto.deadline,
+            reminderStage: dto.reminderStage,
+            daysUntilDeadline: dto.daysUntilDeadline,
         });
     }
     notification(dto) {
@@ -79,6 +87,7 @@ let EmailTemplateService = class EmailTemplateService {
             message: dto.message,
             actionLabel: dto.actionLabel,
             actionLink: dto.actionLink,
+            brandName: dto.brandName,
             footer: dto.footer,
         });
     }

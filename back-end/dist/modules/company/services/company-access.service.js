@@ -47,6 +47,7 @@ let CompanyAccessService = class CompanyAccessService {
             return {
                 isMainManager: true,
                 viewCompanyInfo: true,
+                viewApiKeys: true,
                 editCompanyInfo: true,
                 manageMembers: true,
                 manageApiKeys: true,
@@ -54,6 +55,14 @@ let CompanyAccessService = class CompanyAccessService {
             };
         }
         const permissions = this.payloadService.getCompanyMemberPermissions(company, user.uid);
+        if (user.role === 'Accountant') {
+            return {
+                isMainManager: false,
+                ...permissions,
+                viewCompanyInfo: true,
+                viewApiKeys: true,
+            };
+        }
         return {
             isMainManager: false,
             ...permissions,
@@ -101,6 +110,13 @@ let CompanyAccessService = class CompanyAccessService {
         const permissions = this.getCompanyPermissions(user, companyId, company);
         if (!permissions.manageApiKeys) {
             throw new common_1.ForbiddenException('You do not have permission to manage API keys');
+        }
+    }
+    assertCanViewApiKeys(user, companyId, company) {
+        this.assertCompanyAccess(user, companyId, company);
+        const permissions = this.getCompanyPermissions(user, companyId, company);
+        if (!permissions.viewApiKeys && !permissions.manageApiKeys) {
+            throw new common_1.ForbiddenException('You do not have permission to view API keys');
         }
     }
     assertCanManageInvoiceSettings(user, companyId, company) {

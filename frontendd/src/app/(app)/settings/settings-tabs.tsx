@@ -36,6 +36,7 @@ type SettingsTab =
   | "company"
   | "apiKey"
   | "invoiceGeneration"
+  | "emailTemplates"
   | "notifications"
   | "contacts"
   | "billing"
@@ -140,6 +141,7 @@ type InvoiceTableColumn = "period" | "price" | "amount" | "unit" | "vat" | "sum"
 type PreviewInvoiceRow =
   | { type: "group"; service: string }
   | { service: string; period: string; price: number; amount: number; unit: string };
+type CompanyMemberPermissionKey = keyof CompanyMemberPermissions;
 
 type NameDraft = {
   firstName: string;
@@ -169,6 +171,18 @@ type CompanyDraft = Pick<
 type CompanyMemberRole = "ManagementCompany" | "Accountant";
 
 const baseTabs: SettingsTab[] = ["user", "notifications"];
+const defaultCompanyMemberPermissions: CompanyMemberPermissions = {
+  viewCompanyInfo: true,
+  viewApiKeys: false,
+  editCompanyInfo: false,
+  manageMembers: false,
+  manageApiKeys: false,
+  manageInvoiceSettings: false,
+};
+const companyMemberPermissionOptions: Record<CompanyMemberRole, CompanyMemberPermissionKey[]> = {
+  ManagementCompany: ["viewApiKeys", "editCompanyInfo", "manageMembers", "manageApiKeys", "manageInvoiceSettings"],
+  Accountant: ["viewApiKeys", "manageApiKeys", "manageInvoiceSettings"],
+};
 const MAX_INVOICE_LOGO_BYTES = 350 * 1024;
 const DEFAULT_INVOICE_ACCENT_COLOR = "#ef3340";
 const invoiceNumberPartOptions: InvoiceNumberPart[] = ["companyCode", "apartmentNumber", "month", "year", "date", "sequence"];
@@ -340,6 +354,33 @@ function formatInvoiceNumber(value: number, fractionDigits: number): string {
 
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function normalizeCompanyMemberRole(role: string | undefined): CompanyMemberRole {
+  return role === "Accountant" ? "Accountant" : "ManagementCompany";
+}
+
+function sanitizeMemberPermissionsForRole(
+  permissions: Partial<CompanyMemberPermissions> | undefined,
+  role: CompanyMemberRole,
+): CompanyMemberPermissions {
+  const next = {
+    ...defaultCompanyMemberPermissions,
+    ...permissions,
+  };
+  const allowedOptions = new Set(companyMemberPermissionOptions[role]);
+
+  for (const key of companyMemberPermissionOptions.ManagementCompany) {
+    if (!allowedOptions.has(key)) {
+      next[key] = false;
+    }
+  }
+
+  if (next.manageApiKeys) {
+    next.viewApiKeys = true;
+  }
+
+  return next;
 }
 
 function SettingsRow({
@@ -888,6 +929,293 @@ function NotificationsPanel({ initialSettings }: { initialSettings: Notification
   );
 }
 
+type EmailTemplateType =
+  | "registrationCode"
+  | "passwordReset"
+  | "ownerInvitation"
+  | "tenantInvitation"
+  | "tenantInvitedByOwner"
+  | "invoiceGenerated"
+  | "meterReadingReminder"
+  | "meterReadingClosingReminder"
+  | "notification";
+
+type EmailTemplateLanguage = "ru" | "lv" | "en";
+
+type EmailTemplatePreview = {
+  type: EmailTemplateType;
+  language: EmailTemplateLanguage;
+  subject: string;
+  html: string;
+};
+
+const emailTemplateTypes: EmailTemplateType[] = [
+  "meterReadingReminder",
+  "meterReadingClosingReminder",
+  "invoiceGenerated",
+  "ownerInvitation",
+  "tenantInvitation",
+  "tenantInvitedByOwner",
+];
+
+function previewCopy(language: EmailTemplateLanguage, type: EmailTemplateType, companyName: string) {
+  const common = {
+    lv: {
+      brand: companyName,
+      button: "Atvērt Domera",
+      note: "Šis ir automātiski sagatavots e-pasts, lūdzam uz to neatbildēt.",
+      building: "Brivibas 10",
+      apartment: "24",
+    },
+    ru: {
+      brand: companyName,
+      button: "Открыть Domera",
+      note: "Это автоматическое письмо, пожалуйста, не отвечайте на него.",
+      building: "Brivibas 10",
+      apartment: "24",
+    },
+    en: {
+      brand: companyName,
+      button: "Open Domera",
+      note: "This is an automatically generated email, please do not reply.",
+      building: "Brivibas 10",
+      apartment: "24",
+    },
+  }[language];
+
+  const variants: Record<EmailTemplateType, Record<EmailTemplateLanguage, { subject: string; badge: string; title: string; body: string; details?: Array<[string, string]>; info?: string[]; daysUntilDeadline?: number; countdownLabel?: string; button: string; note?: string }>> = {
+    meterReadingReminder: {
+      lv: {
+        subject: "Laiks iesniegt skaitītāja rādījumus - Domera",
+        badge: "Rādījumi",
+        title: "Iesniedziet skaitītāju rādījumus",
+        body: "Sveiki, Jāni. Pienācis laiks iesniegt rādījumus dzīvoklim 24.",
+        details: [["Iesniegšanas periods", "01.08.2026 - 31.08.2026"]],
+        button: "Iesniegt rādījumus",
+        note: "Precīzi skaitītāju rādījumi palīdz aprēķināt taisnīgus rēķinus visiem iedzīvotājiem.",
+      },
+      ru: {
+        subject: "Время отправить показания счетчиков - Domera",
+        badge: "Показания",
+        title: "Отправьте показания счётчиков",
+        body: "Здравствуйте, Янис. Пришло время отправить показания для квартиры 24.",
+        details: [["Период сдачи", "01.08.2026 - 31.08.2026"]],
+        button: "Отправить показания",
+        note: "Точные показания помогают рассчитать справедливые счета для всех жильцов.",
+      },
+      en: {
+        subject: "Time to submit your meter readings - Domera",
+        badge: "Meter readings",
+        title: "Submit meter readings",
+        body: "Hello, Janis. It is time to submit meter readings for apartment 24.",
+        details: [["Submission period", "01.08.2026 - 31.08.2026"]],
+        button: "Submit readings",
+        note: "Accurate meter readings help calculate fair bills for all residents.",
+      },
+    },
+    meterReadingClosingReminder: {
+      lv: {
+        subject: "Pēdējais brīdis iesniegt ūdens rādījumus - Domera",
+        badge: "Rādījumi",
+        title: "Pēdējais brīdis iesniegt ūdens rādījumus",
+        body: "Sveiki, Jāni. Lūdzu, iesniedziet rādījumus dzīvoklim 24.",
+        daysUntilDeadline: 0,
+        countdownLabel: "dienas līdz beigām",
+        details: [["Iesniegšanas periods", "01.08.2026 - 31.08.2026"]],
+        button: "Iesniegt rādījumus",
+        note: "Ja rādījumi jau ir iesniegti, atkārtota iesniegšana nav nepieciešama.",
+      },
+      ru: {
+        subject: "Последний момент сдать показания воды - Domera",
+        badge: "Показания",
+        title: "Последний момент сдать показания воды",
+        body: "Здравствуйте, Янис. Отправьте показания для квартиры 24.",
+        daysUntilDeadline: 0,
+        countdownLabel: "дней до окончания сдачи",
+        details: [["Период сдачи", "01.08.2026 - 31.08.2026"]],
+        button: "Отправить показания",
+        note: "Если показания уже отправлены, повторно отправлять их не нужно.",
+      },
+      en: {
+        subject: "Last chance to submit water readings - Domera",
+        badge: "Meter readings",
+        title: "Last chance to submit water readings",
+        body: "Hello, Janis. Please submit meter readings for apartment 24.",
+        daysUntilDeadline: 0,
+        countdownLabel: "days until closing",
+        details: [["Submission period", "01.08.2026 - 31.08.2026"]],
+        button: "Submit readings",
+        note: "If readings have already been submitted, no further action is needed.",
+      },
+    },
+    invoiceGenerated: {
+      lv: {
+        subject: "Jauns rēķins Domera",
+        badge: "Rēķins",
+        title: "Rēķins ir sagatavots",
+        body: "Jūsu dzīvoklim ir sagatavots jauns rēķins.",
+        details: [["Rēķins", "INV-2026-0007"], ["Ēka", common.building], ["Dzīvoklis", common.apartment], ["Summa", "128.45 EUR"]],
+        button: "Skatīt rēķinu",
+      },
+      ru: {
+        subject: "Новый счёт Domera",
+        badge: "Счёт",
+        title: "Счёт сформирован",
+        body: "Для вашей квартиры сформирован новый счёт.",
+        details: [["Счёт", "INV-2026-0007"], ["Дом", common.building], ["Квартира", common.apartment], ["Сумма", "128.45 EUR"]],
+        button: "Посмотреть счёт",
+      },
+      en: {
+        subject: "New Domera invoice",
+        badge: "Invoice",
+        title: "Invoice generated",
+        body: "A new invoice has been generated for your apartment.",
+        details: [["Invoice", "INV-2026-0007"], ["Building", common.building], ["Apartment", common.apartment], ["Amount", "128.45 EUR"]],
+        button: "View invoice",
+      },
+    },
+    ownerInvitation: {
+      lv: { subject: "Pievienojieties Domera", badge: "Domera Management", title: "Īpašnieka uzaicinājums", body: "Jūs esat aicināts pievienoties Domera ēkai pēc adreses Brivibas 10 dzīvoklim 24.", details: [["Īpašnieks", "Marta Ozola"], ["Ēka", common.building], ["Dzīvoklis", common.apartment]], button: "Pieņemt uzaicinājumu" },
+      ru: { subject: "Присоединитесь к Domera", badge: "Domera Management", title: "Приглашение собственника", body: "Приглашаем вас присоединиться к жилью в Domera по адресу Brivibas 10, квартира 24.", details: [["Владелец", "Marta Ozola"], ["Дом", common.building], ["Квартира", common.apartment]], button: "Принять приглашение" },
+      en: { subject: "Join Domera", badge: "Domera Management", title: "Property owner invitation", body: "You are invited to join Domera for the building at Brivibas 10, apartment 24.", details: [["Owner", "Marta Ozola"], ["Building", common.building], ["Apartment", common.apartment]], button: "Accept invitation" },
+    },
+    tenantInvitation: {
+      lv: { subject: "Īrnieka uzaicinājums dzīvoklim - Domera Management", badge: "Īrnieka piekļuve", title: "Jūs esat uzaicināts kā īrnieks", body: "Pārvaldības uzņēmums uzaicināja jūs dzīvoklim 24 kā īrnieku.", info: ["Skaitītāju rādījumu apskate", "Rēķinu saņemšana", "Saziņa ar mājas pārvaldnieku"], button: "Pieņemt uzaicinājumu" },
+      ru: { subject: "Приглашение арендатора к квартире - Domera Management", badge: "Доступ арендатора", title: "Вас пригласили как арендатора", body: "Управляющая компания пригласила вас к квартире 24 как арендатора.", info: ["Просмотр показаний счётчиков", "Получение счетов", "Связь с управляющей компанией"], button: "Принять приглашение" },
+      en: { subject: "Tenant invitation to apartment - Domera Management", badge: "Tenant access", title: "You are invited as a tenant", body: "The management company has invited you to apartment 24 as a tenant.", info: ["View meter readings", "Receive invoices", "Contact building management"], button: "Accept invitation" },
+    },
+    tenantInvitedByOwner: {
+      lv: { subject: "Īrnieka uzaicinājums Domera", badge: "Īrnieka piekļuve", title: "Jūs esat uzaicināts kā īrnieks", body: "Sveiki, Jāni. Marta Ozola aicina jūs pievienoties Domera kā īrnieku.", details: [["Īpašnieks", "Marta Ozola"], ["Loma", "Īrnieks"], ["Dzīvoklis", common.apartment]], button: "Pieņemt uzaicinājumu" },
+      ru: { subject: "Приглашение арендатора в Domera", badge: "Доступ арендатора", title: "Вас пригласили как арендатора", body: "Здравствуйте, Янис. Marta Ozola приглашает вас в Domera в качестве арендатора.", details: [["Владелец", "Marta Ozola"], ["Роль", "Арендатор"], ["Квартира", common.apartment]], button: "Принять приглашение" },
+      en: { subject: "Tenant invitation to Domera", badge: "Tenant access", title: "You are invited as a tenant", body: "Hello Janis, Marta Ozola has invited you to Domera as a tenant.", details: [["Owner", "Marta Ozola"], ["Role", "Tenant"], ["Apartment", common.apartment]], button: "Accept invitation" },
+    },
+    registrationCode: {
+      lv: { subject: "Domera reģistrācijas apstiprināšanas kods", badge: "Reģistrācija", title: "Reģistrācijas apstiprināšana", body: "Ievadiet šo kodu reģistrācijas lapā: 482913", button: common.button },
+      ru: { subject: "Код подтверждения регистрации Domera", badge: "Регистрация", title: "Подтверждение регистрации", body: "Введите этот код на странице регистрации: 482913", button: common.button },
+      en: { subject: "Domera registration verification code", badge: "Registration", title: "Confirm your registration", body: "Enter this code on the registration page: 482913", button: common.button },
+    },
+    passwordReset: {
+      lv: { subject: "Domera paroles atiestatīšana", badge: "Drošība", title: "Atiestatīt paroli", body: "Nospiediet pogu zemāk, lai izveidotu jaunu paroli.", button: "Atiestatīt paroli" },
+      ru: { subject: "Сброс пароля Domera", badge: "Безопасность", title: "Сброс пароля", body: "Нажмите кнопку ниже, чтобы создать новый пароль.", button: "Сбросить пароль" },
+      en: { subject: "Domera password reset", badge: "Security", title: "Reset your password", body: "Click the button below to create a new password.", button: "Reset password" },
+    },
+    notification: {
+      lv: { subject: "Domera paziņojums", badge: "Paziņojums", title: "Domera paziņojums", body: "Dzīvoklim ir pievienots jauns dokuments.", button: common.button },
+      ru: { subject: "Уведомление Domera", badge: "Уведомление", title: "Уведомление Domera", body: "Для квартиры добавлен новый документ.", button: common.button },
+      en: { subject: "Domera notification", badge: "Notification", title: "Domera notification", body: "A new document has been added for the apartment.", button: common.button },
+    },
+  };
+
+  return { ...variants[type][language], brand: common.brand, footer: common.note };
+}
+
+function renderEmailPreviewHtml(language: EmailTemplateLanguage, type: EmailTemplateType, companyName: string, accentColor: string) {
+  const data = previewCopy(language, type, companyName);
+  const details = data.details?.length
+    ? `<table style="width:100%;margin:0 0 30px;border-collapse:separate;border-spacing:0;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;"><tbody>${data.details.map(([label, value]) => `<tr><td style="padding:14px 18px;text-align:left;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${label}</td><td style="padding:14px 18px;text-align:right;font-size:16px;font-weight:700;color:#0f172a;border-bottom:1px solid #e2e8f0;">${value}</td></tr>`).join("")}</tbody></table>`
+    : "";
+  const info = data.info?.length
+    ? `<div style="margin:0 0 28px;padding:18px 20px;background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid ${accentColor};border-radius:8px;text-align:left;color:#1e293b;"><ul style="margin:0;padding-left:20px;font-size:15px;line-height:1.7;color:#334155;">${data.info.map((item) => `<li>${item}</li>`).join("")}</ul></div>`
+    : "";
+  const countdown = data.countdownLabel && data.daysUntilDeadline !== undefined
+    ? `<div style="margin:0 auto 28px;max-width:300px;text-align:center;"><div style="font-size:54px;line-height:1;font-weight:900;color:${accentColor};letter-spacing:0;">${data.daysUntilDeadline}</div><div style="margin-top:8px;font-size:15px;line-height:1.4;font-weight:700;color:#334155;text-transform:uppercase;">${data.countdownLabel}</div></div>`
+    : "";
+  const groupedDetails = data.countdownLabel
+    ? `<div style="margin:0 0 30px;padding:22px 24px;background:#f8fafc;border:1px solid #dbe4f0;border-radius:10px;text-align:center;">${countdown.replace("margin:0 auto 28px;", "margin:0 auto 18px;")}${data.details?.map(([label, value]) => `<div style="border-top:1px solid #dbe4f0;padding-top:16px;"><div style="margin:0 0 6px;font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;">${label}</div><div style="font-size:18px;font-weight:800;color:#0f172a;">${value}</div></div>`).join("") ?? ""}</div>`
+    : details;
+
+  return {
+    subject: data.subject,
+    html: `<div style="margin:0;padding:32px 16px;background:#f1f5f9;font-family:Arial,sans-serif;color:#0f172a;"><div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;text-align:center;box-shadow:0 16px 36px rgba(15,23,42,0.08);"><div style="height:5px;background:${accentColor};font-size:0;line-height:0;">&nbsp;</div><div style="padding:30px 32px 28px;border-bottom:1px solid #e2e8f0;background:#ffffff;text-align:center;"><div style="margin:0 0 18px;font-size:24px;font-weight:900;letter-spacing:1.8px;color:#0f172a;">${data.brand}</div><h2 style="margin:0;font-size:26px;font-weight:800;color:#0f172a;line-height:1.3;">${data.title}</h2></div><div style="padding:32px 34px 38px;text-align:center;"><p style="margin:0 auto 22px;max-width:560px;line-height:1.65;font-size:16px;color:#334155;text-align:center;">${data.body}</p>${groupedDetails}${info}<a href="https://domera.example/app" style="display:inline-block;margin:2px 0 28px;padding:13px 24px;border:1px solid ${accentColor};background:${accentColor};color:#ffffff;text-decoration:none;border-radius:7px;font-size:15px;font-weight:700;box-shadow:0 8px 18px rgba(21,93,252,0.18);">${data.button}</a><p style="margin:0 auto;max-width:560px;font-size:14px;line-height:1.6;color:#64748b;text-align:center;">${data.note ?? data.footer}</p></div></div><p style="max-width:680px;margin:18px auto 0;text-align:center;color:#64748b;font-size:12px;line-height:1.5;">${data.footer}</p></div>`,
+  };
+}
+
+function EmailTemplatesPanel({ companyName, initialAccentColor }: { companyName: string; initialAccentColor: string }) {
+  const t = useTranslations("settings");
+  const [templateType, setTemplateType] = useState<EmailTemplateType>("meterReadingReminder");
+  const [language, setLanguage] = useState<EmailTemplateLanguage>("lv");
+  const [accentColorDraft, setAccentColorDraft] = useState(() => normalizeInvoiceAccentColor(initialAccentColor) || "#155DFC");
+  const accentColor = normalizeInvoiceAccentColor(accentColorDraft) || "#155DFC";
+  const preview = renderEmailPreviewHtml(language, templateType, companyName, accentColor);
+
+  return (
+    <div className="py-7">
+      <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <aside className="space-y-2">
+          <h2 className="text-xl font-bold leading-7 text-black">{t("emailTemplates.title")}</h2>
+          <p className="text-sm leading-6 text-slate-600">{t("emailTemplates.description")}</p>
+          <label className="block pt-3">
+            <span className="mb-1.5 block text-sm font-semibold text-black">{t("emailTemplates.language")}</span>
+            <select
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as EmailTemplateLanguage)}
+              className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-base leading-6 text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
+            >
+              <option value="lv">{t("languages.lv")}</option>
+              <option value="ru">{t("languages.ru")}</option>
+              <option value="en">{t("languages.en")}</option>
+            </select>
+          </label>
+          <label className="block pt-3">
+            <span className="mb-1.5 block text-sm font-semibold text-black">{t("emailTemplates.accentColor")}</span>
+            <div className="flex gap-2">
+              <input
+                type="color"
+                value={accentColor}
+                onChange={(event) => setAccentColorDraft(event.target.value)}
+                className="h-11 w-14 rounded-lg border border-slate-300 bg-white p-1"
+              />
+              <input
+                type="text"
+                value={accentColorDraft}
+                onChange={(event) => setAccentColorDraft(event.target.value)}
+                onBlur={() => setAccentColorDraft(accentColor)}
+                className="h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-base leading-6 text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
+              />
+            </div>
+          </label>
+          <div className="space-y-1 pt-3">
+            {emailTemplateTypes.map((type) => {
+              const active = type === templateType;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setTemplateType(type)}
+                  className={`w-full rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition ${
+                    active
+                      ? "bg-black text-white"
+                      : "bg-white text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  {t(`emailTemplates.types.${type}`)}
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        <div className="min-w-0 rounded-lg border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <p className="text-xs font-semibold uppercase text-slate-500">{t("emailTemplates.subject")}</p>
+            <p className="mt-1 break-words text-base font-semibold text-black">
+              {preview.subject}
+            </p>
+          </div>
+          <div className="bg-slate-100 p-3">
+            <iframe
+              title={t("emailTemplates.preview")}
+              srcDoc={preview.html}
+              className="h-[640px] w-full rounded-md border border-slate-200 bg-white"
+              sandbox=""
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TextEditRow({
   id,
   label,
@@ -993,11 +1321,13 @@ function ApiKeyPanel({
   createdByName,
   buildings,
   initialKeys,
+  canManage,
 }: {
   companyId: string;
   createdByName: string;
   buildings: CompanyAccessBuilding[];
   initialKeys: CompanyApiKeyItem[];
+  canManage: boolean;
 }) {
   const t = useTranslations("settings");
   const notify = useNotifications();
@@ -1162,16 +1492,18 @@ function ApiKeyPanel({
           {t("apiKeys.usage")}
           <FiExternalLink className="h-4 w-4" aria-hidden="true" />
         </Button>
-        <Button
-          type="button"
-          variant="dark"
-          size="pill"
-          onClick={() => setIsCreateOpen(true)}
-          className="h-10 gap-2 rounded-lg px-4 text-sm font-bold"
-        >
-          <FiPlus className="h-4 w-4" aria-hidden="true" />
-          {t("apiKeys.createSecret")}
-        </Button>
+        {canManage ? (
+          <Button
+            type="button"
+            variant="dark"
+            size="pill"
+            onClick={() => setIsCreateOpen(true)}
+            className="h-10 gap-2 rounded-lg px-4 text-sm font-bold"
+          >
+            <FiPlus className="h-4 w-4" aria-hidden="true" />
+            {t("apiKeys.createSecret")}
+          </Button>
+        ) : null}
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -1229,16 +1561,18 @@ function ApiKeyPanel({
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex items-center justify-end gap-3">
-                        <button
-                          type="button"
-                          disabled={isDeleting}
-                          onClick={() => setPendingDeleteKey(item)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-500 transition hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-40"
-                          aria-label={t("apiKeys.delete")}
-                          title={t("apiKeys.delete")}
-                        >
-                          <FiTrash2 className="h-4 w-4" aria-hidden="true" />
-                        </button>
+                        {canManage ? (
+                          <button
+                            type="button"
+                            disabled={isDeleting}
+                            onClick={() => setPendingDeleteKey(item)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-500 transition hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-40"
+                            aria-label={t("apiKeys.delete")}
+                            title={t("apiKeys.delete")}
+                          >
+                            <FiTrash2 className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -1255,7 +1589,7 @@ function ApiKeyPanel({
         </table>
       </div>
 
-      {isCreateOpen ? (
+      {canManage && isCreateOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-8"
           onMouseDown={(event) => {
@@ -1389,7 +1723,7 @@ function ApiKeyPanel({
         </div>
       ) : null}
 
-      {pendingDeleteKey ? (
+      {canManage && pendingDeleteKey ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-8"
           onMouseDown={(event) => {
@@ -2569,13 +2903,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   const [memberShowContactToResidents, setMemberShowContactToResidents] = useState(false);
   const [memberCreateAccount, setMemberCreateAccount] = useState(true);
   const [memberRole, setMemberRole] = useState<CompanyMemberRole>("ManagementCompany");
-  const [memberPermissionsDraft, setMemberPermissionsDraft] = useState<CompanyMemberPermissions>({
-    viewCompanyInfo: true,
-    editCompanyInfo: false,
-    manageMembers: false,
-    manageApiKeys: false,
-    manageInvoiceSettings: false,
-  });
+  const [memberPermissionsDraft, setMemberPermissionsDraft] = useState<CompanyMemberPermissions>(defaultCompanyMemberPermissions);
   const [memberModalOpen, setMemberModalOpen] = useState(false);
   const [permissionsModalMember, setPermissionsModalMember] = useState<CompanyMember | null>(null);
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
@@ -2610,21 +2938,12 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
 
   const memberTypeLabel = (member: CompanyMember) => {
     if (member.memberType === "manager") return t("company.roles.manager");
-    if (member.memberType === "employee") return t("company.roles.employee");
+    if (member.memberType === "employee") return roleLabel(member.role);
     return roleLabel(member.role);
   };
 
-  const permissionSummary = (permissions?: CompanyMemberPermissions) => {
-    const flags = permissions ?? memberPermissionsDraft;
-    const labels = [
-      flags.editCompanyInfo ? t("company.permissions.editCompanyInfo") : "",
-      flags.manageMembers ? t("company.permissions.manageMembers") : "",
-      flags.manageApiKeys ? t("company.permissions.manageApiKeys") : "",
-      flags.manageInvoiceSettings ? t("company.permissions.manageInvoiceSettings") : "",
-    ].filter(Boolean);
-
-    return labels.length > 0 ? labels.join(", ") : t("company.permissions.viewOnly");
-  };
+  const memberPermissionOptions = (role: CompanyMemberRole) =>
+    companyMemberPermissionOptions[role].map((key) => [key, t(`company.permissions.${key}`)] as const);
 
   const accountMembers = members.filter((member) => member.createAccount !== false);
   const residentContacts = members.filter((member) => member.createAccount === false);
@@ -2639,13 +2958,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     setMemberShowContactToResidents(false);
     setMemberCreateAccount(true);
     setMemberRole("ManagementCompany");
-    setMemberPermissionsDraft({
-      viewCompanyInfo: true,
-      editCompanyInfo: false,
-      manageMembers: false,
-      manageApiKeys: false,
-      manageInvoiceSettings: false,
-    });
+    setMemberPermissionsDraft(defaultCompanyMemberPermissions);
     setEditingContactId(null);
   };
 
@@ -2818,6 +3131,8 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     setFeedback("");
 
     try {
+      const normalizedRole = normalizeCompanyMemberRole(memberRole);
+      const normalizedPermissions = sanitizeMemberPermissionsForRole(memberPermissionsDraft, normalizedRole);
       const result = await addCompanyMember(details.companyId, {
         memberId: editingContactId ?? undefined,
         email,
@@ -2828,12 +3143,12 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
         comment: comment || undefined,
         showContactToResidents: memberShowContactToResidents,
         createAccount: memberCreateAccount,
-        role: memberRole,
-        permissions: memberPermissionsDraft,
+        role: normalizedRole,
+        permissions: normalizedPermissions,
       });
       const nextMember = result.member ?? {};
       const id = typeof nextMember.id === "string" ? nextMember.id : email || `${firstName}-${lastName}-${Date.now()}`;
-      const savedRole = typeof nextMember.role === "string" ? nextMember.role : memberRole;
+      const savedRole = normalizeCompanyMemberRole(typeof nextMember.role === "string" ? nextMember.role : normalizedRole);
       const savedPhone = typeof nextMember.phone === "string" ? nextMember.phone : phone;
       const savedPosition = typeof nextMember.position === "string" ? nextMember.position : position;
       const savedComment = typeof nextMember.comment === "string" ? nextMember.comment : "";
@@ -2860,7 +3175,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
             createAccount: savedCreateAccount,
             role: savedRole,
             memberType: savedCreateAccount ? "employee" : "contact",
-            permissions: savedCreateAccount ? memberPermissionsDraft : undefined,
+            permissions: savedCreateAccount ? normalizedPermissions : undefined,
           },
         ];
       });
@@ -2903,25 +3218,22 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
 
   const openPermissionsModal = (member: CompanyMember) => {
     if (!canManageMembers || member.memberType !== "employee") return;
+    const role = normalizeCompanyMemberRole(member.role);
     setPermissionsModalMember(member);
-    setMemberPermissionsDraft(member.permissions ?? {
-      viewCompanyInfo: true,
-      editCompanyInfo: false,
-      manageMembers: false,
-      manageApiKeys: false,
-      manageInvoiceSettings: false,
-    });
+    setMemberPermissionsDraft(sanitizeMemberPermissionsForRole(member.permissions, role));
   };
 
   const saveMemberPermissions = async () => {
     if (!permissionsModalMember || !canManageMembers) return;
+    const role = normalizeCompanyMemberRole(permissionsModalMember.role);
+    const normalizedPermissions = sanitizeMemberPermissionsForRole(memberPermissionsDraft, role);
 
     setIsSavingPermissions(true);
     try {
-      await updateCompanyMemberPermissions(details.companyId, permissionsModalMember.id, memberPermissionsDraft);
+      await updateCompanyMemberPermissions(details.companyId, permissionsModalMember.id, normalizedPermissions);
       setMembers((current) => current.map((item) =>
         item.id === permissionsModalMember.id
-          ? { ...item, permissions: memberPermissionsDraft }
+          ? { ...item, permissions: normalizedPermissions }
           : item,
       ));
       setPermissionsModalMember(null);
@@ -3092,11 +3404,6 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
                   <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                     {memberTypeLabel(member)}
                   </span>
-                  {member.memberType === "employee" ? (
-                    <span className="max-w-[24rem] truncate text-xs text-slate-500" title={permissionSummary(member.permissions)}>
-                      {permissionSummary(member.permissions)}
-                    </span>
-                  ) : null}
                   {canManageMembers && member.memberType === "employee" ? (
                     <Button
                       type="button"
@@ -3302,7 +3609,11 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
                 <select
                   value={memberRole}
                   disabled={isAddingMember}
-                  onChange={(event) => setMemberRole(event.target.value as CompanyMemberRole)}
+                  onChange={(event) => {
+                    const nextRole = event.target.value as CompanyMemberRole;
+                    setMemberRole(nextRole);
+                    setMemberPermissionsDraft((current) => sanitizeMemberPermissionsForRole(current, nextRole));
+                  }}
                   className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
                 >
                   <option value="ManagementCompany">{t("company.roles.managementCompany")}</option>
@@ -3327,12 +3638,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
             <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
               <p className="text-sm font-semibold text-black">{t("company.members.permissionsTitle")}</p>
               <div className="mt-3 space-y-3">
-                {([
-                  ["editCompanyInfo", t("company.permissions.editCompanyInfo")],
-                  ["manageMembers", t("company.permissions.manageMembers")],
-                  ["manageApiKeys", t("company.permissions.manageApiKeys")],
-                  ["manageInvoiceSettings", t("company.permissions.manageInvoiceSettings")],
-                ] as const).map(([key, label]) => (
+                {memberPermissionOptions(memberRole).map(([key, label]) => (
                   <label key={key} className="flex items-start gap-3 text-sm font-medium text-slate-700">
                     <input
                       type="checkbox"
@@ -3377,12 +3683,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
           <p className="text-sm text-slate-600">
             {permissionsModalMember ? permissionsModalMember.name || permissionsModalMember.email : ""}
           </p>
-          {([
-            ["editCompanyInfo", t("company.permissions.editCompanyInfo")],
-            ["manageMembers", t("company.permissions.manageMembers")],
-            ["manageApiKeys", t("company.permissions.manageApiKeys")],
-            ["manageInvoiceSettings", t("company.permissions.manageInvoiceSettings")],
-          ] as const).map(([key, label]) => (
+          {memberPermissionOptions(normalizeCompanyMemberRole(permissionsModalMember?.role)).map(([key, label]) => (
             <label key={key} className="flex items-start gap-3 text-sm font-medium text-slate-700">
               <input
                 type="checkbox"
@@ -3418,10 +3719,11 @@ export function SettingsTabs({ user, notificationSettings, company }: SettingsTa
     ? ([
         "user",
         ...(company.permissions.viewCompanyInfo ? (["company"] satisfies SettingsTab[]) : []),
-        ...(company.permissions.manageApiKeys ? (["apiKey"] satisfies SettingsTab[]) : []),
+        ...(company.permissions.viewApiKeys || company.permissions.manageApiKeys ? (["apiKey"] satisfies SettingsTab[]) : []),
         ...(company.permissions.manageInvoiceSettings && company.hasElectricityEnabled
           ? (["invoiceGeneration"] satisfies SettingsTab[])
           : []),
+        "emailTemplates",
         "notifications",
       ] satisfies SettingsTab[])
     : baseTabs;
@@ -3757,17 +4059,25 @@ export function SettingsTabs({ user, notificationSettings, company }: SettingsTa
 
       {activeTab === "company" && company?.permissions.viewCompanyInfo ? <CompanyPanel company={company} currentUserId={user.userId} /> : null}
 
-      {activeTab === "apiKey" && company?.permissions.manageApiKeys ? (
+      {activeTab === "apiKey" && (company?.permissions.viewApiKeys || company?.permissions.manageApiKeys) ? (
         <ApiKeyPanel
           companyId={company.companyId}
           createdByName={displayName}
           buildings={company.buildings}
           initialKeys={company.apiKeys}
+          canManage={company.permissions.manageApiKeys}
         />
       ) : null}
 
       {activeTab === "invoiceGeneration" && company?.permissions.manageInvoiceSettings && company.hasElectricityEnabled ? (
         <InvoiceGenerationPanel company={company} recipientName={displayName || user.username || user.userName || user.email} />
+      ) : null}
+
+      {activeTab === "emailTemplates" && company ? (
+        <EmailTemplatesPanel
+          companyName={company.name || company.email || "Domera"}
+          initialAccentColor={company.invoiceSettings.accentColor}
+        />
       ) : null}
 
     </section>

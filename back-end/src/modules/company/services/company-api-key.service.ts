@@ -107,7 +107,7 @@ export class CompanyApiKeyService {
     const db = this.firebaseAdminService.firestore;
     const companySnap = await db.collection('companies').doc(normalizedCompanyId).get();
     if (!companySnap.exists) throw new NotFoundException('Company not found');
-    this.accessService.assertCanManageApiKeys(user, normalizedCompanyId, companySnap.data() as Record<string, unknown>);
+    this.accessService.assertCanViewApiKeys(user, normalizedCompanyId, companySnap.data() as Record<string, unknown>);
 
     const buildingContexts = await this.getCompanyBuildingContexts(normalizedCompanyId);
     const snapshots = await Promise.all(

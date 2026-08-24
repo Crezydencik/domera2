@@ -179,9 +179,20 @@ function formatPeriodButtonDate(value: string) {
   return `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}.${date.getFullYear()}`;
 }
 
+function currentMonthPeriodDate(value: string) {
+  const stored = new Date(value);
+  if (Number.isNaN(stored.getTime())) return value;
+  const today = new Date();
+  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const day = Math.min(Math.max(stored.getDate(), 1), lastDay);
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 function periodButtonLabel(value?: SubmissionPeriodValue | null) {
   if (!value?.startDate || !value?.endDate) return "";
-  return `${formatPeriodButtonDate(value.startDate)} - ${formatPeriodButtonDate(value.endDate)}`;
+  const startDate = value.monthly ? currentMonthPeriodDate(value.startDate) : value.startDate;
+  const endDate = value.monthly ? currentMonthPeriodDate(value.endDate) : value.endDate;
+  return `${formatPeriodButtonDate(startDate)} - ${formatPeriodButtonDate(endDate)}`;
 }
 
 function waterSummaryForApartments(apartments: ApartmentMeterData[], requestedMonthKey?: string | null): MonthlyWaterSummary | null {
@@ -1949,6 +1960,7 @@ ${xmlRows}
           onDelete={() => deletePeriodFor(effectivePeriodTab)}
           saving={periodSaving}
           deleting={periodDeleting}
+          locale={locale}
           labels={{
             startDate: t("periodStartDate"),
             endDate: t("periodEndDate"),
@@ -1961,6 +1973,19 @@ ${xmlRows}
             saving: t("saving"),
             delete: t("deletePeriod"),
             deleting: t("deletingPeriod"),
+            remindersTitle: t("periodRemindersTitle"),
+            remindersEnabled: t("periodRemindersEnabled"),
+            reminderOnStart: t("periodReminderOnStart"),
+            reminderOnEnd: t("periodReminderOnEnd"),
+            reminderOnClose: t("periodReminderOnClose"),
+            reminderStartTime: t("periodReminderStartTime"),
+            reminderEndTime: t("periodReminderEndTime"),
+            reminderCloseTime: t("periodReminderCloseTime"),
+            reminderOffsetDays: t("periodReminderOffsetDays"),
+            reminderEndOffsetPrefix: t("periodReminderEndOffsetPrefix"),
+            reminderEndOffsetSuffix: t("periodReminderEndOffsetSuffix"),
+            reminderItemColumn: t("periodReminderItemColumn"),
+            reminderTimeColumn: t("periodReminderTimeColumn"),
           }}
         />
       </Modal>

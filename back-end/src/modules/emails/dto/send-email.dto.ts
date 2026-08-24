@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsOptional, IsEnum } from 'class-validator';
+import { IsEmail, IsString, IsOptional, IsEnum, IsIn, IsNumber } from 'class-validator';
 import { EmailLanguage, EmailType } from '../email.types';
 
 export type EmailAttachmentDto = {
@@ -119,6 +119,10 @@ export class SendTenantInvitedByOwnerEmailDto {
 
   @IsOptional()
   @IsString()
+  brandName?: string;
+
+  @IsOptional()
+  @IsString()
   buildingName?: string;
 
   @IsOptional()
@@ -159,6 +163,10 @@ export class SendInvoiceGeneratedEmailDto {
   buildingName?: string;
 
   @IsOptional()
+  @IsString()
+  brandName?: string;
+
+  @IsOptional()
   @IsEnum(['en', 'ru', 'lv'])
   language?: EmailLanguage;
 
@@ -186,11 +194,27 @@ export class SendMeterReadingReminderEmailDto {
   buildingName?: string;
 
   @IsOptional()
+  @IsString()
+  brandName?: string;
+
+  @IsOptional()
   meters?: Array<{ name: string; lastReading?: string; unit?: string }>;
 
   @IsOptional()
   @IsString()
+  periodLabel?: string;
+
+  @IsOptional()
+  @IsString()
   deadline?: string;
+
+  @IsOptional()
+  @IsIn(['start', 'end', 'close'])
+  reminderStage?: 'start' | 'end' | 'close';
+
+  @IsOptional()
+  @IsNumber()
+  daysUntilDeadline?: number;
 
   @IsOptional()
   @IsEnum(['en', 'ru', 'lv'])
@@ -214,6 +238,10 @@ export class SendNotificationEmailDto {
   @IsOptional()
   @IsString()
   actionLink?: string;
+
+  @IsOptional()
+  @IsString()
+  brandName?: string;
 
   @IsOptional()
   @IsString()

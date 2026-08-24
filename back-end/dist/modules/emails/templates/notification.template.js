@@ -14,6 +14,7 @@ exports.notificationTemplates = {
             language: 'en',
             title: params.title,
             badge: 'Notification',
+            brandName: params.brandName,
             children: `
         <div style="${email_layout_template_1.emailStyles.paragraph}">${params.message}</div>
         ${action(params)}
@@ -27,6 +28,7 @@ exports.notificationTemplates = {
             language: 'ru',
             title: params.title,
             badge: 'Уведомление',
+            brandName: params.brandName,
             children: `
         <div style="${email_layout_template_1.emailStyles.paragraph}">${params.message}</div>
         ${action(params)}
@@ -40,6 +42,7 @@ exports.notificationTemplates = {
             language: 'lv',
             title: params.title,
             badge: 'Paziņojums',
+            brandName: params.brandName,
             children: `
         <div style="${email_layout_template_1.emailStyles.paragraph}">${params.message}</div>
         ${action(params)}

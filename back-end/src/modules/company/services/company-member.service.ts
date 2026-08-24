@@ -161,17 +161,41 @@ export class CompanyMemberService {
     await this.emailService.sendNotification({
       to: params.email,
       language: 'lv',
-      title: 'UzaicinДЃjums pievienoties Domera',
-      message: `<p>JЕ«s esat uzaicinДЃts pievienoties uzЕ†Д“mumam <strong>${companyName}</strong>.</p><p>Lai izveidotu kontu un sДЃktu darbu, atveriet zemДЃk esoЕЎo saiti.</p>`,
-      actionLabel: 'Pabeigt reДЈistrДЃciju',
+      brandName: companyName,
+      title: `Jūs esat uzaicināts pievienoties uzņēmumam "${companyName}"`,
+      message: '<p>Lai izveidotu kontu un sāktu darbu, atveriet zemāk esošo saiti.</p>',
+      actionLabel: 'Pabeigt reģistrāciju',
       actionLink: invitationLink,
-      footer: 'Saite ir derД«ga 7 dienas.',
+      footer: 'Saite ir derīga 7 dienas.',
     });
 
     return {
       invitationId: invitationRef.id,
       invitationLink,
     };
+  }
+
+  private async sendExistingMemberAccessNotification(params: {
+    request: Request;
+    company: Record<string, unknown>;
+    email: string;
+  }) {
+    const frontendUrl = this.resolveFrontendUrl(params.request);
+    const companyName =
+      (typeof params.company.companyName === 'string' && params.company.companyName.trim()) ||
+      (typeof params.company.name === 'string' && params.company.name.trim()) ||
+      'Domera';
+
+    await this.emailService.sendNotification({
+      to: params.email,
+      language: 'lv',
+      brandName: companyName,
+      title: `Jums ir piešķirta piekļuve uzņēmumam "${companyName}"`,
+      message: '<p>Jūsu esošais konts ir pievienots uzņēmuma darba videi. Pieslēdzieties Domera, lai sāktu darbu.</p>',
+      actionLabel: 'Atvērt Domera',
+      actionLink: `${frontendUrl}/login`,
+      footer: 'Ja šo piekļuvi negaidījāt, sazinieties ar uzņēmuma administratoru.',
+    });
   }
 
   async add(request: Request, user: RequestUser, companyId: string, payload: Record<string, unknown>) {
@@ -290,6 +314,11 @@ export class CompanyMemberService {
       showContactToResidents,
       role: resolvedRole,
       permissions,
+    });
+    await this.sendExistingMemberAccessNotification({
+      request,
+      company,
+      email,
     });
 
     return {

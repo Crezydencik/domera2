@@ -13,6 +13,7 @@ export declare class CompanyAccessService {
     getCompanyPermissions(user: RequestUser, companyId: string, company: Record<string, unknown>): {
         isMainManager: boolean;
         viewCompanyInfo: boolean;
+        viewApiKeys: boolean;
         editCompanyInfo: boolean;
         manageMembers: boolean;
         manageApiKeys: boolean;
@@ -23,5 +24,6 @@ export declare class CompanyAccessService {
     assertCanEditCompanyInfo(user: RequestUser, companyId: string, company: Record<string, unknown>): void;
     assertCanManageMembers(user: RequestUser, companyId: string, company: Record<string, unknown>): void;
     assertCanManageApiKeys(user: RequestUser, companyId: string, company: Record<string, unknown>): void;
+    assertCanViewApiKeys(user: RequestUser, companyId: string, company: Record<string, unknown>): void;
     assertCanManageInvoiceSettings(user: RequestUser, companyId: string, company: Record<string, unknown>): void;
 }

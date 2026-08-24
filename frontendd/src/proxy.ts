@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { ROUTES } from "@/shared/lib/routes";
-import { isAuthRoute, isProtectedPath, resolveDashboardRole } from "@/shared/api/access";
+import { isAuthRoute, isProtectedPath } from "@/shared/api/access";
 
 const legacyAuthCookieNames = [
   "domera_session",
@@ -141,7 +141,6 @@ export default function proxy(request: NextRequest) {
   const shouldClearAuth = request.nextUrl.searchParams.get("expired") === "1";
   const trustedRole = firstString(sessionPayload.role, sessionPayload.accountType);
   const roleHint = trustedRole;
-  const resolvedRole = resolveDashboardRole(roleHint);
   const requestHeaders = new Headers(request.headers);
 
   requestHeaders.delete("x-domera-role");
@@ -151,7 +150,7 @@ export default function proxy(request: NextRequest) {
   requestHeaders.delete("x-domera-apartment-id");
 
   if (roleHint) {
-    requestHeaders.set("x-domera-role", resolvedRole);
+    requestHeaders.set("x-domera-role", roleHint);
   }
   setRequestHeader(requestHeaders, "x-domera-user-id", firstString(sessionPayload.uid, sessionPayload.user_id));
   setRequestHeader(requestHeaders, "x-domera-email", firstString(sessionPayload.email));

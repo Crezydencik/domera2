@@ -44,6 +44,7 @@ export declare class SendTenantInvitedByOwnerEmailDto {
     ownerName: string;
     invitationLink: string;
     tenantName?: string;
+    brandName?: string;
     buildingName?: string;
     apartmentNumber?: string;
     language?: EmailLanguage;
@@ -57,6 +58,7 @@ export declare class SendInvoiceGeneratedEmailDto {
     tenantName?: string;
     apartmentNumber?: string;
     buildingName?: string;
+    brandName?: string;
     language?: EmailLanguage;
     attachments?: EmailAttachmentDto[];
 }
@@ -66,12 +68,16 @@ export declare class SendMeterReadingReminderEmailDto {
     tenantName?: string;
     apartmentNumber?: string;
     buildingName?: string;
+    brandName?: string;
     meters?: Array<{
         name: string;
         lastReading?: string;
         unit?: string;
     }>;
+    periodLabel?: string;
     deadline?: string;
+    reminderStage?: 'start' | 'end' | 'close';
+    daysUntilDeadline?: number;
     language?: EmailLanguage;
 }
 export declare class SendNotificationEmailDto {
@@ -80,6 +86,7 @@ export declare class SendNotificationEmailDto {
     message: string;
     actionLabel?: string;
     actionLink?: string;
+    brandName?: string;
     footer?: string;
     language?: EmailLanguage;
 }

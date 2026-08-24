@@ -72,21 +72,30 @@ function buildHeaderProfile(headerStore: Headers, roleHint?: string): UnknownRec
   };
 }
 
+function isRawAccountantRole(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^a-z]/gi, "")
+    .toLowerCase() === "accountant";
+}
+
 function contextFromProfile(profile: UnknownRecord, roleHint?: string) {
   const resolvedUserId = firstString(profile?.uid, profile?.id);
+  const rawRole = firstOptionalString(profile?.role, profile?.accountType, roleHint);
   const role = normalizeDashboardRole(
     firstString(
-      profile?.role,
-      profile?.accountType,
+      rawRole,
       roleHint,
     ),
   );
+  const profileCompanyId = firstOptionalString(profile?.companyId);
+  const shouldUseOwnUserAsCompany = role === "managementCompany" && !isRawAccountantRole(rawRole);
 
   return {
     userId: resolvedUserId,
     profile,
     role,
-    companyId: firstString(profile?.companyId, resolvedUserId),
+    companyId: profileCompanyId ?? (shouldUseOwnUserAsCompany ? resolvedUserId : undefined),
     apartmentId: firstString(profile?.apartmentId),
   };
 }
@@ -106,7 +115,11 @@ export async function getAuthenticatedContext(roleHint?: string, options?: { req
   if (!options?.requireFreshProfile) {
     const headerProfile = buildHeaderProfile(await headers(), roleHint);
     if (headerProfile) {
-      return contextFromProfile(headerProfile, roleHint);
+      const needsFreshAccountantCompany =
+        isRawAccountantRole(headerProfile.role) && !firstOptionalString(headerProfile.companyId);
+      if (!needsFreshAccountantCompany) {
+        return contextFromProfile(headerProfile, roleHint);
+      }
     }
   }
 

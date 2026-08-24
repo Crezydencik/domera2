@@ -30,6 +30,7 @@ exports.ownerInvitationTemplates = {
         subject: `Join ${params.companyName} on Domera`,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'en',
+            brandName: params.brandName || params.companyName,
             title: 'Property owner invitation',
             badge: params.companyName,
             children: `
@@ -49,6 +50,7 @@ exports.ownerInvitationTemplates = {
         subject: `Присоединитесь к Domera`,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'ru',
+            brandName: params.brandName || params.companyName,
             title: 'Приглашение собственника',
             badge: params.companyName,
             children: `
@@ -68,6 +70,7 @@ exports.ownerInvitationTemplates = {
         subject: `Pievienojieties Domera`,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'lv',
+            brandName: params.brandName || params.companyName,
             title: 'Īpašnieka uzaicinājums',
             badge: params.companyName,
             children: `

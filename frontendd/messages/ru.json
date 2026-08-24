@@ -1565,6 +1565,19 @@
     "periodDateMode": "По датам",
     "periodFreeModeHint": "Жильцы могут сдавать показания в любое время.",
     "periodMonthlyHint": "Период будет повторяться с {startDay} по {endDay} число каждого месяца.",
+    "periodRemindersTitle": "Отправка напоминаний",
+    "periodRemindersEnabled": "Отправлять e-mail напоминания",
+    "periodReminderOnStart": "В первый день сдачи",
+    "periodReminderOnEnd": "За",
+    "periodReminderOnClose": "В последний день сдачи, если показания не сданы",
+    "periodReminderStartTime": "Время первого напоминания",
+    "periodReminderEndTime": "Время финального напоминания",
+    "periodReminderCloseTime": "Время напоминания в день закрытия",
+    "periodReminderOffsetDays": "Дни",
+    "periodReminderEndOffsetPrefix": "За",
+    "periodReminderEndOffsetSuffix": "дней до окончания, если показания не сданы",
+    "periodReminderItemColumn": "Напоминание",
+    "periodReminderTimeColumn": "Время",
     "deletePeriod": "Удалить период",
     "deletingPeriod": "Удаление...",
     "colApartment": "Квартира",
@@ -1631,6 +1644,7 @@
       "company": "Компания",
       "apiKey": "API ключ",
       "invoiceGeneration": "Генерация счетов",
+      "emailTemplates": "Шаблоны писем",
       "notifications": "Уведомления",
       "contacts": "Контакты",
       "billing": "Расчетные счета",
@@ -1799,6 +1813,7 @@
         "empty": "Участники пока не добавлены."
       },
       "permissions": {
+        "viewApiKeys": "Просматривать API-ключи для импорта счетов",
         "editCompanyInfo": "Редактировать информацию о компании",
         "manageMembers": "Управлять сотрудниками",
         "manageApiKeys": "Управлять API-ключами",
@@ -1817,6 +1832,28 @@
         "edit": "Редактировать контакт",
         "save": "Сохранить контакт",
         "empty": "Контакты для жильцов пока не добавлены."
+      }
+    },
+    "emailTemplates": {
+      "title": "Шаблоны писем",
+      "description": "Просматривайте реальные шаблоны писем Domera без отправки получателям.",
+      "language": "Язык письма",
+      "accentColor": "Цвет письма",
+      "subject": "Тема письма",
+      "preview": "Предпросмотр письма",
+      "loading": "Загрузка шаблона...",
+      "emptyPreview": "Выберите шаблон, чтобы увидеть предпросмотр.",
+      "loadFailed": "Не удалось загрузить шаблон письма.",
+      "types": {
+        "registrationCode": "Код регистрации",
+        "passwordReset": "Сброс пароля",
+        "ownerInvitation": "Приглашение собственника",
+        "tenantInvitation": "Приглашение арендатора",
+        "tenantInvitedByOwner": "Арендатор приглашён собственником",
+        "invoiceGenerated": "Счёт сформирован",
+        "meterReadingReminder": "Напоминание о показаниях",
+        "meterReadingClosingReminder": "Напоминание об окончании сдачи",
+        "notification": "Общее уведомление"
       }
     },
     "apiKeys": {

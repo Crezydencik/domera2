@@ -43,11 +43,35 @@ export declare class BuildingPayloadService {
                 startDate: string;
                 endDate: string;
                 monthly: boolean;
+                reminders: {
+                    enabled: boolean;
+                    onStart: boolean;
+                    onEnd: boolean;
+                    onClose: boolean;
+                    startTime: string;
+                    endTime: string;
+                    closeTime: string;
+                    startOffsetDays: number;
+                    endOffsetDays: number;
+                    closeOffsetDays: number;
+                };
             } | null;
             electricitySubmissionPeriod: {
                 startDate: string;
                 endDate: string;
                 monthly: boolean;
+                reminders: {
+                    enabled: boolean;
+                    onStart: boolean;
+                    onEnd: boolean;
+                    onClose: boolean;
+                    startTime: string;
+                    endTime: string;
+                    closeTime: string;
+                    startOffsetDays: number;
+                    endOffsetDays: number;
+                    closeOffsetDays: number;
+                };
             } | null;
         };
     };
@@ -60,6 +84,9 @@ export declare class BuildingPayloadService {
     private normalizeReadingConfig;
     private normalizeSubmissionPeriod;
     private normalizeSubmissionPeriodByKey;
+    private normalizeSubmissionReminders;
+    private normalizeOffsetDays;
+    private normalizeTime;
     private buildReadablePrefix;
     private buildSecureRandomToken;
 }

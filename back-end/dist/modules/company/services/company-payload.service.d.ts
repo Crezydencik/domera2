@@ -1,6 +1,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 export type CompanyMemberPermissions = {
     viewCompanyInfo: boolean;
+    viewApiKeys: boolean;
     editCompanyInfo: boolean;
     manageMembers: boolean;
     manageApiKeys: boolean;

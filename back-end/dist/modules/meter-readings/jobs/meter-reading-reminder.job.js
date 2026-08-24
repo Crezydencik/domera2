@@ -21,24 +21,18 @@ let MeterReadingReminderJob = MeterReadingReminderJob_1 = class MeterReadingRemi
         this.emailService = emailService;
         this.logger = new common_1.Logger(MeterReadingReminderJob_1.name);
     }
-    async sendPeriodStartReminders() {
-        this.logger.debug('Starting period start reminders job...');
+    async sendConfiguredReminders() {
+        const now = new Date();
+        const currentTime = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
         try {
             const db = this.firebaseAdminService.firestore;
             const buildingsSnapshot = await db.collection('buildings').get();
             for (const buildingDoc of buildingsSnapshot.docs) {
                 const building = buildingDoc.data();
-                const submissionPeriod = building.submissionPeriod;
-                if (!submissionPeriod || !submissionPeriod.startDay)
+                const periods = this.periodsForBuilding(building);
+                const dueReminders = periods.filter(({ period, kind }) => this.isReminderDue(period, kind, now, currentTime));
+                if (dueReminders.length === 0)
                     continue;
-                const today = new Date();
-                const isToday = today.getDate() === submissionPeriod.startDay;
-                if (!isToday)
-                    continue;
-                const endDay = submissionPeriod.endDay || 0;
-                const deadlineDate = endDay > 0
-                    ? `${String(endDay).padStart(2, '0')}.${String(today.getMonth() + 1).padStart(2, '0')}.${today.getFullYear()}`
-                    : undefined;
                 const apartmentsSnapshot = await db
                     .collection('apartments')
                     .where('buildingId', '==', buildingDoc.id)
@@ -48,97 +42,209 @@ let MeterReadingReminderJob = MeterReadingReminderJob_1 = class MeterReadingRemi
                     const residentEmail = apartment.residentEmail || apartment.ownerEmail;
                     if (!residentEmail)
                         continue;
+                    const shouldSend = dueReminders.some(({ kind, utility }) => (kind === 'start' || !this.hasCurrentMonthReading(apartment, utility, now)));
+                    if (!shouldSend)
+                        continue;
+                    const deadline = dueReminders
+                        .map(({ period }) => this.deadlineLabel(period, now))
+                        .find(Boolean);
+                    const periodLabel = dueReminders
+                        .map(({ period }) => this.periodLabel(period, now))
+                        .find(Boolean);
+                    const reminderStage = this.reminderStage(dueReminders.map(({ kind }) => kind));
+                    const daysUntilDeadline = dueReminders
+                        .map(({ period }) => this.daysUntilDeadline(period, now))
+                        .filter((value) => value !== undefined)
+                        .sort((a, b) => a - b)[0];
                     await this.emailService.sendMeterReadingReminder({
                         to: residentEmail,
                         language: apartment.language || 'en',
                         submissionLink: '',
+                        brandName: this.buildingCompanyName(building),
                         buildingName: building.name || building.address || buildingDoc.id,
                         apartmentNumber: apartment.apartment || apartment.apartmentNumber || '',
-                        deadline: deadlineDate,
+                        periodLabel,
+                        deadline,
+                        reminderStage,
+                        daysUntilDeadline,
                     });
                 }
             }
-            this.logger.debug('Period start reminders sent successfully');
         }
         catch (error) {
-            this.logger.error('Error sending period start reminders:', error);
+            this.logger.error('Error sending configured meter reading reminders:', error);
         }
     }
-    async sendPeriodEndReminders() {
-        this.logger.debug('Starting period end reminders job...');
-        try {
-            const db = this.firebaseAdminService.firestore;
-            const buildingsSnapshot = await db.collection('buildings').get();
-            for (const buildingDoc of buildingsSnapshot.docs) {
-                const building = buildingDoc.data();
-                const submissionPeriod = building.submissionPeriod;
-                if (!submissionPeriod || !submissionPeriod.endDay)
-                    continue;
-                const today = new Date();
-                const isLastDay = today.getDate() === submissionPeriod.endDay;
-                if (!isLastDay)
-                    continue;
-                const apartmentsSnapshot = await db
-                    .collection('apartments')
-                    .where('buildingId', '==', buildingDoc.id)
-                    .get();
-                const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-                const deadlineDate = `${String(today.getDate()).padStart(2, '0')}.${String(today.getMonth() + 1).padStart(2, '0')}.${today.getFullYear()}`;
-                for (const aptDoc of apartmentsSnapshot.docs) {
-                    const apartment = aptDoc.data();
-                    const wr = (apartment.waterReadings ?? {});
-                    let hasCurrentMonthReading = false;
-                    for (const key of ['coldmeterwater', 'hotmeterwater']) {
-                        const group = wr[key];
-                        if (!group || !Array.isArray(group.history))
-                            continue;
-                        const found = group.history.some((r) => {
-                            const ts = r.submittedAt;
-                            if (!ts)
-                                return false;
-                            const str = ts instanceof Date ? ts.toISOString() : String(ts);
-                            return str.startsWith(currentMonthStr);
-                        });
-                        if (found) {
-                            hasCurrentMonthReading = true;
-                            break;
-                        }
-                    }
-                    if (hasCurrentMonthReading)
-                        continue;
-                    const residentEmail = apartment.residentEmail || apartment.ownerEmail;
-                    if (!residentEmail)
-                        continue;
-                    await this.emailService.sendMeterReadingReminder({
-                        to: residentEmail,
-                        language: apartment.language || 'en',
-                        submissionLink: '',
-                        buildingName: building.name || building.address || buildingDoc.id,
-                        apartmentNumber: apartment.apartment || apartment.apartmentNumber || '',
-                        deadline: deadlineDate,
-                    });
+    periodsForBuilding(building) {
+        const readingConfig = building.readingConfig && typeof building.readingConfig === 'object'
+            ? building.readingConfig
+            : {};
+        const periods = [];
+        const waterPeriod = this.normalizePeriod(readingConfig.waterSubmissionPeriod ?? readingConfig.submissionPeriod);
+        const electricityPeriod = this.normalizePeriod(readingConfig.electricitySubmissionPeriod);
+        if (waterPeriod) {
+            periods.push({ utility: 'water', kind: 'start', period: waterPeriod });
+            periods.push({ utility: 'water', kind: 'end', period: waterPeriod });
+            periods.push({ utility: 'water', kind: 'close', period: waterPeriod });
+        }
+        if (electricityPeriod) {
+            periods.push({ utility: 'electricity', kind: 'start', period: electricityPeriod });
+            periods.push({ utility: 'electricity', kind: 'end', period: electricityPeriod });
+            periods.push({ utility: 'electricity', kind: 'close', period: electricityPeriod });
+        }
+        return periods;
+    }
+    normalizePeriod(source) {
+        if (!source || typeof source !== 'object')
+            return null;
+        const period = source;
+        const startDate = typeof period.startDate === 'string' ? period.startDate.trim() : '';
+        const endDate = typeof period.endDate === 'string' ? period.endDate.trim() : '';
+        if (!startDate || !endDate)
+            return null;
+        return {
+            startDate,
+            endDate,
+            monthly: Boolean(period.monthly),
+            reminders: this.normalizeReminders(period.reminders),
+        };
+    }
+    buildingCompanyName(building) {
+        const managedBy = building.managedBy && typeof building.managedBy === 'object'
+            ? building.managedBy
+            : {};
+        return this.firstString(managedBy.companyName, building.companyName, building.managementCompanyName, managedBy.name);
+    }
+    firstString(...values) {
+        for (const value of values) {
+            if (typeof value === 'string' && value.trim())
+                return value.trim();
+        }
+        return undefined;
+    }
+    reminderStage(kinds) {
+        if (kinds.includes('close'))
+            return 'close';
+        if (kinds.includes('end'))
+            return 'end';
+        return 'start';
+    }
+    normalizeReminders(source) {
+        const reminders = source && typeof source === 'object' ? source : {};
+        return {
+            enabled: reminders.enabled !== false,
+            onStart: reminders.onStart !== false,
+            onEnd: reminders.onEnd !== false,
+            onClose: reminders.onClose !== false,
+            startTime: this.normalizeTime(reminders.startTime, '08:00'),
+            endTime: this.normalizeTime(reminders.endTime, '18:00'),
+            closeTime: this.normalizeTime(reminders.closeTime, '18:00'),
+            startOffsetDays: 0,
+            endOffsetDays: this.normalizeOffsetDays(reminders.endOffsetDays, 1),
+            closeOffsetDays: this.normalizeOffsetDays(reminders.closeOffsetDays, 0),
+        };
+    }
+    normalizeOffsetDays(value, fallback) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? Math.min(31, Math.max(0, Math.floor(parsed))) : fallback;
+    }
+    normalizeTime(value, fallback) {
+        return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value.trim()) ? value.trim() : fallback;
+    }
+    isReminderDue(period, kind, now, currentTime) {
+        const reminders = period.reminders ?? this.normalizeReminders(null);
+        if (!reminders.enabled)
+            return false;
+        if (kind === 'start' && (!reminders.onStart || reminders.startTime !== currentTime))
+            return false;
+        if (kind === 'end' && (!reminders.onEnd || reminders.endTime !== currentTime))
+            return false;
+        if (kind === 'close' && (!reminders.onClose || reminders.closeTime !== currentTime))
+            return false;
+        const targetDate = kind === 'start'
+            ? this.shiftDate(period.startDate, reminders.startOffsetDays)
+            : kind === 'end'
+                ? this.shiftDate(period.endDate, -reminders.endOffsetDays)
+                : this.shiftDate(period.endDate, -reminders.closeOffsetDays);
+        return this.isPeriodDateToday(targetDate, period.monthly, now);
+    }
+    shiftDate(dateValue, days) {
+        const date = new Date(dateValue);
+        if (Number.isNaN(date.getTime()))
+            return dateValue;
+        date.setUTCDate(date.getUTCDate() + days);
+        return date.toISOString().slice(0, 10);
+    }
+    isPeriodDateToday(dateValue, monthly, now) {
+        const date = new Date(dateValue);
+        if (Number.isNaN(date.getTime()))
+            return false;
+        if (monthly)
+            return date.getUTCDate() === now.getUTCDate();
+        return date.toISOString().slice(0, 10) === now.toISOString().slice(0, 10);
+    }
+    deadlineLabel(period, now) {
+        return this.periodDateLabel(period.endDate, period.monthly, now);
+    }
+    periodLabel(period, now) {
+        const start = this.periodDateLabel(period.startDate, period.monthly, now);
+        const end = this.periodDateLabel(period.endDate, period.monthly, now);
+        if (!start || !end)
+            return undefined;
+        return `${start} - ${end}`;
+    }
+    periodDateLabel(dateValue, monthly, now) {
+        const date = new Date(dateValue);
+        if (Number.isNaN(date.getTime()))
+            return undefined;
+        const year = monthly ? now.getUTCFullYear() : date.getUTCFullYear();
+        const month = monthly ? now.getUTCMonth() + 1 : date.getUTCMonth() + 1;
+        return `${String(date.getUTCDate()).padStart(2, '0')}.${String(month).padStart(2, '0')}.${year}`;
+    }
+    daysUntilDeadline(period, now) {
+        const endDate = new Date(period.endDate);
+        if (Number.isNaN(endDate.getTime()))
+            return undefined;
+        const deadline = new Date(Date.UTC(period.monthly ? now.getUTCFullYear() : endDate.getUTCFullYear(), period.monthly ? now.getUTCMonth() : endDate.getUTCMonth(), endDate.getUTCDate()));
+        const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        return Math.max(0, Math.ceil((deadline.getTime() - today.getTime()) / 86400000));
+    }
+    hasCurrentMonthReading(apartment, utility, now) {
+        const wr = (apartment.waterReadings ?? {});
+        const keys = utility === 'water'
+            ? ['coldmeterwater', 'hotmeterwater']
+            : ['electricitymeter'];
+        const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+        return keys.some((key) => {
+            const group = wr[key];
+            if (!group || !Array.isArray(group.history))
+                return false;
+            return group.history.some((reading) => {
+                const month = Number(reading.month);
+                const year = Number(reading.year);
+                if (Number.isFinite(month) && Number.isFinite(year)) {
+                    return year === now.getUTCFullYear() && month === now.getUTCMonth() + 1;
                 }
-            }
-            this.logger.debug('Period end reminders sent successfully');
-        }
-        catch (error) {
-            this.logger.error('Error sending period end reminders:', error);
-        }
+                const submittedAt = reading.submittedAt;
+                if (!submittedAt)
+                    return false;
+                if (submittedAt instanceof Date)
+                    return submittedAt.toISOString().startsWith(currentMonth);
+                if (typeof submittedAt === 'object' && typeof submittedAt.toDate === 'function') {
+                    return submittedAt.toDate().toISOString().startsWith(currentMonth);
+                }
+                return String(submittedAt).startsWith(currentMonth);
+            });
+        });
     }
 };
 exports.MeterReadingReminderJob = MeterReadingReminderJob;
 __decorate([
-    (0, schedule_1.Cron)('0 8 * * *', { timeZone: 'UTC' }),
+    (0, schedule_1.Cron)('* * * * *', { timeZone: 'UTC' }),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
-], MeterReadingReminderJob.prototype, "sendPeriodStartReminders", null);
-__decorate([
-    (0, schedule_1.Cron)('0 18 * * *', { timeZone: 'UTC' }),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
-    __metadata("design:returntype", Promise)
-], MeterReadingReminderJob.prototype, "sendPeriodEndReminders", null);
+], MeterReadingReminderJob.prototype, "sendConfiguredReminders", null);
 exports.MeterReadingReminderJob = MeterReadingReminderJob = MeterReadingReminderJob_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService,

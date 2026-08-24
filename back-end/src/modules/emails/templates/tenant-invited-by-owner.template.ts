@@ -3,6 +3,7 @@ import { bulletList, button, detailRows, infoBox, note, paragraph, renderEmailLa
 
 export interface TenantInvitedByOwnerParams {
   tenantName?: string;
+  brandName?: string;
   ownerName: string;
   buildingName?: string;
   apartmentNumber?: string;
@@ -17,6 +18,7 @@ export const tenantInvitedByOwnerTemplates: Record<
     subject: 'Tenant invitation to Domera',
     html: renderEmailLayout({
       language: 'en',
+      brandName: params.brandName,
       title: 'You are invited as a tenant',
       badge: 'Tenant access',
       children: `
@@ -43,6 +45,7 @@ export const tenantInvitedByOwnerTemplates: Record<
     subject: 'Приглашение арендатора в Domera',
     html: renderEmailLayout({
       language: 'ru',
+      brandName: params.brandName,
       title: 'Вас пригласили как арендатора',
       badge: 'Доступ арендатора',
       children: `
@@ -69,6 +72,7 @@ export const tenantInvitedByOwnerTemplates: Record<
     subject: 'Īrnieka uzaicinājums Domera',
     html: renderEmailLayout({
       language: 'lv',
+      brandName: params.brandName,
       title: 'Jūs esat uzaicināts kā īrnieks',
       badge: 'Īrnieka piekļuve',
       children: `

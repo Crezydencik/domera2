@@ -547,9 +547,9 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
     try {
       await Promise.all(notificationIds.map(async (id) => {
         try {
-          await markNotificationRead(id);
-        } catch {
           await removeNotification(id);
+        } catch {
+          await markNotificationRead(id);
         }
       }));
     } catch {

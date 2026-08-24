@@ -2,6 +2,7 @@ import { apiFetch } from "@/shared/api/client";
 
 export type CompanyMemberPermissions = {
   viewCompanyInfo: boolean;
+  viewApiKeys: boolean;
   editCompanyInfo: boolean;
   manageMembers: boolean;
   manageApiKeys: boolean;
