@@ -47,6 +47,7 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
     }
     async requestCreationAccess(request, user, payload) {
         this.assertManagement(user);
+        this.assertManagementCompanyMutation(user);
         const normalizedCompanyId = this.firstString(payload.companyId, this.effectiveManagementCompanyId(user));
         if (!normalizedCompanyId)
             throw new common_1.BadRequestException('companyId is required');
@@ -302,6 +303,7 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
     }
     async cancelCreationAccessRequest(request, user, requestId) {
         this.assertManagement(user);
+        this.assertManagementCompanyMutation(user);
         const normalizedRequestId = requestId?.trim();
         if (!normalizedRequestId)
             throw new common_1.BadRequestException('requestId is required');
@@ -361,6 +363,11 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
             throw new common_1.UnauthorizedException('Authentication required');
         if (!['ManagementCompany', 'Accountant'].includes(user.role)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
+        }
+    }
+    assertManagementCompanyMutation(user) {
+        if (user.role !== 'ManagementCompany') {
+            throw new common_1.ForbiddenException('Only management company users can change buildings');
         }
     }
     effectiveManagementCompanyId(user) {

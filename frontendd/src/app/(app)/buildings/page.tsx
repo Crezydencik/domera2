@@ -9,10 +9,11 @@ export default async function BuildingsPage({
 }) {
   const params = (await searchParams) ?? {};
   const data = await getBuildingsPageData(params.role);
+  const canManageBuildings = String(data.rawRole ?? "").replace(/[^a-z]/gi, "").toLowerCase() !== "accountant";
 
   return (
     <div className="space-y-6">
-      <BuildingsManagement companyId={data.companyId} buildings={data.buildings} />
+      <BuildingsManagement companyId={data.companyId} buildings={data.buildings} canManage={canManageBuildings} />
     </div>
   );
 }

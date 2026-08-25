@@ -129,6 +129,21 @@ let DocumentAccessService = class DocumentAccessService {
     }
     async canAccessDocument(user, document, memberApartments) {
         const scope = this.helperService.firstString(document.scope);
+        if ((0, role_constants_1.isAccountantRole)(user.role)) {
+            const companyId = this.helperService.firstString(document.companyId);
+            const buildingId = this.helperService.firstString(document.buildingId);
+            const ownsManagementArchive = scope === 'managementArchive' &&
+                this.helperService.firstString(document.ownerUserId) === user.uid;
+            const isApartmentDocument = Boolean(this.helperService.firstString(document.apartmentId)) ||
+                scope === 'apartmentResidents' ||
+                scope === 'apartmentPrivate' ||
+                scope === 'privateApartment';
+            return Boolean(companyId &&
+                this.requireStaffCompanyId(user) === companyId &&
+                !isApartmentDocument &&
+                ((buildingId && (scope === 'buildingResidents' || scope === 'managementArchive')) ||
+                    ownsManagementArchive));
+        }
         if (this.helperService.firstString(document.ownerUserId) === user.uid)
             return true;
         if (scope === 'platformPrivate')

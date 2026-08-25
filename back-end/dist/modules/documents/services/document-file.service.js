@@ -61,6 +61,11 @@ let DocumentFileService = class DocumentFileService {
             (0, role_constants_1.isPlatformAdminRole)(user.role);
         const canManage = scope !== 'privateApartment' &&
             scope !== 'apartmentPrivate' &&
+            (!(0, role_constants_1.isAccountantRole)(user.role) ||
+                (scope !== 'apartmentResidents' &&
+                    (Boolean(this.helperService.firstString(data.buildingId)) ||
+                        (scope === 'managementArchive' &&
+                            this.helperService.firstString(data.ownerUserId) === user.uid)))) &&
             scope !== 'platformPrivate' &&
             (0, role_constants_1.isStaffRole)(user.role) &&
             this.helperService.firstString(data.companyId) === this.accessService.requireStaffCompanyId(user);

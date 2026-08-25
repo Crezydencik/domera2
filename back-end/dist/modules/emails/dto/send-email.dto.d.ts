@@ -61,6 +61,9 @@ export declare class SendInvoiceGeneratedEmailDto {
     brandName?: string;
     language?: EmailLanguage;
     attachments?: EmailAttachmentDto[];
+    companyId?: string;
+    buildingId?: string;
+    apartmentId?: string;
 }
 export declare class SendMeterReadingReminderEmailDto {
     to: string;
@@ -79,6 +82,10 @@ export declare class SendMeterReadingReminderEmailDto {
     reminderStage?: 'start' | 'end' | 'close';
     daysUntilDeadline?: number;
     language?: EmailLanguage;
+    companyId?: string;
+    buildingId?: string;
+    apartmentId?: string;
+    deliveryKey?: string;
 }
 export declare class SendNotificationEmailDto {
     to: string;
@@ -89,4 +96,8 @@ export declare class SendNotificationEmailDto {
     brandName?: string;
     footer?: string;
     language?: EmailLanguage;
+    companyId?: string;
+    buildingId?: string;
+    apartmentId?: string;
+    deliveryKey?: string;
 }

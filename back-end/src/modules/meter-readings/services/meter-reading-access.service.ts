@@ -3,10 +3,14 @@ import { isPropertyMemberRole, isStaffRole } from '../../../common/auth/role.con
 import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { normalizeEmail } from '../../../common/utils/invitation-token';
+import { CompanyPayloadService } from '../../company/services/company-payload.service';
 
 @Injectable()
 export class MeterReadingAccessService {
-  constructor(private readonly firebaseAdminService: FirebaseAdminService) {}
+  constructor(
+    private readonly firebaseAdminService: FirebaseAdminService,
+    private readonly companyPayloadService: CompanyPayloadService,
+  ) {}
 
   assertAuthenticated(user: RequestUser | undefined): asserts user is RequestUser {
     if (!user?.uid || !user.role) throw new UnauthorizedException('Authentication required');
@@ -30,6 +34,28 @@ export class MeterReadingAccessService {
 
     if (!companyIds.includes(staffCompanyId) && companyId !== staffCompanyId) {
       throw new ForbiddenException('Access denied for company');
+    }
+  }
+
+  async assertCanManageStaffMeterReadings(user: RequestUser, apartment: Record<string, unknown>): Promise<void> {
+    this.assertStaffApartmentCompanyAccess(user, apartment);
+    if (user.role === 'ManagementCompany') return;
+    if (user.role !== 'Accountant') {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    const companyId = this.requireStaffCompanyId(user);
+    const companySnap = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
+    if (!companySnap.exists) {
+      throw new ForbiddenException('Access denied for company');
+    }
+
+    const permissions = this.companyPayloadService.getCompanyMemberPermissions(
+      companySnap.data() as Record<string, unknown>,
+      user.uid,
+    );
+    if (!permissions.manageMeterReadings) {
+      throw new ForbiddenException('You do not have permission to edit meter readings');
     }
   }
 

@@ -54,12 +54,12 @@ function copyFor(language, params) {
             };
         }
         return {
-            subject: 'Время отправить показания счетчиков - Domera',
-            title: 'Отправьте показания счётчиков',
+            subject: 'Отправка показаний счётчиков - Domera',
+            title: 'Отправка показаний счётчиков',
             badge: params.buildingName || 'Показания',
             body: `Здравствуйте${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Пришло время отправить показания${apartment ? ` для квартиры ${apartment}` : ''}.`,
-            countdownLabel: '',
-            alert: params.deadline ? `Пожалуйста, отправьте до: <strong>${params.deadline}</strong>` : '',
+            countdownLabel: 'дней до окончания сдачи',
+            alert: '',
             button: 'Отправить показания',
             note: 'Точные показания помогают рассчитать справедливые счета для всех жильцов.',
         };
@@ -90,12 +90,12 @@ function copyFor(language, params) {
             };
         }
         return {
-            subject: 'Laiks iesniegt skaitītāja rādījumus - Domera',
-            title: 'Iesniedziet skaitītāju rādījumus',
+            subject: 'Skaitītāju rādījumu iesniegšana - Domera',
+            title: 'Skaitītāju rādījumu iesniegšana',
             badge: params.buildingName || 'Rādījumi',
             body: `Sveiki${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Pienācis laiks iesniegt rādījumus${apartment ? ` dzīvoklim ${apartment}` : ''}.`,
-            countdownLabel: '',
-            alert: params.deadline ? `Lūdzu, iesniedziet līdz: <strong>${params.deadline}</strong>` : '',
+            countdownLabel: 'dienas līdz beigām',
+            alert: '',
             button: 'Iesniegt rādījumus',
             note: 'Precīzi skaitītāju rādījumi palīdz aprēķināt taisnīgus rēķinus visiem iedzīvotājiem.',
         };
@@ -129,8 +129,8 @@ function copyFor(language, params) {
         title: 'Submit meter readings',
         badge: params.buildingName || 'Meter readings',
         body: `Hello${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. It is time to submit meter readings${apartment ? ` for apartment ${apartment}` : ''}.`,
-        countdownLabel: '',
-        alert: params.deadline ? `Please submit by: <strong>${params.deadline}</strong>` : '',
+        countdownLabel: 'days until closing',
+        alert: '',
         button: 'Submit readings',
         note: 'Accurate meter readings help calculate fair bills for all residents.',
     };

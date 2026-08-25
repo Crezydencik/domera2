@@ -79,6 +79,8 @@ const navIconByHref: Partial<Record<string, LucideIcon>> = {
 type UserProfileSummary = {
   id?: string;
   uid?: string;
+  role?: string;
+  accountType?: string;
   companyId?: string;
   email?: string;
   firstName?: string;
@@ -112,6 +114,13 @@ function firstText(...values: unknown[]): string | undefined {
   }
 
   return undefined;
+}
+
+function isAccountantRole(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^a-z]/gi, "")
+    .toLowerCase() === "accountant";
 }
 
 function resolveProfileName(profile: UserProfileSummary | null, sessionName: string | undefined, fallbackEmail: string): string {
@@ -197,6 +206,7 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
   const [hasPendingBuildingRequests, setHasPendingBuildingRequests] = useState(false);
   const [hasElectricityNavigation, setHasElectricityNavigation] = useState(false);
   const optimisticElectricityUntilRef = useRef(0);
+  const initialIsAccountant = isAccountantRole(initialProfile?.role) || isAccountantRole(initialProfile?.accountType);
   const baseNavItems = role === "platformAdmin"
     ? navByRole[role]
         .filter((item) => item.href !== ROUTES.approvals)
@@ -207,6 +217,10 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
         )
     : navByRole[role];
   const navItems = baseNavItems.filter((item) => {
+    if (initialIsAccountant && item.href === ROUTES.residents) {
+      return false;
+    }
+
     if (role === "managementCompany" && !hasElectricityNavigation && item.href === ROUTES.electricity) {
       return false;
     }
@@ -234,10 +248,15 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
     role === "managementCompany" ? profileUserId : undefined,
   );
 
- const userEmail = profileSummary?.email ?? "user@domera.lv";
+  const userEmail = profileSummary?.email ?? "user@domera.lv";
 const userName = resolveProfileName(profileSummary, undefined, userEmail);
   const userInitial = userName.slice(0, 1).toUpperCase();
-  const roleLabel = role === "platformAdmin" ? "Platform administrator" : t(`roles.${role}`);
+  const isAccountant = initialIsAccountant || isAccountantRole(profileSummary?.role) || isAccountantRole(profileSummary?.accountType);
+  const roleLabel = isAccountant
+    ? t("roles.accountant")
+    : role === "platformAdmin"
+      ? t("roles.platformAdmin")
+      : t(`roles.${role}`);
   const propertyRoleLabel = useMemo(() => {
     const roles = new Set(
       (profileSummary?.propertyRoles ?? [])
@@ -419,7 +438,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
 
     let active = true;
 
-    apiFetch<UserProfileSummary | null>("/users/me")
+    apiFetch<UserProfileSummary | null>("/users/me", { redirectOnAuthError: false })
       .then((profile) => {
         if (active) setProfileSummary(profile);
       })

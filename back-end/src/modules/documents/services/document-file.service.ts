@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { isPlatformAdminRole, isStaffRole } from '../../../common/auth/role.constants';
+import { isAccountantRole, isPlatformAdminRole, isStaffRole } from '../../../common/auth/role.constants';
 import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { DocumentFilePayload, DocumentScope, UnknownRecord } from '../types/document.types';
@@ -61,6 +61,17 @@ export class DocumentFileService {
     const canManage =
       scope !== 'privateApartment' &&
       scope !== 'apartmentPrivate' &&
+      (!isAccountantRole(user.role) ||
+        (
+          scope !== 'apartmentResidents' &&
+          (
+            Boolean(this.helperService.firstString(data.buildingId)) ||
+            (
+              scope === 'managementArchive' &&
+              this.helperService.firstString(data.ownerUserId) === user.uid
+            )
+          )
+        )) &&
       scope !== 'platformPrivate' &&
       isStaffRole(user.role) &&
       this.helperService.firstString(data.companyId) === this.accessService.requireStaffCompanyId(user);

@@ -49,6 +49,9 @@ let MeterReadingsService = class MeterReadingsService {
     sendTestReminder(user) {
         return this.reminderService.sendTestReminder(user);
     }
+    sendManualReminder(user, payload) {
+        return this.reminderService.sendManualReminder(user, payload);
+    }
 };
 exports.MeterReadingsService = MeterReadingsService;
 exports.MeterReadingsService = MeterReadingsService = __decorate([

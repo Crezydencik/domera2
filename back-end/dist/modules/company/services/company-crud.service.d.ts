@@ -31,6 +31,7 @@ export declare class CompanyCrudService {
             manageMembers: boolean;
             manageApiKeys: boolean;
             manageInvoiceSettings: boolean;
+            manageMeterReadings: boolean;
         };
         publicContacts: {
             id: string;

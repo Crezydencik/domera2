@@ -1,8 +1,12 @@
-import { Controller, Get, Post, Body, HttpCode, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Body, HttpCode, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { CurrentUser } from '../../../common/auth/current-user.decorator';
 import { FirebaseAuthGuard } from '../../../common/auth/firebase-auth.guard';
+import { RequestUser } from '../../../common/auth/request-user.type';
+import { isPlatformAdminRole } from '../../../common/auth/role.constants';
 import { Roles } from '../../../common/auth/roles.decorator';
 import { RolesGuard } from '../../../common/auth/roles.guard';
+import { EmailLogService, EmailLogType } from '../services/email-log.service';
 import { EmailService } from '../services/email.service';
 import { EmailTemplateService } from '../services/email-template.service';
 import {
@@ -35,6 +39,7 @@ type EmailTemplatePreviewType =
 export class EmailController {
   constructor(
     private readonly emailService: EmailService,
+    private readonly emailLogService: EmailLogService,
     private readonly templateService: EmailTemplateService,
   ) {}
 
@@ -56,6 +61,66 @@ export class EmailController {
       subject: template.subject,
       html: template.html,
     };
+  }
+
+  @Get('stats')
+  @Roles('PlatformAdmin', 'ManagementCompany', 'Accountant')
+  @ApiOperation({ summary: 'Get email delivery statistics' })
+  @ApiResponse({ status: 200, description: 'Email statistics returned successfully' })
+  async stats(
+    @CurrentUser() user: RequestUser,
+    @Query('type') type?: EmailLogType,
+    @Query('companyId') companyId?: string,
+    @Query('buildingId') buildingId?: string,
+    @Query('apartmentId') apartmentId?: string,
+  ) {
+    const normalizedType = this.normalizeStatsType(type);
+    const scopedCompanyId = isPlatformAdminRole(user.role)
+      ? this.cleanString(companyId)
+      : this.cleanString(user.companyId);
+
+    if (!isPlatformAdminRole(user.role) && !scopedCompanyId) {
+      throw new BadRequestException('Company ID not found for this user');
+    }
+
+    return this.emailLogService.getStats({
+      type: normalizedType,
+      companyId: scopedCompanyId,
+      buildingId: this.cleanString(buildingId),
+      apartmentId: this.cleanString(apartmentId),
+    });
+  }
+
+  @Get('deliveries')
+  @Roles('PlatformAdmin', 'ManagementCompany', 'Accountant')
+  @ApiOperation({ summary: 'Get email delivery log items' })
+  @ApiResponse({ status: 200, description: 'Email delivery log returned successfully' })
+  async deliveries(
+    @CurrentUser() user: RequestUser,
+    @Query('type') type?: EmailLogType,
+    @Query('companyId') companyId?: string,
+    @Query('buildingId') buildingId?: string,
+    @Query('apartmentId') apartmentId?: string,
+    @Query('deliveryKeyPrefix') deliveryKeyPrefix?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const normalizedType = this.normalizeStatsType(type);
+    const scopedCompanyId = isPlatformAdminRole(user.role)
+      ? this.cleanString(companyId)
+      : this.cleanString(user.companyId);
+
+    if (!isPlatformAdminRole(user.role) && !scopedCompanyId) {
+      throw new BadRequestException('Company ID not found for this user');
+    }
+
+    return this.emailLogService.getDeliveries({
+      type: normalizedType,
+      companyId: scopedCompanyId,
+      buildingId: this.cleanString(buildingId),
+      apartmentId: this.cleanString(apartmentId),
+      deliveryKeyPrefix: this.cleanString(deliveryKeyPrefix),
+      limit: this.cleanNumber(limit, 200),
+    });
   }
 
   @Post('registration-code')
@@ -136,6 +201,31 @@ export class EmailController {
     ];
 
     return allowed.includes(type as EmailTemplatePreviewType) ? type as EmailTemplatePreviewType : 'meterReadingReminder';
+  }
+
+  private normalizeStatsType(type?: string): EmailLogType | undefined {
+    const allowed: EmailLogType[] = [
+      'registrationCode',
+      'passwordReset',
+      'ownerInvitation',
+      'tenantInvitation',
+      'tenantInvitedByOwner',
+      'invoiceGenerated',
+      'meterReadingReminder',
+      'notification',
+    ];
+
+    return allowed.includes(type as EmailLogType) ? type as EmailLogType : undefined;
+  }
+
+  private cleanString(value?: string): string | undefined {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    return trimmed || undefined;
+  }
+
+  private cleanNumber(value: unknown, fallback: number): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.trunc(parsed) : fallback;
   }
 
   private buildPreviewTemplate(type: EmailTemplatePreviewType, language: EmailLanguage) {

@@ -4,6 +4,7 @@ export declare class ApartmentAccessService {
     private readonly firebaseAdminService;
     constructor(firebaseAdminService: FirebaseAdminService);
     assertAuthenticated(user: RequestUser | undefined): asserts user is RequestUser;
+    assertManagementCompanyMutation(user: RequestUser): void;
     isStaff(user: RequestUser): boolean;
     isPropertyMember(user: RequestUser): boolean;
     effectiveStaffCompanyId(user: RequestUser): string;

@@ -52,7 +52,7 @@ let MeterReadingCrudService = class MeterReadingCrudService {
             }
         }
         else if ((0, role_constants_1.isStaffRole)(user.role)) {
-            this.accessService.assertStaffApartmentCompanyAccess(user, apartment);
+            await this.accessService.assertCanManageStaffMeterReadings(user, apartment);
         }
         const now = new Date();
         const staffSubmission = (0, role_constants_1.isStaffRole)(user.role);
@@ -183,7 +183,7 @@ let MeterReadingCrudService = class MeterReadingCrudService {
             }
         }
         else if ((0, role_constants_1.isStaffRole)(user.role)) {
-            this.accessService.assertStaffApartmentCompanyAccess(user, apartment);
+            await this.accessService.assertCanManageStaffMeterReadings(user, apartment);
         }
         const wr = (apartment.waterReadings ?? {});
         let foundKey = null;
@@ -245,7 +245,7 @@ let MeterReadingCrudService = class MeterReadingCrudService {
             }
         }
         else if ((0, role_constants_1.isStaffRole)(user.role)) {
-            this.accessService.assertStaffApartmentCompanyAccess(user, apartment);
+            await this.accessService.assertCanManageStaffMeterReadings(user, apartment);
         }
         const wr = (apartment.waterReadings ?? {});
         let foundKey = null;

@@ -61,6 +61,7 @@ interface SubmissionPeriodCardProps {
   hideHeader?: boolean;
   locale?: string;
   labels?: SubmissionPeriodLabels;
+  beforeActions?: React.ReactNode;
 }
 
 const formatDate = (iso: string) => {
@@ -227,6 +228,7 @@ export function SubmissionPeriodCard({
   hideHeader,
   locale,
   labels,
+  beforeActions,
 }: SubmissionPeriodCardProps) {
   const [startDate, setStartDate] = React.useState(displayPeriodDate(value?.startDate, value?.monthly ?? false));
   const [endDate, setEndDate] = React.useState(displayPeriodDate(value?.endDate, value?.monthly ?? false));
@@ -438,6 +440,8 @@ export function SubmissionPeriodCard({
           </div>
         </>
       )}
+
+      {beforeActions}
 
       <div className="mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4">
         {onDelete && (value?.startDate || value?.endDate) && (

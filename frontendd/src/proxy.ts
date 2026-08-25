@@ -112,6 +112,17 @@ function firstString(...values: unknown[]) {
   return undefined;
 }
 
+function matchesPath(pathname: string, route: string) {
+  return pathname === route || pathname.startsWith(`${route}/`);
+}
+
+function isAccountantRole(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^a-z]/gi, "")
+    .toLowerCase() === "accountant";
+}
+
 function setRequestHeader(requestHeaders: Headers, name: string, value: unknown) {
   const text = firstString(value);
   if (text && /^[\x20-\x7e]+$/.test(text)) requestHeaders.set(name, text);
@@ -137,10 +148,18 @@ export default function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get("__session")?.value?.trim();
   const sessionPayload = sessionCookie ? decodeJwtPayload(sessionCookie) : {};
-  const isAuthenticated = Boolean(sessionCookie);
+  const legacyUserId = firstString(request.cookies.get("userId")?.value);
+  const legacyEmail = firstString(request.cookies.get("userEmail")?.value);
+  const legacyRole = firstString(
+    request.cookies.get("domera_role")?.value,
+    request.cookies.get("domera_accountType")?.value,
+  );
+  const legacyCompanyId = firstString(request.cookies.get("domera_companyId")?.value);
+  const legacyApartmentId = firstString(request.cookies.get("domera_apartmentId")?.value);
+  const isAuthenticated = Boolean(sessionCookie || legacyUserId || legacyEmail || legacyRole);
   const shouldClearAuth = request.nextUrl.searchParams.get("expired") === "1";
   const trustedRole = firstString(sessionPayload.role, sessionPayload.accountType);
-  const roleHint = trustedRole;
+  const roleHint = trustedRole ?? legacyRole;
   const requestHeaders = new Headers(request.headers);
 
   requestHeaders.delete("x-domera-role");
@@ -152,10 +171,10 @@ export default function proxy(request: NextRequest) {
   if (roleHint) {
     requestHeaders.set("x-domera-role", roleHint);
   }
-  setRequestHeader(requestHeaders, "x-domera-user-id", firstString(sessionPayload.uid, sessionPayload.user_id));
-  setRequestHeader(requestHeaders, "x-domera-email", firstString(sessionPayload.email));
-  setRequestHeader(requestHeaders, "x-domera-company-id", firstString(sessionPayload.companyId));
-  setRequestHeader(requestHeaders, "x-domera-apartment-id", firstString(sessionPayload.apartmentId));
+  setRequestHeader(requestHeaders, "x-domera-user-id", firstString(sessionPayload.uid, sessionPayload.user_id, legacyUserId));
+  setRequestHeader(requestHeaders, "x-domera-email", firstString(sessionPayload.email, legacyEmail));
+  setRequestHeader(requestHeaders, "x-domera-company-id", firstString(sessionPayload.companyId, legacyCompanyId));
+  setRequestHeader(requestHeaders, "x-domera-apartment-id", firstString(sessionPayload.apartmentId, legacyApartmentId));
 
   if (pathname === ROUTES.logout) {
     return withSecurityHeaders(NextResponse.next({
@@ -177,6 +196,15 @@ export default function proxy(request: NextRequest) {
 
   if (isProtectedPath(pathname) && !isAuthenticated) {
     return redirectToLogin(request, pathname);
+  }
+
+  if (
+    isAuthenticated &&
+    isAccountantRole(roleHint) &&
+    matchesPath(pathname, ROUTES.residents)
+  ) {
+    const apartmentsUrl = new URL(ROUTES.apartments, request.url);
+    return withSecurityHeaders(NextResponse.redirect(apartmentsUrl));
   }
 
   if (isAuthRoute(pathname) && isAuthenticated) {

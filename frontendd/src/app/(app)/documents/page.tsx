@@ -2,6 +2,13 @@ import { getDocumentsPageData } from "@/shared/server/page-loaders/documents.loa
 import { requireManagementCompanyBuildings } from "@/shared/server/management-building-access";
 import { DocumentsWorkspace } from "./documents-workspace";
 
+function isAccountantRole(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^a-z]/gi, "")
+    .toLowerCase() === "accountant";
+}
+
 export default async function DocumentsPage({
   searchParams,
 }: {
@@ -18,6 +25,7 @@ export default async function DocumentsPage({
       buildings={data.buildings}
       apartments={data.apartments}
       serverDocuments={data.documents}
+      buildingDocumentsOnly={isAccountantRole(data.rawRole)}
     />
   );
 }

@@ -67,6 +67,7 @@ let BuildingCrudService = class BuildingCrudService {
     }
     async create(request, user, payload) {
         this.assertManagement(user);
+        this.assertManagementCompanyMutation(user);
         const companyId = typeof payload.companyId === 'string' ? payload.companyId.trim() : '';
         if (!companyId)
             throw new common_1.BadRequestException('companyId is required');
@@ -76,6 +77,7 @@ let BuildingCrudService = class BuildingCrudService {
     }
     async update(request, user, buildingId, payload) {
         this.assertManagement(user);
+        this.assertManagementCompanyMutation(user);
         if (!buildingId?.trim())
             throw new common_1.BadRequestException('buildingId is required');
         await this.enforceRateLimit(request, 'buildings:update', `${user.uid}:${buildingId}`, 40);
@@ -135,6 +137,7 @@ let BuildingCrudService = class BuildingCrudService {
     }
     async remove(request, user, buildingId) {
         this.assertManagement(user);
+        this.assertManagementCompanyMutation(user);
         if (!buildingId?.trim())
             throw new common_1.BadRequestException('buildingId is required');
         await this.enforceRateLimit(request, 'buildings:delete', `${user.uid}:${buildingId}`, 20);
@@ -248,6 +251,11 @@ let BuildingCrudService = class BuildingCrudService {
             throw new common_1.UnauthorizedException('Authentication required');
         if (!['ManagementCompany', 'Accountant'].includes(user.role)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
+        }
+    }
+    assertManagementCompanyMutation(user) {
+        if (user.role !== 'ManagementCompany') {
+            throw new common_1.ForbiddenException('Only management company users can change buildings');
         }
     }
     effectiveManagementCompanyId(user) {

@@ -12,6 +12,7 @@ type UnknownRecord = Record<string, unknown>;
 
 export interface RoleDataBundle {
   role: DashboardRole;
+  rawRole?: string;
   userId?: string;
   profile?: UnknownRecord;
   companyId?: string;
@@ -95,6 +96,7 @@ function contextFromProfile(profile: UnknownRecord, roleHint?: string) {
     userId: resolvedUserId,
     profile,
     role,
+    rawRole,
     companyId: profileCompanyId ?? (shouldUseOwnUserAsCompany ? resolvedUserId : undefined),
     apartmentId: firstString(profile?.apartmentId),
   };
@@ -107,13 +109,13 @@ export const getCurrentProfile = cache(async () => {
 export async function getAuthenticatedContext(roleHint?: string, options?: { requireFreshProfile?: boolean }) {
   const store = await cookies();
   const sessionCookie = store.get("__session")?.value?.trim();
+  const headerProfile = buildHeaderProfile(await headers(), roleHint);
 
-  if (!sessionCookie) {
+  if (!sessionCookie && !headerProfile) {
     redirectToExpiredLogin();
   }
 
   if (!options?.requireFreshProfile) {
-    const headerProfile = buildHeaderProfile(await headers(), roleHint);
     if (headerProfile) {
       const needsFreshAccountantCompany =
         isRawAccountantRole(headerProfile.role) && !firstOptionalString(headerProfile.companyId);
@@ -128,6 +130,10 @@ export async function getAuthenticatedContext(roleHint?: string, options?: { req
     return contextFromProfile(profile, roleHint);
   } catch (error) {
     if (error instanceof DomeraApiError && [401, 403].includes(error.status)) {
+      if (headerProfile) {
+        return contextFromProfile(headerProfile, roleHint);
+      }
+
       redirectToExpiredLogin();
     }
 
@@ -137,6 +143,7 @@ export async function getAuthenticatedContext(roleHint?: string, options?: { req
         userId: undefined,
         profile: {} as UnknownRecord,
         role,
+        rawRole: roleHint,
         companyId: undefined,
         apartmentId: undefined,
       };

@@ -172,6 +172,18 @@ export class SendInvoiceGeneratedEmailDto {
 
   @IsOptional()
   attachments?: EmailAttachmentDto[];
+
+  @IsOptional()
+  @IsString()
+  companyId?: string;
+
+  @IsOptional()
+  @IsString()
+  buildingId?: string;
+
+  @IsOptional()
+  @IsString()
+  apartmentId?: string;
 }
 
 export class SendMeterReadingReminderEmailDto {
@@ -219,6 +231,22 @@ export class SendMeterReadingReminderEmailDto {
   @IsOptional()
   @IsEnum(['en', 'ru', 'lv'])
   language?: EmailLanguage;
+
+  @IsOptional()
+  @IsString()
+  companyId?: string;
+
+  @IsOptional()
+  @IsString()
+  buildingId?: string;
+
+  @IsOptional()
+  @IsString()
+  apartmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  deliveryKey?: string;
 }
 
 export class SendNotificationEmailDto {
@@ -250,4 +278,20 @@ export class SendNotificationEmailDto {
   @IsOptional()
   @IsEnum(['en', 'ru', 'lv'])
   language?: EmailLanguage;
+
+  @IsOptional()
+  @IsString()
+  companyId?: string;
+
+  @IsOptional()
+  @IsString()
+  buildingId?: string;
+
+  @IsOptional()
+  @IsString()
+  apartmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  deliveryKey?: string;
 }

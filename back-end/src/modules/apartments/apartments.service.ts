@@ -370,6 +370,10 @@ export class ApartmentsService {
     return this.apartmentAccessService.assertAuthenticated(user);
   }
 
+  private assertManagementCompanyMutation(user: RequestUser): void {
+    return this.apartmentAccessService.assertManagementCompanyMutation(user);
+  }
+
   private isStaff(user: RequestUser): boolean {
     return this.apartmentAccessService.isStaff(user);
   }
@@ -1095,6 +1099,7 @@ export class ApartmentsService {
   async importFromFile(input: ImportInput) {
     const { request, user, file, buildingId, companyId } = input;
     this.assertAuthenticated(user);
+    this.assertManagementCompanyMutation(user);
     const userRole = user.role;
     if (!userRole || !['ManagementCompany', 'Accountant'].includes(userRole)) {
       throw new ForbiddenException('Insufficient permissions');
@@ -1534,6 +1539,7 @@ export class ApartmentsService {
 
   async create(request: Request, user: RequestUser, payload: CreateApartmentDto) {
     this.assertAuthenticated(user);
+    this.assertManagementCompanyMutation(user);
     const userRole = user.role;
     if (!userRole || !['ManagementCompany', 'Accountant'].includes(userRole)) {
       throw new ForbiddenException('Insufficient permissions');
@@ -1615,6 +1621,7 @@ export class ApartmentsService {
 
   async update(request: Request, user: RequestUser, apartmentId: string, payload: UpdateApartmentDto) {
     this.assertAuthenticated(user);
+    this.assertManagementCompanyMutation(user);
     if (!apartmentId?.trim()) throw new BadRequestException('apartmentId is required');
 
     await this.enforceRateLimit(request, 'apartments:update', `${user.uid}:${apartmentId}`, 40);
@@ -1740,6 +1747,7 @@ export class ApartmentsService {
 
   async remove(request: Request, user: RequestUser, apartmentId: string) {
     if (!user?.uid || !user.role) throw new UnauthorizedException('Authentication required');
+    this.assertManagementCompanyMutation(user);
     if (!['ManagementCompany', 'Accountant'].includes(user.role)) {
       throw new ForbiddenException('Insufficient permissions');
     }

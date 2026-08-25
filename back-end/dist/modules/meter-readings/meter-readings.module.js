@@ -19,6 +19,7 @@ const meter_reading_helper_service_1 = require("./services/meter-reading-helper.
 const meter_reading_query_service_1 = require("./services/meter-reading-query.service");
 const meter_reading_reminder_service_1 = require("./services/meter-reading-reminder.service");
 const meter_readings_service_1 = require("./services/meter-readings.service");
+const company_payload_service_1 = require("../company/services/company-payload.service");
 let MeterReadingsModule = class MeterReadingsModule {
 };
 exports.MeterReadingsModule = MeterReadingsModule;
@@ -29,6 +30,7 @@ exports.MeterReadingsModule = MeterReadingsModule = __decorate([
         providers: [
             meter_readings_service_1.MeterReadingsService,
             meter_reading_access_service_1.MeterReadingAccessService,
+            company_payload_service_1.CompanyPayloadService,
             meter_reading_helper_service_1.MeterReadingHelperService,
             meter_reading_building_service_1.MeterReadingBuildingService,
             meter_reading_query_service_1.MeterReadingQueryService,

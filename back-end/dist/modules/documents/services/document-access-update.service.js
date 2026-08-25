@@ -38,6 +38,11 @@ let DocumentAccessUpdateService = class DocumentAccessUpdateService {
             (0, role_constants_1.isPlatformAdminRole)(user.role);
         const canStaffManage = currentScope !== 'privateApartment' &&
             currentScope !== 'apartmentPrivate' &&
+            (!(0, role_constants_1.isAccountantRole)(user.role) ||
+                (currentScope !== 'apartmentResidents' &&
+                    (Boolean(this.helperService.firstString(current.buildingId)) ||
+                        (currentScope === 'managementArchive' &&
+                            this.helperService.firstString(current.ownerUserId) === user.uid)))) &&
             currentScope !== 'platformPrivate' &&
             (0, role_constants_1.isStaffRole)(user.role) &&
             this.helperService.firstString(current.companyId) === this.accessService.requireStaffCompanyId(user);
@@ -50,6 +55,9 @@ let DocumentAccessUpdateService = class DocumentAccessUpdateService {
         }
         if ((nextScope === 'apartmentPrivate' || nextScope === 'privateApartment') && ((0, role_constants_1.isStaffRole)(user.role) || (0, role_constants_1.isPlatformAdminRole)(user.role))) {
             throw new common_1.ForbiddenException('Management company cannot create private apartment documents');
+        }
+        if ((0, role_constants_1.isAccountantRole)(user.role) && nextScope === 'apartmentResidents') {
+            throw new common_1.ForbiddenException('Accountant cannot manage apartment documents');
         }
         if (nextScope === 'platformPrivate' && !(0, role_constants_1.isPlatformAdminRole)(user.role)) {
             throw new common_1.ForbiddenException('Only platform administrators can create private platform documents');
@@ -86,8 +94,20 @@ let DocumentAccessUpdateService = class DocumentAccessUpdateService {
                 buildingName = this.helperService.firstString(building.name, building.address, buildingId);
             }
             else if ((0, role_constants_1.isStaffRole)(user.role)) {
-                if (!companyId && user.companyId)
+                if ((0, role_constants_1.isAccountantRole)(user.role)) {
+                    buildingId = this.helperService.firstString(body.buildingId, current.buildingId);
+                    if (buildingId) {
+                        const building = await this.metadataService.getBuilding(buildingId);
+                        companyId = this.metadataService.resolveCompanyId(building, companyId);
+                        buildingName = this.helperService.firstString(building.name, building.address, buildingId);
+                    }
+                    if (!companyId || this.accessService.requireStaffCompanyId(user) !== companyId) {
+                        throw new common_1.ForbiddenException(buildingId ? 'Access denied for building' : 'Company scope is required');
+                    }
+                }
+                else if (!companyId && user.companyId) {
                     companyId = user.companyId;
+                }
             }
             else {
                 buildingId = this.helperService.firstString(body.buildingId, current.buildingId);
@@ -110,6 +130,7 @@ let DocumentAccessUpdateService = class DocumentAccessUpdateService {
             const apartmentCompanyId = this.metadataService.resolveCompanyId(apartment, companyId);
             const canStaffAttach = nextScope === 'apartmentResidents'
                 && (0, role_constants_1.isStaffRole)(user.role)
+                && !(0, role_constants_1.isAccountantRole)(user.role)
                 && Boolean(apartmentCompanyId && this.accessService.requireStaffCompanyId(user) === apartmentCompanyId);
             const canMemberAttach = this.accessService.isApartmentMember(apartment, user);
             if (!canStaffAttach && !canMemberAttach)

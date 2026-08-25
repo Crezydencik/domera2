@@ -50,7 +50,7 @@ export class MeterReadingCrudService {
         throw new ForbiddenException('Access denied for apartment');
       }
     } else if (isStaffRole(user.role)) {
-      this.accessService.assertStaffApartmentCompanyAccess(user, apartment);
+      await this.accessService.assertCanManageStaffMeterReadings(user, apartment);
     }
 
     const now = new Date();
@@ -213,7 +213,7 @@ export class MeterReadingCrudService {
         throw new ForbiddenException('Access denied for apartment');
       }
     } else if (isStaffRole(user.role)) {
-      this.accessService.assertStaffApartmentCompanyAccess(user, apartment);
+      await this.accessService.assertCanManageStaffMeterReadings(user, apartment);
     }
 
     const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
@@ -285,7 +285,7 @@ export class MeterReadingCrudService {
         throw new ForbiddenException('Access denied for apartment');
       }
     } else if (isStaffRole(user.role)) {
-      this.accessService.assertStaffApartmentCompanyAccess(user, apartment);
+      await this.accessService.assertCanManageStaffMeterReadings(user, apartment);
     }
 
     const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;

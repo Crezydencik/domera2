@@ -69,4 +69,12 @@ export declare class MeterReadingsService {
         success: boolean;
         message: string;
     }>;
+    sendManualReminder(user: RequestUser, payload: Record<string, unknown>): Promise<{
+        success: boolean;
+        sent: number;
+        failed: number;
+        skippedNoEmail: number;
+        skippedSubmitted: number;
+        totalApartments: number;
+    }>;
 }

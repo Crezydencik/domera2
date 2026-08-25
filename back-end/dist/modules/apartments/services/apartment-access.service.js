@@ -23,6 +23,11 @@ let ApartmentAccessService = class ApartmentAccessService {
             throw new common_1.UnauthorizedException('Authentication required');
         }
     }
+    assertManagementCompanyMutation(user) {
+        if (user.role !== 'ManagementCompany') {
+            throw new common_1.ForbiddenException('Only management company users can change apartments and residents');
+        }
+    }
     isStaff(user) {
         return (0, role_constants_1.isStaffRole)(user.role);
     }
@@ -134,7 +139,7 @@ let ApartmentAccessService = class ApartmentAccessService {
     }
     canManageTenants(user, apartment) {
         if (this.isStaff(user)) {
-            return this.apartmentBelongsToStaffCompany(user, apartment);
+            return user.role === 'ManagementCompany' && this.apartmentBelongsToStaffCompany(user, apartment);
         }
         if (user.role !== 'Landlord') {
             return false;

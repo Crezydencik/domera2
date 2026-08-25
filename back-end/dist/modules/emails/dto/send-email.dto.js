@@ -229,6 +229,21 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Array)
 ], SendInvoiceGeneratedEmailDto.prototype, "attachments", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendInvoiceGeneratedEmailDto.prototype, "companyId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendInvoiceGeneratedEmailDto.prototype, "buildingId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendInvoiceGeneratedEmailDto.prototype, "apartmentId", void 0);
 class SendMeterReadingReminderEmailDto {
 }
 exports.SendMeterReadingReminderEmailDto = SendMeterReadingReminderEmailDto;
@@ -289,6 +304,26 @@ __decorate([
     (0, class_validator_1.IsEnum)(['en', 'ru', 'lv']),
     __metadata("design:type", String)
 ], SendMeterReadingReminderEmailDto.prototype, "language", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendMeterReadingReminderEmailDto.prototype, "companyId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendMeterReadingReminderEmailDto.prototype, "buildingId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendMeterReadingReminderEmailDto.prototype, "apartmentId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendMeterReadingReminderEmailDto.prototype, "deliveryKey", void 0);
 class SendNotificationEmailDto {
 }
 exports.SendNotificationEmailDto = SendNotificationEmailDto;
@@ -329,3 +364,23 @@ __decorate([
     (0, class_validator_1.IsEnum)(['en', 'ru', 'lv']),
     __metadata("design:type", String)
 ], SendNotificationEmailDto.prototype, "language", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendNotificationEmailDto.prototype, "companyId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendNotificationEmailDto.prototype, "buildingId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendNotificationEmailDto.prototype, "apartmentId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendNotificationEmailDto.prototype, "deliveryKey", void 0);

@@ -6,6 +6,7 @@ exports.normalizeAccountType = normalizeAccountType;
 exports.resolveUserRole = resolveUserRole;
 exports.resolveAccountType = resolveAccountType;
 exports.isPlatformAdminRole = isPlatformAdminRole;
+exports.isAccountantRole = isAccountantRole;
 exports.isStaffRole = isStaffRole;
 exports.isPropertyMemberRole = isPropertyMemberRole;
 exports.isPublicRegistrationRole = isPublicRegistrationRole;
@@ -127,6 +128,9 @@ function resolveAccountType(input) {
 }
 function isPlatformAdminRole(role) {
     return normalizeUserRole(role) === 'PlatformAdmin';
+}
+function isAccountantRole(role) {
+    return normalizeUserRole(role) === 'Accountant';
 }
 function isStaffRole(role) {
     const normalizedRole = normalizeUserRole(role);

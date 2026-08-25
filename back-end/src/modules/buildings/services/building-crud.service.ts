@@ -81,6 +81,7 @@ export class BuildingCrudService {
 
   async create(request: Request, user: RequestUser, payload: Record<string, unknown>) {
     this.assertManagement(user);
+    this.assertManagementCompanyMutation(user);
 
     const companyId = typeof payload.companyId === 'string' ? payload.companyId.trim() : '';
     if (!companyId) throw new BadRequestException('companyId is required');
@@ -92,6 +93,7 @@ export class BuildingCrudService {
 
   async update(request: Request, user: RequestUser, buildingId: string, payload: Record<string, unknown>) {
     this.assertManagement(user);
+    this.assertManagementCompanyMutation(user);
     if (!buildingId?.trim()) throw new BadRequestException('buildingId is required');
 
     await this.enforceRateLimit(request, 'buildings:update', `${user.uid}:${buildingId}`, 40);
@@ -177,6 +179,7 @@ export class BuildingCrudService {
 
   async remove(request: Request, user: RequestUser, buildingId: string) {
     this.assertManagement(user);
+    this.assertManagementCompanyMutation(user);
     if (!buildingId?.trim()) throw new BadRequestException('buildingId is required');
 
     await this.enforceRateLimit(request, 'buildings:delete', `${user.uid}:${buildingId}`, 20);
@@ -314,6 +317,12 @@ export class BuildingCrudService {
     if (!user?.uid || !user.role) throw new UnauthorizedException('Authentication required');
     if (!['ManagementCompany', 'Accountant'].includes(user.role)) {
       throw new ForbiddenException('Insufficient permissions');
+    }
+  }
+
+  private assertManagementCompanyMutation(user: RequestUser): void {
+    if (user.role !== 'ManagementCompany') {
+      throw new ForbiddenException('Only management company users can change buildings');
     }
   }
 

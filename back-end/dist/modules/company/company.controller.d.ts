@@ -25,6 +25,7 @@ export declare class CompanyController {
             manageMembers: boolean;
             manageApiKeys: boolean;
             manageInvoiceSettings: boolean;
+            manageMeterReadings: boolean;
         };
         publicContacts: {
             id: string;

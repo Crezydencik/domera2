@@ -423,10 +423,12 @@ let InvitationsService = class InvitationsService {
                             ? invitation.memberPermissions
                             : {
                                 viewCompanyInfo: true,
+                                viewApiKeys: false,
                                 editCompanyInfo: false,
                                 manageMembers: false,
                                 manageApiKeys: false,
                                 manageInvoiceSettings: false,
+                                manageMeterReadings: false,
                             },
                     },
                     updatedAt: new Date(),

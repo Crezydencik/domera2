@@ -26,8 +26,16 @@ function listHasApprovedBuildings(value: unknown) {
   return false;
 }
 
+function isRawAccountantRole(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^a-z]/gi, "")
+    .toLowerCase() === "accountant";
+}
+
 export function requireManagementCompanyBuildings(data: RoleDataBundle | MaybeBuildingsData) {
   if (data.role !== "managementCompany") return;
+  if (isRawAccountantRole((data as RoleDataBundle).rawRole)) return;
 
   const accessData = data as MaybeBuildingsData;
   const hasBuildings =

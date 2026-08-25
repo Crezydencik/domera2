@@ -177,6 +177,13 @@ function isTenantActive(record: UnknownRecord) {
   return status === "accepted";
 }
 
+function isAccountantRole(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^a-z]/gi, "")
+    .toLowerCase() === "accountant";
+}
+
 export default async function ApartmentDetailsPage({
   params,
 }: {
@@ -189,6 +196,8 @@ export default async function ApartmentDetailsPage({
   const { apartmentId } = await params;
   const data = await getApartmentDetailsPageData();
   requireManagementCompanyBuildings(data);
+  const canManageApartmentResidents = data.role === "managementCompany" && !isAccountantRole(data.rawRole);
+  const canViewApartmentDocuments = !isAccountantRole(data.rawRole);
   const normalizedId = decodeURIComponent(apartmentId);
 
   let baseApartment = data.apartments.find((item) => {
@@ -682,40 +691,44 @@ export default async function ApartmentDetailsPage({
           </SectionCard>
         </div>
 
-        <SectionCard title={t("details.tenantManagement")}> 
-          <TenantAccessManager 
-            apartmentId={resolvedApartmentId} 
-            apartmentLabel={apartmentLabel}
-            companyEmail={companyEmail}
-            ownerData={{
-              email: ownerEmail,
-              userId: typeof apartment.ownerId === "string" ? apartment.ownerId : undefined,
-              activated: Boolean(apartment.ownerActivated) || Boolean(apartment.ownerAcceptedAt),
-              invitedAt: formatPossibleDate(apartment.ownerInvitedAt ?? baseApartment.ownerInvitedAt),
-            }}
-            inviteHistory={Array.isArray(apartment.ownerInviteHistory) ? apartment.ownerInviteHistory : []}
-            tenants={tenants}
-            tenantRows={tenantRows}
-            tenantColumns={[
-              t("details.columns.firstName"),
-              t("details.columns.lastName"),
-              t("details.columns.email"),
-              t("details.columns.fromDate"),
-              t("details.columns.toDate"),
-              t("details.columns.status"),
-            ]}
-            tenantsTitle={t("details.tenants")}
-          />
-        </SectionCard>
+        {canManageApartmentResidents ? (
+          <SectionCard title={t("details.tenantManagement")}> 
+            <TenantAccessManager 
+              apartmentId={resolvedApartmentId} 
+              apartmentLabel={apartmentLabel}
+              companyEmail={companyEmail}
+              ownerData={{
+                email: ownerEmail,
+                userId: typeof apartment.ownerId === "string" ? apartment.ownerId : undefined,
+                activated: Boolean(apartment.ownerActivated) || Boolean(apartment.ownerAcceptedAt),
+                invitedAt: formatPossibleDate(apartment.ownerInvitedAt ?? baseApartment.ownerInvitedAt),
+              }}
+              inviteHistory={Array.isArray(apartment.ownerInviteHistory) ? apartment.ownerInviteHistory : []}
+              tenants={tenants}
+              tenantRows={tenantRows}
+              tenantColumns={[
+                t("details.columns.firstName"),
+                t("details.columns.lastName"),
+                t("details.columns.email"),
+                t("details.columns.fromDate"),
+                t("details.columns.toDate"),
+                t("details.columns.status"),
+              ]}
+              tenantsTitle={t("details.tenants")}
+            />
+          </SectionCard>
+        ) : null}
 
-        <SectionCard title={documentsT("apartmentBlock.sectionTitle")}>
-          <ApartmentDocumentsBlock
-            apartmentId={resolvedApartmentId}
-            apartmentLabel={apartmentLabel}
-            role={data.role}
-            userId={data.userId}
-          />
-        </SectionCard>
+        {canViewApartmentDocuments ? (
+          <SectionCard title={documentsT("apartmentBlock.sectionTitle")}>
+            <ApartmentDocumentsBlock
+              apartmentId={resolvedApartmentId}
+              apartmentLabel={apartmentLabel}
+              role={data.role}
+              userId={data.userId}
+            />
+          </SectionCard>
+        ) : null}
 
         <div className="grid gap-5 xl:grid-cols-2">
           <SectionCard title={t("details.invoices")}>

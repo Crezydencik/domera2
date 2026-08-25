@@ -54,6 +54,7 @@ interface ApartmentsManagementRowActionsProps {
   isOccupied?: boolean;
   residentOptions: ApartmentResidentOption[];
   readOnly?: boolean;
+  canManageAccess?: boolean;
 }
 
 function ModalShell({
@@ -110,6 +111,7 @@ export function ApartmentsManagementRowActions({
   currentResidentId,
   isOccupied = false,
   readOnly = false,
+  canManageAccess = true,
 }: ApartmentsManagementRowActionsProps) {
   const t = useTranslations("apartments");
   const ui = useTranslations("ui");
@@ -183,22 +185,22 @@ export function ApartmentsManagementRowActions({
             onClick: () => router.push(`${ROUTES.apartments}/${encodeURIComponent(apartmentId)}`),
             disabled: isDeleting,
           },
-          {
+          ...(canManageAccess ? [{
             key: `${apartmentId}-access`,
             label: t("management.actions.manageAccess"),
             icon: "user",
             tone: "warning",
             disabled: readOnly || isDeleting,
             onClick: () => setAccessManagementOpen(true),
-          },
-          {
+          } as const] : []),
+          ...(canManageAccess ? [{
             key: `${apartmentId}-delete`,
             label: t("management.actions.delete"),
             icon: "delete",
             tone: "danger",
             disabled: readOnly || isDeleting,
             onClick: () => void openDeleteDialog(),
-          },
+          } as const] : []),
         ]}
       />
 

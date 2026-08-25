@@ -16,5 +16,5 @@ export default async function MeterReadingsPage() {
 
   return data.role === "resident" || data.role === "landlord"
     ? <OwnerLandlordPage />
-    : <ManagementCompanyPage initialCompanyId={data.companyId} initialData={data.managementInitialData} />;
+    : <ManagementCompanyPage initialCompanyId={data.companyId} initialData={data.managementInitialData} canManageReadings={data.canManageReadings} />;
 }

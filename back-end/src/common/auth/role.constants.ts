@@ -137,6 +137,10 @@ export function isPlatformAdminRole(role: unknown): boolean {
   return normalizeUserRole(role) === 'PlatformAdmin';
 }
 
+export function isAccountantRole(role: unknown): boolean {
+  return normalizeUserRole(role) === 'Accountant';
+}
+
 export function isStaffRole(role: unknown): boolean {
   const normalizedRole = normalizeUserRole(role);
   return Boolean(normalizedRole && (STAFF_ROLES as readonly string[]).includes(normalizedRole));

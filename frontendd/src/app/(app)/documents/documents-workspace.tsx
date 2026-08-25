@@ -107,7 +107,34 @@ function toApartmentOption(item: RawRecord, fallbackLabel: string, shortPrefix: 
   };
 }
 
-function canSeeDocument(document: StoredDocument, role: DashboardRole, userId?: string, managementCompanyVisibilityOnly = false) {
+function isApartmentScopedDocument(document: StoredDocument) {
+  return Boolean(document.apartmentId) ||
+    document.scope === "apartmentResidents" ||
+    document.scope === "apartmentPrivate" ||
+    document.scope === "privateApartment";
+}
+
+function isOwnManagementArchiveDocument(document: StoredDocument, userId?: string) {
+  return document.scope === "managementArchive" && Boolean(userId) && document.ownerUserId === userId;
+}
+
+function isBuildingScopedDocument(document: StoredDocument) {
+  return Boolean(document.buildingId) &&
+    !isApartmentScopedDocument(document) &&
+    (document.scope === "buildingResidents" || document.scope === "managementArchive");
+}
+
+function canSeeDocument(
+  document: StoredDocument,
+  role: DashboardRole,
+  userId?: string,
+  managementCompanyVisibilityOnly = false,
+  buildingDocumentsOnly = false,
+) {
+  if (buildingDocumentsOnly && !isBuildingScopedDocument(document) && !isOwnManagementArchiveDocument(document, userId)) {
+    return false;
+  }
+
   if (managementCompanyVisibilityOnly) {
     return (
       document.ownerUserId === userId &&
@@ -205,6 +232,7 @@ export function DocumentsWorkspace({
   apartments,
   serverDocuments,
   managementCompanyVisibilityOnly = false,
+  buildingDocumentsOnly = false,
 }: {
   role: DashboardRole;
   userId?: string;
@@ -212,6 +240,7 @@ export function DocumentsWorkspace({
   apartments: RawRecord[];
   serverDocuments: DocumentItem[];
   managementCompanyVisibilityOnly?: boolean;
+  buildingDocumentsOnly?: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useTranslations("documents");
@@ -227,7 +256,7 @@ export function DocumentsWorkspace({
   const [updatingAccessId, setUpdatingAccessId] = useState<string | null>(null);
   const [editingAccessDocument, setEditingAccessDocument] = useState<StoredDocument | null>(null);
   const [accessDraftScope, setAccessDraftScope] = useState<DocumentScope>(
-    managementCompanyVisibilityOnly ? "platformPrivate" : "apartmentResidents",
+    managementCompanyVisibilityOnly ? "platformPrivate" : "buildingResidents",
   );
   const [accessDraftApartmentId, setAccessDraftApartmentId] = useState("");
   const [scope, setScope] = useState<DocumentScope>(
@@ -306,7 +335,7 @@ export function DocumentsWorkspace({
   const canUseBuildingResidents = !managementCompanyVisibilityOnly && role === "managementCompany";
   const canShareWithManagement = managementCompanyVisibilityOnly || role !== "managementCompany";
   const canUseManagementArchive = !managementCompanyVisibilityOnly && role === "managementCompany";
-  const canUsePrivateApartment = !managementCompanyVisibilityOnly && role !== "managementCompany";
+  const canUsePrivateApartment = !buildingDocumentsOnly && !managementCompanyVisibilityOnly && role !== "managementCompany";
   const hasMultipleBuildingOptions = buildingOptions.length > 1;
 
   const isManagementDocument = useCallback((item: StoredDocument) => {
@@ -319,6 +348,7 @@ export function DocumentsWorkspace({
   }, []);
 
   const isPersonalDocument = useCallback((item: StoredDocument) => {
+    if (isOwnManagementArchiveDocument(item, effectiveUserId)) return true;
     if (item.scope === "platformPrivate") return item.ownerUserId === effectiveUserId;
     if (item.scope === "apartmentPrivate") return true;
     return item.scope === "privateApartment" && (!item.ownerUserId || item.ownerUserId === effectiveUserId);
@@ -336,7 +366,7 @@ export function DocumentsWorkspace({
   }, []);
 
   const isOpenManagementAccessDocument = useCallback((item: StoredDocument) => {
-    return item.scope === "managementArchive" && item.ownerUserId === effectiveUserId;
+    return isOwnManagementArchiveDocument(item, effectiveUserId);
   }, [effectiveUserId]);
 
   const canDeleteDocument = useCallback((item: StoredDocument) => {
@@ -356,7 +386,7 @@ export function DocumentsWorkspace({
   useEffect(() => {
     let mounted = true;
 
-    const loadPromise = role === "managementCompany" || managementCompanyVisibilityOnly
+    const loadPromise = role === "managementCompany" || managementCompanyVisibilityOnly || buildingDocumentsOnly
       ? getDocuments()
       : Promise.all(apartmentOptions.map((apartment) => getDocuments({ apartmentId: apartment.id }))).then((responses) => ({
           items: Array.from(
@@ -384,7 +414,7 @@ export function DocumentsWorkspace({
     return () => {
       mounted = false;
     };
-  }, [apartmentOptions, managementCompanyVisibilityOnly, role, t]);
+  }, [apartmentOptions, buildingDocumentsOnly, managementCompanyVisibilityOnly, role, t]);
 
   useEffect(() => {
     if (buildingId || !buildingOptions[0]) return;
@@ -426,10 +456,15 @@ export function DocumentsWorkspace({
   }, [role, scope]);
 
   useEffect(() => {
+    if (buildingDocumentsOnly && activeTab === "apartments") {
+      setActiveTab("all");
+      return;
+    }
+
     if (role === "managementCompany" && (activeTab === "management" || activeTab === "personal")) {
       setActiveTab("all");
     }
-  }, [activeTab, role]);
+  }, [activeTab, buildingDocumentsOnly, role]);
 
   const allDocuments = useMemo(() => {
     const liveDocuments = role === "managementCompany" ? serverDocuments.map(toStoredServerDocument) : [];
@@ -437,15 +472,15 @@ export function DocumentsWorkspace({
     const unique = new Map(merged.map((item) => [item.id, item]));
 
     return Array.from(unique.values()).filter((item) =>
-      canSeeDocument(item, role, effectiveUserId, managementCompanyVisibilityOnly),
+      canSeeDocument(item, role, effectiveUserId, managementCompanyVisibilityOnly, buildingDocumentsOnly),
     );
-  }, [documents, effectiveUserId, managementCompanyVisibilityOnly, role, serverDocuments]);
+  }, [buildingDocumentsOnly, documents, effectiveUserId, managementCompanyVisibilityOnly, role, serverDocuments]);
 
   const filteredDocuments = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
     return allDocuments.filter((item) => {
-      if (archiveBuildingId && item.buildingId !== archiveBuildingId) return false;
+      if (archiveBuildingId && item.buildingId !== archiveBuildingId && !(buildingDocumentsOnly && isOpenManagementAccessDocument(item))) return false;
       if (role !== "managementCompany" && !archiveBuildingId && archiveApartmentId) {
         const isSelectedApartmentDocument = item.apartmentId === archiveApartmentId;
         const isSelectedBuildingDocument =
@@ -455,7 +490,7 @@ export function DocumentsWorkspace({
       }
       if (activeTab === "management" && !isManagementDocument(item)) return false;
       if (activeTab === "personal" && !isPersonalDocument(item)) return false;
-      if (activeTab === "apartments" && item.apartmentId !== archiveApartmentId) return false;
+      if (activeTab === "apartments" && (!archiveApartmentId || item.apartmentId !== archiveApartmentId)) return false;
       if (activeTab === "shared" && !isSharedWithBuildingDocument(item)) return false;
       if (activeTab === "internalArchive" && !isInternalManagementArchiveDocument(item)) return false;
       if (activeTab === "openAccess" && !isOpenManagementAccessDocument(item)) return false;
@@ -476,6 +511,7 @@ export function DocumentsWorkspace({
     allDocuments,
     archiveBuildingId,
     archiveApartmentId,
+    buildingDocumentsOnly,
     isInternalManagementArchiveDocument,
     isManagementDocument,
     isOpenManagementAccessDocument,
@@ -489,7 +525,7 @@ export function DocumentsWorkspace({
   ]);
 
   const scopedArchiveDocuments = archiveBuildingId
-    ? allDocuments.filter((item) => item.buildingId === archiveBuildingId)
+    ? allDocuments.filter((item) => item.buildingId === archiveBuildingId || (buildingDocumentsOnly && isOpenManagementAccessDocument(item)))
     : role !== "managementCompany" && archiveApartmentId
       ? allDocuments.filter((item) => {
         const isSelectedApartmentDocument = item.apartmentId === archiveApartmentId;
@@ -513,9 +549,10 @@ export function DocumentsWorkspace({
     : role === "managementCompany"
     ? [
       { id: "all" as const, label: t("tabs.all"), count: scopedArchiveDocuments.length },
-      { id: "apartments" as const, label: t("tabs.apartments"), count: null },
+      ...(buildingDocumentsOnly ? [] : [{ id: "apartments" as const, label: t("tabs.apartments"), count: null }]),
       { id: "shared" as const, label: t("tabs.shared"), count: sharedCount },
       { id: "internalArchive" as const, label: t("tabs.internalArchive"), count: internalArchiveCount },
+      ...(buildingDocumentsOnly ? [{ id: "personal" as const, label: t("tabs.personal"), count: personalCount }] : []),
     ]
     : [
       { id: "all" as const, label: t("tabs.all"), count: scopedArchiveDocuments.length },
@@ -529,17 +566,19 @@ export function DocumentsWorkspace({
     }
 
     if (role === "managementCompany") {
-      return ["buildingResidents", "apartmentResidents", "managementArchive"];
+      return buildingDocumentsOnly
+        ? ["buildingResidents", "managementArchive"]
+        : ["buildingResidents", "apartmentResidents", "managementArchive"];
     }
 
     return ["managementArchive", "apartmentPrivate", "privateApartment"];
-  }, [managementCompanyVisibilityOnly, role]);
+  }, [buildingDocumentsOnly, managementCompanyVisibilityOnly, role]);
 
   function resetCreateForm() {
     setError("");
     setTitle("");
     setSelectedFile(null);
-    setScope(managementCompanyVisibilityOnly ? "platformPrivate" : role === "managementCompany" ? "buildingResidents" : "apartmentPrivate");
+    setScope(managementCompanyVisibilityOnly ? "platformPrivate" : role === "managementCompany" || buildingDocumentsOnly ? "buildingResidents" : "apartmentPrivate");
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -699,7 +738,7 @@ export function DocumentsWorkspace({
                   </button>
                 ) : null}
 
-                {role === "managementCompany" ? (
+                {role === "managementCompany" && !buildingDocumentsOnly ? (
                   <button
                     type="button"
                     onClick={() => setScope("apartmentResidents")}
@@ -933,7 +972,7 @@ export function DocumentsWorkspace({
             ))}
           </div>
 
-          {role === "managementCompany" && activeTab === "apartments" && hasMultipleArchiveApartmentOptions ? (
+          {role === "managementCompany" && !buildingDocumentsOnly && activeTab === "apartments" && hasMultipleArchiveApartmentOptions ? (
             <label className="mt-4 block max-w-md">
               <span className="text-xs font-semibold text-slate-500">{t("fields.apartment")}</span>
               <select

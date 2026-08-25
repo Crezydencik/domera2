@@ -298,6 +298,9 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
     assertAuthenticated(user) {
         return this.apartmentAccessService.assertAuthenticated(user);
     }
+    assertManagementCompanyMutation(user) {
+        return this.apartmentAccessService.assertManagementCompanyMutation(user);
+    }
     isStaff(user) {
         return this.apartmentAccessService.isStaff(user);
     }
@@ -884,6 +887,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
     async importFromFile(input) {
         const { request, user, file, buildingId, companyId } = input;
         this.assertAuthenticated(user);
+        this.assertManagementCompanyMutation(user);
         const userRole = user.role;
         if (!userRole || !['ManagementCompany', 'Accountant'].includes(userRole)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
@@ -1263,6 +1267,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
     }
     async create(request, user, payload) {
         this.assertAuthenticated(user);
+        this.assertManagementCompanyMutation(user);
         const userRole = user.role;
         if (!userRole || !['ManagementCompany', 'Accountant'].includes(userRole)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
@@ -1331,6 +1336,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
     }
     async update(request, user, apartmentId, payload) {
         this.assertAuthenticated(user);
+        this.assertManagementCompanyMutation(user);
         if (!apartmentId?.trim())
             throw new common_1.BadRequestException('apartmentId is required');
         await this.enforceRateLimit(request, 'apartments:update', `${user.uid}:${apartmentId}`, 40);
@@ -1458,6 +1464,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
     async remove(request, user, apartmentId) {
         if (!user?.uid || !user.role)
             throw new common_1.UnauthorizedException('Authentication required');
+        this.assertManagementCompanyMutation(user);
         if (!['ManagementCompany', 'Accountant'].includes(user.role)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }

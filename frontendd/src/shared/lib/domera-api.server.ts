@@ -576,6 +576,7 @@ function deriveResidentsFromApartments(apartments: UnknownRecord[]): Resident[] 
 export function emptyRoleDataBundle(context: AuthenticatedContext): RoleDataBundle {
   return {
     role: context.role,
+    rawRole: context.rawRole,
     userId: context.userId,
     profile: context.profile,
     companyId: context.companyId,
@@ -714,7 +715,7 @@ export async function getApartmentsPageData(roleHint?: string): Promise<RoleData
 }
 
 export async function getResidentsPageData(roleHint?: string): Promise<RoleDataBundle> {
-  const context = await getAuthenticatedContext(roleHint);
+  const context = await getAuthenticatedContext(roleHint, { requireFreshProfile: true });
 
   if (context.role === "managementCompany") {
     return getManagementRegistryData(context, {
@@ -838,7 +839,7 @@ export async function getNotificationsPageData(roleHint?: string): Promise<RoleD
 }
 
 export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBundle> {
-  const { userId, profile, role, companyId, apartmentId } = await getAuthenticatedContext(roleHint);
+  const { userId, profile, role, rawRole, companyId, apartmentId } = await getAuthenticatedContext(roleHint);
 
   if (role === "platformAdmin") {
     const usersResponse = await apiFetchSafe<ApiListResponse>("/users");
@@ -846,6 +847,7 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
 
     return {
       role,
+      rawRole,
       userId,
       profile,
       companyId,
@@ -865,6 +867,7 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
     if (!companyId) {
       return {
         role,
+        rawRole,
         userId,
         profile,
         companyId,
@@ -922,6 +925,7 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
 
     return {
       role,
+      rawRole,
       userId,
       profile,
       companyId,
@@ -997,6 +1001,7 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
 
   return {
     role,
+    rawRole,
     userId,
     profile,
     companyId,

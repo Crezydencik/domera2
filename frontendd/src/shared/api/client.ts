@@ -38,6 +38,20 @@ function redirectToLogin() {
   window.location.assign(loginUrl.toString());
 }
 
+function hasBrowserAuthHints() {
+  if (typeof document === "undefined") return false;
+
+  return document.cookie
+    .split(";")
+    .map((item) => item.trim())
+    .some((item) =>
+      item.startsWith("userId=") ||
+      item.startsWith("userEmail=") ||
+      item.startsWith("domera_role=") ||
+      item.startsWith("domera_accountType="),
+    );
+}
+
 function isPublicAuthPath(path: string) {
   return (
     path.startsWith("/auth/login") ||
@@ -173,7 +187,7 @@ export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T>
         ? errorPayload.message.join(", ")
         : errorPayload.message || errorPayload.error || `Request failed for ${path}`;
 
-      if (redirectOnAuthError && (response.status === 401 || response.status === 403) && !isPublicAuthPath(path)) {
+      if (redirectOnAuthError && response.status === 401 && !isPublicAuthPath(path) && !hasBrowserAuthHints()) {
         redirectToLogin();
       }
 

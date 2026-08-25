@@ -10,6 +10,7 @@ import { MeterReadingHelperService } from './services/meter-reading-helper.servi
 import { MeterReadingQueryService } from './services/meter-reading-query.service';
 import { MeterReadingReminderService } from './services/meter-reading-reminder.service';
 import { MeterReadingsService } from './services/meter-readings.service';
+import { CompanyPayloadService } from '../company/services/company-payload.service';
 
 @Module({
   imports: [EmailModule],
@@ -17,6 +18,7 @@ import { MeterReadingsService } from './services/meter-readings.service';
   providers: [
     MeterReadingsService,
     MeterReadingAccessService,
+    CompanyPayloadService,
     MeterReadingHelperService,
     MeterReadingBuildingService,
     MeterReadingQueryService,

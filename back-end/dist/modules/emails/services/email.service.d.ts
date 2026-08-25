@@ -1,14 +1,17 @@
 import { SendEmailDto, SendInvoiceGeneratedEmailDto, SendMeterReadingReminderEmailDto, SendNotificationEmailDto, SendOwnerInvitationEmailDto, SendPasswordResetEmailDto, SendRegistrationCodeEmailDto, SendTenantInvitationEmailDto, SendTenantInvitedByOwnerEmailDto } from '../dto/send-email.dto';
+import { EmailLogService } from './email-log.service';
 import { EmailTemplateService } from './email-template.service';
 import { EmailTransportService } from './email-transport.service';
 export declare class EmailService {
     private readonly transportService;
     private readonly templateService;
+    private readonly emailLogService;
     private readonly logger;
-    constructor(transportService: EmailTransportService, templateService: EmailTemplateService);
+    constructor(transportService: EmailTransportService, templateService: EmailTemplateService, emailLogService: EmailLogService);
     send(payload: SendEmailDto): Promise<{
         id: string;
     }>;
+    private sendTracked;
     sendRegistrationCode(dto: SendRegistrationCodeEmailDto): Promise<{
         id: string;
     }>;

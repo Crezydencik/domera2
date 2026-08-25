@@ -22,6 +22,7 @@ export declare function resolveAccountType(input: {
     accountType?: unknown;
 }): AccountType | undefined;
 export declare function isPlatformAdminRole(role: unknown): boolean;
+export declare function isAccountantRole(role: unknown): boolean;
 export declare function isStaffRole(role: unknown): boolean;
 export declare function isPropertyMemberRole(role: unknown): boolean;
 export declare function isPublicRegistrationRole(role: unknown): boolean;

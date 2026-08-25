@@ -30,6 +30,7 @@ let CompanyPayloadService = class CompanyPayloadService {
             manageMembers: false,
             manageApiKeys: false,
             manageInvoiceSettings: false,
+            manageMeterReadings: false,
             ...overrides,
         };
     }
@@ -44,6 +45,7 @@ let CompanyPayloadService = class CompanyPayloadService {
             manageMembers: source.manageMembers === true,
             manageApiKeys: source.manageApiKeys === true,
             manageInvoiceSettings: source.manageInvoiceSettings === true,
+            manageMeterReadings: source.manageMeterReadings === true,
         });
     }
     normalizeCompanyMemberPermissionMap(value) {

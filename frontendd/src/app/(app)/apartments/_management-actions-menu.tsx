@@ -246,6 +246,7 @@ export function ApartmentsManagementActionsMenu({
   apartments,
   apartmentRecords,
   lockedBuildingIds,
+  canManage = true,
 }: {
   companyId?: string;
   buildings: ManagementActionBuildingOption[];
@@ -253,6 +254,7 @@ export function ApartmentsManagementActionsMenu({
   apartments: ManagementActionApartment[];
   apartmentRecords: RawRecord[];
   lockedBuildingIds?: Set<string>;
+  canManage?: boolean;
 }) {
   const t = useTranslations("apartments.management.menu");
   const ui = useTranslations("ui");
@@ -873,6 +875,7 @@ export function ApartmentsManagementActionsMenu({
                 <span>{t("items.export")}</span>
               </button>
 
+              {canManage ? (
               <button
                 type="button"
                 onClick={openImportModal}
@@ -883,23 +886,30 @@ export function ApartmentsManagementActionsMenu({
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600 transition group-hover:bg-white"><UploadIcon /></span>
                 <span>{loadingImport ? t("items.importLoading") : t("items.import")}</span>
               </button>
+              ) : null}
 
+              {canManage ? (
               <button type="button" onClick={openAddModal} disabled={selectedScopeLocked} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-slate-800 transition hover:bg-slate-50 disabled:opacity-60">
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition group-hover:bg-white"><PlusIcon /></span>
                 <span>{t("items.add")}</span>
               </button>
+              ) : null}
 
+              {canManage ? (
               <div className="my-2 border-t border-slate-100 pt-2">
                 <button type="button" onClick={() => { setDeleteOpen(true); setOpen(false); }} disabled={selectedScopeLocked} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-60">
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600 transition group-hover:bg-white"><TrashIcon /></span>
                   <span>{t("items.deleteAll")}</span>
                 </button>
               </div>
+              ) : null}
 
+              {canManage ? (
               <button type="button" onClick={() => void openInvitations()} disabled={selectedScopeLocked} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition group-hover:bg-white"><ListIcon /></span>
                 <span>{t("items.invitations")}</span>
               </button>
+              ) : null}
             </div>
           </div>
         )}

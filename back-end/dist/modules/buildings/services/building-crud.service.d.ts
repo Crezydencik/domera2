@@ -54,6 +54,7 @@ export declare class BuildingCrudService {
         deletedRequest?: undefined;
     }>;
     private assertManagement;
+    private assertManagementCompanyMutation;
     private effectiveManagementCompanyId;
     private assertManagementCompanyScope;
     private enforceRateLimit;

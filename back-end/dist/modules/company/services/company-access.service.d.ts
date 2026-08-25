@@ -18,6 +18,7 @@ export declare class CompanyAccessService {
         manageMembers: boolean;
         manageApiKeys: boolean;
         manageInvoiceSettings: boolean;
+        manageMeterReadings: boolean;
     };
     assertCompanyAccess(user: RequestUser, companyId: string, company: Record<string, unknown>): void;
     assertMainCompanyManagerForCompany(user: RequestUser, companyId: string, company: Record<string, unknown>, message: string): void;

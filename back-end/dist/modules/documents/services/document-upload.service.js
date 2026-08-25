@@ -56,8 +56,20 @@ let DocumentUploadService = DocumentUploadService_1 = class DocumentUploadServic
                 buildingName = this.helperService.firstString(building.name, building.address, buildingId);
             }
             else if ((0, role_constants_1.isStaffRole)(user.role)) {
-                if (!companyId)
+                if ((0, role_constants_1.isAccountantRole)(user.role)) {
+                    buildingId = this.helperService.firstString(body.buildingId);
+                    if (buildingId) {
+                        const building = await this.metadataService.getBuilding(buildingId);
+                        companyId = this.metadataService.resolveCompanyId(building, companyId);
+                        buildingName = this.helperService.firstString(building.name, building.address, buildingId);
+                    }
+                    if (!companyId || this.accessService.requireStaffCompanyId(user) !== companyId) {
+                        throw new common_1.ForbiddenException(buildingId ? 'Access denied for building' : 'Company scope is required');
+                    }
+                }
+                else if (!companyId) {
                     throw new common_1.BadRequestException('companyId is required');
+                }
             }
             else {
                 buildingId = this.helperService.firstString(body.buildingId);
@@ -97,6 +109,7 @@ let DocumentUploadService = DocumentUploadService_1 = class DocumentUploadServic
             const apartmentCompanyId = this.metadataService.resolveCompanyId(apartment, companyId);
             const canStaffAttach = scope === 'apartmentResidents'
                 && (0, role_constants_1.isStaffRole)(user.role)
+                && !(0, role_constants_1.isAccountantRole)(user.role)
                 && Boolean(apartmentCompanyId && this.accessService.requireStaffCompanyId(user) === apartmentCompanyId);
             const canMemberAttach = this.accessService.isApartmentMember(apartment, user);
             if (!canStaffAttach && !canMemberAttach)

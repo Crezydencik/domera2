@@ -56,4 +56,8 @@ export class MeterReadingsService {
   sendTestReminder(user: RequestUser) {
     return this.reminderService.sendTestReminder(user);
   }
+
+  sendManualReminder(user: RequestUser, payload: Record<string, unknown>) {
+    return this.reminderService.sendManualReminder(user, payload);
+  }
 }

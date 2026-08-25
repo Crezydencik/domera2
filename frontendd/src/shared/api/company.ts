@@ -7,6 +7,7 @@ export type CompanyMemberPermissions = {
   manageMembers: boolean;
   manageApiKeys: boolean;
   manageInvoiceSettings: boolean;
+  manageMeterReadings: boolean;
 };
 
 export type CompanyApiKeyItem = {

@@ -52,6 +52,7 @@ export declare class BuildingCreationRequestService {
         requestId: string;
     }>;
     private assertManagement;
+    private assertManagementCompanyMutation;
     private effectiveManagementCompanyId;
     private assertManagementCompanyScope;
     private enforceRateLimit;

@@ -206,6 +206,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const companyId = firstString(data.companyId, profile?.companyId, userId);
   const accountType = firstString(profile?.accountType, profile?.role);
   const normalizedAccountType = normalizeAccessValue(accountType);
+  const isAccountant = normalizeAccessValue(data.rawRole) === "accountant" || normalizedAccountType === "accountant";
   const canViewCompany =
     data.role === "managementCompany" &&
     (normalizedAccountType === "" || normalizedAccountType === "managementcompany" || normalizedAccountType === "accountant");
@@ -248,6 +249,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     manageMembers: value?.manageMembers === true,
     manageApiKeys: value?.manageApiKeys === true,
     manageInvoiceSettings: value?.manageInvoiceSettings === true,
+    manageMeterReadings: value?.manageMeterReadings === true,
   });
 
   return (
@@ -262,6 +264,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           personalCode,
         }}
         notificationSettings={notificationSettings}
+        isAccountant={isAccountant}
         company={{
           canManage: currentUserPermissions.editCompanyInfo === true,
           companyId,
@@ -285,6 +288,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             manageMembers: currentUserPermissions.manageMembers === true,
             manageApiKeys: currentUserPermissions.manageApiKeys === true,
             manageInvoiceSettings: currentUserPermissions.manageInvoiceSettings === true,
+            manageMeterReadings: currentUserPermissions.manageMeterReadings === true,
           },
           buildings: data.buildings
             .filter(isApprovedBuilding)

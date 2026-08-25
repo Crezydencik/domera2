@@ -14,6 +14,12 @@ export class ApartmentAccessService {
     }
   }
 
+  assertManagementCompanyMutation(user: RequestUser): void {
+    if (user.role !== 'ManagementCompany') {
+      throw new ForbiddenException('Only management company users can change apartments and residents');
+    }
+  }
+
   isStaff(user: RequestUser): boolean {
     return isStaffRole(user.role);
   }
@@ -147,7 +153,7 @@ export class ApartmentAccessService {
 
   canManageTenants(user: RequestUser, apartment: Record<string, unknown>): boolean {
     if (this.isStaff(user)) {
-      return this.apartmentBelongsToStaffCompany(user, apartment);
+      return user.role === 'ManagementCompany' && this.apartmentBelongsToStaffCompany(user, apartment);
     }
 
     if (user.role !== 'Landlord') {

@@ -423,9 +423,11 @@ function TextAreaField({
 export function BuildingsManagement({
   companyId,
   buildings,
+  canManage = true,
 }: {
   companyId?: string;
   buildings: Building[];
+  canManage?: boolean;
 }) {
   const t = useTranslations("buildings");
   const s = useTranslations("system");
@@ -729,9 +731,11 @@ export function BuildingsManagement({
         title={t("title")}
         description={t("description")}
         headerAside={
-          <Button type="button" onClick={() => void handleOpenCreate()}>
-            + {t("addButton")}
-          </Button>
+          canManage ? (
+            <Button type="button" onClick={() => void handleOpenCreate()}>
+              + {t("addButton")}
+            </Button>
+          ) : null
         }
       >
         <DataTable
@@ -772,7 +776,9 @@ export function BuildingsManagement({
                 ) : null}
               </div>,
               <div key={`${item.id}-actions`} className="flex justify-end gap-2">
-                {isPendingBuilding(item.status || "") ? (
+                {!canManage ? (
+                  <span className="text-xs text-slate-400">—</span>
+                ) : isPendingBuilding(item.status || "") ? (
                   <Button
                     type="button"
                     variant="danger"

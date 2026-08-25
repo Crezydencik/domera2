@@ -65,6 +65,38 @@ interface MonthlyWaterSummary {
   readingsCount: number;
 }
 
+interface EmailDeliveryStats {
+  total: number;
+  success: number;
+  error: number;
+  last30Days?: {
+    total: number;
+    success: number;
+    error: number;
+  };
+  lastSentAt?: string | null;
+}
+
+interface EmailDeliveryLogItem {
+  id: string;
+  status: "success" | "error";
+  to: string;
+  subject?: string;
+  createdAt?: string | null;
+  errorMessage?: string;
+  deliveryKey?: string;
+  apartmentId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface ManualReminderResult {
+  sent: number;
+  failed: number;
+  skippedNoEmail: number;
+  skippedSubmitted: number;
+  totalApartments: number;
+}
+
 type UnknownRecord = Record<string, unknown>;
 type ExportFormat = "csv" | "excel" | "xml";
 type UtilityTab = "water" | "electricity";
@@ -72,6 +104,7 @@ type UtilityTab = "water" | "electricity";
 interface ManagementCompanyPageProps {
   initialCompanyId?: string;
   initialData?: MeterReadingsInitialData;
+  canManageReadings?: boolean;
 }
 
 export type MeterReadingsInitialData = {
@@ -653,7 +686,7 @@ function toExcelHtml(rows: string[][]) {
   return `\uFEFF<html><head><meta charset="utf-8" /></head><body><table>${tableRows}</table></body></html>`;
 }
 
-export default function ManagementCompanyPage({ initialCompanyId, initialData }: ManagementCompanyPageProps) {
+export default function ManagementCompanyPage({ initialCompanyId, initialData, canManageReadings = true }: ManagementCompanyPageProps) {
   const t = useTranslations("meterread");
   const locale = useLocale();
   const notify = useNotifications();
@@ -683,6 +716,11 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData }:
   });
   const [periodSaving, setPeriodSaving] = useState(false);
   const [periodDeleting, setPeriodDeleting] = useState(false);
+  const [emailStats, setEmailStats] = useState<EmailDeliveryStats | null>(null);
+  const [emailDeliveries, setEmailDeliveries] = useState<EmailDeliveryLogItem[]>([]);
+  const [emailStatsLoading, setEmailStatsLoading] = useState(false);
+  const [emailDeliveryOpen, setEmailDeliveryOpen] = useState(false);
+  const [manualReminderSending, setManualReminderSending] = useState(false);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const mobileActionsRef = React.useRef<HTMLDivElement | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
@@ -1616,11 +1654,52 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData }:
   const selectedBuildingHasNoApartments = selectedBuildingApartmentCount === 0;
   const selectedBuildingOption = managedBuildings.find((building) => building.id === effectiveBuilding);
 
+  const loadEmailStats = React.useCallback(async () => {
+    if (!effectiveBuilding) {
+      setEmailStats(null);
+      setEmailDeliveries([]);
+      return;
+    }
+
+    setEmailStatsLoading(true);
+    try {
+      const query = new URLSearchParams({
+        type: "meterReadingReminder",
+        buildingId: effectiveBuilding,
+      });
+      const stats = await apiFetch<EmailDeliveryStats>(`/emails/stats?${query.toString()}`, {
+        staleTimeMs: 5_000,
+      });
+      const deliveryQuery = new URLSearchParams({
+        type: "meterReadingReminder",
+        buildingId: effectiveBuilding,
+        deliveryKeyPrefix: "meter-reading-reminder:",
+        limit: "200",
+      });
+      const deliveries = await apiFetch<EmailDeliveryLogItem[]>(`/emails/deliveries?${deliveryQuery.toString()}`, {
+        staleTimeMs: 5_000,
+      });
+      setEmailStats(stats);
+      setEmailDeliveries(deliveries);
+    } catch (error) {
+      console.error("Failed to load email delivery stats", error);
+      setEmailStats(null);
+      setEmailDeliveries([]);
+    } finally {
+      setEmailStatsLoading(false);
+    }
+  }, [effectiveBuilding]);
+
   React.useEffect(() => {
     if (selectedBuilding !== effectiveBuilding) {
       setFilterValue("building", effectiveBuilding);
     }
   }, [effectiveBuilding, selectedBuilding, setFilterValue]);
+
+  React.useEffect(() => {
+    if (!periodOpen) return;
+    loadEmailStats();
+  }, [loadEmailStats, periodOpen]);
 
   // Load saved submission period for selected building
   React.useEffect(() => {
@@ -1666,6 +1745,7 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData }:
         headers: { "Content-Type": "application/json" },
       });
       setPeriodValues((current) => ({ ...current, [tab]: value }));
+      void loadEmailStats();
       notify.success(t("notifyPeriodSaved"));
     } catch (e) {
       console.error("Failed to save submission period", e);
@@ -1688,6 +1768,7 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData }:
         headers: { "Content-Type": "application/json" },
       });
       setPeriodValues((current) => ({ ...current, [tab]: null }));
+      void loadEmailStats();
       notify.success(t("notifyPeriodDeleted"));
     } catch (e) {
       console.error("Failed to delete submission period", e);
@@ -1744,6 +1825,33 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData }:
     .find(Boolean);
   const periodActionLabel = activePeriodButtonLabel || fallbackPeriodButtonLabel || t("periodModalTitle");
   const periodOpenTab = periodAvailableTabs.includes(effectiveTab) ? effectiveTab : effectivePeriodTab;
+
+  const sendManualReminder = React.useCallback(async () => {
+    if (!effectiveBuilding || manualReminderSending) return;
+
+    setManualReminderSending(true);
+    try {
+      const result = await apiFetch<ManualReminderResult>("/meter-readings/reminders/send", {
+        method: "POST",
+        body: JSON.stringify({
+          buildingId: effectiveBuilding,
+          utility: effectivePeriodTab,
+          language: locale,
+        }),
+      });
+      notify.success(t("manualReminderResult", {
+        sent: result.sent,
+        failed: result.failed,
+        skipped: result.skippedNoEmail + result.skippedSubmitted,
+      }));
+      await loadEmailStats();
+    } catch (error) {
+      console.error("Failed to send manual reminders", error);
+      notify.error(error instanceof Error ? error.message : t("manualReminderFailed"));
+    } finally {
+      setManualReminderSending(false);
+    }
+  }, [effectiveBuilding, effectivePeriodTab, loadEmailStats, manualReminderSending, notify, t]);
 
   React.useEffect(() => {
     if ((hasWaterTab || hasElectricityTab) && activeTab !== effectiveTab) {
@@ -1950,14 +2058,145 @@ ${xmlRows}
             ))}
           </div>
         ) : null}
+        <div className="hidden rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className={`${emailDeliveryOpen ? "mb-3" : ""} flex flex-wrap items-center justify-between gap-3`}>
+            <button
+              type="button"
+              onClick={() => setEmailDeliveryOpen((value) => !value)}
+              className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 py-1 text-left transition hover:bg-white/70"
+            >
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition ${emailDeliveryOpen ? "rotate-90" : ""}`}>
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("emailStatsTitle")}</span>
+                <span className="block truncate text-sm text-slate-600">
+                  {emailStatsLoading
+                    ? t("emailStatsLoading")
+                    : emailStats?.lastSentAt
+                      ? t("emailStatsLastSent", { date: new Date(emailStats.lastSentAt).toLocaleString(locale) })
+                      : t("emailStatsSubtitle")}
+                </span>
+              </span>
+            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => sendManualReminder()}
+                disabled={!effectiveBuilding || manualReminderSending}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m22 2-7 20-4-9-9-4Z" />
+                  <path d="M22 2 11 13" />
+                </svg>
+                {manualReminderSending ? t("manualReminderSending") : t("manualReminderSend")}
+              </button>
+              <button
+                type="button"
+                onClick={() => loadEmailStats()}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <svg className={`h-4 w-4 ${emailStatsLoading ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                  <path d="M3 21v-5h5" />
+                  <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                  <path d="M21 3v5h-5" />
+                </svg>
+                {t("emailStatsRefresh")}
+              </button>
+            </div>
+          </div>
+          {emailDeliveryOpen ? (
+            <>
+          <div className="grid gap-2 sm:grid-cols-4">
+            {[
+              { label: t("emailStatsTotal"), value: emailStats?.total ?? 0, className: "text-slate-900" },
+              { label: t("emailStatsSuccess"), value: emailStats?.success ?? 0, className: "text-emerald-700" },
+              { label: t("emailStatsErrors"), value: emailStats?.error ?? 0, className: "text-rose-700" },
+              { label: t("emailStatsLast30Days"), value: emailStats?.last30Days?.total ?? 0, className: "text-blue-700" },
+            ].map((item) => (
+              <div key={item.label} className="rounded-md border border-slate-200 bg-white px-3 py-2">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{item.label}</div>
+                <div className={`mt-0.5 text-xl font-bold tabular-nums ${item.className}`}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 text-xs font-medium text-slate-500">
+            {emailStats?.lastSentAt
+              ? t("emailStatsLastSent", { date: new Date(emailStats.lastSentAt).toLocaleString(locale) })
+              : t("emailStatsNoSent")}
+          </div>
+          <div className="mt-4 overflow-hidden rounded-md border border-slate-200 bg-white">
+            <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                {t("emailDeliveryListTitle")}
+              </div>
+              <div className="text-xs font-medium text-slate-500">
+                {t("emailDeliveryListCount", { count: emailDeliveries.length })}
+              </div>
+            </div>
+            {emailDeliveries.length > 0 ? (
+              <div className="max-h-64 overflow-auto">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">{t("emailDeliveryApartment")}</th>
+                      <th className="px-3 py-2 font-semibold">{t("emailDeliveryEmail")}</th>
+                      <th className="px-3 py-2 font-semibold">{t("emailDeliveryStatus")}</th>
+                      <th className="px-3 py-2 font-semibold">{t("emailDeliveryTime")}</th>
+                      <th className="px-3 py-2 font-semibold">{t("emailDeliveryError")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {emailDeliveries.map((item) => {
+                      const apartmentLabel = item.apartmentId
+                        ? apartments.find((apartment) => apartment.id === item.apartmentId || apartment.apartmentId === item.apartmentId)?.apartment
+                        : "";
+                      return (
+                        <tr key={item.id} className="align-top">
+                          <td className="px-3 py-2 font-medium text-slate-700">{apartmentLabel || item.apartmentId || "—"}</td>
+                          <td className="px-3 py-2 text-slate-600">{item.to || "—"}</td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              item.status === "success"
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-rose-50 text-rose-700"
+                            }`}>
+                              {item.status === "success" ? t("emailDeliverySuccess") : t("emailDeliveryFailed")}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-slate-500">
+                            {item.createdAt ? new Date(item.createdAt).toLocaleString(locale) : "—"}
+                          </td>
+                          <td className="max-w-[220px] px-3 py-2 text-rose-700">
+                            {item.errorMessage || "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="px-3 py-4 text-sm text-slate-500">
+                {emailStatsLoading ? t("emailStatsLoading") : t("emailDeliveryListEmpty")}
+              </div>
+            )}
+          </div>
+            </>
+          ) : null}
+        </div>
         <SubmissionPeriodCard
           key={`${effectiveBuilding}:${effectivePeriodTab}`}
           bare
           hideHeader
           buildingLabel={effectivePeriodTab === "water" ? t("water") : t("electricity")}
           value={periodValues[effectivePeriodTab]}
-          onSave={(value) => savePeriodFor(effectivePeriodTab, value)}
-          onDelete={() => deletePeriodFor(effectivePeriodTab)}
+          onSave={(value) => canManageReadings ? savePeriodFor(effectivePeriodTab, value) : undefined}
+          onDelete={canManageReadings ? () => deletePeriodFor(effectivePeriodTab) : undefined}
           saving={periodSaving}
           deleting={periodDeleting}
           locale={locale}
@@ -1987,6 +2226,141 @@ ${xmlRows}
             reminderItemColumn: t("periodReminderItemColumn"),
             reminderTimeColumn: t("periodReminderTimeColumn"),
           }}
+          beforeActions={
+            <div className="mt-5">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className={`${emailDeliveryOpen ? "mb-3" : ""} flex flex-wrap items-center justify-between gap-3`}>
+                  <button
+                    type="button"
+                    onClick={() => setEmailDeliveryOpen((value) => !value)}
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 py-1 text-left transition hover:bg-white/70"
+                  >
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition ${emailDeliveryOpen ? "rotate-90" : ""}`}>
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m9 18 6-6-6-6" />
+                      </svg>
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("emailStatsTitle")}</span>
+                      <span className="block truncate text-sm text-slate-600">
+                        {emailStatsLoading
+                          ? t("emailStatsLoading")
+                          : emailStats?.lastSentAt
+                            ? t("emailStatsLastSent", { date: new Date(emailStats.lastSentAt).toLocaleString(locale) })
+                            : t("emailStatsSubtitle")}
+                      </span>
+                    </span>
+                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => sendManualReminder()}
+                      disabled={!effectiveBuilding || manualReminderSending}
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m22 2-7 20-4-9-9-4Z" />
+                        <path d="M22 2 11 13" />
+                      </svg>
+                      {manualReminderSending ? t("manualReminderSending") : t("manualReminderSend")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => loadEmailStats()}
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <svg className={`h-4 w-4 ${emailStatsLoading ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                        <path d="M3 21v-5h5" />
+                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                        <path d="M21 3v5h-5" />
+                      </svg>
+                      {t("emailStatsRefresh")}
+                    </button>
+                  </div>
+                </div>
+                {emailDeliveryOpen ? (
+                  <>
+                    <div className="grid gap-2 sm:grid-cols-4">
+                      {[
+                        { label: t("emailStatsTotal"), value: emailStats?.total ?? 0, className: "text-slate-900" },
+                        { label: t("emailStatsSuccess"), value: emailStats?.success ?? 0, className: "text-emerald-700" },
+                        { label: t("emailStatsErrors"), value: emailStats?.error ?? 0, className: "text-rose-700" },
+                        { label: t("emailStatsLast30Days"), value: emailStats?.last30Days?.total ?? 0, className: "text-blue-700" },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-md border border-slate-200 bg-white px-3 py-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{item.label}</div>
+                          <div className={`mt-0.5 text-xl font-bold tabular-nums ${item.className}`}>{item.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 text-xs font-medium text-slate-500">
+                      {emailStats?.lastSentAt
+                        ? t("emailStatsLastSent", { date: new Date(emailStats.lastSentAt).toLocaleString(locale) })
+                        : t("emailStatsNoSent")}
+                    </div>
+                    <div className="mt-4 overflow-hidden rounded-md border border-slate-200 bg-white">
+                      <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          {t("emailDeliveryListTitle")}
+                        </div>
+                        <div className="text-xs font-medium text-slate-500">
+                          {t("emailDeliveryListCount", { count: emailDeliveries.length })}
+                        </div>
+                      </div>
+                      {emailDeliveries.length > 0 ? (
+                        <div className="max-h-64 overflow-auto">
+                          <table className="min-w-full text-left text-xs">
+                            <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                              <tr>
+                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryApartment")}</th>
+                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryEmail")}</th>
+                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryStatus")}</th>
+                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryTime")}</th>
+                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryError")}</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {emailDeliveries.map((item) => {
+                                const apartmentLabel = item.apartmentId
+                                  ? apartments.find((apartment) => apartment.id === item.apartmentId || apartment.apartmentId === item.apartmentId)?.apartment
+                                  : "";
+                                return (
+                                  <tr key={item.id} className="align-top">
+                                    <td className="px-3 py-2 font-medium text-slate-700">{apartmentLabel || item.apartmentId || "—"}</td>
+                                    <td className="px-3 py-2 text-slate-600">{item.to || "—"}</td>
+                                    <td className="px-3 py-2">
+                                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                        item.status === "success"
+                                          ? "bg-emerald-50 text-emerald-700"
+                                          : "bg-rose-50 text-rose-700"
+                                      }`}>
+                                        {item.status === "success" ? t("emailDeliverySuccess") : t("emailDeliveryFailed")}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-slate-500">
+                                      {item.createdAt ? new Date(item.createdAt).toLocaleString(locale) : "—"}
+                                    </td>
+                                    <td className="max-w-[220px] px-3 py-2 text-rose-700">
+                                      {item.errorMessage || "—"}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="px-3 py-4 text-sm text-slate-500">
+                          {emailStatsLoading ? t("emailStatsLoading") : t("emailDeliveryListEmpty")}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          }
         />
       </Modal>
 
@@ -2003,7 +2377,7 @@ ${xmlRows}
             <Button
               variant="primary"
               onClick={submitReadings}
-              disabled={submitting}
+              disabled={submitting || !canManageReadings}
               className="min-h-12 rounded-xl bg-emerald-600 px-3 text-sm hover:bg-emerald-700 sm:px-5"
             >
               {submitting ? t("sending") : t("send")}
@@ -2131,9 +2505,11 @@ ${xmlRows}
             >
               {t("cancel")}
             </button>
+            {canManageReadings ? (
             <Button variant="primary" onClick={saveViewDates} disabled={viewSaving}>
               {viewSaving ? t("saving") : t("save")}
             </Button>
+            ) : null}
           </div>
         }
       >
@@ -2315,37 +2691,41 @@ ${xmlRows}
             actionsClassName="self-end flex justify-end gap-2 md:flex md:flex-nowrap md:justify-end"
             actions={
               <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPeriodTab(periodOpenTab);
-                    setPeriodOpen(true);
-                  }}
-                  disabled={!effectiveBuilding || periodAvailableTabs.length === 0}
-                  className="hidden items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex"
-                  title={periodActionLabel}
-                >
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="4" width="18" height="18" rx="2" />
-                    <path d="M16 2v4M8 2v4M3 10h18" />
-                  </svg>
-                  {periodActionLabel}
-                  {periodValue?.monthly && (
-                    <svg className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="ежемесячно">
-                      <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
-                      <path d="M21 3v5h-5" />
+                {canManageReadings ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPeriodTab(periodOpenTab);
+                      setPeriodOpen(true);
+                    }}
+                    disabled={!effectiveBuilding || periodAvailableTabs.length === 0}
+                    className="hidden items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex"
+                    title={periodActionLabel}
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="4" width="18" height="18" rx="2" />
+                      <path d="M16 2v4M8 2v4M3 10h18" />
                     </svg>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectAptOpen(true)}
-                  disabled={filteredApartments.length === 0}
-                  className="hidden items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1 md:inline-flex"
-                >
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                  {t("submit")}
-                </button>
+                    {periodActionLabel}
+                    {periodValue?.monthly && (
+                      <svg className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="ежемесячно">
+                        <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
+                        <path d="M21 3v5h-5" />
+                      </svg>
+                    )}
+                  </button>
+                ) : null}
+                {canManageReadings ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectAptOpen(true)}
+                    disabled={filteredApartments.length === 0}
+                    className="hidden items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1 md:inline-flex"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    {t("submit")}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setExportOpen(true)}
@@ -2358,35 +2738,39 @@ ${xmlRows}
                 <div ref={mobileActionsRef} className="relative flex h-10 w-10 items-center justify-end md:hidden">
                   {mobileActionsOpen && (
                     <div className="absolute right-0 top-11 z-20 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMobileActionsOpen(false);
-                          setPeriodTab(periodOpenTab);
-                          setPeriodOpen(true);
-                        }}
-                        disabled={!effectiveBuilding || periodAvailableTabs.length === 0}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        title={periodActionLabel}
-                      >
-                        <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="3" y="4" width="18" height="18" rx="2" />
-                          <path d="M16 2v4M8 2v4M3 10h18" />
-                        </svg>
-                        {periodActionLabel}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMobileActionsOpen(false);
-                          setSelectAptOpen(true);
-                        }}
-                        disabled={filteredApartments.length === 0}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                        {t("submit")}
-                      </button>
+                      {canManageReadings ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMobileActionsOpen(false);
+                            setPeriodTab(periodOpenTab);
+                            setPeriodOpen(true);
+                          }}
+                          disabled={!effectiveBuilding || periodAvailableTabs.length === 0}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          title={periodActionLabel}
+                        >
+                          <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="4" width="18" height="18" rx="2" />
+                            <path d="M16 2v4M8 2v4M3 10h18" />
+                          </svg>
+                          {periodActionLabel}
+                        </button>
+                      ) : null}
+                      {canManageReadings ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMobileActionsOpen(false);
+                            setSelectAptOpen(true);
+                          }}
+                          disabled={filteredApartments.length === 0}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                          {t("submit")}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => {
@@ -2556,6 +2940,7 @@ ${xmlRows}
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                         {t("view")}
                       </button>
+                      {canManageReadings ? (
                       <button
                         type="button"
                         onClick={() => openSubmitModal(apt)}
@@ -2564,6 +2949,7 @@ ${xmlRows}
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
                         {t("edit")}
                       </button>
+                      ) : null}
                     </div>
                   </div>
                   )}
@@ -2705,6 +3091,7 @@ ${xmlRows}
                             >
                               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                             </button>
+                            {canManageReadings ? (
                             <button
                               onClick={() => openSubmitModal(apt)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
@@ -2712,6 +3099,7 @@ ${xmlRows}
                             >
                               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
                             </button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -2811,6 +3199,7 @@ ${xmlRows}
                                               <svg className={`h-4 w-4 text-slate-400 transition-transform ${isMonthExpanded ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                                             </div>
                                           </button>
+                                          {canManageReadings ? (
                                           <button
                                             type="button"
                                             onClick={(e) => {
@@ -2832,6 +3221,7 @@ ${xmlRows}
                                               <path d="M10 11v6M14 11v6" />
                                             </svg>
                                           </button>
+                                          ) : null}
                                         </div>
                                         
                                         {/* Month Content */}

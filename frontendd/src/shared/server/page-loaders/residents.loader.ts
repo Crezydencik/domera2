@@ -5,7 +5,7 @@ import {
 import { getAuthenticatedContext, type RoleDataBundle } from "@/shared/server/auth-context";
 
 export async function getResidentsPageData(roleHint?: string): Promise<RoleDataBundle> {
-  const context = await getAuthenticatedContext(roleHint);
+  const context = await getAuthenticatedContext(roleHint, { requireFreshProfile: true });
 
   if (context.role === "managementCompany") {
     return getManagementRegistryData(context, {

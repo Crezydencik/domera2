@@ -171,4 +171,14 @@ export class MeterReadingsController {
   ) {
     return this.meterReadingsService.sendTestReminder(user);
   }
+
+  @Post('reminders/send')
+  @Roles(...STAFF_ROLES)
+  @ApiOperation({ summary: 'Send meter reading reminders manually for a building' })
+  async sendManualReminder(
+    @CurrentUser() user: RequestUser,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.meterReadingsService.sendManualReminder(user, body);
+  }
 }

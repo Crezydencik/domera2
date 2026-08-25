@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { Request } from 'express';
-import { isPlatformAdminRole, isStaffRole } from '../../../common/auth/role.constants';
+import { isAccountantRole, isPlatformAdminRole, isStaffRole } from '../../../common/auth/role.constants';
 import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { DocumentRecord, UnknownRecord, UploadedDocumentFile } from '../types/document.types';
@@ -52,7 +52,20 @@ export class DocumentUploadService {
         companyId = this.metadataService.resolveCompanyId(building, companyId);
         buildingName = this.helperService.firstString(building.name, building.address, buildingId);
       } else if (isStaffRole(user.role)) {
-        if (!companyId) throw new BadRequestException('companyId is required');
+        if (isAccountantRole(user.role)) {
+          buildingId = this.helperService.firstString(body.buildingId);
+          if (buildingId) {
+            const building = await this.metadataService.getBuilding(buildingId);
+            companyId = this.metadataService.resolveCompanyId(building, companyId);
+            buildingName = this.helperService.firstString(building.name, building.address, buildingId);
+          }
+
+          if (!companyId || this.accessService.requireStaffCompanyId(user) !== companyId) {
+            throw new ForbiddenException(buildingId ? 'Access denied for building' : 'Company scope is required');
+          }
+        } else if (!companyId) {
+          throw new BadRequestException('companyId is required');
+        }
       } else {
         buildingId = this.helperService.firstString(body.buildingId);
         if (!buildingId) throw new BadRequestException('buildingId is required');
@@ -93,6 +106,7 @@ export class DocumentUploadService {
       const apartmentCompanyId = this.metadataService.resolveCompanyId(apartment, companyId);
       const canStaffAttach = scope === 'apartmentResidents'
         && isStaffRole(user.role)
+        && !isAccountantRole(user.role)
         && Boolean(apartmentCompanyId && this.accessService.requireStaffCompanyId(user) === apartmentCompanyId);
       const canMemberAttach = this.accessService.isApartmentMember(apartment, user);
       if (!canStaffAttach && !canMemberAttach) throw new ForbiddenException('Access denied for apartment');

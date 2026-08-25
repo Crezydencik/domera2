@@ -96,6 +96,7 @@ export function ApartmentsManagementView({
   const [selectedBuildingId, setSelectedBuildingId] = useState<string | undefined>(undefined);
   const approvedBuildings = useMemo(() => data.buildings.filter(isApprovedBuilding), [data.buildings]);
   const hasBuildings = approvedBuildings.length > 0;
+  const canManageRegistry = String(data.rawRole ?? "").replace(/[^a-z]/gi, "").toLowerCase() !== "accountant";
   const lockedBuildingIds = useMemo(
     () => new Set(approvedBuildings.filter((building) => building.editLocked === true).map((building) => building.id)),
     [approvedBuildings],
@@ -287,7 +288,8 @@ export function ApartmentsManagementView({
           currentResidentName={residentName}
           isOccupied={occupancyStatus === "occupied"}
           residentOptions={residentOptions}
-          readOnly={buildingLocked}
+          readOnly={buildingLocked || !canManageRegistry}
+          canManageAccess={canManageRegistry}
         />
       ) : (
         <span key={`${id}-empty`} className="text-xs text-slate-400">—</span>
@@ -298,7 +300,7 @@ export function ApartmentsManagementView({
         </span>
       ) : null,
     ];
-  }), [filteredApartments, lockedBuildingIds, residentById, residentOptions, t]);
+  }), [canManageRegistry, filteredApartments, lockedBuildingIds, residentById, residentOptions, t]);
 
   return (
     <div className="space-y-6">
@@ -333,6 +335,7 @@ export function ApartmentsManagementView({
             apartments={managementMenuApartments}
             apartmentRecords={filteredApartments}
             lockedBuildingIds={lockedBuildingIds}
+            canManage={canManageRegistry}
           />
         }
       >

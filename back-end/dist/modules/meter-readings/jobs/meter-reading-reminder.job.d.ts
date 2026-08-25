@@ -1,20 +1,30 @@
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
+import { EmailLogService } from '../../emails/services/email-log.service';
 import { EmailService } from '../../emails/services/email.service';
 export declare class MeterReadingReminderJob {
     private readonly firebaseAdminService;
     private readonly emailService;
+    private readonly emailLogService;
     private readonly logger;
-    constructor(firebaseAdminService: FirebaseAdminService, emailService: EmailService);
+    constructor(firebaseAdminService: FirebaseAdminService, emailService: EmailService, emailLogService: EmailLogService);
     sendConfiguredReminders(): Promise<void>;
     private periodsForBuilding;
     private normalizePeriod;
     private buildingCompanyName;
+    private buildingCompanyId;
     private firstString;
+    private emailLanguage;
     private reminderStage;
     private normalizeReminders;
     private normalizeOffsetDays;
     private normalizeTime;
-    private isReminderDue;
+    private dueReminderTargetDate;
+    private reminderConfigForKind;
+    private alertSummary;
+    private sendManagementAlerts;
+    private managementEmail;
+    private deliveryKey;
+    private reminderDeliveryDate;
     private shiftDate;
     private isPeriodDateToday;
     private deadlineLabel;
@@ -22,4 +32,6 @@ export declare class MeterReadingReminderJob {
     private periodDateLabel;
     private daysUntilDeadline;
     private hasCurrentMonthReading;
+    private localDateTimeParts;
+    private errorMessage;
 }

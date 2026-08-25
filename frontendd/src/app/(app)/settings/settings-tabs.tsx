@@ -129,6 +129,7 @@ type SettingsTabsProps = {
   user: UserSettings;
   notificationSettings: NotificationSettings;
   company?: CompanySettings;
+  isAccountant?: boolean;
 };
 
 type EditableField = "email" | "name" | "phone" | "password" | null;
@@ -178,10 +179,11 @@ const defaultCompanyMemberPermissions: CompanyMemberPermissions = {
   manageMembers: false,
   manageApiKeys: false,
   manageInvoiceSettings: false,
+  manageMeterReadings: false,
 };
 const companyMemberPermissionOptions: Record<CompanyMemberRole, CompanyMemberPermissionKey[]> = {
-  ManagementCompany: ["viewApiKeys", "editCompanyInfo", "manageMembers", "manageApiKeys", "manageInvoiceSettings"],
-  Accountant: ["viewApiKeys", "manageApiKeys", "manageInvoiceSettings"],
+  ManagementCompany: ["viewApiKeys", "editCompanyInfo", "manageMembers", "manageApiKeys", "manageInvoiceSettings", "manageMeterReadings"],
+  Accountant: ["viewApiKeys", "manageApiKeys", "manageInvoiceSettings", "manageMeterReadings"],
 };
 const MAX_INVOICE_LOGO_BYTES = 350 * 1024;
 const DEFAULT_INVOICE_ACCENT_COLOR = "#ef3340";
@@ -3712,18 +3714,18 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   );
 }
 
-export function SettingsTabs({ user, notificationSettings, company }: SettingsTabsProps) {
+export function SettingsTabs({ user, notificationSettings, company, isAccountant = false }: SettingsTabsProps) {
   const notify = useNotifications();
   const t = useTranslations("settings");
   const tabs = company
     ? ([
         "user",
-        ...(company.permissions.viewCompanyInfo ? (["company"] satisfies SettingsTab[]) : []),
+        ...(company.permissions.viewCompanyInfo && !isAccountant ? (["company"] satisfies SettingsTab[]) : []),
         ...(company.permissions.viewApiKeys || company.permissions.manageApiKeys ? (["apiKey"] satisfies SettingsTab[]) : []),
         ...(company.permissions.manageInvoiceSettings && company.hasElectricityEnabled
           ? (["invoiceGeneration"] satisfies SettingsTab[])
           : []),
-        "emailTemplates",
+        ...(!isAccountant ? (["emailTemplates"] satisfies SettingsTab[]) : []),
         "notifications",
       ] satisfies SettingsTab[])
     : baseTabs;
@@ -4057,7 +4059,7 @@ export function SettingsTabs({ user, notificationSettings, company }: SettingsTa
 
       {activeTab === "notifications" ? <NotificationsPanel initialSettings={notificationSettings} /> : null}
 
-      {activeTab === "company" && company?.permissions.viewCompanyInfo ? <CompanyPanel company={company} currentUserId={user.userId} /> : null}
+      {activeTab === "company" && company?.permissions.viewCompanyInfo && !isAccountant ? <CompanyPanel company={company} currentUserId={user.userId} /> : null}
 
       {activeTab === "apiKey" && (company?.permissions.viewApiKeys || company?.permissions.manageApiKeys) ? (
         <ApiKeyPanel
@@ -4073,7 +4075,7 @@ export function SettingsTabs({ user, notificationSettings, company }: SettingsTa
         <InvoiceGenerationPanel company={company} recipientName={displayName || user.username || user.userName || user.email} />
       ) : null}
 
-      {activeTab === "emailTemplates" && company ? (
+      {activeTab === "emailTemplates" && company && !isAccountant ? (
         <EmailTemplatesPanel
           companyName={company.name || company.email || "Domera"}
           initialAccentColor={company.invoiceSettings.accentColor}

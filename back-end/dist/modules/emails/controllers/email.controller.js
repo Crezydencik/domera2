@@ -15,15 +15,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const current_user_decorator_1 = require("../../../common/auth/current-user.decorator");
 const firebase_auth_guard_1 = require("../../../common/auth/firebase-auth.guard");
+const role_constants_1 = require("../../../common/auth/role.constants");
 const roles_decorator_1 = require("../../../common/auth/roles.decorator");
 const roles_guard_1 = require("../../../common/auth/roles.guard");
+const email_log_service_1 = require("../services/email-log.service");
 const email_service_1 = require("../services/email.service");
 const email_template_service_1 = require("../services/email-template.service");
 const send_email_dto_1 = require("../dto/send-email.dto");
 let EmailController = class EmailController {
-    constructor(emailService, templateService) {
+    constructor(emailService, emailLogService, templateService) {
         this.emailService = emailService;
+        this.emailLogService = emailLogService;
         this.templateService = templateService;
     }
     previewTemplate(type, language) {
@@ -36,6 +40,38 @@ let EmailController = class EmailController {
             subject: template.subject,
             html: template.html,
         };
+    }
+    async stats(user, type, companyId, buildingId, apartmentId) {
+        const normalizedType = this.normalizeStatsType(type);
+        const scopedCompanyId = (0, role_constants_1.isPlatformAdminRole)(user.role)
+            ? this.cleanString(companyId)
+            : this.cleanString(user.companyId);
+        if (!(0, role_constants_1.isPlatformAdminRole)(user.role) && !scopedCompanyId) {
+            throw new common_1.BadRequestException('Company ID not found for this user');
+        }
+        return this.emailLogService.getStats({
+            type: normalizedType,
+            companyId: scopedCompanyId,
+            buildingId: this.cleanString(buildingId),
+            apartmentId: this.cleanString(apartmentId),
+        });
+    }
+    async deliveries(user, type, companyId, buildingId, apartmentId, deliveryKeyPrefix, limit) {
+        const normalizedType = this.normalizeStatsType(type);
+        const scopedCompanyId = (0, role_constants_1.isPlatformAdminRole)(user.role)
+            ? this.cleanString(companyId)
+            : this.cleanString(user.companyId);
+        if (!(0, role_constants_1.isPlatformAdminRole)(user.role) && !scopedCompanyId) {
+            throw new common_1.BadRequestException('Company ID not found for this user');
+        }
+        return this.emailLogService.getDeliveries({
+            type: normalizedType,
+            companyId: scopedCompanyId,
+            buildingId: this.cleanString(buildingId),
+            apartmentId: this.cleanString(apartmentId),
+            deliveryKeyPrefix: this.cleanString(deliveryKeyPrefix),
+            limit: this.cleanNumber(limit, 200),
+        });
     }
     async sendRegistrationCode(dto) {
         return this.emailService.sendRegistrationCode(dto);
@@ -74,6 +110,27 @@ let EmailController = class EmailController {
             'notification',
         ];
         return allowed.includes(type) ? type : 'meterReadingReminder';
+    }
+    normalizeStatsType(type) {
+        const allowed = [
+            'registrationCode',
+            'passwordReset',
+            'ownerInvitation',
+            'tenantInvitation',
+            'tenantInvitedByOwner',
+            'invoiceGenerated',
+            'meterReadingReminder',
+            'notification',
+        ];
+        return allowed.includes(type) ? type : undefined;
+    }
+    cleanString(value) {
+        const trimmed = typeof value === 'string' ? value.trim() : '';
+        return trimmed || undefined;
+    }
+    cleanNumber(value, fallback) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? Math.trunc(parsed) : fallback;
     }
     buildPreviewTemplate(type, language) {
         const sampleLink = 'https://domera.example/app';
@@ -182,6 +239,36 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], EmailController.prototype, "previewTemplate", null);
 __decorate([
+    (0, common_1.Get)('stats'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin', 'ManagementCompany', 'Accountant'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get email delivery statistics' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Email statistics returned successfully' }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)('type')),
+    __param(2, (0, common_1.Query)('companyId')),
+    __param(3, (0, common_1.Query)('buildingId')),
+    __param(4, (0, common_1.Query)('apartmentId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String, String, String]),
+    __metadata("design:returntype", Promise)
+], EmailController.prototype, "stats", null);
+__decorate([
+    (0, common_1.Get)('deliveries'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin', 'ManagementCompany', 'Accountant'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get email delivery log items' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Email delivery log returned successfully' }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)('type')),
+    __param(2, (0, common_1.Query)('companyId')),
+    __param(3, (0, common_1.Query)('buildingId')),
+    __param(4, (0, common_1.Query)('apartmentId')),
+    __param(5, (0, common_1.Query)('deliveryKeyPrefix')),
+    __param(6, (0, common_1.Query)('limit')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String, String, String, String, String]),
+    __metadata("design:returntype", Promise)
+], EmailController.prototype, "deliveries", null);
+__decorate([
     (0, common_1.Post)('registration-code'),
     (0, common_1.HttpCode)(200),
     (0, swagger_1.ApiOperation)({ summary: 'Send registration code email' }),
@@ -267,5 +354,6 @@ exports.EmailController = EmailController = __decorate([
     (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('ManagementCompany', 'Accountant'),
     __metadata("design:paramtypes", [email_service_1.EmailService,
+        email_log_service_1.EmailLogService,
         email_template_service_1.EmailTemplateService])
 ], EmailController);

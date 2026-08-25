@@ -14,9 +14,11 @@ const common_1 = require("@nestjs/common");
 const role_constants_1 = require("../../../common/auth/role.constants");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const invitation_token_1 = require("../../../common/utils/invitation-token");
+const company_payload_service_1 = require("../../company/services/company-payload.service");
 let MeterReadingAccessService = class MeterReadingAccessService {
-    constructor(firebaseAdminService) {
+    constructor(firebaseAdminService, companyPayloadService) {
         this.firebaseAdminService = firebaseAdminService;
+        this.companyPayloadService = companyPayloadService;
     }
     assertAuthenticated(user) {
         if (!user?.uid || !user.role)
@@ -40,6 +42,23 @@ let MeterReadingAccessService = class MeterReadingAccessService {
         const companyId = typeof apartment.companyId === 'string' ? apartment.companyId : '';
         if (!companyIds.includes(staffCompanyId) && companyId !== staffCompanyId) {
             throw new common_1.ForbiddenException('Access denied for company');
+        }
+    }
+    async assertCanManageStaffMeterReadings(user, apartment) {
+        this.assertStaffApartmentCompanyAccess(user, apartment);
+        if (user.role === 'ManagementCompany')
+            return;
+        if (user.role !== 'Accountant') {
+            throw new common_1.ForbiddenException('Insufficient permissions');
+        }
+        const companyId = this.requireStaffCompanyId(user);
+        const companySnap = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
+        if (!companySnap.exists) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
+        const permissions = this.companyPayloadService.getCompanyMemberPermissions(companySnap.data(), user.uid);
+        if (!permissions.manageMeterReadings) {
+            throw new common_1.ForbiddenException('You do not have permission to edit meter readings');
         }
     }
     hasApartmentAccess(user, apartmentId, apartment) {
@@ -120,5 +139,6 @@ let MeterReadingAccessService = class MeterReadingAccessService {
 exports.MeterReadingAccessService = MeterReadingAccessService;
 exports.MeterReadingAccessService = MeterReadingAccessService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService])
+    __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService,
+        company_payload_service_1.CompanyPayloadService])
 ], MeterReadingAccessService);

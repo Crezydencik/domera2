@@ -60,6 +60,9 @@ let MeterReadingsController = class MeterReadingsController {
     async sendTestReminder(user) {
         return this.meterReadingsService.sendTestReminder(user);
     }
+    async sendManualReminder(user, body) {
+        return this.meterReadingsService.sendManualReminder(user, body);
+    }
 };
 exports.MeterReadingsController = MeterReadingsController;
 __decorate([
@@ -186,6 +189,16 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], MeterReadingsController.prototype, "sendTestReminder", null);
+__decorate([
+    (0, common_1.Post)('reminders/send'),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, swagger_1.ApiOperation)({ summary: 'Send meter reading reminders manually for a building' }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], MeterReadingsController.prototype, "sendManualReminder", null);
 exports.MeterReadingsController = MeterReadingsController = __decorate([
     (0, swagger_1.ApiTags)('Meter Readings'),
     (0, common_1.Controller)('meter-readings'),
