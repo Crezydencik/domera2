@@ -349,7 +349,7 @@ export function ApartmentsManagementActionsMenu({
         const tenants = Array.isArray(record.tenants) ? record.tenants : [];
         const occupied =
           booleanValue(record.ownerActivated) ||
-          Boolean(textValue(record.ownerAcceptedAt, record.residentId)) ||
+          Boolean(textValue(record.ownerAcceptedAt)) ||
           tenants.some((tenant) => {
             if (!tenant || typeof tenant !== "object") return false;
             const tenantRecord = tenant as Record<string, unknown>;
@@ -861,14 +861,14 @@ export function ApartmentsManagementActionsMenu({
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-400 shadow-sm shadow-slate-950/[0.03] outline-none transition hover:border-slate-300 hover:bg-white hover:text-slate-600 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
           aria-label={t("openMenu")}
         >
           <KebabIcon />
         </button>
 
         {open && (
-          <div className="absolute right-0 z-30 mt-2 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white py-2 shadow-[0_18px_45px_rgba(15,23,42,0.16)]">
+          <div className="absolute right-0 z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-[0_18px_45px_rgba(15,23,42,0.16)]">
             <div className="px-2">
               <button type="button" onClick={() => { setExportOpen(true); setOpen(false); }} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50">
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition group-hover:bg-white group-hover:text-slate-800"><DownloadIcon /></span>

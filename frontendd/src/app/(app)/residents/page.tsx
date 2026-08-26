@@ -1,6 +1,5 @@
 import { getTranslations } from "next-intl/server";
 import { redirect } from "next/navigation";
-import { SectionCard } from "@/components/section-card";
 import { getResidentsPageData } from "@/shared/server/page-loaders/residents.loader";
 import { requireManagementCompanyBuildings } from "@/shared/server/management-building-access";
 import { ROUTES } from "@/shared/lib/routes";
@@ -28,7 +27,7 @@ export default async function ResidentsPage({
 
   return (
     <div className="space-y-6 max-sm:-mx-2">
-      <SectionCard className="max-sm:!rounded-none max-sm:!border-0 max-sm:!bg-transparent max-sm:!p-0 max-sm:!shadow-none">
+      <section>
         <ResidentsDirectory
           data={data}
           labels={{
@@ -42,7 +41,7 @@ export default async function ResidentsPage({
             empty: "Kontaktpersonas pagaidām nav atrastas.",
           }}
         />
-      </SectionCard>
+      </section>
     </div>
   );
 }

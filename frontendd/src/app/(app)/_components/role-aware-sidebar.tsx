@@ -615,7 +615,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f7fb] text-slate-900">
+    <div className="min-h-screen bg-white text-slate-900">
       <div className="flex min-h-screen flex-col lg:flex-row">
 
         {/* Mobile backdrop */}
@@ -644,10 +644,6 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
               className={`h-7 min-w-0 max-w-[calc(100%_-_4.5rem)] object-contain sm:h-8 sm:max-w-[11rem] ${sidebarCollapsed ? "lg:hidden" : ""}`}
             />
             <div className="flex items-center gap-2">
-              {/* Locale switcher — mobile only */}
-              <div className="lg:hidden">
-                <LocaleSwitcher />
-              </div>
               <button
                 type="button"
                 onClick={toggleSidebarCollapsed}
@@ -706,23 +702,25 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
 
           {role === "managementCompany" ? (
             <div className={`border-t border-slate-100 px-3 py-3 ${sidebarCollapsed ? "lg:px-2" : ""}`}>
-              <Link
-                href={ROUTES.support}
-                title={sidebarCollapsed ? "Support" : undefined}
-                onClick={() => setMobileMenuOpen(false)}
-                onFocus={() => prefetchRoute(ROUTES.support)}
-                onMouseEnter={() => prefetchRoute(ROUTES.support)}
-                className={`relative flex min-h-10 items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${sidebarCollapsed ? "lg:justify-center lg:px-0" : ""} ${
-                  isActive(ROUTES.support)
-                    ? "border border-sky-100 bg-sky-100/70 text-sky-700 shadow-sm shadow-sky-950/[0.03]"
-                    : "border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                }`}
-              >
-                <span className={`flex min-w-0 items-center gap-3 ${sidebarCollapsed ? "lg:justify-center" : ""}`}>
-                  <LifeBuoy className="h-4 w-4 shrink-0 opacity-80" aria-hidden="true" />
-                  <span className={`truncate ${sidebarCollapsed ? "lg:hidden" : ""}`}>Support</span>
-                </span>
-              </Link>
+              <div className={`flex items-center gap-2 ${sidebarCollapsed ? "lg:flex-col" : ""}`}>
+                <Link
+                  href={ROUTES.support}
+                  title={sidebarCollapsed ? "Support" : undefined}
+                  onClick={() => setMobileMenuOpen(false)}
+                  onFocus={() => prefetchRoute(ROUTES.support)}
+                  onMouseEnter={() => prefetchRoute(ROUTES.support)}
+                  className={`relative flex min-h-10 flex-1 items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${sidebarCollapsed ? "lg:w-full lg:justify-center lg:px-0" : ""} ${
+                    isActive(ROUTES.support)
+                      ? "border border-sky-100 bg-sky-100/70 text-sky-700 shadow-sm shadow-sky-950/[0.03]"
+                      : "border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                  }`}
+                >
+                  <span className={`flex min-w-0 items-center gap-3 ${sidebarCollapsed ? "lg:justify-center" : ""}`}>
+                    <LifeBuoy className="h-4 w-4 shrink-0 opacity-80" aria-hidden="true" />
+                    <span className={`truncate ${sidebarCollapsed ? "lg:hidden" : ""}`}>Support</span>
+                  </span>
+                </Link>
+              </div>
             </div>
           ) : null}
         </aside>
@@ -749,10 +747,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
 
               {/* Actions */}
               <div className="flex shrink-0 items-center gap-2">
-                {/* Locale — desktop only */}
-                <div className="hidden lg:block">
-                  <LocaleSwitcher />
-                </div>
+                <LocaleSwitcher iconOnly />
 
                 {/* Notifications */}
                 <div className="relative" ref={notificationsRef}>
@@ -762,7 +757,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
                       notifications.toggle();
                       setProfileOpen(false);
                     }}
-                    className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-950 shadow-sm transition hover:border-slate-300 hover:bg-white"
+                    className="relative flex h-11 min-w-11 items-center justify-center rounded-2xl bg-transparent px-2 text-slate-950 transition"
                     aria-label={t("notifications.openAria")}
                   >
                     <Bell className="h-5 w-5" aria-hidden="true" />
@@ -845,64 +840,81 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
                       setProfileOpen((value) => !value);
                       notifications.close();
                     }}
-                    className="flex h-10 min-w-10 items-center gap-2 rounded-full border border-slate-200 bg-white p-1 pr-2 text-left shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                    className="flex h-11 min-w-11 items-center gap-2 rounded-full bg-transparent px-1.5 pr-2 text-left transition"
                     aria-label={t("profile.openAria")}
                     aria-expanded={profileOpen}
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-600 text-sm font-bold text-white">
+                    <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-600 text-sm font-bold text-white shadow-sm shadow-orange-600/30">
                       {userInitial}
+                      <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
                     </span>
                     <span className="hidden min-w-0 max-w-36 sm:block lg:max-w-44">
                       <span className="block truncate text-sm font-semibold leading-4 text-slate-950">{userName}</span>
                       {propertyRoleLabel ? (
-                        <span className="block truncate text-[11px] leading-4 text-slate-500">{propertyRoleLabel}</span>
+                        <span className="block truncate pt-0.5 text-[11px] leading-4 text-slate-500">{propertyRoleLabel}</span>
                       ) : null}
                     </span>
                     <ChevronDown
-                      className={`hidden h-4 w-4 shrink-0 text-slate-500 transition sm:block ${profileOpen ? "rotate-180" : ""}`}
+                      className={`hidden h-4 w-4 shrink-0 text-slate-400 transition sm:block ${profileOpen ? "rotate-180 text-slate-600" : ""}`}
                       aria-hidden="true"
                     />
                   </button>
 
                   {profileOpen && (
-                    <div className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-900/10">
-                      <div className="flex items-center gap-3 px-4 py-3">
-                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-600 text-base font-bold text-white">
-                          {userInitial}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-slate-950">{userName}</p>
-                          <p className="truncate text-sm text-slate-500">{userEmail}</p>
+                    <div className="absolute right-0 z-20 mt-3 w-72 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.14)]">
+                      <div className="px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-600 text-base font-bold text-white shadow-lg shadow-orange-600/25">
+                            {userInitial}
+                            <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-950">{userName}</p>
+                            <p className="mt-1 truncate text-sm text-slate-500">{userEmail}</p>
+                            {propertyRoleLabel ? (
+                              <span className="mt-2 inline-flex max-w-full rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                                <span className="truncate">{propertyRoleLabel}</span>
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
 
-                      <div className="border-t border-slate-100 py-2">
-                        <Link
-                          href={ROUTES.settings}
-                          onClick={() => setProfileOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
-                        >
-                          <User className="h-4 w-4 shrink-0" aria-hidden="true" />
-                          <span>{t("profile.viewProfile")}</span>
-                        </Link>
-                        <Link
-                          href={ROUTES.settings}
-                          onClick={() => setProfileOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
-                        >
-                          <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
-                          <span>{t("profile.accountSettings")}</span>
-                        </Link>
+                      <div className="border-t border-slate-100 px-3 py-2.5">
+                        <div className="grid gap-1.5">
+                          <Link
+                            href={ROUTES.settings}
+                            onClick={() => setProfileOpen(false)}
+                            className="flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
+                          >
+                            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                              <User className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            </span>
+                            <span>{t("profile.viewProfile")}</span>
+                          </Link>
+                          <Link
+                            href={ROUTES.settings}
+                            onClick={() => setProfileOpen(false)}
+                            className="flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
+                          >
+                            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                              <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            </span>
+                            <span>{t("profile.accountSettings")}</span>
+                          </Link>
+                        </div>
                       </div>
 
-                      <div className="border-t border-slate-100 py-2">
+                      <div className="border-t border-slate-100 px-3 py-2.5">
                         <button
                           type="button"
                           onClick={() => void handleLogout()}
                           disabled={logoutLoading}
-                          className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950 disabled:pointer-events-none disabled:opacity-60"
+                          className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-700 disabled:pointer-events-none disabled:opacity-60"
                         >
-                          <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
+                            <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          </span>
                           <span>{logoutLoading ? t("profile.signingOut") : t("profile.signOut")}</span>
                         </button>
                       </div>

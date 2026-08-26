@@ -1004,7 +1004,11 @@
       },
       "filters": {
         "building": "Ēka",
-        "allBuildings": "Visas ēkas"
+        "allBuildings": "Visas ēkas",
+        "status": "Statuss",
+        "allStatuses": "Visi statusi",
+        "search": "Meklēt",
+        "searchPlaceholder": "Dzīvoklis, atbildīgais, tālrunis"
       },
       "menu": {
         "openMenu": "Atvērt darbību izvēlni",

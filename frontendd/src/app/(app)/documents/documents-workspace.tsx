@@ -906,71 +906,121 @@ export function DocumentsWorkspace({
         </div>
         </Modal>
 
-        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <h3 className="text-lg font-semibold text-slate-950 sm:text-base">{t("archive.title")}</h3>
-                {archiveBuildingOptions.length ? (
-                  <select
-                    value={archiveBuildingId}
-                    onChange={(event) => setArchiveBuildingId(event.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 sm:w-56"
-                    aria-label={t("aria.selectBuilding")}
+        <section className="min-w-0 p-0">
+          {archiveBuildingOptions.length > 1 ? (
+            <>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="relative w-full sm:w-80">
+                    <select
+                      value={archiveBuildingId}
+                      onChange={(event) => setArchiveBuildingId(event.target.value)}
+                      className="h-11 w-full appearance-none rounded-2xl border border-slate-200 bg-white pl-4 pr-11 text-sm font-medium text-slate-900 shadow-sm shadow-slate-950/[0.03] outline-none transition hover:border-slate-300 focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                      aria-label={t("aria.selectBuilding")}
+                    >
+                      {archiveBuildingOptions.map((building) => (
+                        <option key={building.id} value={building.id}>
+                          {building.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-slate-400">
+                      <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
+                        <path d="m5.75 8 4.25 4.25L14.25 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                  </div>
+                </div>
+                <div className="flex w-full items-center gap-2 lg:w-auto">
+                  <label className="relative block min-w-0 flex-1 lg:w-80">
+                    <FiSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      className="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 text-sm font-medium text-slate-900 shadow-sm shadow-slate-950/[0.03] outline-none transition hover:border-slate-300 focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                      placeholder={t("search.placeholder")}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={openCreateModal}
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-600 text-white shadow-sm shadow-sky-600/20 transition hover:bg-sky-700"
+                    title={t("actions.addDocument")}
+                    aria-label={t("actions.addDocument")}
                   >
-                    {archiveBuildingOptions.map((building) => (
-                      <option key={building.id} value={building.id}>
-                        {building.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
+                    <FiPlus className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
-              <p className="mt-1 text-sm leading-5 text-slate-500">{t("archive.description")}</p>
-            </div>
-            <div className="flex w-full items-center gap-2 lg:w-auto">
-              <label className="relative block min-w-0 flex-1 lg:w-80">
-                <FiSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                  placeholder={t("search.placeholder")}
-                />
-              </label>
-              <button
-                type="button"
-                onClick={openCreateModal}
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white shadow-sm shadow-sky-600/20 transition hover:bg-sky-700"
-                title={t("actions.addDocument")}
-                aria-label={t("actions.addDocument")}
-              >
-                <FiPlus className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-            {archiveTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`inline-flex min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm font-semibold leading-4 transition sm:justify-start ${
-                  activeTab === tab.id
-                    ? "border-sky-500 bg-sky-50 text-sky-700"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <span className="min-w-0 text-left break-words">{tab.label}</span>
-                {tab.count !== null ? (
-                  <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs text-slate-500 ring-1 ring-slate-200">
-                    {tab.count}
-                  </span>
-                ) : null}
-              </button>
-            ))}
-          </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                {archiveTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`inline-flex min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm font-semibold leading-4 transition sm:justify-start ${
+                      activeTab === tab.id
+                        ? "border-sky-500 bg-sky-50 text-sky-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="min-w-0 text-left break-words">{tab.label}</span>
+                    {tab.count !== null ? (
+                      <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs text-slate-500 ring-1 ring-slate-200">
+                        {tab.count}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                {archiveTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`inline-flex min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm font-semibold leading-4 transition sm:justify-start ${
+                      activeTab === tab.id
+                        ? "border-sky-500 bg-sky-50 text-sky-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="min-w-0 text-left break-words">{tab.label}</span>
+                    {tab.count !== null ? (
+                      <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs text-slate-500 ring-1 ring-slate-200">
+                        {tab.count}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex w-full items-center gap-2 xl:w-auto">
+                <label className="relative block min-w-0 flex-1 xl:w-80">
+                  <FiSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 text-sm font-medium text-slate-900 shadow-sm shadow-slate-950/[0.03] outline-none transition hover:border-slate-300 focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                    placeholder={t("search.placeholder")}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-600 text-white shadow-sm shadow-sky-600/20 transition hover:bg-sky-700"
+                  title={t("actions.addDocument")}
+                  aria-label={t("actions.addDocument")}
+                >
+                  <FiPlus className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {role === "managementCompany" && !buildingDocumentsOnly && activeTab === "apartments" && hasMultipleArchiveApartmentOptions ? (
             <label className="mt-4 block max-w-md">

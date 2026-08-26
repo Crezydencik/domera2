@@ -52,16 +52,16 @@ interface FilterBarProps {
 }
 
 const inputBase =
-  "min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm shadow-slate-950/[0.02] transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200";
+  "h-11 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-900 shadow-sm shadow-slate-950/[0.03] outline-none transition hover:border-slate-300 hover:bg-white focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100";
 
 export function FilterBar({ fields, values, onChange, actions, actionsClassName, mobileActionsInline, footer }: FilterBarProps) {
   const visibleFields = fields.filter((f) => f.visible !== false);
   const resolvedActionsClassName = actionsClassName ?? "grid grid-cols-2 gap-2 sm:grid-cols-4 xl:flex xl:flex-wrap xl:justify-end";
   const fieldsClassName = mobileActionsInline
-    ? "contents"
+    ? "flex flex-col gap-3 md:contents"
     : "flex flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap";
   const controlsClassName = mobileActionsInline
-    ? "grid grid-cols-[minmax(0,1fr)_6.75rem_auto] items-start gap-2 md:grid-cols-[minmax(16rem,1fr)_minmax(12rem,18rem)_auto]"
+    ? "flex flex-col gap-3 md:grid md:grid-cols-[minmax(16rem,1fr)_minmax(12rem,18rem)_auto] md:items-start md:gap-2"
     : "flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between";
 
   return (
@@ -74,7 +74,7 @@ export function FilterBar({ fields, values, onChange, actions, actionsClassName,
               return (
                 <div key={field.name} className={field.className ?? (mobileActionsInline ? "relative min-w-0 w-full" : "relative w-full sm:w-64")}>
                   <svg
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400"
+                    className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -90,25 +90,39 @@ export function FilterBar({ fields, values, onChange, actions, actionsClassName,
                     placeholder={field.placeholder}
                     value={value}
                     onChange={(e) => onChange(field.name, e.target.value)}
-                    className={`${inputBase} w-full pl-9 pr-3 placeholder:text-slate-400`}
+                    className={`${inputBase} w-full pl-11 pr-4 placeholder:text-slate-400`}
                   />
                 </div>
               );
             }
             return (
-              <select
+              <div
                 key={field.name}
-                value={value}
-                onChange={(e) => onChange(field.name, e.target.value)}
-                className={`${inputBase} ${mobileActionsInline ? "min-w-0 w-full truncate px-2 pr-6 text-xs sm:px-3 sm:pr-8 sm:text-sm" : "pr-8"} ${field.className ?? ""}`}
+                className={field.className ?? (mobileActionsInline ? "relative min-w-0 w-full" : "relative w-full sm:w-64")}
               >
-                {field.placeholder && <option value="">{field.placeholder}</option>}
-                {field.options.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-slate-400">
+                  <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
+                    <path d="M3.5 5.5h13M6.5 10h7M8.5 14.5h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                </span>
+                <select
+                  value={value}
+                  onChange={(e) => onChange(field.name, e.target.value)}
+                  className={`${inputBase} w-full appearance-none pl-11 pr-11 ${mobileActionsInline ? "min-w-0 text-sm md:truncate" : ""}`}
+                >
+                  {field.placeholder && <option value="">{field.placeholder}</option>}
+                  {field.options.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-slate-400">
+                  <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
+                    <path d="m5.75 8 4.25 4.25L14.25 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+              </div>
             );
           })}
         </div>

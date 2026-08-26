@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 // import { useAuthSession } from "@/shared/hooks/use-auth";
-import { SectionCard } from "@/components/section-card";
 import { FilterBar, useFilters, type FilterField } from "@/components/ui/filter-bar";
 import { Modal } from "@/components/ui/modal";
 import { SubmissionPeriodCard, type SubmissionPeriodValue } from "@/components/ui/submission-period-card";
@@ -2915,7 +2914,7 @@ ${xmlRows}
         {renderBuildingStatsChart(buildingWaterSummaries)}
       </Modal>
 
-      <SectionCard> 
+      <section> 
         {buildings.length > 1 && (
           <div className="mb-5 max-w-md">
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -2964,7 +2963,7 @@ ${xmlRows}
             values={{ ...filterValues, building: effectiveBuilding }}
             onChange={setFilterValue}
             mobileActionsInline
-            actionsClassName="self-end flex justify-end gap-2 md:flex md:flex-nowrap md:justify-end"
+            actionsClassName="flex w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap md:justify-end"
             actions={
               <>
                 {canManageReadings ? (
@@ -3580,7 +3579,7 @@ ${xmlRows}
             {t("noReadings")}
           </div>
         )}
-      </SectionCard>
+      </section>
     </div>
   );
 }

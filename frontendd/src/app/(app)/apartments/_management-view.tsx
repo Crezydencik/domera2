@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { FaBuilding } from "react-icons/fa";
 import { DataTable } from "@/components/data-table";
-import { SectionCard } from "@/components/section-card";
 import { ApartmentsManagementActionsMenu, type ManagementActionApartment, type ManagementActionBuildingOption } from "./_management-actions-menu";
 import { ApartmentsManagementRowActions, type ApartmentResidentOption } from "./_management-row-actions";
 import { RegistryBuildingFilter, type RegistryBuildingOption } from "./_registry-building-filter";
@@ -68,7 +67,7 @@ function getApartmentOccupancyStatus(apartment: Record<string, unknown>): Apartm
   });
   const ownerPending = !ownerActivated && hasReadableText(apartment.ownerEmail);
 
-  if (apartment.residentId || ownerActivated || activeTenant) {
+  if (ownerActivated || activeTenant) {
     return "occupied";
   }
 
@@ -94,6 +93,8 @@ export function ApartmentsManagementView({
 }) {
   const t = useTranslations("apartments");
   const [selectedBuildingId, setSelectedBuildingId] = useState<string | undefined>(undefined);
+  const [selectedStatus, setSelectedStatus] = useState<ApartmentOccupancyStatus | undefined>(undefined);
+  const [searchQuery, setSearchQuery] = useState("");
   const approvedBuildings = useMemo(() => data.buildings.filter(isApprovedBuilding), [data.buildings]);
   const hasBuildings = approvedBuildings.length > 0;
   const canManageRegistry = String(data.rawRole ?? "").replace(/[^a-z]/gi, "").toLowerCase() !== "accountant";
@@ -138,6 +139,14 @@ export function ApartmentsManagementView({
     [buildingOptions, normalizedBuildingId],
   );
   const selectedBuildingLocked = Boolean(normalizedBuildingId && lockedBuildingIds.has(normalizedBuildingId));
+  const statusOptions: RegistryBuildingOption[] = useMemo(
+    () => [
+      { id: "occupied", label: t("management.occupied") },
+      { id: "pending", label: t("management.pending") },
+      { id: "vacant", label: t("management.vacant") },
+    ],
+    [t],
+  );
   const residentOptions: ApartmentResidentOption[] = useMemo(
     () => Array.from(
       new Map(
@@ -164,8 +173,62 @@ export function ApartmentsManagementView({
         if (normalizedBuildingId) return buildingId === normalizedBuildingId;
         return !buildingId || approvedBuildingIds.has(buildingId);
       })
+      .filter((item) => !selectedStatus || getApartmentOccupancyStatus(item) === selectedStatus)
+      .filter((item) => {
+        const query = searchQuery.trim().toLowerCase();
+        if (!query) return true;
+
+        const residentIdValue = item.residentId;
+        const residentId = hasReadableText(residentIdValue) ? residentIdValue.trim() : undefined;
+        const resolvedOwnerFromResident = residentId ? residentById.get(residentId) : undefined;
+        const tenantNames = Array.isArray(item.tenants)
+          ? item.tenants
+              .map((tenant) => {
+                if (!tenant || typeof tenant !== "object") return "";
+                const record = tenant as Record<string, unknown>;
+                const firstName = hasReadableText(record.firstName) ? record.firstName.trim() : "";
+                const lastName = hasReadableText(record.lastName) ? record.lastName.trim() : "";
+                const fullName = [firstName, lastName].filter(Boolean).join(" ");
+                return hasReadableText(record.fullName)
+                  ? record.fullName.trim()
+                  : hasReadableText(record.name)
+                    ? record.name.trim()
+                    : fullName || (hasReadableText(record.email) ? record.email.trim() : "");
+              })
+              .filter(Boolean)
+          : [];
+        const tenantPhones = Array.isArray(item.tenants)
+          ? item.tenants
+              .map((tenant) => {
+                if (!tenant || typeof tenant !== "object") return "";
+                const record = tenant as Record<string, unknown>;
+                return hasReadableText(record.phone) ? record.phone.trim() : "";
+              })
+              .filter(Boolean)
+          : [];
+
+        const searchableValues = [
+          item.id,
+          item.apartmentId,
+          item.number,
+          item.address,
+          item.owner,
+          item.ownerEmail,
+          item.ownerPhone,
+          item.residentEmail,
+          item.residentPhone,
+          item.phone,
+          item.phoneNumber,
+          resolvedOwnerFromResident?.fullName,
+          resolvedOwnerFromResident?.phone,
+          ...tenantNames,
+          ...tenantPhones,
+        ];
+
+        return searchableValues.some((value) => String(value ?? "").toLowerCase().includes(query));
+      })
       .sort((left, right) => compareApartmentOrder(left, right)),
-    [approvedBuildingIds, data.apartments, normalizedBuildingId],
+    [approvedBuildingIds, data.apartments, normalizedBuildingId, residentById, searchQuery, selectedStatus],
   );
 
   const managementMenuApartments: ManagementActionApartment[] = useMemo(() => filteredApartments.map((item) => {
@@ -303,31 +366,64 @@ export function ApartmentsManagementView({
   }), [canManageRegistry, filteredApartments, lockedBuildingIds, residentById, residentOptions, t]);
 
   return (
-    <div className="space-y-6">
-      <SectionCard
-        title={t("management.registryTitle")}
-        titleMeta={selectedBuildingLabel ? (
-          <span className={`inline-flex max-w-full items-center rounded-full border px-3 py-1 text-sm font-medium ${
-            selectedBuildingLocked
-              ? "border-rose-200 bg-rose-50 text-rose-700"
-              : "border-blue-100 bg-blue-50 text-blue-700"
-          }`}>
-            <span className="truncate">{selectedBuildingLabel}</span>
-            {selectedBuildingLocked ? <span className="ml-2 shrink-0 text-xs font-semibold">Locked</span> : null}
-          </span>
+    <section className="px-0 py-0">
+      <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:flex-nowrap lg:items-center">
+        {selectedBuildingLabel ? (
+          <div className="lg:flex-none">
+            <span className={`inline-flex h-11 max-w-full items-center rounded-2xl border px-4 text-sm font-medium ${
+              selectedBuildingLocked
+                ? "border-rose-200 bg-rose-50 text-rose-700"
+                : "border-blue-100 bg-blue-50 text-blue-700"
+            }`}>
+              <span className="truncate">{selectedBuildingLabel}</span>
+              {selectedBuildingLocked ? <span className="ml-2 shrink-0 text-xs font-semibold">Locked</span> : null}
+            </span>
+          </div>
         ) : null}
-        description={t("management.registryDescription")}
-        titleAside={buildingOptions.length > 1 ? (
-          <RegistryBuildingFilter
-            label={t("management.filters.building")}
-            allLabel={t("management.filters.allBuildings")}
-            options={buildingOptions}
-            value={normalizedBuildingId}
-            onChange={setSelectedBuildingId}
-          />
-        ) : null}
-        titleAsidePlacement="below"
-        headerAside={
+        <div className="w-full lg:w-[420px] lg:max-w-[420px] lg:flex-none">
+          <div className="relative">
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={t("management.filters.searchPlaceholder")}
+              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-11 pr-4 text-sm font-medium text-slate-900 shadow-sm shadow-slate-950/[0.03] outline-none transition hover:border-slate-300 hover:bg-white focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
+            />
+            <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-slate-400">
+              <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
+                <circle cx="9" cy="9" r="5.5" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M13.5 13.5 17 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </span>
+          </div>
+        </div>
+        <div className="flex w-full flex-col gap-3 lg:w-auto lg:flex-row lg:flex-nowrap lg:items-center">
+          {buildingOptions.length > 1 ? (
+            <div className="w-full sm:w-[200px]">
+              <RegistryBuildingFilter
+                label={t("management.filters.building")}
+                allLabel={t("management.filters.allBuildings")}
+                options={buildingOptions}
+                value={normalizedBuildingId}
+                onChange={setSelectedBuildingId}
+                compact
+                minimal
+              />
+            </div>
+          ) : null}
+          <div className="w-full sm:w-[180px]">
+            <RegistryBuildingFilter
+              label={t("management.filters.status")}
+              allLabel={t("management.filters.allStatuses")}
+              options={statusOptions}
+              value={selectedStatus}
+              onChange={(value) => setSelectedStatus(value as ApartmentOccupancyStatus | undefined)}
+              compact
+              minimal
+            />
+          </div>
+        </div>
+        <div className="flex justify-start lg:ml-auto lg:flex-none">
           <ApartmentsManagementActionsMenu
             companyId={data.companyId}
             buildings={menuBuildingOptions}
@@ -337,8 +433,10 @@ export function ApartmentsManagementView({
             lockedBuildingIds={lockedBuildingIds}
             canManage={canManageRegistry}
           />
-        }
-      >
+        </div>
+      </div>
+
+      <div className="mt-6">
         {rows.length > 0 ? (
           <DataTable
             columns={[
@@ -377,7 +475,7 @@ export function ApartmentsManagementView({
             </p>
           </div>
         )}
-      </SectionCard>
-    </div>
+      </div>
+    </section>
   );
 }

@@ -8,7 +8,6 @@ import { InvoiceDeleteButton } from "@/components/invoice-delete-button";
 import { InvoiceMobileRow } from "@/components/invoice-mobile-row";
 import { InvoicePdfViewerButton } from "@/components/invoice-pdf-viewer-button";
 import { InvoiceResendEmailButton } from "@/components/invoice-resend-email-button";
-import { SectionCard } from "@/components/section-card";
 import { Button } from "@/components/ui/button";
 import {
   approvePendingInvoiceApprovalAction,
@@ -1411,15 +1410,16 @@ export function InvoicesWorkspace({
       ) : null}
 
       {canImport ? (
-        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <div className="grid gap-4 p-5 lg:grid-cols-[minmax(280px,1fr)_220px_auto] lg:items-end">
+        <section className="grid gap-6">
+          <div className="rounded-[28px] border border-slate-200 bg-white/90 p-5 shadow-sm shadow-slate-950/[0.04]">
+            <div className="grid gap-4 lg:grid-cols-[minmax(280px,1fr)_220px_auto] lg:items-end">
             {hasMultipleBuildingOptions ? (
-            <label className="flex min-w-0 flex-col gap-1.5 text-sm">
-              <span className="font-semibold text-slate-900">{copy.pageBuildingTitle}</span>
+            <label className="flex min-w-0 flex-col gap-2 text-sm">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{copy.pageBuildingTitle}</span>
               <select
                 value={selectedBuildingId}
                 onChange={(event) => setSelectedBuildingId(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-medium text-slate-900 shadow-sm shadow-slate-950/[0.03] outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
               >
                 <option value="">{copy.chooseBuilding}</option>
                 {buildingOptions.map((building) => (
@@ -1428,40 +1428,40 @@ export function InvoicesWorkspace({
               </select>
             </label>
             ) : (
-              <div className="flex min-w-0 flex-col gap-1.5 text-sm">
-                <span className="font-semibold text-slate-900">{copy.pageBuildingTitle}</span>
-                <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-900">
+              <div className="flex min-w-0 flex-col gap-2 text-sm">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{copy.pageBuildingTitle}</span>
+                <div className="flex h-14 items-center rounded-2xl border border-slate-200 bg-slate-50/70 px-4 text-base font-medium text-slate-900 shadow-sm shadow-slate-950/[0.02]">
                   {selectedBuildingId ? buildingLabelById.get(selectedBuildingId) || selectedBuildingId : copy.chooseBuilding}
                 </div>
               </div>
             )}
-            <label className="flex min-w-0 flex-col gap-1.5 text-sm">
-              <span className="font-semibold text-slate-900">{copy.period}</span>
+            <label className="flex min-w-0 flex-col gap-2 text-sm">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{copy.period}</span>
               <input
                 type="month"
                 value={selectedInvoicePeriod}
                 onChange={(event) => setSelectedInvoicePeriod(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-medium text-slate-900 shadow-sm shadow-slate-950/[0.03] outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
               />
             </label>
-            <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-              <Button type="button" variant="secondary" onClick={() => setApprovalModalOpen(true)}>
+            <div className="flex flex-wrap items-end justify-start gap-3 lg:justify-end">
+              <Button type="button" variant="secondary" className="h-14 rounded-2xl px-5" onClick={() => setApprovalModalOpen(true)}>
                 <FiFileText className="h-4 w-4" aria-hidden="true" />
                 {copy.approvalButton}
                 {filteredPendingApprovals.length ? (
                   <span className="ml-1 rounded-full bg-blue-600 px-2 py-0.5 text-xs font-bold text-white">{filteredPendingApprovals.length}</span>
                 ) : null}
               </Button>
-              <Button type="button" variant={importOpen ? "primary" : "secondary"} onClick={() => setImportOpen((open) => !open)}>
+              <Button type="button" className="h-14 rounded-2xl px-5" variant={importOpen ? "primary" : "secondary"} onClick={() => setImportOpen((open) => !open)}>
                 <FiUploadCloud className="h-4 w-4" aria-hidden="true" />
                 {importOpen ? copy.collapseImport : copy.importTitle}
               </Button>
             </div>
           </div>
+          </div>
 
           {importOpen ? (
-            <div className="border-t border-slate-200 p-5">
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,460px)]">
+            <div className="grid gap-5 rounded-[28px] border border-slate-200 bg-white/90 p-5 shadow-sm shadow-slate-950/[0.04] xl:grid-cols-[minmax(0,1fr)_minmax(340px,460px)]">
             <div className="space-y-4">
               <div className="grid gap-3">
                 <label className="flex flex-col gap-1.5 text-sm">
@@ -1632,34 +1632,36 @@ export function InvoicesWorkspace({
               <div className="rounded-xl bg-white px-4 py-5 text-sm text-slate-500">{copy.dropHint}</div>
             )}
           </div>
-          </div>
             </div>
           ) : null}
         </section>
       ) : null}
 
-      <SectionCard
-        title={copy.invoicesTitle}
-        description={copy.invoicesDescription}
-        headerAside={!canImport && apartmentOptions.length > 1 ? (
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-              <span className="font-medium">{copy.apartment}</span>
-              <select
-                value={selectedInvoiceApartmentId}
-                onChange={(event) => setSelectedInvoiceApartmentId(event.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              >
-                {apartmentOptions.map((apartment) => (
-                  <option key={apartment.id} value={apartment.id}>{apartment.label}</option>
-                ))}
-              </select>
-            </label>
+      <section className="grid gap-6 border-t border-slate-100 pt-2">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-[28px] font-semibold tracking-tight text-slate-950">{copy.invoicesTitle}</h2>
+            <p className="mt-2 max-w-3xl text-base leading-7 text-slate-500">{copy.invoicesDescription}</p>
           </div>
-        ) : undefined}
-      >
+          {!canImport && apartmentOptions.length > 1 ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <span className="font-medium">{copy.apartment}</span>
+                <select
+                  value={selectedInvoiceApartmentId}
+                  onChange={(event) => setSelectedInvoiceApartmentId(event.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  {apartmentOptions.map((apartment) => (
+                    <option key={apartment.id} value={apartment.id}>{apartment.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
+        </div>
         {invoiceSections.length ? (
-          <div className="grid gap-6">
+          <div className="grid gap-8">
             {invoiceSections.map((section) => (
               <section key={section.key} className="grid gap-3">
                 <div className="flex items-center justify-between gap-3">
@@ -1676,22 +1678,28 @@ export function InvoicesWorkspace({
             ))}
           </div>
         ) : (
-          <div className="rounded-xl bg-slate-50 px-4 py-5 text-sm text-slate-500">{copy.emptyInvoices}</div>
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-5 py-8 text-sm text-slate-500">{copy.emptyInvoices}</div>
         )}
-      </SectionCard>
+      </section>
 
       {canImport ? (
-        <SectionCard title={copy.historyTitle} description={copy.historyDescription}>
+        <section className="grid gap-6 border-t border-slate-100 pt-2">
+          <div>
+            <h2 className="text-[28px] font-semibold tracking-tight text-slate-950">{copy.historyTitle}</h2>
+            <p className="mt-2 max-w-3xl text-base leading-7 text-slate-500">{copy.historyDescription}</p>
+          </div>
           {uploadHistoryError ? (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-5 text-sm text-rose-700">
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-5 text-sm text-rose-700">
               {copy.loadFailed}{uploadHistoryError}
             </div>
           ) : historyRows.length ? (
-            <DataTable columns={[copy.colInvoice, copy.colFile, copy.colSource, copy.colDate, copy.colStatus]} rows={historyRows} pageSize={25} />
+            <div>
+              <DataTable columns={[copy.colInvoice, copy.colFile, copy.colSource, copy.colDate, copy.colStatus]} rows={historyRows} pageSize={25} />
+            </div>
           ) : (
-            <div className="rounded-xl bg-slate-50 px-4 py-5 text-sm text-slate-500">{copy.emptyHistory}</div>
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-5 py-8 text-sm text-slate-500">{copy.emptyHistory}</div>
           )}
-        </SectionCard>
+        </section>
       ) : null}
     </div>
   );

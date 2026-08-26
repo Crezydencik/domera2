@@ -920,7 +920,11 @@
       },
       "filters": {
         "building": "Дом",
-        "allBuildings": "Все дома"
+        "allBuildings": "Все дома",
+        "status": "Статус",
+        "allStatuses": "Все статусы",
+        "search": "Поиск",
+        "searchPlaceholder": "Квартира, ответственный, телефон"
       },
       "menu": {
         "openMenu": "Открыть меню действий",

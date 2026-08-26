@@ -925,7 +925,11 @@
       },
       "filters": {
         "building": "Building",
-        "allBuildings": "All buildings"
+        "allBuildings": "All buildings",
+        "status": "Status",
+        "allStatuses": "All statuses",
+        "search": "Search",
+        "searchPlaceholder": "Apartment, responsible person, phone"
       },
       "menu": {
         "openMenu": "Open actions menu",

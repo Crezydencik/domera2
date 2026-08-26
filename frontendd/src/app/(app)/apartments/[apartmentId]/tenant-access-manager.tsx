@@ -267,7 +267,7 @@ export function TenantAccessManager({
       notifications.success(t("alerts.updateSuccess"));
       setLocalOwner({
         email: normalizedEmail,
-        activated: result.ownerActivated === true || localOwner.activated,
+        activated: result.ownerActivated === true,
         invitedAt: new Date().toISOString(),
       });
       setEditOwnerModal(false);
@@ -576,7 +576,13 @@ export function TenantAccessManager({
                             onConfirm: async () => {
                               try {
                                 await resendOwnerInvitation(apartmentId, localOwner.email);
+                                setLocalOwner((current) => ({
+                                  ...current,
+                                  activated: false,
+                                  invitedAt: new Date().toISOString(),
+                                }));
                                 notifications.success(t("alerts.resendSuccess"));
+                                router.refresh();
                               } catch {
                                 notifications.error(t("alerts.resendError"));
                               }

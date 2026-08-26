@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { DataTable } from "@/components/data-table";
-import { SectionCard } from "@/components/section-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DomeraApiError } from "@/shared/api/client";
@@ -727,17 +726,14 @@ export function BuildingsManagement({
 
   return (
     <>
-      <SectionCard
-        title={t("title")}
-        description={t("description")}
-        headerAside={
-          canManage ? (
+      <section className="px-0 py-0">
+        {canManage ? (
+          <div className="mb-6 flex justify-end">
             <Button type="button" onClick={() => void handleOpenCreate()}>
               + {t("addButton")}
             </Button>
-          ) : null
-        }
-      >
+          </div>
+        ) : null}
         <DataTable
           columns={[
             t("colBuilding"),
@@ -869,7 +865,7 @@ export function BuildingsManagement({
             <p className="mt-1">{t("emptyDescription")}</p>
           </div>
         ) : null}
-      </SectionCard>
+      </section>
 
       <ModalShell
         open={createOpen}
