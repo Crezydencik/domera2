@@ -536,6 +536,7 @@
       "month": "Month: {month}",
       "submissionPeriod": "Submission period: {period}",
       "openReadings": "Open readings",
+      "submitReadings": "Submit readings",
       "emptyPortfolio": {
         "title": "Create your first managed object",
         "description": "Add a building to unlock apartments, residents, meter readings, invoices and documents for this workspace.",
@@ -586,10 +587,17 @@
     },
     "resident": {
       "myReadings": "My readings",
+      "submitReadings": "Submit readings",
       "submitted": "Submitted",
       "notSubmitted": "Not submitted",
       "coldWater": "Cold water",
       "hotWater": "Hot water",
+      "linkedApartments": "Linked apartments",
+      "linkedApartmentSingle": "apartment linked",
+      "linkedApartmentMany": "apartments linked",
+      "linkedApartmentFallback": "Apartment is linked to this account",
+      "linkedApartmentsHint": "This account already has access to linked apartments.",
+      "openApartments": "Open apartments",
       "managementCompany": "Management company",
       "contactsMissing": "Contact details are not provided"
     }

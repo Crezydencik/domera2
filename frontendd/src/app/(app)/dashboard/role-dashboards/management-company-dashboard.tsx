@@ -237,11 +237,12 @@ export async function ManagementCompanyDashboard({ data, selectedBuildingId }: {
             </div>
             <Link
               href={ROUTES.meterReadings}
-              title={t("openReadings")}
-              aria-label={t("openReadings")}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-900 transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              title={t("submitReadings")}
+              aria-label={t("submitReadings")}
+              className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
             >
-              <FiExternalLink className="h-4 w-4" aria-hidden="true" />
+              <span>{t("submitReadings")}</span>
+              <FiExternalLink className="ml-2 h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
         </div>

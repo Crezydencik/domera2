@@ -531,6 +531,7 @@
       "month": "Месяц: {month}",
       "submissionPeriod": "Период сдачи: {period}",
       "openReadings": "Открыть показания",
+      "submitReadings": "Сдать показания",
       "emptyPortfolio": {
         "title": "Создайте первый объект управления",
         "description": "Добавьте дом, чтобы открыть квартиры, жильцов, показания счётчиков, счета и документы для этого рабочего пространства.",
@@ -581,10 +582,17 @@
     },
     "resident": {
       "myReadings": "Мои показания",
+      "submitReadings": "Сдать показания",
       "submitted": "Сдано",
       "notSubmitted": "Не сдано",
       "coldWater": "Холодная вода",
       "hotWater": "Горячая вода",
+      "linkedApartments": "Прикреплённые квартиры",
+      "linkedApartmentSingle": "квартира прикреплена",
+      "linkedApartmentMany": "квартиры прикреплены",
+      "linkedApartmentFallback": "Квартира привязана к аккаунту",
+      "linkedApartmentsHint": "На этом аккаунте уже есть доступ к прикреплённым квартирам.",
+      "openApartments": "Открыть квартиры",
       "managementCompany": "Управляющая компания",
       "contactsMissing": "Контакты не указаны"
     }

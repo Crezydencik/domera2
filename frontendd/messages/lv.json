@@ -615,6 +615,7 @@
       "month": "Mēnesis: {month}",
       "submissionPeriod": "Iesniegšanas periods: {period}",
       "openReadings": "Atvērt rādījumus",
+      "submitReadings": "Iesniegt rādījumus",
       "emptyPortfolio": {
         "title": "Izveidojiet pirmo pārvaldāmo objektu",
         "description": "Pievienojiet māju, lai šai darba videi atvērtu dzīvokļus, iedzīvotājus, skaitītāju rādījumus, rēķinus un dokumentus.",
@@ -665,10 +666,17 @@
     },
     "resident": {
       "myReadings": "Mani rādījumi",
+      "submitReadings": "Iesniegt rādījumus",
       "submitted": "Iesniegts",
       "notSubmitted": "Nav iesniegts",
       "coldWater": "Aukstais ūdens",
       "hotWater": "Karstais ūdens",
+      "linkedApartments": "Piesaistītie dzīvokļi",
+      "linkedApartmentSingle": "dzīvoklis piesaistīts",
+      "linkedApartmentMany": "dzīvokļi piesaistīti",
+      "linkedApartmentFallback": "Dzīvoklis ir piesaistīts šim kontam",
+      "linkedApartmentsHint": "Šim kontam jau ir piekļuve piesaistītajiem dzīvokļiem.",
+      "openApartments": "Atvērt dzīvokļus",
       "managementCompany": "Apsaimniekotājs",
       "contactsMissing": "Kontaktinformācija nav norādīta"
     }

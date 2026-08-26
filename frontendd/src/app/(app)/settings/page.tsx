@@ -265,7 +265,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         }}
         notificationSettings={notificationSettings}
         isAccountant={isAccountant}
-        company={{
+        company={canViewCompany ? {
           canManage: currentUserPermissions.editCompanyInfo === true,
           companyId,
           name: firstString(company?.companyName, company?.name, profile?.companyName, fullName),
@@ -324,7 +324,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               memberType: "contact",
               permissions: normalizeMemberPermissionFlags(),
             }))),
-        }}
+        } : undefined}
       />
     </div>
   );
