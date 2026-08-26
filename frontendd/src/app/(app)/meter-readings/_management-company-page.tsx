@@ -43,6 +43,8 @@ interface ApartmentMeterData {
   apartment: string;
   building: string;
   buildingLabel: string;
+  residentEmail?: string;
+  ownerEmail?: string;
   meters: MeterInfo[];
 }
 
@@ -88,6 +90,20 @@ interface EmailDeliveryLogItem {
   apartmentId?: string;
   metadata?: Record<string, unknown>;
 }
+
+interface EmailDeliveryGroup {
+  key: string;
+  utility: UtilityTab;
+  stage: "start" | "end" | "close";
+  date: string;
+  total: number;
+  success: number;
+  error: number;
+  lastAt?: string | null;
+}
+
+type EmailDeliveryRecipientStatus = "success" | "error" | "missing";
+type EmailDeliveryRecipientFilter = "all" | EmailDeliveryRecipientStatus;
 
 interface ManualReminderResult {
   sent: number;
@@ -539,6 +555,8 @@ function buildManagementMeterReadingsState(initialData: MeterReadingsInitialData
       apartment: text(apartment.number, apartment.apartmentNumber, apartment.label, apartment.name, apartmentId),
       building: buildingId || buildingLabel,
       buildingLabel,
+      residentEmail: text(apartment.residentEmail),
+      ownerEmail: text(apartment.ownerEmail),
       meters: [...configuredMeters, ...fallbackMeters],
     });
   });
@@ -720,7 +738,10 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
   const [emailDeliveries, setEmailDeliveries] = useState<EmailDeliveryLogItem[]>([]);
   const [emailStatsLoading, setEmailStatsLoading] = useState(false);
   const [emailDeliveryOpen, setEmailDeliveryOpen] = useState(false);
+  const [expandedEmailDeliveryGroups, setExpandedEmailDeliveryGroups] = useState<Set<string>>(new Set());
+  const [emailRecipientFilter, setEmailRecipientFilter] = useState<EmailDeliveryRecipientFilter>("all");
   const [manualReminderSending, setManualReminderSending] = useState(false);
+  const [resendingDeliveryKey, setResendingDeliveryKey] = useState<string | null>(null);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const mobileActionsRef = React.useRef<HTMLDivElement | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
@@ -1674,7 +1695,7 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
         type: "meterReadingReminder",
         buildingId: effectiveBuilding,
         deliveryKeyPrefix: "meter-reading-reminder:",
-        limit: "200",
+        limit: "2000",
       });
       const deliveries = await apiFetch<EmailDeliveryLogItem[]>(`/emails/deliveries?${deliveryQuery.toString()}`, {
         staleTimeMs: 5_000,
@@ -1852,6 +1873,139 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
       setManualReminderSending(false);
     }
   }, [effectiveBuilding, effectivePeriodTab, loadEmailStats, manualReminderSending, notify, t]);
+
+  const emailDeliveryGroups = React.useMemo(() => {
+    const groups = new Map<string, EmailDeliveryGroup>();
+
+    emailDeliveries.forEach((item) => {
+      const parts = item.deliveryKey?.split(":") ?? [];
+      if (
+        parts[0] !== "meter-reading-reminder" ||
+        (parts[2] !== "water" && parts[2] !== "electricity") ||
+        (parts[3] !== "start" && parts[3] !== "end" && parts[3] !== "close") ||
+        !parts[4]
+      ) {
+        return;
+      }
+
+      const key = parts.slice(0, 5).join(":");
+      const existing = groups.get(key) ?? {
+        key,
+        utility: parts[2] as UtilityTab,
+        stage: parts[3] as "start" | "end" | "close",
+        date: parts[4],
+        total: 0,
+        success: 0,
+        error: 0,
+        lastAt: null,
+      };
+
+      existing.total += 1;
+      if (item.status === "success") existing.success += 1;
+      if (item.status === "error") existing.error += 1;
+      if (item.createdAt && (!existing.lastAt || new Date(item.createdAt).getTime() > new Date(existing.lastAt).getTime())) {
+        existing.lastAt = item.createdAt;
+      }
+      groups.set(key, existing);
+    });
+
+    return Array.from(groups.values()).sort((a, b) => (
+      new Date(b.lastAt ?? 0).getTime() - new Date(a.lastAt ?? 0).getTime()
+    ));
+  }, [emailDeliveries]);
+
+  const orderedBuildingApartments = React.useMemo(() => (
+    buildingScopedApartments
+      .slice()
+      .sort((left, right) => left.apartment.localeCompare(right.apartment, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }))
+  ), [buildingScopedApartments]);
+
+  const emailDeliveryRowsForGroup = React.useCallback((groupKey: string) => {
+    return orderedBuildingApartments
+      .map((apartment) => {
+        const attempts = emailDeliveries
+          .filter((item) => item.apartmentId === apartment.apartmentId && item.deliveryKey?.startsWith(`${groupKey}:`))
+          .sort((left, right) => new Date(right.createdAt ?? 0).getTime() - new Date(left.createdAt ?? 0).getTime());
+        const successful = attempts.find((item) => item.status === "success");
+        const latest = successful ?? attempts[0];
+        const status: EmailDeliveryRecipientStatus = successful ? "success" : latest?.status === "error" ? "error" : "missing";
+        return {
+          id: apartment.apartmentId,
+          apartment: apartment.apartment,
+          email: latest?.to || apartment.residentEmail || apartment.ownerEmail || "",
+          status,
+          createdAt: latest?.createdAt ?? null,
+          errorMessage: status === "error" ? latest?.errorMessage : undefined,
+        };
+      })
+      .filter((item) => emailRecipientFilter === "all" || item.status === emailRecipientFilter);
+  }, [emailDeliveries, emailRecipientFilter, orderedBuildingApartments]);
+
+  const resendMissingAutoReminder = React.useCallback(async (deliveryKey: string) => {
+    if (resendingDeliveryKey) return;
+
+    setResendingDeliveryKey(deliveryKey);
+    try {
+      const result = await apiFetch<ManualReminderResult & { skippedAlreadySent?: number }>("/meter-readings/reminders/resend-missing", {
+        method: "POST",
+        body: JSON.stringify({
+          deliveryKey,
+          language: locale,
+        }),
+      });
+      notify.success(t("emailDeliveryResendResult", {
+        sent: result.sent,
+        failed: result.failed,
+        skipped: result.skippedNoEmail + result.skippedSubmitted + (result.skippedAlreadySent ?? 0),
+      }));
+      await loadEmailStats();
+    } catch (error) {
+      console.error("Failed to resend automatic reminders", error);
+      notify.error(error instanceof Error ? error.message : t("emailDeliveryResendFailed"));
+    } finally {
+      setResendingDeliveryKey(null);
+    }
+  }, [loadEmailStats, locale, notify, resendingDeliveryKey, t]);
+
+  const resendAllMissingAutoReminders = React.useCallback(async () => {
+    if (resendingDeliveryKey || emailDeliveryGroups.length === 0) return;
+
+    setResendingDeliveryKey("__all__");
+    const total = { sent: 0, failed: 0, skipped: 0 };
+    try {
+      for (const group of emailDeliveryGroups) {
+        const result = await apiFetch<ManualReminderResult & { skippedAlreadySent?: number }>("/meter-readings/reminders/resend-missing", {
+          method: "POST",
+          body: JSON.stringify({
+            deliveryKey: group.key,
+            language: locale,
+          }),
+        });
+        total.sent += result.sent;
+        total.failed += result.failed;
+        total.skipped += result.skippedNoEmail + result.skippedSubmitted + (result.skippedAlreadySent ?? 0);
+      }
+      notify.success(t("emailDeliveryResendResult", total));
+      await loadEmailStats();
+    } catch (error) {
+      console.error("Failed to resend all automatic reminders", error);
+      notify.error(error instanceof Error ? error.message : t("emailDeliveryResendFailed"));
+    } finally {
+      setResendingDeliveryKey(null);
+    }
+  }, [emailDeliveryGroups, loadEmailStats, locale, notify, resendingDeliveryKey, t]);
+
+  const toggleEmailDeliveryGroup = React.useCallback((key: string) => {
+    setExpandedEmailDeliveryGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   React.useEffect(() => {
     if ((hasWaterTab || hasElectricityTab) && activeTab !== effectiveTab) {
@@ -2281,7 +2435,7 @@ ${xmlRows}
                 </div>
                 {emailDeliveryOpen ? (
                   <>
-                    <div className="grid gap-2 sm:grid-cols-4">
+                    <div className="hidden">
                       {[
                         { label: t("emailStatsTotal"), value: emailStats?.total ?? 0, className: "text-slate-900" },
                         { label: t("emailStatsSuccess"), value: emailStats?.success ?? 0, className: "text-emerald-700" },
@@ -2294,7 +2448,7 @@ ${xmlRows}
                         </div>
                       ))}
                     </div>
-                    <div className="mt-3 text-xs font-medium text-slate-500">
+                    <div className="hidden">
                       {emailStats?.lastSentAt
                         ? t("emailStatsLastSent", { date: new Date(emailStats.lastSentAt).toLocaleString(locale) })
                         : t("emailStatsNoSent")}
@@ -2304,47 +2458,164 @@ ${xmlRows}
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                           {t("emailDeliveryListTitle")}
                         </div>
-                        <div className="text-xs font-medium text-slate-500">
-                          {t("emailDeliveryListCount", { count: emailDeliveries.length })}
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <div className="text-xs font-medium text-slate-500">
+                            {t("emailDeliveryListCount", { count: emailDeliveryGroups.length })}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => resendAllMissingAutoReminders()}
+                            disabled={Boolean(resendingDeliveryKey) || emailDeliveryGroups.length === 0}
+                            className="inline-flex h-8 items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {resendingDeliveryKey === "__all__" ? t("emailDeliveryResending") : t("emailDeliveryResendAllMissing")}
+                          </button>
                         </div>
                       </div>
-                      {emailDeliveries.length > 0 ? (
+                      {emailDeliveryGroups.length > 0 ? (
                         <div className="max-h-64 overflow-auto">
                           <table className="min-w-full text-left text-xs">
                             <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                               <tr>
-                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryApartment")}</th>
-                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryEmail")}</th>
-                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryStatus")}</th>
+                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryReminder")}</th>
+                                <th className="px-3 py-2 font-semibold">{t("emailDeliverySent")}</th>
+                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryErrors")}</th>
                                 <th className="px-3 py-2 font-semibold">{t("emailDeliveryTime")}</th>
-                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryError")}</th>
+                                <th className="px-3 py-2 font-semibold">{t("emailDeliveryAction")}</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                              {emailDeliveries.map((item) => {
-                                const apartmentLabel = item.apartmentId
-                                  ? apartments.find((apartment) => apartment.id === item.apartmentId || apartment.apartmentId === item.apartmentId)?.apartment
-                                  : "";
+                              {emailDeliveryGroups.map((group) => {
+                                const isResending = resendingDeliveryKey === group.key;
+                                const isExpanded = expandedEmailDeliveryGroups.has(group.key);
+                                const recipientRows = emailDeliveryRowsForGroup(group.key);
                                 return (
-                                  <tr key={item.id} className="align-top">
-                                    <td className="px-3 py-2 font-medium text-slate-700">{apartmentLabel || item.apartmentId || "—"}</td>
-                                    <td className="px-3 py-2 text-slate-600">{item.to || "—"}</td>
-                                    <td className="px-3 py-2">
-                                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                                        item.status === "success"
-                                          ? "bg-emerald-50 text-emerald-700"
-                                          : "bg-rose-50 text-rose-700"
-                                      }`}>
-                                        {item.status === "success" ? t("emailDeliverySuccess") : t("emailDeliveryFailed")}
-                                      </span>
-                                    </td>
-                                    <td className="px-3 py-2 text-slate-500">
-                                      {item.createdAt ? new Date(item.createdAt).toLocaleString(locale) : "—"}
-                                    </td>
-                                    <td className="max-w-[220px] px-3 py-2 text-rose-700">
-                                      {item.errorMessage || "—"}
-                                    </td>
-                                  </tr>
+                                  <React.Fragment key={group.key}>
+                                    <tr className="align-top">
+                                      <td className="px-3 py-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleEmailDeliveryGroup(group.key)}
+                                          className="flex min-w-0 items-start gap-2 text-left"
+                                        >
+                                          <span className={`mt-0.5 text-slate-400 transition ${isExpanded ? "rotate-90" : ""}`}>
+                                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                              <path d="m9 18 6-6-6-6" />
+                                            </svg>
+                                          </span>
+                                          <span>
+                                            <span className="block font-semibold text-slate-700">
+                                              {group.utility === "water" ? t("water") : t("electricity")} · {t(`emailDeliveryStage_${group.stage}`)}
+                                            </span>
+                                            <span className="mt-0.5 block text-slate-500">{group.date}</span>
+                                          </span>
+                                        </button>
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                          {group.success}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                          group.error > 0 ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-500"
+                                        }`}>
+                                          {group.error}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2 text-slate-500">
+                                        {group.lastAt ? new Date(group.lastAt).toLocaleString(locale) : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => resendMissingAutoReminder(group.key)}
+                                          disabled={Boolean(resendingDeliveryKey)}
+                                          className="inline-flex h-8 items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                          {isResending ? t("emailDeliveryResending") : t("emailDeliveryResendMissing")}
+                                        </button>
+                                      </td>
+                                    </tr>
+                                    {isExpanded ? (
+                                      <tr>
+                                        <td colSpan={5} className="bg-slate-50 px-3 py-3">
+                                          <div className="mb-2 flex flex-wrap gap-1.5">
+                                            {[
+                                              { value: "all" as const, label: t("emailDeliveryFilterAll") },
+                                              { value: "missing" as const, label: t("emailDeliveryFilterMissing") },
+                                              { value: "error" as const, label: t("emailDeliveryFilterErrors") },
+                                              { value: "success" as const, label: t("emailDeliveryFilterSuccess") },
+                                            ].map((filter) => (
+                                              <button
+                                                key={filter.value}
+                                                type="button"
+                                                onClick={() => setEmailRecipientFilter(filter.value)}
+                                                className={`h-8 rounded-md border px-2.5 text-[11px] font-semibold transition ${
+                                                  emailRecipientFilter === filter.value
+                                                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                                                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                                }`}
+                                              >
+                                                {filter.label}
+                                              </button>
+                                            ))}
+                                          </div>
+                                          <div className="max-h-56 overflow-auto rounded-md border border-slate-200 bg-white">
+                                            <table className="min-w-full text-left text-xs">
+                                              <thead className="sticky top-0 bg-white text-[10px] uppercase tracking-wide text-slate-500">
+                                                <tr>
+                                                  <th className="px-3 py-2 font-semibold">{t("emailDeliveryApartment")}</th>
+                                                  <th className="px-3 py-2 font-semibold">{t("emailDeliveryEmail")}</th>
+                                                  <th className="px-3 py-2 font-semibold">{t("emailDeliveryStatus")}</th>
+                                                  <th className="px-3 py-2 font-semibold">{t("emailDeliveryTime")}</th>
+                                                  <th className="px-3 py-2 font-semibold">{t("emailDeliveryError")}</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-slate-100">
+                                                {recipientRows.map((item) => {
+                                                  return (
+                                                    <tr key={item.id} className="align-top">
+                                                      <td className="px-3 py-2 font-medium text-slate-700">{item.apartment || "—"}</td>
+                                                      <td className="px-3 py-2 text-slate-600">{item.email || "—"}</td>
+                                                      <td className="px-3 py-2">
+                                                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                                          item.status === "success"
+                                                            ? "bg-emerald-50 text-emerald-700"
+                                                            : item.status === "error"
+                                                              ? "bg-rose-50 text-rose-700"
+                                                              : "bg-amber-50 text-amber-700"
+                                                        }`}>
+                                                          {item.status === "success"
+                                                            ? t("emailDeliverySuccess")
+                                                            : item.status === "error"
+                                                              ? t("emailDeliveryFailed")
+                                                              : t("emailDeliveryMissing")}
+                                                        </span>
+                                                      </td>
+                                                      <td className="px-3 py-2 text-slate-500">
+                                                        {item.createdAt ? new Date(item.createdAt).toLocaleString(locale) : "—"}
+                                                      </td>
+                                                      <td className="max-w-[220px] px-3 py-2 text-rose-700">
+                                                        {item.errorMessage || "—"}
+                                                      </td>
+                                                    </tr>
+                                                  );
+                                                })}
+                                                {recipientRows.length === 0 ? (
+                                                  <tr>
+                                                    <td colSpan={5} className="px-3 py-4 text-center text-sm text-slate-500">
+                                                      {t("emailDeliveryFilterEmpty")}
+                                                    </td>
+                                                  </tr>
+                                                ) : null}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ) : null}
+                                  </React.Fragment>
                                 );
                               })}
                             </tbody>

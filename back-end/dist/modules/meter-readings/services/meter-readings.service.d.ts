@@ -77,4 +77,13 @@ export declare class MeterReadingsService {
         skippedSubmitted: number;
         totalApartments: number;
     }>;
+    resendMissingAutoReminder(user: RequestUser, payload: Record<string, unknown>): Promise<{
+        success: boolean;
+        sent: number;
+        failed: number;
+        skippedAlreadySent: number;
+        skippedNoEmail: number;
+        skippedSubmitted: number;
+        totalApartments: number;
+    }>;
 }

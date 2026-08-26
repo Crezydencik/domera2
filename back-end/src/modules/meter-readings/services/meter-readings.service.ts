@@ -60,4 +60,8 @@ export class MeterReadingsService {
   sendManualReminder(user: RequestUser, payload: Record<string, unknown>) {
     return this.reminderService.sendManualReminder(user, payload);
   }
+
+  resendMissingAutoReminder(user: RequestUser, payload: Record<string, unknown>) {
+    return this.reminderService.resendMissingAutoReminder(user, payload);
+  }
 }

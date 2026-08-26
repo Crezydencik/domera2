@@ -181,4 +181,14 @@ export class MeterReadingsController {
   ) {
     return this.meterReadingsService.sendManualReminder(user, body);
   }
+
+  @Post('reminders/resend-missing')
+  @Roles(...STAFF_ROLES)
+  @ApiOperation({ summary: 'Resend an automatic meter reading reminder to missing recipients' })
+  async resendMissingAutoReminder(
+    @CurrentUser() user: RequestUser,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.meterReadingsService.resendMissingAutoReminder(user, body);
+  }
 }

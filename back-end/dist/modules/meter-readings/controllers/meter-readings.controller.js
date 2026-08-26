@@ -63,6 +63,9 @@ let MeterReadingsController = class MeterReadingsController {
     async sendManualReminder(user, body) {
         return this.meterReadingsService.sendManualReminder(user, body);
     }
+    async resendMissingAutoReminder(user, body) {
+        return this.meterReadingsService.resendMissingAutoReminder(user, body);
+    }
 };
 exports.MeterReadingsController = MeterReadingsController;
 __decorate([
@@ -199,6 +202,16 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], MeterReadingsController.prototype, "sendManualReminder", null);
+__decorate([
+    (0, common_1.Post)('reminders/resend-missing'),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, swagger_1.ApiOperation)({ summary: 'Resend an automatic meter reading reminder to missing recipients' }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], MeterReadingsController.prototype, "resendMissingAutoReminder", null);
 exports.MeterReadingsController = MeterReadingsController = __decorate([
     (0, swagger_1.ApiTags)('Meter Readings'),
     (0, common_1.Controller)('meter-readings'),

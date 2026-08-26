@@ -149,7 +149,7 @@ export class EmailLogService {
     if (query.apartmentId) ref = ref.where('apartmentId', '==', query.apartmentId);
 
     const snapshot = await ref.get();
-    const limit = Math.min(500, Math.max(1, query.limit ?? 200));
+    const limit = Math.min(5000, Math.max(1, query.limit ?? 200));
     const prefix = query.deliveryKeyPrefix?.trim();
 
     return snapshot.docs

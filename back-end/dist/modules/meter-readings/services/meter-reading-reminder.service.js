@@ -13,12 +13,14 @@ exports.MeterReadingReminderService = void 0;
 const common_1 = require("@nestjs/common");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const company_payload_service_1 = require("../../company/services/company-payload.service");
+const email_log_service_1 = require("../../emails/services/email-log.service");
 const email_service_1 = require("../../emails/services/email.service");
 const meter_reading_access_service_1 = require("./meter-reading-access.service");
 let MeterReadingReminderService = class MeterReadingReminderService {
-    constructor(firebaseAdminService, emailService, accessService, companyPayloadService) {
+    constructor(firebaseAdminService, emailService, emailLogService, accessService, companyPayloadService) {
         this.firebaseAdminService = firebaseAdminService;
         this.emailService = emailService;
+        this.emailLogService = emailLogService;
         this.accessService = accessService;
         this.companyPayloadService = companyPayloadService;
     }
@@ -133,6 +135,88 @@ let MeterReadingReminderService = class MeterReadingReminderService {
         }
         return result;
     }
+    async resendMissingAutoReminder(user, payload) {
+        this.accessService.assertAuthenticated(user);
+        const companyId = this.accessService.requireStaffCompanyId(user);
+        const deliveryKey = this.firstString(payload.deliveryKey);
+        const parsed = this.parseAutoReminderDeliveryKey(deliveryKey);
+        if (!parsed) {
+            throw new common_1.BadRequestException('Valid automatic reminder deliveryKey is required');
+        }
+        const { buildingId, utility, kind } = parsed;
+        const db = this.firebaseAdminService.firestore;
+        const buildingSnap = await db.collection('buildings').doc(buildingId).get();
+        if (!buildingSnap.exists) {
+            throw new common_1.NotFoundException('Building not found');
+        }
+        const building = buildingSnap.data();
+        const buildingCompanyId = this.buildingCompanyId(building);
+        if (!buildingCompanyId || buildingCompanyId !== companyId) {
+            throw new common_1.ForbiddenException('Access denied for building');
+        }
+        if (user.role === 'Accountant') {
+            const companySnap = await db.collection('companies').doc(companyId).get();
+            const permissions = companySnap.exists
+                ? this.companyPayloadService.getCompanyMemberPermissions(companySnap.data(), user.uid)
+                : null;
+            if (!permissions?.manageMeterReadings) {
+                throw new common_1.ForbiddenException('You do not have permission to edit meter readings');
+            }
+        }
+        const period = this.periodForBuilding(building, utility);
+        const apartmentsSnapshot = await db.collection('apartments').where('buildingId', '==', buildingId).get();
+        const fallbackLanguage = this.emailLanguage(payload.language);
+        const now = new Date();
+        const result = {
+            success: true,
+            sent: 0,
+            failed: 0,
+            skippedAlreadySent: 0,
+            skippedNoEmail: 0,
+            skippedSubmitted: 0,
+            totalApartments: apartmentsSnapshot.size,
+        };
+        for (const apartmentDoc of apartmentsSnapshot.docs) {
+            const apartment = apartmentDoc.data();
+            const apartmentDeliveryKey = `${deliveryKey}:${apartmentDoc.id}`;
+            if (await this.emailLogService.hasSuccessfulDeliveryKey(apartmentDeliveryKey)) {
+                result.skippedAlreadySent += 1;
+                continue;
+            }
+            const to = this.firstString(apartment.residentEmail, apartment.ownerEmail);
+            if (!to) {
+                result.skippedNoEmail += 1;
+                continue;
+            }
+            if (kind !== 'start' && this.hasCurrentMonthReading(apartment, utility, now)) {
+                result.skippedSubmitted += 1;
+                continue;
+            }
+            try {
+                await this.emailService.sendMeterReadingReminder({
+                    to,
+                    language: this.emailLanguage(apartment.language, fallbackLanguage),
+                    submissionLink: '',
+                    companyId,
+                    buildingId,
+                    apartmentId: apartmentDoc.id,
+                    deliveryKey: apartmentDeliveryKey,
+                    brandName: this.buildingCompanyName(building),
+                    buildingName: this.firstString(building.name, building.address, buildingId),
+                    apartmentNumber: this.firstString(apartment.apartment, apartment.apartmentNumber, apartment.number),
+                    periodLabel: period ? this.periodLabel(period, now) : undefined,
+                    deadline: period ? this.periodDateLabel(period.endDate, period.monthly, now) : undefined,
+                    reminderStage: kind,
+                    daysUntilDeadline: period ? this.daysUntilDeadline(period, now) : undefined,
+                });
+                result.sent += 1;
+            }
+            catch {
+                result.failed += 1;
+            }
+        }
+        return result;
+    }
     periodForBuilding(building, utility) {
         const readingConfig = building.readingConfig && typeof building.readingConfig === 'object'
             ? building.readingConfig
@@ -172,6 +256,17 @@ let MeterReadingReminderService = class MeterReadingReminderService {
                 return String(value);
         }
         return '';
+    }
+    parseAutoReminderDeliveryKey(value) {
+        const [prefix, buildingId, utility, kind, targetDate] = value.split(':');
+        if (prefix !== 'meter-reading-reminder' ||
+            !buildingId ||
+            (utility !== 'water' && utility !== 'electricity') ||
+            (kind !== 'start' && kind !== 'end' && kind !== 'close') ||
+            !/^\d{4}-\d{2}-\d{2}$/.test(targetDate ?? '')) {
+            return null;
+        }
+        return { buildingId, utility, kind, targetDate };
     }
     emailLanguage(...values) {
         for (const value of values) {
@@ -246,6 +341,7 @@ exports.MeterReadingReminderService = MeterReadingReminderService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService,
         email_service_1.EmailService,
+        email_log_service_1.EmailLogService,
         meter_reading_access_service_1.MeterReadingAccessService,
         company_payload_service_1.CompanyPayloadService])
 ], MeterReadingReminderService);
