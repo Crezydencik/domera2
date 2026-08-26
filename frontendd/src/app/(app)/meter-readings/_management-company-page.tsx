@@ -2020,11 +2020,19 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
     }
   }, [effectivePeriodTab, periodAvailableTabs.length, periodTab]);
 
-  const filteredApartments = apartments.filter((item) => {
-    if (effectiveBuilding && item.building !== effectiveBuilding) return false;
-    if (searchQuery && !item.apartment.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    if (statusFilter !== "all") {
-      // Проверяем, есть ли хотя бы один счётчик с нужным статусом
+  const filteredApartments = apartments
+    .map((item) => ({
+      ...item,
+      meters: item.meters.filter((meter) => meterMatchesTab(meter, effectiveTab)),
+    }))
+    .filter((item) => {
+      if (item.meters.length === 0) return false;
+      if (effectiveBuilding && item.building !== effectiveBuilding) return false;
+      if (searchQuery && !item.apartment.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      if (statusFilter === "all") return true;
+
+      // Фильтр статуса должен смотреть только на счётчики активной вкладки,
+      // иначе квартира может попасть в список по электричеству, а отображаться по воде.
       const dates = item.meters
         .map((m) => m.latestReading?.submittedAt)
         .filter((d): d is string => Boolean(d) && d !== "â€”");
@@ -2034,17 +2042,14 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
         .filter(Boolean);
       const latestMonthKey = monthKeys.length > 0 ? monthKeys.sort().reverse()[0] : undefined;
       const periodStatus = getPeriodStatus(latestDate, latestMonthKey);
-      const hasReadingStatus = item.meters.some((m) => m.latestReading?.status === statusFilter);
-      if (statusFilter === "pending") return periodStatus === "pending" || hasReadingStatus;
+      if (statusFilter === "pending") return periodStatus === "pending";
       if (statusFilter === "overdue") return periodStatus === "overdue";
-      if (statusFilter === "submitted") return periodStatus === "submitted" || hasReadingStatus;
-      if (!hasReadingStatus) return false;
-    }
-    return true;
-  }).map((item) => ({
-    ...item,
-    meters: item.meters.filter((meter) => meterMatchesTab(meter, effectiveTab)),
-  })).filter((item) => item.meters.length > 0);
+      if (statusFilter === "submitted") return periodStatus === "submitted";
+      if (statusFilter === "verified") {
+        return item.meters.some((m) => m.latestReading?.status === "verified");
+      }
+      return false;
+    });
 
   const buildingApartments = buildingScopedApartments
     .map((item) => ({
