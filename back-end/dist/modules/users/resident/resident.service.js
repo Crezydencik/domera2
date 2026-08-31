@@ -91,9 +91,12 @@ let ResidentService = class ResidentService {
             }
         }
         const apartmentRefs = Array.from(apartmentIds).map((id) => db.collection('apartments').doc(id));
-        const [individualSnaps, residentApartmentsSnap, ownerIdApartmentsSnap, ownerEmailApartmentsSnap] = await Promise.all([
+        const [individualSnaps, residentApartmentsSnap, residentEmailApartmentsSnap, ownerIdApartmentsSnap, ownerEmailApartmentsSnap] = await Promise.all([
             apartmentRefs.length > 0 ? db.getAll(...apartmentRefs) : Promise.resolve([]),
             db.collection('apartments').where('residentId', '==', user.uid).get(),
+            normalizedEmail
+                ? db.collection('apartments').where('residentEmail', '==', normalizedEmail).get()
+                : Promise.resolve(null),
             db.collection('apartments').where('ownerId', '==', user.uid).get(),
             normalizedEmail
                 ? db.collection('apartments').where('ownerEmail', '==', normalizedEmail).get()
@@ -113,6 +116,14 @@ let ResidentService = class ResidentService {
                 ...doc.data(),
             });
         }
+        if (residentEmailApartmentsSnap) {
+            for (const doc of residentEmailApartmentsSnap.docs) {
+                mergedApartments.set(doc.id, {
+                    id: doc.id,
+                    ...doc.data(),
+                });
+            }
+        }
         for (const snap of [ownerIdApartmentsSnap, ownerEmailApartmentsSnap]) {
             if (!snap)
                 continue;
@@ -128,6 +139,8 @@ let ResidentService = class ResidentService {
         }
         const hasConfirmedAccess = (apartment) => {
             const isPrimaryResident = this.toOptionalString(apartment.residentId) === user.uid;
+            const residentEmail = (0, invitation_token_1.normalizeEmail)(this.toOptionalString(apartment.residentEmail) ?? '');
+            const isResidentByEmail = Boolean(normalizedEmail && residentEmail === normalizedEmail);
             const ownerId = this.toOptionalString(apartment.ownerId);
             const ownerEmail = (0, invitation_token_1.normalizeEmail)(this.toOptionalString(apartment.ownerEmail) ?? '');
             const isActivatedOwner = apartment.ownerActivated === true &&
@@ -137,19 +150,25 @@ let ResidentService = class ResidentService {
                 if (!tenant || typeof tenant !== 'object')
                     return false;
                 const t = tenant;
-                if (this.toOptionalString(t.userId) === user.uid) {
-                    const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
-                    const until = typeof t.until === 'string' ? new Date(t.until) : null;
-                    const now = new Date();
-                    if (fromDate && now < fromDate)
-                        return false;
-                    if (until && now > until)
-                        return false;
-                    return true;
-                }
-                return false;
+                const status = this.toOptionalString(t.status)?.toLowerCase() ?? '';
+                if (['removed', 'deleted', 'revoked', 'inactive'].includes(status))
+                    return false;
+                const tenantUserId = this.toOptionalString(t.userId);
+                const tenantEmail = (0, invitation_token_1.normalizeEmail)(this.toOptionalString(t.email) ?? '');
+                const matches = tenantUserId === user.uid ||
+                    Boolean(normalizedEmail && tenantEmail === normalizedEmail);
+                if (!matches)
+                    return false;
+                const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
+                const until = typeof t.until === 'string' ? new Date(t.until) : null;
+                const now = new Date();
+                if (fromDate && now < fromDate)
+                    return false;
+                if (until && now > until)
+                    return false;
+                return true;
             });
-            return isPrimaryResident || isActivatedOwner || isTenant;
+            return isPrimaryResident || isResidentByEmail || isActivatedOwner || isTenant;
         };
         const apartments = Array.from(mergedApartments.values())
             .filter(hasConfirmedAccess)

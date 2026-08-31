@@ -93,13 +93,16 @@ let ApartmentAccessService = class ApartmentAccessService {
         }
         const normalizedEmail = (0, invitation_token_1.normalizeEmail)((typeof user.email === 'string' ? user.email : typeof userData.email === 'string' ? userData.email : '') ?? '');
         if (normalizedEmail) {
-            const [residentSnap, ownerIdSnap, ownerEmailSnap] = await Promise.all([
+            const [residentSnap, residentEmailSnap, ownerIdSnap, ownerEmailSnap] = await Promise.all([
                 this.firebaseAdminService.firestore.collection('apartments').where('residentId', '==', user.uid).get(),
+                this.firebaseAdminService.firestore.collection('apartments').where('residentEmail', '==', normalizedEmail).get(),
                 this.firebaseAdminService.firestore.collection('apartments').where('ownerId', '==', user.uid).get(),
                 this.firebaseAdminService.firestore.collection('apartments').where('ownerEmail', '==', normalizedEmail).get(),
             ]);
-            for (const doc of residentSnap.docs) {
-                apartmentIds.add(doc.id);
+            for (const snap of [residentSnap, residentEmailSnap]) {
+                for (const doc of snap.docs) {
+                    apartmentIds.add(doc.id);
+                }
             }
             for (const snap of [ownerIdSnap, ownerEmailSnap]) {
                 for (const doc of snap.docs) {
@@ -121,17 +124,24 @@ let ApartmentAccessService = class ApartmentAccessService {
             .filter((snap) => {
             const apartment = snap.data();
             const residentId = typeof apartment.residentId === 'string' ? apartment.residentId : '';
+            const residentEmail = typeof apartment.residentEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.residentEmail) : '';
             const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
             const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
-            const isResident = residentId === user.uid;
+            const isResident = residentId === user.uid ||
+                Boolean(normalizedUserEmail && residentEmail === normalizedUserEmail);
             const isOwner = apartment.ownerActivated === true &&
                 ((ownerId && ownerId === user.uid) || Boolean(normalizedUserEmail && ownerEmail === normalizedUserEmail));
             const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
             const isTenant = tenants.some((tenant) => {
                 if (!tenant || typeof tenant !== 'object')
                     return false;
-                return typeof tenant.userId === 'string'
-                    && tenant.userId === user.uid;
+                const record = tenant;
+                const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
+                if (['removed', 'deleted', 'revoked', 'inactive'].includes(status))
+                    return false;
+                const tenantUserId = typeof record.userId === 'string' ? record.userId.trim() : '';
+                const tenantEmail = typeof record.email === 'string' ? (0, invitation_token_1.normalizeEmail)(record.email) : '';
+                return tenantUserId === user.uid || Boolean(normalizedUserEmail && tenantEmail === normalizedUserEmail);
             });
             return isResident || isOwner || isTenant;
         })

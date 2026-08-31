@@ -257,6 +257,14 @@ function compareReadingsAscending(left: MeterReadingRecord, right: MeterReadingR
   return String(left.submittedAt).localeCompare(String(right.submittedAt));
 }
 
+function latestReadingForMonth(meter: MeterInfo | undefined, monthKey: string) {
+  if (!meter) return null;
+
+  return meter.readings
+    .filter((reading) => readingMonthKey(reading) === monthKey)
+    .sort((left, right) => String(right.submittedAt).localeCompare(String(left.submittedAt)))[0] ?? null;
+}
+
 function normalizeInitialMeterReadings(apartments: ApartmentMeterData[]) {
   return apartments.map((apartment) => ({
     ...apartment,
@@ -609,6 +617,10 @@ function parseReadingInput(value: string) {
 
 export default function BuildingPrimaryMeterPage({ initialData, canManageReadings = true }: Props) {
   const t = useTranslations("meterread");
+  const tr = React.useCallback((key: string, fallback: string) => {
+    const value = t(key);
+    return value === `meterread.${key}` ? fallback : value;
+  }, [t]);
   const initialState = React.useMemo(() => initialData ? buildManagementMeterReadingsState(initialData) : { apartments: [], managedBuildings: [] }, [initialData]);
   const [selectedBuildingId, setSelectedBuildingId] = React.useState("");
   const [buildingEntries, setBuildingEntries] = React.useState<BuildingMainMeterEntry[]>([]);
@@ -621,6 +633,7 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
   const [hotCurrentValueInput, setHotCurrentValueInput] = React.useState("");
   const [storageReady, setStorageReady] = React.useState(false);
   const [historyTab, setHistoryTab] = React.useState<"building" | "apartments">("building");
+  const [expandedMonthKeys, setExpandedMonthKeys] = React.useState<Set<string>>(() => new Set());
 
   const buildings = initialState.managedBuildings;
 
@@ -708,6 +721,17 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
   const totalMainConsumption = latestRow?.mainConsumptionTotal ?? 0;
   const totalResidentValue = latestRow?.residentTotal ?? 0;
   const totalDifferenceValue = latestRow?.differenceTotal ?? 0;
+  const toggleMonthExpanded = React.useCallback((targetMonthKey: string) => {
+    setExpandedMonthKeys((current) => {
+      const next = new Set(current);
+      if (next.has(targetMonthKey)) {
+        next.delete(targetMonthKey);
+      } else {
+        next.add(targetMonthKey);
+      }
+      return next;
+    });
+  }, []);
 
   const saveMainReading = React.useCallback(() => {
     if (!selectedBuildingId || !canManageReadings) return;
@@ -734,7 +758,7 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
   const width = 960;
   const height = 360;
   const padLeft = 72;
-  const padRight = 28;
+  const padRight = 76;
   const padTop = 24;
   const padBottom = 54;
   const chartMax = Math.max(
@@ -795,20 +819,41 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
     ...row,
     submittedApartmentCount: submittedApartmentsByMonth.get(row.monthKey) ?? 0,
   }));
-  const combinedChartMax = Math.max(
-    1,
-    ...combinedChartRows.flatMap((row) => [
+  const combinedConsumptionValues = combinedChartRows
+    .flatMap((row) => [
       row.coldMainConsumption,
       row.hotMainConsumption,
       row.residentCold,
       row.residentHot,
-      row.submittedApartmentCount,
-    ]).filter((value) => value > 0),
+    ])
+    .filter((value) => value > 0)
+    .sort((left, right) => right - left);
+  const combinedLargestValue = combinedConsumptionValues[0] ?? 0;
+  const combinedSecondLargestValue = combinedConsumptionValues[1] ?? combinedLargestValue;
+  const combinedHasOutlier =
+    combinedLargestValue > 0 &&
+    combinedSecondLargestValue > 0 &&
+    combinedLargestValue >= combinedSecondLargestValue * 4;
+  const combinedChartMax = Math.max(
+    1,
+    combinedHasOutlier ? combinedSecondLargestValue * 1.2 : combinedLargestValue,
   );
-  const combinedYFor = (value: number) => height - padBottom - (value / combinedChartMax) * (height - padTop - padBottom);
+  const submittedApartmentsMax = Math.max(
+    1,
+    selectedBuilding?.apartmentCount ?? 0,
+    ...combinedChartRows.map((row) => row.submittedApartmentCount),
+  );
+  const combinedChartValue = (value: number) => Math.min(value, combinedChartMax);
+  const combinedYFor = (value: number) => height - padBottom - (combinedChartValue(value) / combinedChartMax) * (height - padTop - padBottom);
+  const submittedApartmentsYFor = (value: number) => height - padBottom - (Math.min(value, submittedApartmentsMax) / submittedApartmentsMax) * (height - padTop - padBottom);
   const combinedTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
     ratio,
     value: combinedChartMax * ratio,
+    y: height - padBottom - ratio * (height - padTop - padBottom),
+  }));
+  const submittedApartmentTicks = [0, 0.5, 1].map((ratio) => ({
+    ratio,
+    value: submittedApartmentsMax * ratio,
     y: height - padBottom - ratio * (height - padTop - padBottom),
   }));
   const coldHousePoints = combinedChartRows.map((row, index) => `${xFor(index)},${combinedYFor(row.coldMainConsumption)}`).join(" ");
@@ -817,20 +862,56 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
   const hotApartmentsPoints = combinedChartRows.map((row, index) => `${xFor(index)},${combinedYFor(row.residentHot)}`).join(" ");
   const latestCombinedChartRow = combinedChartRows[combinedChartRows.length - 1] ?? null;
   const latestCombinedChartX = combinedChartRows.length > 0 ? xFor(combinedChartRows.length - 1) : 0;
+  const renderWaterPair = (coldValue: number | null, hotValue: number | null) => (
+    <div className="inline-grid min-w-[7.5rem] gap-1 text-right tabular-nums">
+      <div className="flex items-center justify-end gap-2 text-blue-700">
+        <span className="text-[11px] font-semibold uppercase text-blue-500">{t("coldWaterShort")}</span>
+        <span>{formatMaybeCubic(coldValue)}</span>
+      </div>
+      <div className="flex items-center justify-end gap-2 text-rose-700">
+        <span className="text-[11px] font-semibold uppercase text-rose-500">{t("hotWaterShort")}</span>
+        <span>{formatMaybeCubic(hotValue)}</span>
+      </div>
+    </div>
+  );
+  const apartmentBreakdownForMonth = (targetMonthKey: string) => buildingApartments
+    .map((apartment) => {
+      const coldMeter = apartment.meters.find((meter) => meter.meterKey === "coldmeterwater" || (!isHotWaterMeter(meter) && !isElectricityMeter(meter)));
+      const hotMeter = apartment.meters.find((meter) => meter.meterKey === "hotmeterwater" || isHotWaterMeter(meter));
+      const coldReading = latestReadingForMonth(coldMeter, targetMonthKey);
+      const hotReading = latestReadingForMonth(hotMeter, targetMonthKey);
+      const coldConsumption = coldReading ? readingConsumptionNumber(coldReading) : null;
+      const hotConsumption = hotReading ? readingConsumptionNumber(hotReading) : null;
+      const totalConsumption = coldConsumption !== null || hotConsumption !== null
+        ? Number(((coldConsumption ?? 0) + (hotConsumption ?? 0)).toFixed(3))
+        : null;
+
+      return {
+        apartmentId: apartment.apartmentId,
+        apartment: apartment.apartment,
+        coldCurrentValue: coldReading ? parseReadingInput(coldReading.currentValue) : null,
+        hotCurrentValue: hotReading ? parseReadingInput(hotReading.currentValue) : null,
+        coldConsumption,
+        hotConsumption,
+        totalConsumption,
+        hasReading: Boolean(coldReading || hotReading),
+      };
+    })
+    .sort((left, right) => left.apartment.localeCompare(right.apartment, undefined, { numeric: true, sensitivity: "base" }));
 
   return (
     <>
-      <div className="space-y-5">
-        <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-5 shadow-sm">
+      <div className="max-w-full space-y-4 overflow-hidden sm:space-y-5">
+        <div className="rounded-lg border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-4 shadow-sm sm:rounded-[28px] sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-3xl">
+            <div className="min-w-0 max-w-3xl">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("buildingMainMeterEyebrow")}</div>
-              <h1 className="mt-2 text-2xl font-semibold text-slate-950">{t("buildingMainMeterTitle")}</h1>
+              <h1 className="mt-2 text-xl font-semibold text-slate-950 sm:text-2xl">{t("buildingMainMeterTitle")}</h1>
               <p className="mt-2 text-sm leading-6 text-slate-600">{t("buildingMainMeterDescription")}</p>
             </div>
             {selectedBuilding ? (
-              <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-right shadow-sm">
-                <div className="text-sm font-semibold text-slate-900">{selectedBuilding.label}</div>
+              <div className="w-full rounded-lg border border-slate-200 bg-white/90 px-4 py-3 text-left shadow-sm sm:w-auto sm:rounded-2xl sm:text-right">
+                <div className="break-words text-sm font-semibold text-slate-900">{selectedBuilding.label}</div>
                 <div className="mt-1 text-xs uppercase tracking-wide text-slate-500">{selectedBuilding.apartmentCount} {t("apts")}</div>
               </div>
             ) : null}
@@ -848,11 +929,11 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
           </div>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-          <div className="space-y-5">
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="grid min-w-0 max-w-full gap-4 xl:grid-cols-[minmax(0,1fr)_22rem] xl:gap-5">
+          <div className="min-w-0 space-y-4 sm:space-y-5">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
               <div className="flex flex-wrap items-end justify-between gap-4">
-                <div className="min-w-[18rem] flex-1">
+                <div className="min-w-0 flex-1">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("selectBuilding")}</div>
                   <div className="mt-2">
                     <select
@@ -869,22 +950,22 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
               </div>
             </div>
 
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
             <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("buildingStats")}</div>
                 <div className="mt-1 text-lg font-semibold text-slate-950">{t("buildingMainMeterTitle")}</div>
-                <div className="mt-1 text-sm text-slate-500">{t("buildingMainMeterCombinedChartDescription")}</div>
+                <div className="mt-1 text-sm text-slate-500">{tr("buildingMainMeterCombinedChartDescription", "Расход домового счётчика и показания жильцов по месяцам")}</div>
                 <div className="mt-2 text-xs font-medium text-slate-400">
-                  {t("buildingMainMeterCombinedChartUnits")}
+                  {tr("buildingMainMeterCombinedChartUnits", "Левая ось: m3. Правая ось: квартиры.")}
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <span className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700"><span className="h-2.5 w-2.5 rounded-full bg-sky-500" />{t("buildingMainMeterSeriesHouseCold")}</span>
-                <span className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />{t("buildingMainMeterSeriesHouseHot")}</span>
-                <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700"><span className="h-2.5 w-2.5 rounded-full bg-blue-700" />{t("buildingMainMeterSeriesApartmentsCold")}</span>
-                <span className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1.5 text-xs font-semibold text-pink-700"><span className="h-2.5 w-2.5 rounded-full bg-pink-600" />{t("buildingMainMeterSeriesApartmentsHot")}</span>
-                <span className="inline-flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700"><span className="h-2.5 w-2.5 rounded-full bg-violet-600" />{t("buildingMainMeterSeriesSubmittedApartments")}</span>
+              <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:w-auto xl:max-w-xl">
+                <span className="inline-flex min-w-0 items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-sky-500" /><span className="min-w-0 whitespace-normal break-words">{tr("buildingMainMeterSeriesHouseCold", "Дом ХВ")}</span></span>
+                <span className="inline-flex min-w-0 items-center gap-2 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-rose-500" /><span className="min-w-0 whitespace-normal break-words">{tr("buildingMainMeterSeriesHouseHot", "Дом ГВ")}</span></span>
+                <span className="inline-flex min-w-0 items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-700" /><span className="min-w-0 whitespace-normal break-words">{tr("buildingMainMeterSeriesApartmentsCold", "Квартиры ХВ")}</span></span>
+                <span className="inline-flex min-w-0 items-center gap-2 rounded-full bg-pink-50 px-3 py-1.5 text-xs font-semibold text-pink-700"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-pink-600" /><span className="min-w-0 whitespace-normal break-words">{tr("buildingMainMeterSeriesApartmentsHot", "Квартиры ГВ")}</span></span>
+                <span className="inline-flex min-w-0 items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 sm:col-span-2"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-violet-600" /><span className="min-w-0 whitespace-normal break-words">{tr("buildingMainMeterSeriesSubmittedApartments", "Квартиры с показаниями")}</span></span>
               </div>
             </div>
 
@@ -893,10 +974,11 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                 {t("buildingMainMeterEmpty")}
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-3">
-                <svg viewBox={`0 0 ${width} ${height}`} className="h-80 min-w-[760px] w-full overflow-visible">
+              <div className="overflow-x-auto rounded-lg border border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-2 sm:rounded-2xl sm:p-3">
+                <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full min-w-[680px] overflow-visible sm:h-80 sm:min-w-[760px]">
                   <line x1={padLeft} y1={height - padBottom} x2={width - padRight} y2={height - padBottom} stroke="#cbd5e1" strokeWidth="1" />
                   <line x1={padLeft} y1={padTop} x2={padLeft} y2={height - padBottom} stroke="#cbd5e1" strokeWidth="1" />
+                  <line x1={width - padRight} y1={padTop} x2={width - padRight} y2={height - padBottom} stroke="#ddd6fe" strokeWidth="1" />
                   {combinedTicks.map((tick) => (
                     <g key={tick.ratio}>
                       <line x1={padLeft} y1={tick.y} x2={width - padRight} y2={tick.y} stroke="#e2e8f0" strokeWidth="1" />
@@ -905,6 +987,17 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                       </text>
                     </g>
                   ))}
+                  {submittedApartmentTicks.map((tick) => (
+                    <text key={`submitted-${tick.ratio}`} x={width - padRight + 10} y={tick.y + 4} textAnchor="start" className="fill-violet-600 text-[11px] font-semibold">
+                      {tick.value.toFixed(0)}
+                    </text>
+                  ))}
+                  <text x={padLeft} y={padTop - 8} textAnchor="start" className="fill-slate-400 text-[10px] font-semibold">
+                    m3
+                  </text>
+                  <text x={width - padRight} y={padTop - 8} textAnchor="end" className="fill-violet-500 text-[10px] font-semibold">
+                    {t("buildingMainMeterSubmittedAxis")}
+                  </text>
                   {combinedChartRows.map((row, index) => (
                     <text key={`${row.monthKey}-label`} x={xFor(index)} y={height - 16} textAnchor="middle" className="fill-slate-500 text-[11px] font-semibold">
                       {row.label}
@@ -918,9 +1011,9 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                     <g key={`${row.monthKey}-dots`}>
                       <rect
                         x={xFor(index) - 9}
-                        y={combinedYFor(row.submittedApartmentCount)}
+                        y={submittedApartmentsYFor(row.submittedApartmentCount)}
                         width="18"
-                        height={height - padBottom - combinedYFor(row.submittedApartmentCount)}
+                        height={height - padBottom - submittedApartmentsYFor(row.submittedApartmentCount)}
                         rx="6"
                         fill="#7c3aed"
                         opacity="0.22"
@@ -929,7 +1022,7 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                       <circle cx={xFor(index)} cy={combinedYFor(row.hotMainConsumption)} r="4.5" fill="#f43f5e" />
                       <circle cx={xFor(index)} cy={combinedYFor(row.residentCold)} r="4.5" fill="#1d4ed8" />
                       <circle cx={xFor(index)} cy={combinedYFor(row.residentHot)} r="4.5" fill="#db2777" />
-                      <text x={xFor(index)} y={combinedYFor(row.submittedApartmentCount) - 12} textAnchor="middle" className="fill-violet-700 text-[10px] font-semibold">
+                      <text x={xFor(index)} y={submittedApartmentsYFor(row.submittedApartmentCount) - 12} textAnchor="middle" className="fill-violet-700 text-[10px] font-semibold">
                         {row.submittedApartmentCount}
                       </text>
                     </g>
@@ -955,24 +1048,34 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
             )}
           </div>
 
-          <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
-              <div>
+          <div className="rounded-lg border border-slate-200 bg-white shadow-sm sm:rounded-[28px]">
+            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-5">
+              <div className="min-w-0">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("buildingMainMeterHistoryTitle")}</div>
-                <div className="mt-1 text-sm text-slate-500">{selectedBuilding?.label ?? "—"}</div>
+                <div className="mt-1 break-words text-sm text-slate-500">{selectedBuilding?.label ?? "—"}</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                    <span className="h-2 w-2 rounded-full bg-blue-500" />
+                    {t("coldWaterFull")}
+                  </span>
+                  <span className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
+                    <span className="h-2 w-2 rounded-full bg-rose-500" />
+                    {t("hotWaterFull")}
+                  </span>
+                </div>
               </div>
-              <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-50 p-1">
+              <div className="grid w-full grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-1 sm:inline-flex sm:w-auto sm:rounded-2xl">
                 <button
                   type="button"
                   onClick={() => setHistoryTab("building")}
-                  className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${historyTab === "building" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}
+                  className={`rounded-md px-2 py-2 text-sm font-semibold transition sm:rounded-xl sm:px-3 ${historyTab === "building" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}
                 >
                   {t("buildingMainMeterTitle")}
                 </button>
                 <button
                   type="button"
                   onClick={() => setHistoryTab("apartments")}
-                  className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${historyTab === "apartments" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}
+                  className={`rounded-md px-2 py-2 text-sm font-semibold transition sm:rounded-xl sm:px-3 ${historyTab === "apartments" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}
                 >
                   {t("residentsSubmittedTotal")}
                 </button>
@@ -980,29 +1083,98 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
             </div>
             <div className="overflow-x-auto">
               {historyTab === "building" ? (
-                <table className="min-w-full text-sm">
+                <table className="min-w-[760px] text-sm lg:min-w-full">
                   <thead className="bg-slate-50/80 text-slate-600">
                     <tr>
-                      <th className="px-5 py-3 text-left font-semibold">{t("period")}</th>
-                      <th className="px-5 py-3 text-right font-semibold">{t("currentReading")}</th>
-                      <th className="px-5 py-3 text-right font-semibold">{t("mainMeterMonthlyConsumption")}</th>
-                      <th className="px-5 py-3 text-right font-semibold">{t("residentsSubmittedTotal")}</th>
-                      <th className="px-5 py-3 text-right font-semibold">{t("differenceLabel")}</th>
+                      <th className="px-4 py-3 text-left font-semibold sm:px-5">{t("period")}</th>
+                      <th className="px-3 py-3 text-right font-semibold sm:px-5">{t("currentReading")}</th>
+                      <th className="px-3 py-3 text-right font-semibold sm:px-5">{t("mainMeterMonthlyConsumption")}</th>
+                      <th className="px-3 py-3 text-right font-semibold sm:px-5">{t("residentsSubmittedTotal")}</th>
+                      <th className="px-4 py-3 text-right font-semibold sm:px-5">{t("differenceLabel")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {historyRows.map((row) => (
-                      <tr key={row.monthKey} className="hover:bg-slate-50/70">
-                        <td className="px-5 py-3.5">
-                          <div className="font-semibold text-slate-900">{row.label}</div>
-                          <div className="text-xs text-slate-500">{row.readingDate || "—"}</div>
-                        </td>
-                        <td className="px-5 py-3.5 text-right tabular-nums text-blue-700">{formatMaybeCubic((row.coldMainCurrentValue !== null || row.hotMainCurrentValue !== null) ? Number(((row.coldMainCurrentValue ?? 0) + (row.hotMainCurrentValue ?? 0)).toFixed(3)) : null)}</td>
-                        <td className="px-5 py-3.5 text-right tabular-nums text-slate-900">{formatCubic(row.mainConsumptionTotal)}</td>
-                        <td className="px-5 py-3.5 text-right tabular-nums font-semibold text-blue-700">{formatCubic(row.residentTotal)}</td>
-                        <td className="px-5 py-3.5 text-right tabular-nums font-semibold text-amber-700">{formatCubic(row.differenceTotal)}</td>
-                      </tr>
-                    ))}
+                    {historyRows.map((row) => {
+                      const isExpanded = expandedMonthKeys.has(row.monthKey);
+                      const apartmentRows = apartmentBreakdownForMonth(row.monthKey);
+                      const submittedApartmentRows = apartmentRows.filter((apartment) => apartment.hasReading);
+
+                      return (
+                        <React.Fragment key={row.monthKey}>
+                          <tr className="hover:bg-slate-50/70">
+                            <td className="px-4 py-3.5 sm:px-5">
+                              <button
+                                type="button"
+                                onClick={() => toggleMonthExpanded(row.monthKey)}
+                                className="inline-flex items-center gap-2 rounded-lg text-left transition hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                aria-expanded={isExpanded}
+                                title={isExpanded ? t("collapseApartmentReadings") : t("expandApartmentReadings")}
+                              >
+                                <svg className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="m9 18 6-6-6-6" />
+                                </svg>
+                                <span>
+                                  <span className="block font-semibold text-slate-900">{row.label}</span>
+                                  <span className="block text-xs text-slate-500">{row.readingDate || "—"}</span>
+                                </span>
+                              </button>
+                            </td>
+                            <td className="px-3 py-3.5 text-right sm:px-5">
+                              {renderWaterPair(row.coldMainCurrentValue, row.hotMainCurrentValue)}
+                            </td>
+                            <td className="px-3 py-3.5 text-right sm:px-5">
+                              {renderWaterPair(row.coldMainConsumption, row.hotMainConsumption)}
+                            </td>
+                            <td className="px-3 py-3.5 text-right sm:px-5">
+                              {renderWaterPair(row.residentCold, row.residentHot)}
+                            </td>
+                            <td className="px-4 py-3.5 text-right sm:px-5">
+                              {renderWaterPair(row.coldDifference, row.hotDifference)}
+                            </td>
+                          </tr>
+                          {isExpanded ? (
+                            <tr className="bg-white">
+                              <td colSpan={5} className="p-0">
+                                <div className="overflow-x-auto border-t border-slate-100 bg-white">
+                                    <table className="min-w-[560px] text-sm sm:min-w-full">
+                                      <thead className="bg-slate-50/80 text-slate-600">
+                                        <tr>
+                                          <th colSpan={3} className="px-6 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-8">
+                                            {t("apartmentReadingsBreakdown")} · {row.label} · {submittedApartmentRows.length} / {apartmentRows.length}
+                                          </th>
+                                        </tr>
+                                        <tr>
+                                          <th className="px-6 py-2.5 text-left font-semibold sm:px-8">{t("colApartment")}</th>
+                                          <th className="px-4 py-2.5 text-right font-semibold">{t("currentReading")}</th>
+                                          <th className="px-6 py-2.5 text-right font-semibold sm:px-8">{t("colConsumption")}</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {apartmentRows.map((apartment) => (
+                                          <tr key={apartment.apartmentId} className="hover:bg-slate-50">
+                                            <td className="px-6 py-3 font-semibold text-slate-900 sm:px-8">{apartment.apartment}</td>
+                                            <td className="px-6 py-3 text-right sm:px-8">
+                                              {renderWaterPair(apartment.coldCurrentValue, apartment.hotCurrentValue)}
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                              {renderWaterPair(apartment.coldConsumption, apartment.hotConsumption)}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                        {apartmentRows.length === 0 ? (
+                                          <tr>
+                                            <td colSpan={3} className="px-4 py-8 text-center text-slate-500">{t("apartmentReadingsEmpty")}</td>
+                                          </tr>
+                                        ) : null}
+                                      </tbody>
+                                    </table>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </React.Fragment>
+                      );
+                    })}
                     {historyRows.length === 0 && (
                       <tr>
                         <td colSpan={5} className="px-4 py-10 text-center text-slate-500">{t("buildingMainMeterEmpty")}</td>
@@ -1011,30 +1183,92 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                   </tbody>
                 </table>
               ) : (
-                <table className="min-w-full text-sm">
+                <table className="min-w-[520px] text-sm sm:min-w-full">
                   <thead className="bg-slate-50/80 text-slate-600">
                     <tr>
-                      <th className="px-5 py-3 text-left font-semibold">{t("period")}</th>
-                      <th className="px-5 py-3 text-right font-semibold">{t("coldWaterShort")}</th>
-                      <th className="px-5 py-3 text-right font-semibold">{t("hotWaterShort")}</th>
-                      <th className="px-5 py-3 text-right font-semibold">{t("residentsSubmittedTotal")}</th>
+                      <th className="px-4 py-3 text-left font-semibold sm:px-5">{t("period")}</th>
+                      <th className="px-3 py-3 text-right font-semibold sm:px-5">{t("coldWaterShort")}</th>
+                      <th className="px-4 py-3 text-right font-semibold sm:px-5">{t("hotWaterShort")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {historyRows.map((row) => (
-                      <tr key={`${row.monthKey}-apartments`} className="hover:bg-slate-50/70">
-                        <td className="px-5 py-3.5">
-                          <div className="font-semibold text-slate-900">{row.label}</div>
-                          <div className="text-xs text-slate-500">{row.readingDate || "—"}</div>
-                        </td>
-                        <td className="px-5 py-3.5 text-right tabular-nums text-blue-700">{formatCubic(row.residentCold)}</td>
-                        <td className="px-5 py-3.5 text-right tabular-nums text-rose-700">{formatCubic(row.residentHot)}</td>
-                        <td className="px-5 py-3.5 text-right tabular-nums font-semibold text-slate-900">{formatCubic(row.residentTotal)}</td>
-                      </tr>
-                    ))}
+                    {historyRows.map((row) => {
+                      const expansionKey = `apartments:${row.monthKey}`;
+                      const isExpanded = expandedMonthKeys.has(expansionKey);
+                      const apartmentRows = apartmentBreakdownForMonth(row.monthKey);
+                      const submittedApartmentRows = apartmentRows.filter((apartment) => apartment.hasReading);
+
+                      return (
+                        <React.Fragment key={`${row.monthKey}-apartments`}>
+                          <tr className="hover:bg-slate-50/70">
+                            <td className="px-4 py-3.5 sm:px-5">
+                              <button
+                                type="button"
+                                onClick={() => toggleMonthExpanded(expansionKey)}
+                                className="inline-flex items-center gap-2 rounded-lg text-left transition hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                aria-expanded={isExpanded}
+                                title={isExpanded ? t("collapseApartmentReadings") : t("expandApartmentReadings")}
+                              >
+                                <svg className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="m9 18 6-6-6-6" />
+                                </svg>
+                                <span>
+                                  <span className="block font-semibold text-slate-900">{row.label}</span>
+                                  <span className="block text-xs text-slate-500">
+                                    {submittedApartmentRows.length} / {apartmentRows.length} {t("apts")}
+                                  </span>
+                                </span>
+                              </button>
+                            </td>
+                            <td className="px-3 py-3.5 text-right tabular-nums text-blue-700 sm:px-5">{formatCubic(row.residentCold)}</td>
+                            <td className="px-4 py-3.5 text-right tabular-nums text-rose-700 sm:px-5">{formatCubic(row.residentHot)}</td>
+                          </tr>
+                          {isExpanded ? (
+                            <tr className="bg-white">
+                              <td colSpan={3} className="p-0">
+                                <div className="overflow-x-auto border-t border-slate-100 bg-white">
+                                    <table className="min-w-[560px] text-sm sm:min-w-full">
+                                      <thead className="bg-slate-50/80 text-slate-600">
+                                        <tr>
+                                          <th colSpan={3} className="px-6 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-8">
+                                            {t("apartmentReadingsBreakdown")} · {row.label} · {submittedApartmentRows.length} / {apartmentRows.length}
+                                          </th>
+                                        </tr>
+                                        <tr>
+                                          <th className="px-6 py-2.5 text-left font-semibold sm:px-8">{t("colApartment")}</th>
+                                          <th className="px-4 py-2.5 text-right font-semibold">{t("currentReading")}</th>
+                                          <th className="px-6 py-2.5 text-right font-semibold sm:px-8">{t("colConsumption")}</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {apartmentRows.map((apartment) => (
+                                          <tr key={`${row.monthKey}-${apartment.apartmentId}`} className="hover:bg-slate-50">
+                                            <td className="px-6 py-3 font-semibold text-slate-900 sm:px-8">{apartment.apartment}</td>
+                                            <td className="px-6 py-3 text-right sm:px-8">
+                                              {renderWaterPair(apartment.coldCurrentValue, apartment.hotCurrentValue)}
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                              {renderWaterPair(apartment.coldConsumption, apartment.hotConsumption)}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                        {apartmentRows.length === 0 ? (
+                                          <tr>
+                                            <td colSpan={3} className="px-4 py-8 text-center text-slate-500">{t("apartmentReadingsEmpty")}</td>
+                                          </tr>
+                                        ) : null}
+                                      </tbody>
+                                    </table>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </React.Fragment>
+                      );
+                    })}
                     {historyRows.length === 0 && (
                       <tr>
-                        <td colSpan={4} className="px-4 py-10 text-center text-slate-500">{t("buildingMainMeterEmpty")}</td>
+                        <td colSpan={3} className="px-4 py-10 text-center text-slate-500">{t("buildingMainMeterEmpty")}</td>
                       </tr>
                     )}
                   </tbody>
@@ -1045,8 +1279,8 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
 
           </div>
 
-          <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="min-w-0 space-y-4 xl:sticky xl:top-4 xl:self-start">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
               <div className="mb-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("mainMeterEntryTitle")}</div>
                 <div className="mt-1 text-sm leading-6 text-slate-500">{t("mainMeterEntryDescription")}</div>
@@ -1071,7 +1305,7 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                 />
               </label>
               {coldEnabled ? (
-                <div className="rounded-3xl border border-blue-100 bg-blue-50/40 p-4">
+                <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-3 sm:rounded-3xl sm:p-4">
                   <MeterReadingInput
                     variant="cold"
                     label={t("mainMeterColdValueLabel")}
@@ -1088,7 +1322,7 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                 </div>
               ) : null}
               {hotEnabled ? (
-                <div className="rounded-3xl border border-rose-100 bg-rose-50/40 p-4">
+                <div className="rounded-lg border border-rose-100 bg-rose-50/40 p-3 sm:rounded-3xl sm:p-4">
                   <MeterReadingInput
                     variant="hot"
                     label={t("mainMeterHotValueLabel")}
@@ -1128,7 +1362,7 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
           </div>
 
             {latestRow ? (
-              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
                 <div className="mb-4">
                   <div>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("currentMonthBreakdown")}</div>
@@ -1136,19 +1370,19 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                   </div>
                 </div>
                 <div className="space-y-3">
-                  <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 sm:rounded-2xl">
                     <div className="text-xs font-medium text-slate-500">{t("mainMeterMonthlyConsumption")}</div>
                     <div className="mt-1 text-lg font-semibold text-slate-950">{formatCubic(totalMainConsumption)}</div>
                   </div>
-                  <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 sm:rounded-2xl">
                     <div className="text-xs font-medium text-slate-500">{t("residentsSubmittedTotal")}</div>
                     <div className="mt-1 text-lg font-semibold text-blue-700">{formatCubic(totalResidentValue)}</div>
                   </div>
-                  <div className="rounded-2xl border border-amber-100 bg-amber-50/80 px-4 py-3">
+                  <div className="rounded-lg border border-amber-100 bg-amber-50/80 px-4 py-3 sm:rounded-2xl">
                     <div className="text-xs font-medium text-amber-700">{t("differenceLabel")}</div>
                     <div className="mt-1 text-lg font-semibold text-amber-800">{formatCubic(totalDifferenceValue)}</div>
                   </div>
-                  <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3">
+                  <div className="rounded-lg border border-slate-100 bg-white px-4 py-3 sm:rounded-2xl">
                     <div className="text-xs font-medium text-slate-500">{t("previousReading")}</div>
                     <div className="mt-1 text-sm font-semibold text-slate-900">{formatMaybeCubic(totalMainPreviousValue)}</div>
                   </div>
@@ -1157,11 +1391,11 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
             ) : null}
 
             {yearlyTotals.length > 1 ? (
-              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
                 <div className="mb-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("yearDifferenceTotal")}</div>
                 <div className="space-y-3">
                   {yearlyTotals.map(([year, total]) => (
-                    <div key={year} className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                    <div key={year} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 sm:rounded-2xl">
                       <div className="text-sm font-medium text-slate-600">{year}</div>
                       <div className="text-base font-semibold tabular-nums text-slate-950">{formatCubic(total)}</div>
                     </div>

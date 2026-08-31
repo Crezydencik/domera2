@@ -19,17 +19,14 @@ export default async function RootLayout({
 
   return (
     <html lang={locale} suppressHydrationWarning>
-      <head>
+      <body suppressHydrationWarning className="min-h-screen antialiased">
         <Script
           id="Cookiebot"
           src="https://consent.cookiebot.com/uc.js"
           data-cbid="fa5beae3-8221-4a7b-8228-854fe6491f49"
           type="text/javascript"
-          strategy="beforeInteractive"
-          async
+          strategy="afterInteractive"
         />
-      </head>
-      <body suppressHydrationWarning className="min-h-screen antialiased">
         <NextIntlClientProvider messages={messages}>
           {children}
         </NextIntlClientProvider>

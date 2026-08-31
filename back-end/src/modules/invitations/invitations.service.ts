@@ -539,22 +539,58 @@ export class InvitationsService {
         const tenants = Array.isArray(apartment.tenants)
           ? (apartment.tenants as Record<string, unknown>[])
           : [];
+        let matchedTenant = false;
         const nextTenants = tenants.map((tenant) => {
           const tenantEmail = typeof tenant.email === 'string' ? tenant.email.trim().toLowerCase() : '';
           const tenantUserId = typeof tenant.userId === 'string' ? tenant.userId.trim() : '';
           const matches = tenantUserId === uid || Boolean(tenantEmail && tenantEmail === invitationEmail);
 
           if (!matches) return tenant;
+          matchedTenant = true;
 
           return {
             ...tenant,
             userId: uid,
+            email: email ?? invitationEmail,
+            ...(firstName ? { firstName } : {}),
+            ...(lastName ? { lastName } : {}),
+            ...(fullName ? { name: fullName, fullName } : {}),
+            ...(phone ? { phone } : {}),
             status: 'Active',
+            activated: true,
             acceptedAt: new Date(),
           };
         });
+        const resolvedTenants = matchedTenant
+          ? nextTenants
+          : [
+              ...nextTenants,
+              {
+                userId: uid,
+                email: email ?? invitationEmail,
+                ...(firstName ? { firstName } : {}),
+                ...(lastName ? { lastName } : {}),
+                ...(fullName ? { name: fullName, fullName } : {}),
+                ...(phone ? { phone } : {}),
+                status: 'Active',
+                activated: true,
+                acceptedAt: new Date(),
+              },
+            ];
 
-        await apartmentRef.set({ residentId: uid, tenants: nextTenants }, { merge: true });
+        await apartmentRef.set(
+          {
+            residentId: uid,
+            residentEmail: email ?? invitationEmail,
+            ...(firstName ? { residentFirstName: firstName } : {}),
+            ...(lastName ? { residentLastName: lastName } : {}),
+            ...(fullName ? { residentName: fullName } : {}),
+            ...(phone ? { residentPhone: phone } : {}),
+            tenants: resolvedTenants,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
       }
       await db.collection('invitations').doc(docId).set(
         {

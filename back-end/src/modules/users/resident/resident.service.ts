@@ -103,9 +103,12 @@ export class ResidentService {
       db.collection('apartments').doc(id),
     );
 
-    const [individualSnaps, residentApartmentsSnap, ownerIdApartmentsSnap, ownerEmailApartmentsSnap] = await Promise.all([
+    const [individualSnaps, residentApartmentsSnap, residentEmailApartmentsSnap, ownerIdApartmentsSnap, ownerEmailApartmentsSnap] = await Promise.all([
       apartmentRefs.length > 0 ? db.getAll(...apartmentRefs) : Promise.resolve([]),
       db.collection('apartments').where('residentId', '==', user.uid).get(),
+      normalizedEmail
+        ? db.collection('apartments').where('residentEmail', '==', normalizedEmail).get()
+        : Promise.resolve(null),
       db.collection('apartments').where('ownerId', '==', user.uid).get(),
       normalizedEmail
         ? db.collection('apartments').where('ownerEmail', '==', normalizedEmail).get()
@@ -129,6 +132,15 @@ export class ResidentService {
       });
     }
 
+    if (residentEmailApartmentsSnap) {
+      for (const doc of residentEmailApartmentsSnap.docs) {
+        mergedApartments.set(doc.id, {
+          id: doc.id,
+          ...(doc.data() as Record<string, unknown>),
+        });
+      }
+    }
+
     for (const snap of [ownerIdApartmentsSnap, ownerEmailApartmentsSnap]) {
       if (!snap) continue;
 
@@ -145,6 +157,8 @@ export class ResidentService {
 
     const hasConfirmedAccess = (apartment: Record<string, unknown>) => {
       const isPrimaryResident = this.toOptionalString(apartment.residentId) === user.uid;
+      const residentEmail = normalizeEmail(this.toOptionalString(apartment.residentEmail) ?? '');
+      const isResidentByEmail = Boolean(normalizedEmail && residentEmail === normalizedEmail);
       const ownerId = this.toOptionalString(apartment.ownerId);
       const ownerEmail = normalizeEmail(this.toOptionalString(apartment.ownerEmail) ?? '');
       const isActivatedOwner =
@@ -154,19 +168,25 @@ export class ResidentService {
       const isTenant = tenants.some((tenant) => {
         if (!tenant || typeof tenant !== 'object') return false;
         const t = tenant as Record<string, unknown>;
-        if (this.toOptionalString(t.userId) === user.uid) {
-          // Check tenant lease dates
-          const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
-          const until = typeof t.until === 'string' ? new Date(t.until) : null;
-          const now = new Date();
-          if (fromDate && now < fromDate) return false; // Lease hasn't started
-          if (until && now > until) return false; // Lease has ended
-          return true; // Within lease period
-        }
-        return false;
+        const status = this.toOptionalString(t.status)?.toLowerCase() ?? '';
+        if (['removed', 'deleted', 'revoked', 'inactive'].includes(status)) return false;
+
+        const tenantUserId = this.toOptionalString(t.userId);
+        const tenantEmail = normalizeEmail(this.toOptionalString(t.email) ?? '');
+        const matches =
+          tenantUserId === user.uid ||
+          Boolean(normalizedEmail && tenantEmail === normalizedEmail);
+        if (!matches) return false;
+
+        const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
+        const until = typeof t.until === 'string' ? new Date(t.until) : null;
+        const now = new Date();
+        if (fromDate && now < fromDate) return false;
+        if (until && now > until) return false;
+        return true;
       });
 
-      return isPrimaryResident || isActivatedOwner || isTenant;
+      return isPrimaryResident || isResidentByEmail || isActivatedOwner || isTenant;
     };
 
     const apartments = Array.from(mergedApartments.values())

@@ -595,11 +595,7 @@ export function emptyRoleDataBundle(context: AuthenticatedContext): RoleDataBund
 export async function getResidentHomeData(context: AuthenticatedContext): Promise<RoleDataBundle> {
   const bundle = emptyRoleDataBundle(context);
   const residentHome = await apiFetchSafe<ResidentHomeResponse>("/resident/apartments");
-  const liveApartments = Array.isArray(residentHome?.apartments) && residentHome.apartments.length
-    ? residentHome.apartments
-    : context.apartmentId && context.apartmentId !== "вЂ”"
-      ? [{ id: context.apartmentId, apartmentId: context.apartmentId }]
-      : [];
+  const liveApartments = Array.isArray(residentHome?.apartments) ? residentHome.apartments : [];
 
   liveApartments.sort(compareApartmentOrder);
 
@@ -949,9 +945,7 @@ export async function getRoleDataBundle(roleHint?: string): Promise<RoleDataBund
   ]);
   const liveApartments = Array.isArray(residentHome?.apartments) && residentHome.apartments.length
     ? residentHome.apartments
-    : apartmentId && apartmentId !== "вЂ”"
-      ? [{ id: apartmentId, apartmentId }]
-      : [];
+    : [];
   liveApartments.sort(compareApartmentOrder);
   const liveBuildings = Array.isArray(residentHome?.buildings) ? residentHome.buildings.map(toBuilding) : [];
   const residentHomeCompanies = Array.isArray(residentHome?.managementCompanies) ? residentHome.managementCompanies : [];

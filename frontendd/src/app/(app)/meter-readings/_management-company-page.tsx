@@ -6,6 +6,7 @@ import Link from "next/link";
 // import { useAuthSession } from "@/shared/hooks/use-auth";
 import { FilterBar, useFilters, type FilterField } from "@/components/ui/filter-bar";
 import { Modal } from "@/components/ui/modal";
+import { AlertModal } from "@/components/ui/alert-modal";
 import { SubmissionPeriodCard, type SubmissionPeriodValue } from "@/components/ui/submission-period-card";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/client";
@@ -420,6 +421,14 @@ function previousReadingForMonth(meter: MeterInfo | undefined, period: string) {
     .sort((a, b) => readingMonthKey(b).localeCompare(readingMonthKey(a)))[0] ?? null;
 }
 
+function readingForMonth(meter: MeterInfo | undefined, period: string) {
+  if (!meter) return null;
+
+  return [...meter.readings]
+    .filter((reading) => readingMonthKey(reading) === period)
+    .sort((a, b) => submittedDateLabel(b.submittedAt).localeCompare(submittedDateLabel(a.submittedAt)))[0] ?? null;
+}
+
 function previousReadingValue(reading: MeterReadingRecord | null | undefined) {
   if (!reading) return "—";
   return reading.currentValue || reading.previousValue || "—";
@@ -757,6 +766,7 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
 
   // Submission modal state
   const [selectAptOpen, setSelectAptOpen] = useState(false);
+  const [selectAptValue, setSelectAptValue] = useState("");
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitApt, setSubmitApt] = useState<ApartmentMeterData | null>(null);
   const [submitMonth, setSubmitMonth] = useState<string>(() => {
@@ -767,6 +777,9 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
   const [submitHot, setSubmitHot] = useState("");
   const [submitElectricity, setSubmitElectricity] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [confirmEditReadingsOpen, setConfirmEditReadingsOpen] = useState(false);
+  const [submitApartmentSelectorOpen, setSubmitApartmentSelectorOpen] = useState(false);
+  const submitApartmentSelectorRef = React.useRef<HTMLDivElement | null>(null);
   const submitMonthParts = React.useMemo(() => {
     const [rawYear, rawMonth] = submitMonth.split("-");
     const now = new Date();
@@ -792,6 +805,52 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
     const end = Math.max(currentYear + 3, Number.isFinite(selectedYear) ? selectedYear : currentYear);
     return Array.from({ length: end - start + 1 }, (_, index) => String(start + index));
   }, [submitMonthParts.year]);
+  const submitMeters = React.useMemo(() => {
+    const cold = submitApt?.meters.find((m) => m.meterKey === "coldmeterwater" || m.meterType.toLowerCase().includes("cold"));
+    const hot = submitApt?.meters.find((m) => m.meterKey === "hotmeterwater" || m.meterType.toLowerCase().includes("hot"));
+    const electricity = submitApt?.meters.find((m) => isElectricityMeter(m));
+    return { cold, hot, electricity };
+  }, [submitApt]);
+  const submitExistingReadings = React.useMemo(() => ({
+    cold: readingForMonth(submitMeters.cold, submitMonth),
+    hot: readingForMonth(submitMeters.hot, submitMonth),
+    electricity: readingForMonth(submitMeters.electricity, submitMonth),
+  }), [submitMeters, submitMonth]);
+  const submitHasExistingReadings = Boolean(
+    submitExistingReadings.cold || submitExistingReadings.hot || submitExistingReadings.electricity,
+  );
+
+  React.useEffect(() => {
+    if (!submitApt || !submitOpen) return;
+    setSubmitCold(submitExistingReadings.cold?.currentValue ? String(submitExistingReadings.cold.currentValue) : "");
+    setSubmitHot(submitExistingReadings.hot?.currentValue ? String(submitExistingReadings.hot.currentValue) : "");
+    setSubmitElectricity(submitExistingReadings.electricity?.currentValue ? String(submitExistingReadings.electricity.currentValue) : "");
+  }, [submitApt, submitOpen, submitExistingReadings]);
+
+  React.useEffect(() => {
+    if (!submitApartmentSelectorOpen) return;
+
+    const closeOnOutsideClick = (event: MouseEvent | TouchEvent) => {
+      const target = event.target;
+      if (target instanceof Node && submitApartmentSelectorRef.current?.contains(target)) return;
+      setSubmitApartmentSelectorOpen(false);
+    };
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("touchstart", closeOnOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("touchstart", closeOnOutsideClick);
+    };
+  }, [submitApartmentSelectorOpen]);
+
+  React.useEffect(() => {
+    if (!submitOpen) setSubmitApartmentSelectorOpen(false);
+  }, [submitOpen]);
+
+  React.useEffect(() => {
+    if (selectAptOpen) setSelectAptValue("");
+  }, [selectAptOpen]);
 
   // Period-aware status: 'submitted' (зелёный, сдано в текущем периоде),
   // 'pending' (жёлтый, период открыт, ещё не сдано), 'overdue' (красный,
@@ -1074,18 +1133,24 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
     setSubmitOpen(true);
   };
 
-  const submitReadings = async () => {
+  const submitReadings = async (skipEditConfirm = false) => {
     if (!submitApt) return;
     const [yearStr, monthStr] = submitMonth.split("-");
     const year = Number(yearStr);
     const month = Number(monthStr);
-    const coldMeter = submitApt.meters.find((m) => m.meterKey === "coldmeterwater" || m.meterType.toLowerCase().includes("cold"));
-    const hotMeter = submitApt.meters.find((m) => m.meterKey === "hotmeterwater" || m.meterType.toLowerCase().includes("hot"));
-    const electricityMeter = submitApt.meters.find((m) => isElectricityMeter(m));
-    const buildBody = (meter: MeterInfo, currentValueStr: string) => {
+    const { cold: coldMeter, hot: hotMeter, electricity: electricityMeter } = submitMeters;
+    const parseReadingValue = (raw: string) => Number(raw.replace(",", "."));
+    const readingValueChanged = (reading: MeterReadingRecord | null, raw: string) => {
+      if (!reading) return false;
+      const nextValue = parseReadingValue(raw);
+      const existingValue = Number(String(reading.currentValue ?? "").replace(",", "."));
+      return Number.isFinite(nextValue) && Number.isFinite(existingValue) && nextValue !== existingValue;
+    };
+    const buildReadingData = (meter: MeterInfo, currentValueStr: string) => {
       const currentValue = Number(currentValueStr.replace(",", "."));
       const previousReading = previousReadingForMonth(meter, submitMonth);
-      const previousValue = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+      const parsedPreviousValue = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+      const previousValue = Number.isFinite(parsedPreviousValue) ? parsedPreviousValue : 0;
       return {
         apartmentId: submitApt.apartmentId,
         meterId: meter.meterId ?? meter.serialNumber ?? "",
@@ -1099,6 +1164,16 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
         year,
       };
     };
+    const entries = [
+      { meter: coldMeter, value: submitCold, label: t("coldWater"), existing: submitExistingReadings.cold },
+      { meter: hotMeter, value: submitHot, label: t("hotWater"), existing: submitExistingReadings.hot },
+      { meter: electricityMeter, value: submitElectricity, label: t("electricity"), existing: submitExistingReadings.electricity },
+    ].filter((entry): entry is { meter: MeterInfo; value: string; label: string; existing: MeterReadingRecord | null } => Boolean(entry.meter && entry.value));
+    const changedExistingEntries = entries.filter((entry) => readingValueChanged(entry.existing, entry.value));
+    if (!skipEditConfirm && changedExistingEntries.length > 0) {
+      setConfirmEditReadingsOpen(true);
+      return;
+    }
     try {
       setSubmitting(true);
       // Валидация: текущее показание не должно быть меньше предыдущего.
@@ -1107,7 +1182,8 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
         if (!meter || !raw) return;
         const currentValue = Number(raw.replace(",", "."));
         const previousReading = previousReadingForMonth(meter, submitMonth);
-        const previousValue = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+        const parsedPreviousValue = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+        const previousValue = Number.isFinite(parsedPreviousValue) ? parsedPreviousValue : 0;
         if (Number.isFinite(currentValue) && Number.isFinite(previousValue) && currentValue < previousValue) {
           violations.push(`${label}: ${currentValue} < ${previousValue}`);
         }
@@ -1120,21 +1196,33 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
         return;
       }
       let count = 0;
+      let editedCount = 0;
       // Секвенциально: два параллельных письма в документ apartments перезапишут друг друга.
-      if (coldMeter && submitCold) {
-        await apiFetch(`/meter-readings`, { method: "POST", body: JSON.stringify(buildBody(coldMeter, submitCold)) });
-        count += 1;
-      }
-      if (hotMeter && submitHot) {
-        await apiFetch(`/meter-readings`, { method: "POST", body: JSON.stringify(buildBody(hotMeter, submitHot)) });
-        count += 1;
-      }
-      if (electricityMeter && submitElectricity) {
-        await apiFetch(`/meter-readings`, { method: "POST", body: JSON.stringify(buildBody(electricityMeter, submitElectricity)) });
+      for (const entry of entries) {
+        const data = buildReadingData(entry.meter, entry.value);
+        if (entry.existing) {
+          if (!readingValueChanged(entry.existing, entry.value)) continue;
+          await apiFetch(`/meter-readings/${encodeURIComponent(entry.existing.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              apartmentId: submitApt.apartmentId,
+              data: {
+                previousValue: data.previousValue,
+                currentValue: data.currentValue,
+                consumption: data.consumption,
+                month,
+                year,
+              },
+            }),
+          });
+          editedCount += 1;
+        } else {
+          await apiFetch(`/meter-readings`, { method: "POST", body: JSON.stringify(data) });
+        }
         count += 1;
       }
       if (count === 0) {
-        notify.info(t("notifyEnterAtLeastOne"));
+        notify.info(entries.length === 0 ? t("notifyEnterAtLeastOne") : t("notifyNoReadingChanges"));
         return;
       }
       // Локальное обновление без перезагрузки
@@ -1148,13 +1236,15 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
               if (coldMeter && submitCold && (m.meterKey === "coldmeterwater" || m.meterId === coldMeter.meterId)) {
                 const currentVal = Number(submitCold.replace(",", "."));
                 const previousReading = previousReadingForMonth(m, submitMonth);
-                const prevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+                const parsedPrevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+                const prevVal = Number.isFinite(parsedPrevVal) ? parsedPrevVal : 0;
+                const existingReading = readingForMonth(m, submitMonth);
                 const nextReading: MeterReadingRecord = {
-                  id: `local-${submitApt.apartmentId}-${m.meterKey ?? m.meterId ?? "cold"}-${submitMonth}`,
+                  id: existingReading?.id ?? `local-${submitApt.apartmentId}-${m.meterKey ?? m.meterId ?? "cold"}-${submitMonth}`,
                   previousValue: String(prevVal),
                   currentValue: String(currentVal),
                   consumption: formatConsumption(consumptionValue(currentVal, prevVal)),
-                  submittedAt: `${submitMonth}-${String(now.getDate()).padStart(2, "0")}`,
+                  submittedAt: existingReading?.submittedAt ?? `${submitMonth}-${String(now.getDate()).padStart(2, "0")}`,
                   month,
                   year,
                   status: "submitted" as const,
@@ -1169,13 +1259,15 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
               if (hotMeter && submitHot && (m.meterKey === "hotmeterwater" || m.meterId === hotMeter.meterId)) {
                 const currentVal = Number(submitHot.replace(",", "."));
                 const previousReading = previousReadingForMonth(m, submitMonth);
-                const prevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+                const parsedPrevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+                const prevVal = Number.isFinite(parsedPrevVal) ? parsedPrevVal : 0;
+                const existingReading = readingForMonth(m, submitMonth);
                 const nextReading: MeterReadingRecord = {
-                  id: `local-${submitApt.apartmentId}-${m.meterKey ?? m.meterId ?? "hot"}-${submitMonth}`,
+                  id: existingReading?.id ?? `local-${submitApt.apartmentId}-${m.meterKey ?? m.meterId ?? "hot"}-${submitMonth}`,
                   previousValue: String(prevVal),
                   currentValue: String(currentVal),
                   consumption: formatConsumption(consumptionValue(currentVal, prevVal)),
-                  submittedAt: `${submitMonth}-${String(now.getDate()).padStart(2, "0")}`,
+                  submittedAt: existingReading?.submittedAt ?? `${submitMonth}-${String(now.getDate()).padStart(2, "0")}`,
                   month,
                   year,
                   status: "submitted" as const,
@@ -1190,13 +1282,15 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
               if (electricityMeter && submitElectricity && (m.meterKey === "electricitymeter" || m.meterId === electricityMeter.meterId)) {
                 const currentVal = Number(submitElectricity.replace(",", "."));
                 const previousReading = previousReadingForMonth(m, submitMonth);
-                const prevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+                const parsedPrevVal = Number(previousReading?.currentValue ?? previousReading?.previousValue ?? 0);
+                const prevVal = Number.isFinite(parsedPrevVal) ? parsedPrevVal : 0;
+                const existingReading = readingForMonth(m, submitMonth);
                 const nextReading: MeterReadingRecord = {
-                  id: `local-${submitApt.apartmentId}-${m.meterKey ?? m.meterId ?? "electricity"}-${submitMonth}`,
+                  id: existingReading?.id ?? `local-${submitApt.apartmentId}-${m.meterKey ?? m.meterId ?? "electricity"}-${submitMonth}`,
                   previousValue: String(prevVal),
                   currentValue: String(currentVal),
                   consumption: formatConsumption(consumptionValue(currentVal, prevVal)),
-                  submittedAt: `${submitMonth}-${String(now.getDate()).padStart(2, "0")}`,
+                  submittedAt: existingReading?.submittedAt ?? `${submitMonth}-${String(now.getDate()).padStart(2, "0")}`,
                   month,
                   year,
                   status: "submitted" as const,
@@ -1213,7 +1307,7 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
           };
         }),
       );
-      notify.success(t("notifyReadingsSent"));
+      notify.success(editedCount > 0 ? t("notifyReadingsUpdated") : t("notifyReadingsSent"));
       setSubmitOpen(false);
     } catch (e) {
       console.error(e);
@@ -2481,11 +2575,11 @@ ${xmlRows}
             </Button>
             <Button
               variant="primary"
-              onClick={submitReadings}
+              onClick={() => void submitReadings()}
               disabled={submitting || !canManageReadings}
               className="min-h-12 rounded-xl bg-emerald-600 px-3 text-sm hover:bg-emerald-700 sm:px-5"
             >
-              {submitting ? t("sending") : t("send")}
+              {submitting ? t("sending") : submitHasExistingReadings ? t("editReadings") : t("send")}
             </Button>
           </div>
         }
@@ -2495,8 +2589,61 @@ ${xmlRows}
             <div className="space-y-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">{t("selectApartmentLabel")}</label>
-              <div className="flex h-11 w-full items-center rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm text-slate-800">
-                {submitApt.apartment}
+              <div ref={submitApartmentSelectorRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setSubmitApartmentSelectorOpen((open) => !open)}
+                  className={`flex h-11 w-full items-center justify-between gap-3 rounded-xl border bg-slate-50 px-3 text-left text-sm text-slate-800 outline-none transition ${
+                    submitApartmentSelectorOpen
+                      ? "border-blue-500 ring-2 ring-blue-500/30"
+                      : "border-slate-300 hover:border-slate-400"
+                  }`}
+                  aria-haspopup="listbox"
+                  aria-expanded={submitApartmentSelectorOpen}
+                >
+                  <span className="min-w-0 truncate">{submitApt.apartment}</span>
+                  <svg
+                    className={`h-4 w-4 shrink-0 text-slate-500 transition ${submitApartmentSelectorOpen ? "rotate-180" : ""}`}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+                {submitApartmentSelectorOpen ? (
+                  <div
+                    role="listbox"
+                    className="mt-2 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg shadow-slate-900/10"
+                  >
+                    {filteredApartments.map((apt) => {
+                      const selected = apt.apartmentId === submitApt.apartmentId;
+                      return (
+                        <button
+                          key={apt.apartmentId}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          onClick={() => {
+                            setSubmitApt(apt);
+                            setSubmitApartmentSelectorOpen(false);
+                          }}
+                          className={`flex min-h-9 w-full items-center rounded-lg px-3 text-left text-sm transition ${
+                            selected
+                              ? "bg-blue-50 font-semibold text-blue-700"
+                              : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="truncate">{apt.apartment}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             </div>
             <div>
@@ -2529,9 +2676,7 @@ ${xmlRows}
             </div>
 
             {(() => {
-              const cold = submitApt.meters.find((m) => m.meterKey === "coldmeterwater" || m.meterType.toLowerCase().includes("cold"));
-              const hot = submitApt.meters.find((m) => m.meterKey === "hotmeterwater" || m.meterType.toLowerCase().includes("hot"));
-              const electricity = submitApt.meters.find((m) => isElectricityMeter(m));
+              const { cold, hot, electricity } = submitMeters;
               const [yearStr, monthStr] = submitMonth.split("-");
               const currentPeriodLabel = `${monthStr}.${yearStr}`;
               const coldPreviousReading = previousReadingForMonth(cold, submitMonth);
@@ -2595,6 +2740,18 @@ ${xmlRows}
           </div>
         )}
       </Modal>
+
+      <AlertModal
+        open={confirmEditReadingsOpen}
+        onClose={() => setConfirmEditReadingsOpen(false)}
+        title={t("confirmEditReadingsTitle")}
+        variant="warning"
+        confirmLabel={t("editReadings")}
+        cancelLabel={t("cancel")}
+        onConfirm={() => void submitReadings(true)}
+      >
+        {t("confirmEditReadings")}
+      </AlertModal>
 
       <Modal
         open={viewOpen}
@@ -2669,16 +2826,18 @@ ${xmlRows}
       >
         <div className="space-y-4">
           <select
+            value={selectAptValue}
             onChange={(e) => {
-              if (e.target.value) {
-                const apt = filteredApartments.find(a => a.apartmentId === e.target.value);
+              const value = e.target.value;
+              setSelectAptValue(value);
+              if (value) {
+                const apt = filteredApartments.find(a => a.apartmentId === value);
                 if (apt) {
                   setSelectAptOpen(false);
                   openSubmitModal(apt);
                 }
               }
             }}
-            defaultValue=""
             className="w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-transparent"
           >
             <option value="">{t("selectApartmentPlaceholder")}</option>
