@@ -63,43 +63,6 @@ type ImportResult = {
   errors: string[];
   createdApartments: string[];
 };
-type ImportFieldKey =
-  | "cadastralNumber"
-  | "address"
-  | "cadastralPart"
-  | "commonPropertyShare"
-  | "owner"
-  | "ownerEmail"
-  | "number"
-  | "floor"
-  | "apartmentType"
-  | "heatingArea"
-  | "managementArea"
-  | "declaredResidents"
-  | "hotWaterMeter"
-  | "coldWaterMeter"
-  | "hotWaterReadings"
-  | "coldWaterReadings";
-
-const IMPORT_FIELD_KEYS: ImportFieldKey[] = [
-  "cadastralNumber",
-  "number",
-  "address",
-  "cadastralPart",
-  "commonPropertyShare",
-  "floor",
-  "owner",
-  "ownerEmail",
-  "apartmentType",
-  "heatingArea",
-  "managementArea",
-  "declaredResidents",
-  "hotWaterMeter",
-  "coldWaterMeter",
-  "hotWaterReadings",
-  "coldWaterReadings",
-];
-
 const IMPORT_FORMATS = ["excel", "json", "xml"] as const;
 const IMPORT_ACCEPT = ".xlsx,.csv,.json,.xml";
 
@@ -310,13 +273,13 @@ export function ApartmentsManagementActionsMenu({
     () => buildings.find((building) => building.id === effectiveBuildingId),
     [buildings, effectiveBuildingId],
   );
+  const hasSingleBuilding = buildings.length === 1;
   const effectiveImportBuildingId = importBuildingId.trim() || effectiveBuildingId || "";
   const importBuilding = useMemo(
     () => buildings.find((building) => building.id === effectiveImportBuildingId),
     [buildings, effectiveImportBuildingId],
   );
   const importBuildingLabel = importBuilding?.label;
-  const importExample = "";
   const buildingReadingConfig = effectiveBuilding?.readingConfig;
   const apartmentCountForBuilding = (buildingId: string) => apartments.filter((apartment) => apartment.buildingId === buildingId).length;
   const currentBuildingApartmentCount = effectiveBuildingId ? apartmentCountForBuilding(effectiveBuildingId) : apartments.length;
@@ -1098,48 +1061,39 @@ export function ApartmentsManagementActionsMenu({
 
       <ModalShell open={importOpen} onClose={() => !loadingImport && setImportOpen(false)} title={t("dialogs.import.title")}>
         <div className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{t("dialogs.import.summaryBuildingLabel")}</p>
-              <p className="mt-2 font-medium text-slate-900">{importBuildingLabel ?? t("dialogs.import.summaryNotSelected")}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{t("dialogs.import.summaryFormatLabel")}</p>
-              <p className="mt-2 font-medium text-slate-900">{t("dialogs.import.autoFormatValue")}</p>
-            </div>
-          </div>
-
-          <div className={`rounded-2xl border px-4 py-3 text-sm ${importBuildingLabel ? "border-emerald-100 bg-emerald-50 text-emerald-900" : "border-amber-100 bg-amber-50 text-amber-900"}`}>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
             <p className="font-medium">
               {importBuildingLabel
                 ? t("dialogs.import.selectedBuilding", { building: importBuildingLabel })
                 : t("dialogs.import.selectBuildingFirst")}
             </p>
-            <p className={`mt-1 text-xs ${importBuildingLabel ? "text-emerald-700" : "text-amber-700"}`}>
-              {t("dialogs.import.selectionHint")}
-            </p>
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="import-building" className="text-sm font-semibold text-slate-900">
+            <label htmlFor={hasSingleBuilding ? undefined : "import-building"} className="text-sm font-semibold text-slate-900">
               {t("dialogs.import.buildingLabel")}
             </label>
-            <select
-              id="import-building"
-              value={importBuildingId}
-              onChange={(event) => setImportBuildingId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-              disabled={loadingImport}
-            >
-              <option value="">{t("dialogs.import.buildingPlaceholder")}</option>
-              {buildings.map((building) => (
-                <option key={building.id} value={building.id} disabled={lockedBuildings.has(building.id)}>
-                  {building.label}{lockedBuildings.has(building.id) ? " - Locked" : ""}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-slate-500">{t("dialogs.import.buildingHint")}</p>
-          </div> 
+            {hasSingleBuilding ? (
+              <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-900">
+                {buildings[0]?.label}
+              </div>
+            ) : (
+              <select
+                id="import-building"
+                value={importBuildingId}
+                onChange={(event) => setImportBuildingId(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                disabled={loadingImport}
+              >
+                <option value="">{t("dialogs.import.buildingPlaceholder")}</option>
+                {buildings.map((building) => (
+                  <option key={building.id} value={building.id} disabled={lockedBuildings.has(building.id)}>
+                    {building.label}{lockedBuildings.has(building.id) ? " - Locked" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
 
           <div className="space-y-3">
             <label
@@ -1171,25 +1125,12 @@ export function ApartmentsManagementActionsMenu({
 
             <div className="space-y-2">
               {IMPORT_FORMATS.map((format) => (
-                <details key={format} className="group rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" open={format === "excel"}>
+                <details key={format} className="group rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-medium text-slate-900">
                     <span>{t(`dialogs.import.formats.${format}.label`)}</span>
                     <span className="text-slate-400 transition group-open:rotate-180">⌄</span>
                   </summary>
                   <p className="mt-2 text-xs text-slate-500">{t(`dialogs.import.formats.${format}.description`)}</p>
-                  {format === "excel" ? (
-                    <div className="mt-3 space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("dialogs.import.fieldsLabel")}</p>
-                      <ul className="grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
-                        {IMPORT_FIELD_KEYS.map((fieldKey) => (
-                          <li key={fieldKey}>
-                            <span className="font-medium text-slate-900">{t(`dialogs.import.fields.${fieldKey}.label`)}</span>
-                            <span className="text-slate-500"> - {t(`dialogs.import.fields.${fieldKey}.description`)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
                   <pre className="mt-3 overflow-x-auto rounded-2xl bg-slate-50 px-3 py-3 font-mono text-xs leading-6 text-slate-800 whitespace-pre-wrap">
                     {String(t.raw(`dialogs.import.examples.${format}`))}
                   </pre>
@@ -1197,29 +1138,6 @@ export function ApartmentsManagementActionsMenu({
               ))}
             </div>
           </div>
-
-          {false ? (
-            <>
-              <div className="space-y-3">
-                <p className="text-sm font-semibold text-slate-900">{t("dialogs.import.fieldsLabel")}</p>
-                <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700 marker:text-slate-400">
-                  {IMPORT_FIELD_KEYS.map((fieldKey) => (
-                    <li key={fieldKey}>
-                      <span className="font-medium text-slate-900">{t(`dialogs.import.fields.${fieldKey}.label`)}</span>
-                      <span className="text-slate-500"> — {t(`dialogs.import.fields.${fieldKey}.description`)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                <p className="font-medium">{t("dialogs.import.examples.title")}</p>
-                <pre className="mt-2 overflow-x-auto rounded-2xl bg-white/80 px-3 py-3 font-mono text-xs leading-6 text-blue-950 whitespace-pre-wrap">
-                  {importExample}
-                </pre>
-              </div>
-            </>
-          ) : null}
 
           <div className="flex justify-end pt-2">
             <Button type="button" variant="secondary" size="sm" onClick={() => setImportOpen(false)} disabled={loadingImport}>{ui("cancel")}</Button>
@@ -1232,10 +1150,21 @@ export function ApartmentsManagementActionsMenu({
           <div className="space-y-5">
             <p className="text-sm text-slate-600">{t("dialogs.importResult.description")}</p>
 
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm leading-7 text-emerald-900">
-              <p className="font-semibold">{t("dialogs.importResult.imported", { count: importResult.imported })}</p>
-              <p>{t("dialogs.importResult.duplicates", { count: importResult.skippedDuplicates.length })}</p>
-              <p>{t("dialogs.importResult.errors", { count: importResult.errors.length })}</p>
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50">
+              <div className="grid divide-y divide-slate-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                <div className="px-5 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("dialogs.importResult.importedLabel")}</p>
+                  <p className="mt-2 text-3xl font-semibold leading-none text-slate-950">{importResult.imported}</p>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("dialogs.importResult.duplicatesLabel")}</p>
+                  <p className="mt-2 text-3xl font-semibold leading-none text-slate-950">{importResult.skippedDuplicates.length}</p>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("dialogs.importResult.errorsLabel")}</p>
+                  <p className="mt-2 text-3xl font-semibold leading-none text-slate-950">{importResult.errors.length}</p>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -1243,7 +1172,7 @@ export function ApartmentsManagementActionsMenu({
               {importResult.createdApartments.length ? (
                 <div className="max-h-44 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   {importResult.createdApartments.map((apartment, index) => (
-                    <div key={`${apartment}-${index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700 shadow-sm ring-1 ring-slate-200">
+                    <div key={`${apartment}-${index}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                       {apartment}
                     </div>
                   ))}
@@ -1258,9 +1187,9 @@ export function ApartmentsManagementActionsMenu({
             {importResult.skippedDuplicates.length ? (
               <div className="space-y-2">
                 <p className="text-sm font-semibold text-slate-900">{t("dialogs.importResult.duplicateRows")}</p>
-                <div className="max-h-32 space-y-2 overflow-y-auto rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                <div className="max-h-32 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   {importResult.skippedDuplicates.map((item, index) => (
-                    <div key={`${item}-${index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-amber-800 shadow-sm ring-1 ring-amber-100">
+                    <div key={`${item}-${index}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                       {item}
                     </div>
                   ))}
@@ -1273,7 +1202,7 @@ export function ApartmentsManagementActionsMenu({
                 <p className="text-sm font-semibold text-slate-900">{t("dialogs.importResult.errorRows")}</p>
                 <div className="max-h-32 space-y-2 overflow-y-auto rounded-2xl border border-red-200 bg-red-50 p-3">
                   {importResult.errors.map((item, index) => (
-                    <div key={`${item}-${index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-red-700 shadow-sm ring-1 ring-red-100">
+                    <div key={`${item}-${index}`} className="rounded-xl border border-red-200 bg-white px-3 py-2 text-sm text-red-700">
                       {item}
                     </div>
                   ))}

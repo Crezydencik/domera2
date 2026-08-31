@@ -743,8 +743,6 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
   const [resendingDeliveryKey, setResendingDeliveryKey] = useState<string | null>(null);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const mobileActionsRef = React.useRef<HTMLDivElement | null>(null);
-  const [statsOpen, setStatsOpen] = useState(false);
-  const [statsExpandedYear, setStatsExpandedYear] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
   const [exportReadingMonth, setExportReadingMonth] = useState<string>(() => {
@@ -886,7 +884,7 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
   const formatCubic = React.useCallback((value: number) => `${value.toFixed(3)} m\u00b3`, []);
 
   const renderBuildingStatsPanel = React.useCallback(
-    (summary: MonthlyWaterSummary | null, onOpenChart: () => void) => {
+    (summary: MonthlyWaterSummary | null, buildingId: string) => {
       if (!summary) return null;
       return (
         <div className="mb-5 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -895,17 +893,23 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("buildingStats")}</div>
               <div className="text-base font-semibold text-slate-900 tabular-nums">{summary.label}</div>
             </div>
-            <button
-              type="button"
-              onClick={onOpenChart}
+            <Link
+              href={ROUTES.meterReadingsBuilding}
+              onClick={() => {
+                try {
+                  window.localStorage.setItem("domera:building-main-meter:selected-building", buildingId);
+                } catch {
+                  // Ignore storage write issues during navigation.
+                }
+              }}
               className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 3v18h18" />
                 <path d="m7 15 4-4 3 3 5-7" />
               </svg>
-              {t("openChart")}
-            </button>
+              Показание дома
+            </Link>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             <div className="rounded-md bg-blue-50 px-2.5 py-2">
@@ -921,180 +925,6 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
       );
     },
     [formatCubic, t],
-  );
-
-  const renderBuildingStatsChart = React.useCallback(
-    (summaries: MonthlyWaterSummary[]) => {
-      if (summaries.length === 0) {
-        return (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
-            {t("noConsumptionData")}
-          </div>
-        );
-      }
-
-      const chartData = summaries.slice(0, 12).reverse();
-      const latest = summaries[0] ?? null;
-      const width = 920;
-      const height = 340;
-      const padLeft = 72;
-      const padRight = 28;
-      const padTop = 36;
-      const padBottom = 52;
-      const values = chartData.flatMap((summary) => [summary.cold, summary.hot]).filter((value) => value > 0).sort((a, b) => a - b);
-      const maxValue = Math.max(...values, 1);
-      const medianValue = values.length > 0 ? values[Math.floor(values.length / 2)] : maxValue;
-      const regularLimit = Math.max(medianValue * 4, 1);
-      const regularValues = values.filter((value) => value <= regularLimit);
-      const regularMax = Math.max(...(regularValues.length > 0 ? regularValues : values), 1);
-      const chartMax = maxValue > regularMax * 4 ? Math.max(regularMax * 1.25, 1) : maxValue;
-      const hasOutlier = maxValue > chartMax;
-      const xFor = (index: number) => {
-        if (chartData.length === 1) return width / 2;
-        return padLeft + (index * (width - padLeft - padRight)) / (chartData.length - 1);
-      };
-      const yFor = (value: number) => height - padBottom - (Math.min(value, chartMax) / chartMax) * (height - padTop - padBottom);
-      const coldPoints = chartData.map((summary, index) => `${xFor(index)},${yFor(summary.cold)}`).join(" ");
-      const hotPoints = chartData.map((summary, index) => `${xFor(index)},${yFor(summary.hot)}`).join(" ");
-      const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
-        ratio,
-        value: chartMax * ratio,
-        y: height - padBottom - ratio * (height - padTop - padBottom),
-      }));
-      const yearGroups = chartData.reduce<Array<{ year: string; items: MonthlyWaterSummary[]; cold: number; hot: number }>>((groups, summary) => {
-        const year = summary.monthKey.split("-")[0] || summary.label.slice(-4);
-        const existing = groups.find((group) => group.year === year);
-        if (existing) {
-          existing.items.push(summary);
-          existing.cold += summary.cold;
-          existing.hot += summary.hot;
-        } else {
-          groups.push({ year, items: [summary], cold: summary.cold, hot: summary.hot });
-        }
-        return groups;
-      }, []);
-      const hasMultipleYears = yearGroups.length > 1;
-      const renderMonthRow = (summary: MonthlyWaterSummary) => (
-        <div key={summary.monthKey} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <span className="font-semibold text-slate-800 tabular-nums">{summary.label}</span>
-          <div className="flex shrink-0 flex-wrap justify-end gap-2 text-xs font-semibold">
-            <span className="rounded-md bg-blue-50 px-2 py-1 text-blue-700 tabular-nums">{t("coldWaterShort")}: {formatCubic(summary.cold)}</span>
-            <span className="rounded-md bg-rose-50 px-2 py-1 text-rose-700 tabular-nums">{t("hotWaterShort")}: {formatCubic(summary.hot)}</span>
-          </div>
-        </div>
-      );
-
-      return (
-        <div className="space-y-4">
-          {latest && (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="rounded-lg bg-blue-50 px-3 py-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">{t("coldWaterShort")} {latest.label}</div>
-                <div className="mt-0.5 text-lg font-bold text-blue-700 tabular-nums">{formatCubic(latest.cold)}</div>
-              </div>
-              <div className="rounded-lg bg-rose-50 px-3 py-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-rose-500">{t("hotWaterShort")} {latest.label}</div>
-                <div className="mt-0.5 text-lg font-bold text-rose-700 tabular-nums">{formatCubic(latest.hot)}</div>
-              </div>
-            </div>
-          )}
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("buildingStats")}</div>
-                <div className="text-sm text-slate-500">{t("summaryChart")}</div>
-              </div>
-              <div className="flex items-center gap-3 text-xs font-semibold">
-                <span className="inline-flex items-center gap-1 text-blue-700"><span className="h-2 w-2 rounded-full bg-blue-500" />{t("coldWaterShort")}</span>
-                <span className="inline-flex items-center gap-1 text-rose-700"><span className="h-2 w-2 rounded-full bg-rose-500" />{t("hotWaterShort")}</span>
-              </div>
-            </div>
-            {hasOutlier && (
-              <div className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                {t("chartOutlierHint")}
-              </div>
-            )}
-            <svg viewBox={`0 0 ${width} ${height}`} className="h-80 w-full overflow-visible">
-              <line x1={padLeft} y1={height - padBottom} x2={width - padRight} y2={height - padBottom} stroke="#cbd5e1" strokeWidth="1" />
-              <line x1={padLeft} y1={padTop} x2={padLeft} y2={height - padBottom} stroke="#cbd5e1" strokeWidth="1" />
-              {yTicks.map((tick) => (
-                <g key={tick.ratio}>
-                  <line x1={padLeft} y1={tick.y} x2={width - padRight} y2={tick.y} stroke="#e2e8f0" strokeWidth="1" />
-                  <text x={padLeft - 10} y={tick.y + 4} textAnchor="end" className="fill-slate-500 text-[11px] font-semibold">
-                    {tick.ratio === 0 ? "0" : tick.value.toFixed(0)}
-                  </text>
-                </g>
-              ))}
-              <polyline points={coldPoints} fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-              <polyline points={hotPoints} fill="none" stroke="#f43f5e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-              {chartData.map((summary, index) => (
-                <g key={summary.monthKey}>
-                  <circle cx={xFor(index)} cy={yFor(summary.cold)} r="4" fill="#3b82f6" />
-                  <circle cx={xFor(index)} cy={yFor(summary.hot)} r="4" fill="#f43f5e" />
-                  {summary.cold > chartMax && (
-                    <text x={xFor(index)} y={yFor(summary.cold) - 9} textAnchor="middle" className="fill-blue-700 text-[11px] font-bold">
-                      {formatCubic(summary.cold)}
-                    </text>
-                  )}
-                  {summary.hot > chartMax && (
-                    <text x={xFor(index)} y={yFor(summary.hot) + 17} textAnchor="middle" className="fill-rose-700 text-[11px] font-bold">
-                      {formatCubic(summary.hot)}
-                    </text>
-                  )}
-                  <text x={xFor(index)} y={height - 18} textAnchor="middle" className="fill-slate-500 text-[11px] font-semibold">
-                    {summary.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-          {hasMultipleYears ? (
-            <div className="space-y-2">
-              {yearGroups.map((group) => {
-                const isExpanded = statsExpandedYear === group.year;
-                return (
-                  <div key={group.year} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                    <button
-                      type="button"
-                      onClick={() => setStatsExpandedYear((current) => (current === group.year ? null : group.year))}
-                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <svg
-                          className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="m9 18 6-6-6-6" />
-                        </svg>
-                        <span className="font-semibold text-slate-900 tabular-nums">{group.year}</span>
-                      </div>
-                      <div className="flex shrink-0 flex-wrap justify-end gap-2 text-xs font-semibold">
-                        <span className="rounded-md bg-blue-50 px-2 py-1 text-blue-700 tabular-nums">{t("coldWaterShort")}: {formatCubic(group.cold)}</span>
-                        <span className="rounded-md bg-rose-50 px-2 py-1 text-rose-700 tabular-nums">{t("hotWaterShort")}: {formatCubic(group.hot)}</span>
-                      </div>
-                    </button>
-                    {isExpanded && (
-                      <div className="space-y-2 border-t border-slate-100 bg-slate-50/60 p-3">
-                        {group.items.map(renderMonthRow)}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="space-y-2">{chartData.map(renderMonthRow)}</div>
-          )}
-        </div>
-      );
-    },
-    [formatCubic, statsExpandedYear, t],
   );
 
   // View meters modal
@@ -2905,15 +2735,6 @@ ${xmlRows}
         </div>
       </Modal>
 
-      <Modal
-        open={statsOpen}
-        onClose={() => setStatsOpen(false)}
-        title={t("statsModalTitle")}
-        size="xl"
-      >
-        {renderBuildingStatsChart(buildingWaterSummaries)}
-      </Modal>
-
       <section> 
         {buildings.length > 1 && (
           <div className="mb-5 max-w-md">
@@ -2963,7 +2784,7 @@ ${xmlRows}
             values={{ ...filterValues, building: effectiveBuilding }}
             onChange={setFilterValue}
             mobileActionsInline
-            actionsClassName="flex w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap md:justify-end"
+            actionsClassName="flex w-full items-center justify-end gap-2 md:w-auto md:flex-nowrap"
             actions={
               <>
                 {canManageReadings ? (
@@ -2995,7 +2816,7 @@ ${xmlRows}
                     type="button"
                     onClick={() => setSelectAptOpen(true)}
                     disabled={filteredApartments.length === 0}
-                    className="hidden items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1 md:inline-flex"
+                    className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1"
                   >
                     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                     {t("submit")}
@@ -3010,9 +2831,9 @@ ${xmlRows}
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
                   {t("export")}
                 </button>
-                <div ref={mobileActionsRef} className="relative flex h-10 w-10 items-center justify-end md:hidden">
+                <div ref={mobileActionsRef} className="relative flex h-11 w-11 shrink-0 items-center justify-end md:hidden">
                   {mobileActionsOpen && (
-                    <div className="absolute right-0 top-11 z-20 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 text-sm shadow-xl shadow-slate-950/10">
                       {canManageReadings ? (
                         <button
                           type="button"
@@ -3022,7 +2843,7 @@ ${xmlRows}
                             setPeriodOpen(true);
                           }}
                           disabled={!effectiveBuilding || periodAvailableTabs.length === 0}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                           title={periodActionLabel}
                         >
                           <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -3040,7 +2861,7 @@ ${xmlRows}
                             setSelectAptOpen(true);
                           }}
                           disabled={filteredApartments.length === 0}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                           {t("submit")}
@@ -3053,7 +2874,7 @@ ${xmlRows}
                           setExportOpen(true);
                         }}
                         disabled={filteredApartments.length === 0}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
                         {t("export")}
@@ -3063,7 +2884,7 @@ ${xmlRows}
                   <button
                     type="button"
                     onClick={() => setMobileActionsOpen((open) => !open)}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm shadow-slate-950/[0.03] transition hover:border-slate-300 hover:bg-slate-50"
                     aria-label={t("colActions")}
                     aria-expanded={mobileActionsOpen}
                   >
@@ -3109,7 +2930,7 @@ ${xmlRows}
           </div>
         ) : null}
 
-        {!selectedBuildingHasNoApartments && effectiveTab === "water" && renderBuildingStatsPanel(buildingWaterSummary, () => setStatsOpen(true))}
+        {!selectedBuildingHasNoApartments && effectiveTab === "water" && effectiveBuilding && renderBuildingStatsPanel(buildingWaterSummary, effectiveBuilding)}
 
         {/* Table */}
         {loading ? (
@@ -3369,10 +3190,11 @@ ${xmlRows}
                             {canManageReadings ? (
                             <button
                               onClick={() => openSubmitModal(apt)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                               title="Сдать показание"
                             >
                               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                              {t("submit")}
                             </button>
                             ) : null}
                           </div>
