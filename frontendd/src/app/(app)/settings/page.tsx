@@ -250,6 +250,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     manageApiKeys: value?.manageApiKeys === true,
     manageInvoiceSettings: value?.manageInvoiceSettings === true,
     manageMeterReadings: value?.manageMeterReadings === true,
+    manageMeterReadingData: value?.manageMeterReadingData === true || value?.manageMeterReadings === true,
   });
 
   return (
@@ -289,6 +290,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             manageApiKeys: currentUserPermissions.manageApiKeys === true,
             manageInvoiceSettings: currentUserPermissions.manageInvoiceSettings === true,
             manageMeterReadings: currentUserPermissions.manageMeterReadings === true,
+            manageMeterReadingData: currentUserPermissions.manageMeterReadingData === true || currentUserPermissions.manageMeterReadings === true,
           },
           buildings: data.buildings
             .filter(isApprovedBuilding)
@@ -303,6 +305,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               id: item.id,
               email: item.email ?? "",
               name: item.fullName,
+              firstName: firstString((item as unknown as UnknownRecord).firstName),
+              lastName: firstString((item as unknown as UnknownRecord).lastName),
               phone: item.phone ?? "",
               position: firstString(item.position, item.jobTitle, item.comment),
               showContactToResidents: item.showContactToResidents === true,
@@ -315,6 +319,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               id: firstString(item.id, item.email),
               email: firstString(item.email),
               name: firstString(item.fullName, item.name, [item.firstName, item.lastName].filter((value) => typeof value === "string" && value.trim()).join(" ")),
+              firstName: firstString(item.firstName),
+              lastName: firstString(item.lastName),
               phone: firstString(item.phone),
               position: firstString(item.position, item.jobTitle),
               comment: firstString(item.comment),

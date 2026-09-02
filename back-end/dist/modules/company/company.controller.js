@@ -46,6 +46,9 @@ let CompanyController = class CompanyController {
     removeMember(request, user, companyId, memberId) {
         return this.companyService.removeMember(request, user, companyId, memberId);
     }
+    updateMember(request, user, companyId, memberId, body) {
+        return this.companyService.updateMember(request, user, companyId, memberId, body);
+    }
     updateMemberPermissions(request, user, companyId, memberId, body) {
         return this.companyService.updateMemberPermissions(request, user, companyId, memberId, body);
     }
@@ -145,6 +148,20 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, String, String]),
     __metadata("design:returntype", void 0)
 ], CompanyController.prototype, "removeMember", null);
+__decorate([
+    (0, common_1.Patch)(':companyId/members/:memberId'),
+    (0, swagger_1.ApiOperation)({ summary: 'Update a management company member profile' }),
+    (0, swagger_1.ApiParam)({ name: 'companyId', required: true, type: String }),
+    (0, swagger_1.ApiParam)({ name: 'memberId', required: true, type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('companyId')),
+    __param(3, (0, common_1.Param)('memberId')),
+    __param(4, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, String, Object]),
+    __metadata("design:returntype", void 0)
+], CompanyController.prototype, "updateMember", null);
 __decorate([
     (0, common_1.Patch)(':companyId/members/:memberId/permissions'),
     (0, swagger_1.ApiOperation)({ summary: 'Update a management company member permissions' }),

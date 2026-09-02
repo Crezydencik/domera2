@@ -11,6 +11,7 @@ import { BuildingPlatformBillingService } from './services/building-platform-bil
 import { BuildingPlatformNotificationService } from './services/building-platform-notification.service';
 import { BuildingStatsService } from './services/building-stats.service';
 import { BuildingStorageService } from './services/building-storage.service';
+import { CompanyPayloadService } from '../company/services/company-payload.service';
 
 @Module({
   controllers: [
@@ -28,6 +29,7 @@ import { BuildingStorageService } from './services/building-storage.service';
     BuildingPlatformNotificationService,
     BuildingStatsService,
     BuildingStorageService,
+    CompanyPayloadService,
   ],
   exports: [BuildingsService],
 })

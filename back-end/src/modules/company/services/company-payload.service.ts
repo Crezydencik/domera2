@@ -9,6 +9,7 @@ export type CompanyMemberPermissions = {
   manageApiKeys: boolean;
   manageInvoiceSettings: boolean;
   manageMeterReadings: boolean;
+  manageMeterReadingData: boolean;
 };
 
 @Injectable()
@@ -37,6 +38,7 @@ export class CompanyPayloadService {
       manageApiKeys: false,
       manageInvoiceSettings: false,
       manageMeterReadings: false,
+      manageMeterReadingData: false,
       ...overrides,
     };
   }
@@ -54,6 +56,7 @@ export class CompanyPayloadService {
       manageApiKeys: source.manageApiKeys === true,
       manageInvoiceSettings: source.manageInvoiceSettings === true,
       manageMeterReadings: source.manageMeterReadings === true,
+      manageMeterReadingData: source.manageMeterReadingData === true || source.manageMeterReadings === true,
     });
   }
 

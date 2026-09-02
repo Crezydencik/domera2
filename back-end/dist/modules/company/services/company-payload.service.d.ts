@@ -7,6 +7,7 @@ export type CompanyMemberPermissions = {
     manageApiKeys: boolean;
     manageInvoiceSettings: boolean;
     manageMeterReadings: boolean;
+    manageMeterReadingData: boolean;
 };
 export declare class CompanyPayloadService {
     firstString(...values: unknown[]): string;

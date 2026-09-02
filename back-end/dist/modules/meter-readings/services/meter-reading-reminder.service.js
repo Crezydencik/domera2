@@ -83,7 +83,7 @@ let MeterReadingReminderService = class MeterReadingReminderService {
             const permissions = companySnap.exists
                 ? this.companyPayloadService.getCompanyMemberPermissions(companySnap.data(), user.uid)
                 : null;
-            if (!permissions?.manageMeterReadings) {
+            if (!permissions?.manageMeterReadings && !permissions?.manageMeterReadingData) {
                 throw new common_1.ForbiddenException('You do not have permission to edit meter readings');
             }
         }
@@ -159,7 +159,7 @@ let MeterReadingReminderService = class MeterReadingReminderService {
             const permissions = companySnap.exists
                 ? this.companyPayloadService.getCompanyMemberPermissions(companySnap.data(), user.uid)
                 : null;
-            if (!permissions?.manageMeterReadings) {
+            if (!permissions?.manageMeterReadings && !permissions?.manageMeterReadingData) {
                 throw new common_1.ForbiddenException('You do not have permission to edit meter readings');
             }
         }

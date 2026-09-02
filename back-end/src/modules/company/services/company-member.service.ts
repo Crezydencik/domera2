@@ -26,6 +26,19 @@ export class CompanyMemberService {
     return (process.env.FRONTEND_URL || process.env.APP_URL || 'https://domera.app').replace(/\/+$/, '');
   }
 
+  private sanitizePermissionsForRole(
+    permissions: CompanyMemberPermissions,
+    role: CompanyMemberRole,
+  ): CompanyMemberPermissions {
+    if (role !== 'Accountant') return permissions;
+
+    return {
+      ...permissions,
+      editCompanyInfo: false,
+      manageMembers: false,
+    };
+  }
+
   private async attachMemberToCompany(params: {
     companyId: string;
     company: Record<string, unknown>;
@@ -232,7 +245,10 @@ export class CompanyMemberService {
       companyId,
       company,
     );
-    const permissions = this.payloadService.normalizeCompanyMemberPermissions(payload.permissions);
+    const permissions = this.sanitizePermissionsForRole(
+      this.payloadService.normalizeCompanyMemberPermissions(payload.permissions),
+      resolvedRole,
+    );
 
     if (!createAccount) {
       const fullName = [firstName, lastName].filter(Boolean).join(' ');
@@ -438,6 +454,128 @@ export class CompanyMemberService {
     return { success: true, memberId: resolvedMemberId };
   }
 
+  async update(request: Request, user: RequestUser, companyId: string, memberId: string, payload: Record<string, unknown>) {
+    this.accessService.assertAuthenticated(user);
+    const normalizedCompanyId = companyId?.trim();
+    const normalizedMemberId = memberId?.trim();
+    if (!normalizedCompanyId || !normalizedMemberId) {
+      throw new BadRequestException('companyId and memberId are required');
+    }
+    if (normalizedMemberId === normalizedCompanyId) {
+      throw new ForbiddenException('The main company account cannot be edited here');
+    }
+
+    await this.accessService.enforceRateLimit(request, 'company:update-member', `${user.uid}:${normalizedCompanyId}`, 20);
+
+    const db = this.firebaseAdminService.firestore;
+    const companyRef = db.collection('companies').doc(normalizedCompanyId);
+    const companySnap = await companyRef.get();
+    if (!companySnap.exists) throw new NotFoundException('Company not found');
+
+    const company = companySnap.data() as Record<string, unknown>;
+    this.accessService.assertCanManageMembers(user, normalizedCompanyId, company);
+
+    const userIds = Array.isArray(company.userIds)
+      ? company.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const manager = Array.isArray(company.manager)
+      ? company.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const employees = Array.isArray(company.employees)
+      ? company.employees.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+
+    if ((!userIds.includes(normalizedMemberId) && !employees.includes(normalizedMemberId)) || manager.includes(normalizedMemberId)) {
+      throw new NotFoundException('Company member not found');
+    }
+
+    const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+    const role = payload.role === 'Accountant' || payload.role === 'ManagementCompany' ? payload.role : null;
+    const firstName = typeof payload.firstName === 'string' ? payload.firstName.trim() : '';
+    const lastName = typeof payload.lastName === 'string' ? payload.lastName.trim() : '';
+    const phone = this.payloadService.toOptionalTrimmedString(payload.phone);
+    const position = this.payloadService.toOptionalTrimmedString(payload.position);
+    const showContactToResidents = payload.showContactToResidents === true;
+
+    if (!email || !role || !firstName || !lastName) {
+      throw new BadRequestException('email, firstName, lastName and role are required');
+    }
+
+    const memberRef = db.collection('users').doc(normalizedMemberId);
+    const memberSnap = await memberRef.get();
+    if (!memberSnap.exists) throw new NotFoundException('Company member not found');
+
+    const memberData = memberSnap.data() as Record<string, unknown>;
+    const memberCompanyId = typeof memberData.companyId === 'string' ? memberData.companyId : '';
+    if (memberCompanyId && memberCompanyId !== normalizedCompanyId) {
+      throw new ForbiddenException('User belongs to another company');
+    }
+
+    const fullName = [firstName, lastName].filter(Boolean).join(' ');
+    const accountType = resolveAccountType({ role }) ?? 'ManagementCompany';
+    const memberPermissions = this.payloadService.normalizeCompanyMemberPermissionMap(company.memberPermissions);
+    const nextPermissions = this.sanitizePermissionsForRole(
+      memberPermissions[normalizedMemberId] ?? this.payloadService.defaultCompanyMemberPermissions(),
+      role,
+    );
+    const currentEmail = this.payloadService.firstString(memberData.email).toLowerCase();
+    if (email !== currentEmail) {
+      await this.firebaseAdminService.auth.updateUser(normalizedMemberId, { email });
+    }
+
+    await memberRef.set(
+      {
+        email,
+        firstName,
+        lastName,
+        fullName,
+        name: fullName,
+        displayName: fullName,
+        phone: phone ?? FieldValue.delete(),
+        phoneNumber: phone ?? FieldValue.delete(),
+        position: position ?? FieldValue.delete(),
+        jobTitle: position ?? FieldValue.delete(),
+        showContactToResidents,
+        role,
+        accountType,
+        companyId: normalizedCompanyId,
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
+
+    await companyRef.set(
+      {
+        memberPermissions: {
+          ...memberPermissions,
+          [normalizedMemberId]: nextPermissions,
+        },
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
+
+    return {
+      success: true,
+      member: {
+        id: normalizedMemberId,
+        uid: normalizedMemberId,
+        email,
+        firstName,
+        lastName,
+        fullName,
+        phone,
+        position,
+        showContactToResidents,
+        role,
+        accountType,
+        companyId: normalizedCompanyId,
+        permissions: nextPermissions,
+        memberType: 'employee',
+      },
+    };
+  }
+
   async updatePermissions(request: Request, user: RequestUser, companyId: string, memberId: string, payload: Record<string, unknown>) {
     this.accessService.assertAuthenticated(user);
     const normalizedCompanyId = companyId?.trim();
@@ -470,7 +608,13 @@ export class CompanyMemberService {
     }
 
     const memberPermissions = this.payloadService.normalizeCompanyMemberPermissionMap(company.memberPermissions);
-    const nextPermissions = this.payloadService.normalizeCompanyMemberPermissions(payload.permissions);
+    const memberSnap = await this.firebaseAdminService.firestore.collection('users').doc(normalizedMemberId).get();
+    const memberData = memberSnap.exists ? (memberSnap.data() as Record<string, unknown>) : {};
+    const memberRole = memberData.role === 'Accountant' ? 'Accountant' : 'ManagementCompany';
+    const nextPermissions = this.sanitizePermissionsForRole(
+      this.payloadService.normalizeCompanyMemberPermissions(payload.permissions),
+      memberRole,
+    );
 
     await companyRef.set(
       {

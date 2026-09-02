@@ -54,7 +54,7 @@ export class MeterReadingAccessService {
       companySnap.data() as Record<string, unknown>,
       user.uid,
     );
-    if (!permissions.manageMeterReadings) {
+    if (!permissions.manageMeterReadings && !permissions.manageMeterReadingData) {
       throw new ForbiddenException('You do not have permission to edit meter readings');
     }
   }

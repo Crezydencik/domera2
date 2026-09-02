@@ -53,6 +53,7 @@ let CompanyAccessService = class CompanyAccessService {
                 manageApiKeys: true,
                 manageInvoiceSettings: true,
                 manageMeterReadings: true,
+                manageMeterReadingData: true,
             };
         }
         const permissions = this.payloadService.getCompanyMemberPermissions(company, user.uid);

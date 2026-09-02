@@ -20,6 +20,7 @@ const building_platform_billing_service_1 = require("./services/building-platfor
 const building_platform_notification_service_1 = require("./services/building-platform-notification.service");
 const building_stats_service_1 = require("./services/building-stats.service");
 const building_storage_service_1 = require("./services/building-storage.service");
+const company_payload_service_1 = require("../company/services/company-payload.service");
 let BuildingsModule = class BuildingsModule {
 };
 exports.BuildingsModule = BuildingsModule;
@@ -40,6 +41,7 @@ exports.BuildingsModule = BuildingsModule = __decorate([
             building_platform_notification_service_1.BuildingPlatformNotificationService,
             building_stats_service_1.BuildingStatsService,
             building_storage_service_1.BuildingStorageService,
+            company_payload_service_1.CompanyPayloadService,
         ],
         exports: [buildings_service_1.BuildingsService],
     })

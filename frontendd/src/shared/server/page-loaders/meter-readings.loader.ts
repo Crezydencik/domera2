@@ -52,7 +52,9 @@ export async function getMeterReadingsPageData(roleHint?: string): Promise<Meter
       ? (companyResponse as { currentUserPermissions?: Record<string, unknown> }).currentUserPermissions
       : undefined;
   const canManageReadings =
-    normalizedRawRole !== "accountant" || currentUserPermissions?.manageMeterReadings === true;
+    normalizedRawRole !== "accountant"
+    || currentUserPermissions?.manageMeterReadings === true
+    || currentUserPermissions?.manageMeterReadingData === true;
 
   return {
     role,

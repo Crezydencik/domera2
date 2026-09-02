@@ -45,6 +45,16 @@ export class CompanyService {
     return this.memberService.remove(request, user, companyId, memberId);
   }
 
+  updateMember(
+    request: Request,
+    user: RequestUser,
+    companyId: string,
+    memberId: string,
+    payload: Record<string, unknown>,
+  ) {
+    return this.memberService.update(request, user, companyId, memberId, payload);
+  }
+
   updateMemberPermissions(
     request: Request,
     user: RequestUser,

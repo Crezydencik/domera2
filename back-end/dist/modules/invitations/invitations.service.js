@@ -429,6 +429,7 @@ let InvitationsService = class InvitationsService {
                                 manageApiKeys: false,
                                 manageInvoiceSettings: false,
                                 manageMeterReadings: false,
+                                manageMeterReadingData: false,
                             },
                     },
                     updatedAt: new Date(),

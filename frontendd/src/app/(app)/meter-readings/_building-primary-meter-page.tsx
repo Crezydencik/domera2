@@ -3,8 +3,13 @@
 import React from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { AlertModal } from "@/components/ui/alert-modal";
 import { Button } from "@/components/ui/button";
 import MeterReadingInput from "../../../components/ui/meter-reading-input";
+import { apiFetch } from "@/shared/api/client";
+import { useAuthSession } from "@/shared/hooks/use-auth";
+import { notifyMeterReadingsChanged } from "@/shared/hooks/use-app-notifications";
+import { useNotifications } from "@/shared/hooks/use-notifications";
 import { ROUTES } from "@/shared/lib/routes";
 import type { MeterReadingsInitialData } from "@/shared/server/page-loaders/meter-readings.loader";
 
@@ -49,6 +54,7 @@ type ManagedBuildingOption = {
   apartmentCount: number;
   coldWaterEnabled: boolean;
   hotWaterEnabled: boolean;
+  buildingMainMeterEntries: BuildingMainMeterEntry[];
 };
 
 type MonthlyWaterSummary = {
@@ -64,6 +70,7 @@ type MonthlyWaterSummary = {
 type BuildingMainMeterEntry = {
   monthKey: string;
   readingDate: string;
+  currentValue?: number | null;
   coldCurrentValue?: number | null;
   hotCurrentValue?: number | null;
 };
@@ -87,6 +94,8 @@ type BuildingHistoryRow = {
   differenceTotal: number;
   readingDate: string | null;
 };
+
+type CombinedChartSeriesKey = "house" | "apartmentsTotal" | "apartmentsCold" | "apartmentsHot" | "submittedApartments";
 
 type Props = {
   initialCompanyId?: string;
@@ -319,6 +328,7 @@ function buildManagementMeterReadingsState(initialData: MeterReadingsInitialData
         apartmentCount: Number.isFinite(apartmentCount) ? apartmentCount : 0,
         coldWaterEnabled: Boolean(readingConfig.waterEnabled) && numberValue(readingConfig.coldWaterMetersPerResident) > 0,
         hotWaterEnabled: Boolean(readingConfig.waterEnabled) && numberValue(readingConfig.hotWaterMetersPerResident) > 0,
+        buildingMainMeterEntries: normalizeBuildingMainMeterEntries(building.buildingMainMeterEntries),
       } : null;
     })
     .filter((item): item is ManagedBuildingOption => Boolean(item))
@@ -508,18 +518,25 @@ function endOfMonthDate(monthKey: string) {
 
 function normalizeHistory(entries: BuildingMainMeterEntry[]) {
   return entries
-    .map((entry) => ({
-      monthKey: entry.monthKey,
-      readingDate: entry.readingDate || endOfMonthDate(entry.monthKey),
-      coldCurrentValue: entry.coldCurrentValue === null || entry.coldCurrentValue === undefined ? null : Number(entry.coldCurrentValue),
-      hotCurrentValue: entry.hotCurrentValue === null || entry.hotCurrentValue === undefined ? null : Number(entry.hotCurrentValue),
-    }))
+    .map((entry) => {
+      const currentValue = entry.currentValue === null || entry.currentValue === undefined ? null : Number(entry.currentValue);
+      const legacyColdValue = entry.coldCurrentValue === null || entry.coldCurrentValue === undefined ? null : Number(entry.coldCurrentValue);
+      const legacyHotValue = entry.hotCurrentValue === null || entry.hotCurrentValue === undefined ? null : Number(entry.hotCurrentValue);
+      const legacyTotalValue =
+        legacyColdValue === null && legacyHotValue === null
+          ? null
+          : Number((((legacyColdValue !== null && Number.isFinite(legacyColdValue)) ? legacyColdValue : 0) + ((legacyHotValue !== null && Number.isFinite(legacyHotValue)) ? legacyHotValue : 0)).toFixed(3));
+
+      return {
+        monthKey: entry.monthKey,
+        readingDate: entry.readingDate || endOfMonthDate(entry.monthKey),
+        currentValue: currentValue ?? legacyTotalValue,
+      };
+    })
     .filter((entry) =>
       /^\d{4}-\d{2}$/.test(entry.monthKey)
-      && (
-        (entry.coldCurrentValue !== null && Number.isFinite(entry.coldCurrentValue))
-        || (entry.hotCurrentValue !== null && Number.isFinite(entry.hotCurrentValue))
-      ),
+      && entry.currentValue !== null
+      && Number.isFinite(entry.currentValue),
     )
     .sort((left, right) => left.monthKey.localeCompare(right.monthKey));
 }
@@ -530,30 +547,21 @@ function buildRows(summaries: MonthlyWaterSummary[], entries: BuildingMainMeterE
     .sort((left, right) => right.localeCompare(left));
   const normalizedEntries = normalizeHistory(entries);
   const calculatedEntries = new Map<string, {
-    coldCurrentValue: number | null;
-    coldPreviousValue: number | null;
-    coldConsumption: number;
-    hotCurrentValue: number | null;
-    hotPreviousValue: number | null;
-    hotConsumption: number;
+    currentValue: number | null;
+    previousValue: number | null;
+    consumption: number;
     readingDate: string;
   }>();
 
   normalizedEntries.forEach((entry, index) => {
     const previousEntry = index > 0 ? normalizedEntries[index - 1] : null;
-    const coldPreviousValue = previousEntry?.coldCurrentValue ?? null;
-    const hotPreviousValue = previousEntry?.hotCurrentValue ?? null;
-    const coldConsumption =
-      entry.coldCurrentValue === null || coldPreviousValue === null ? 0 : consumptionValue(entry.coldCurrentValue, coldPreviousValue);
-    const hotConsumption =
-      entry.hotCurrentValue === null || hotPreviousValue === null ? 0 : consumptionValue(entry.hotCurrentValue, hotPreviousValue);
+    const previousValue = previousEntry?.currentValue ?? null;
+    const consumption =
+      entry.currentValue === null || previousValue === null ? 0 : consumptionValue(entry.currentValue, previousValue);
     calculatedEntries.set(entry.monthKey, {
-      coldCurrentValue: entry.coldCurrentValue,
-      coldPreviousValue,
-      coldConsumption,
-      hotCurrentValue: entry.hotCurrentValue,
-      hotPreviousValue,
-      hotConsumption,
+      currentValue: entry.currentValue,
+      previousValue,
+      consumption,
       readingDate: entry.readingDate,
     });
   });
@@ -564,8 +572,8 @@ function buildRows(summaries: MonthlyWaterSummary[], entries: BuildingMainMeterE
     const residentCold = summary?.cold ?? 0;
     const residentHot = summary?.hot ?? 0;
     const residentTotal = summary?.total ?? 0;
-    const coldMainConsumption = main?.coldConsumption ?? 0;
-    const hotMainConsumption = main?.hotConsumption ?? 0;
+    const coldMainConsumption = main?.consumption ?? 0;
+    const hotMainConsumption = 0;
     const mainConsumptionTotal = Number((coldMainConsumption + hotMainConsumption).toFixed(3));
     const coldDifference = Number((coldMainConsumption - residentCold).toFixed(3));
     const hotDifference = Number((hotMainConsumption - residentHot).toFixed(3));
@@ -573,11 +581,11 @@ function buildRows(summaries: MonthlyWaterSummary[], entries: BuildingMainMeterE
       monthKey,
       label: monthLabelFromKey(monthKey),
       year: monthKey.split("-")[0] || "",
-      coldMainCurrentValue: main?.coldCurrentValue ?? null,
-      coldMainPreviousValue: main?.coldPreviousValue ?? null,
+      coldMainCurrentValue: main?.currentValue ?? null,
+      coldMainPreviousValue: main?.previousValue ?? null,
       coldMainConsumption,
-      hotMainCurrentValue: main?.hotCurrentValue ?? null,
-      hotMainPreviousValue: main?.hotPreviousValue ?? null,
+      hotMainCurrentValue: null,
+      hotMainPreviousValue: null,
       hotMainConsumption,
       mainConsumptionTotal,
       residentCold,
@@ -610,13 +618,50 @@ function formatMaybeCubic(value: number | null) {
   return value === null ? "—" : formatCubic(value);
 }
 
+function entryTotalValue(entry: BuildingMainMeterEntry | null | undefined) {
+  if (!entry) return null;
+  return entry.currentValue == null ? null : Number(entry.currentValue.toFixed(3));
+}
+
 function parseReadingInput(value: string) {
   const parsed = Number(String(value).replace(",", "."));
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeBuildingMainMeterEntries(value: unknown): BuildingMainMeterEntry[] {
+  if (!Array.isArray(value)) return [];
+
+  const entries: BuildingMainMeterEntry[] = [];
+  value.forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    const item = entry as UnknownRecord;
+    const monthKey = text(item.monthKey);
+    const readingDate = text(item.readingDate);
+    const currentValue = parseReadingInput(String(item.currentValue ?? ""));
+    const coldCurrentValue = parseReadingInput(String(item.coldCurrentValue ?? ""));
+    const hotCurrentValue = parseReadingInput(String(item.hotCurrentValue ?? ""));
+    const legacyTotalValue =
+      coldCurrentValue === null && hotCurrentValue === null
+        ? null
+        : Number(((coldCurrentValue ?? 0) + (hotCurrentValue ?? 0)).toFixed(3));
+
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) return;
+    if (currentValue === null && legacyTotalValue === null) return;
+
+    entries.push({
+      monthKey,
+      readingDate,
+      currentValue: currentValue ?? legacyTotalValue,
+    });
+  });
+
+  return normalizeHistory(entries);
+}
+
 export default function BuildingPrimaryMeterPage({ initialData, canManageReadings = true }: Props) {
   const t = useTranslations("meterread");
+  const session = useAuthSession();
+  const notify = useNotifications();
   const tr = React.useCallback((key: string, fallback: string) => {
     const value = t(key);
     return value === `meterread.${key}` ? fallback : value;
@@ -624,18 +669,42 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
   const initialState = React.useMemo(() => initialData ? buildManagementMeterReadingsState(initialData) : { apartments: [], managedBuildings: [] }, [initialData]);
   const [selectedBuildingId, setSelectedBuildingId] = React.useState("");
   const [buildingEntries, setBuildingEntries] = React.useState<BuildingMainMeterEntry[]>([]);
+  const [buildingEntryOverrides, setBuildingEntryOverrides] = React.useState<Record<string, BuildingMainMeterEntry[]>>({});
   const [monthKey, setMonthKey] = React.useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
   const [readingDate, setReadingDate] = React.useState(() => endOfMonthDate(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`));
   const [coldCurrentValueInput, setColdCurrentValueInput] = React.useState("");
-  const [hotCurrentValueInput, setHotCurrentValueInput] = React.useState("");
   const [storageReady, setStorageReady] = React.useState(false);
+  const [mainMeterSaving, setMainMeterSaving] = React.useState(false);
+  const [mainMeterDeleting, setMainMeterDeleting] = React.useState(false);
+  const [deleteMainMeterOpen, setDeleteMainMeterOpen] = React.useState(false);
   const [historyTab, setHistoryTab] = React.useState<"building" | "apartments">("building");
   const [expandedMonthKeys, setExpandedMonthKeys] = React.useState<Set<string>>(() => new Set());
+  const [visibleCombinedSeries, setVisibleCombinedSeries] = React.useState<Record<CombinedChartSeriesKey, boolean>>({
+    house: true,
+    apartmentsTotal: true,
+    apartmentsCold: true,
+    apartmentsHot: true,
+    submittedApartments: true,
+  });
 
   const buildings = initialState.managedBuildings;
+  const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId) ?? null;
+  const selectedMonthMainEntry = React.useMemo(
+    () => normalizeHistory(buildingEntries).find((entry) => entry.monthKey === monthKey) ?? null,
+    [buildingEntries, monthKey],
+  );
+  const previousMonthMainEntry = React.useMemo(
+    () => {
+      const previousEntries = normalizeHistory(buildingEntries).filter((entry) => entry.monthKey < monthKey);
+      return previousEntries[previousEntries.length - 1] ?? null;
+    },
+    [buildingEntries, monthKey],
+  );
+  const selectedMonthMainValue = entryTotalValue(selectedMonthMainEntry);
+  const previousMonthMainValue = entryTotalValue(previousMonthMainEntry);
 
   React.useEffect(() => {
     if (buildings.length === 0) return;
@@ -674,6 +743,13 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
   React.useEffect(() => {
     if (!selectedBuildingId) return;
     setStorageReady(false);
+    const entriesFromBuilding = buildingEntryOverrides[selectedBuildingId] ?? selectedBuilding?.buildingMainMeterEntries ?? [];
+    if (entriesFromBuilding.length > 0) {
+      setBuildingEntries(entriesFromBuilding);
+      setStorageReady(true);
+      return;
+    }
+
     try {
       const raw = window.localStorage.getItem(safeStorageKey(selectedBuildingId));
       const nextEntries = raw ? JSON.parse(raw) as BuildingMainMeterEntry[] : [];
@@ -683,7 +759,12 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
     } finally {
       setStorageReady(true);
     }
-  }, [selectedBuildingId]);
+  }, [buildingEntryOverrides, selectedBuilding?.buildingMainMeterEntries, selectedBuildingId]);
+
+  React.useEffect(() => {
+    setColdCurrentValueInput(selectedMonthMainValue === null ? "" : String(selectedMonthMainValue));
+    setReadingDate(selectedMonthMainEntry?.readingDate || endOfMonthDate(monthKey));
+  }, [monthKey, selectedMonthMainEntry?.readingDate, selectedMonthMainValue]);
 
   const buildingApartments = React.useMemo(
     () => initialState.apartments.filter((apartment) => apartment.building === selectedBuildingId),
@@ -697,6 +778,12 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
     () => buildRows(buildingSummaryRows, buildingEntries),
     [buildingEntries, buildingSummaryRows],
   );
+  const [reportMonthKey, setReportMonthKey] = React.useState(() => historyRows[0]?.monthKey ?? monthKey);
+  React.useEffect(() => {
+    if (historyRows.length > 0 && !historyRows.some((row) => row.monthKey === reportMonthKey)) {
+      setReportMonthKey(historyRows[0].monthKey);
+    }
+  }, [historyRows, reportMonthKey]);
   const yearlyTotals = React.useMemo(() => {
     const totals = new Map<string, number>();
     historyRows.forEach((row) => {
@@ -704,10 +791,8 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
     });
     return Array.from(totals.entries()).sort((left, right) => right[0].localeCompare(left[0]));
   }, [historyRows]);
-  const latestRow = historyRows[0] ?? null;
-  const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId) ?? null;
-  const coldEnabled = selectedBuilding?.coldWaterEnabled !== false;
-  const hotEnabled = selectedBuilding?.hotWaterEnabled === true;
+  const latestRow = historyRows.find((row) => row.monthKey === reportMonthKey) ?? historyRows[0] ?? null;
+  const coldEnabled = Boolean(selectedBuilding);
   const [yearStr, monthStr] = monthKey.split("-");
   const currentPeriodLabel = yearStr && monthStr ? `${monthStr}.${yearStr}` : monthKey;
   const totalMainCurrentValue =
@@ -733,26 +818,106 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
     });
   }, []);
 
-  const saveMainReading = React.useCallback(() => {
+  const toggleCombinedSeries = React.useCallback((key: CombinedChartSeriesKey) => {
+    setVisibleCombinedSeries((current) => ({ ...current, [key]: !current[key] }));
+  }, []);
+
+  const saveMainReading = React.useCallback(async () => {
     if (!selectedBuildingId || !canManageReadings) return;
     const coldCurrentValue = coldEnabled ? parseReadingInput(coldCurrentValueInput) : null;
-    const hotCurrentValue = hotEnabled ? parseReadingInput(hotCurrentValueInput) : null;
     if (coldEnabled && coldCurrentValue === null) return;
-    if (hotEnabled && hotCurrentValue === null) return;
     const nextEntries = normalizeHistory([
       ...buildingEntries.filter((entry) => entry.monthKey !== monthKey),
       {
         monthKey,
         readingDate: readingDate || endOfMonthDate(monthKey),
-        coldCurrentValue,
-        hotCurrentValue,
+        currentValue: coldCurrentValue,
       },
     ]);
-    setBuildingEntries(nextEntries);
-    window.localStorage.setItem(safeStorageKey(selectedBuildingId), JSON.stringify(nextEntries));
-    setColdCurrentValueInput("");
-    setHotCurrentValueInput("");
-  }, [buildingEntries, canManageReadings, coldCurrentValueInput, coldEnabled, hotCurrentValueInput, hotEnabled, monthKey, readingDate, selectedBuildingId]);
+    try {
+      setMainMeterSaving(true);
+      await apiFetch(`/buildings/${encodeURIComponent(selectedBuildingId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ buildingMainMeterEntries: nextEntries }),
+      });
+      setBuildingEntries(nextEntries);
+      setBuildingEntryOverrides((current) => ({ ...current, [selectedBuildingId]: nextEntries }));
+      window.localStorage.setItem(safeStorageKey(selectedBuildingId), JSON.stringify(nextEntries));
+      setColdCurrentValueInput("");
+      notify.success(t("notifyMetersSaved"));
+      if (session.userId) {
+        void apiFetch("/notifications", {
+          method: "POST",
+          redirectOnAuthError: false,
+          body: JSON.stringify({
+            userId: session.userId,
+            type: "meter-reading",
+            channel: t("buildingMainMeterEyebrow"),
+            title: t("notifyMetersSaved"),
+            description: `${selectedBuilding?.label ?? t("buildingMainMeterTitle")} · ${currentPeriodLabel}`,
+            actionHref: ROUTES.meterReadingsBuilding,
+            actionLabel: t("openBuildingMainMeter"),
+          }),
+        })
+          .then(() => notifyMeterReadingsChanged())
+          .catch((error) => {
+            console.error("Failed to create building main meter notification", error);
+          });
+      } else {
+        notifyMeterReadingsChanged();
+      }
+    } catch (error) {
+      console.error("Failed to save building main meter reading", error);
+      notify.error(t("notifySaveError"));
+    } finally {
+      setMainMeterSaving(false);
+    }
+  }, [buildingEntries, canManageReadings, coldCurrentValueInput, coldEnabled, currentPeriodLabel, monthKey, notify, readingDate, selectedBuilding?.label, selectedBuildingId, session.userId, t]);
+
+  const deleteMainReading = React.useCallback(async () => {
+    if (!selectedBuildingId || !canManageReadings || !selectedMonthMainEntry) return;
+    const nextEntries = normalizeHistory(buildingEntries.filter((entry) => entry.monthKey !== monthKey));
+
+    try {
+      setMainMeterDeleting(true);
+      await apiFetch(`/buildings/${encodeURIComponent(selectedBuildingId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ buildingMainMeterEntries: nextEntries }),
+      });
+      setBuildingEntries(nextEntries);
+      setBuildingEntryOverrides((current) => ({ ...current, [selectedBuildingId]: nextEntries }));
+      window.localStorage.setItem(safeStorageKey(selectedBuildingId), JSON.stringify(nextEntries));
+      setColdCurrentValueInput("");
+      setReadingDate(endOfMonthDate(monthKey));
+      notify.success(t("notifyDeletedReadings", { monthKey }));
+      if (session.userId) {
+        void apiFetch("/notifications", {
+          method: "POST",
+          redirectOnAuthError: false,
+          body: JSON.stringify({
+            userId: session.userId,
+            type: "meter-reading",
+            channel: t("buildingMainMeterEyebrow"),
+            title: t("notifyDeletedReadings", { monthKey }),
+            description: `${selectedBuilding?.label ?? t("buildingMainMeterTitle")} · ${currentPeriodLabel}`,
+            actionHref: ROUTES.meterReadingsBuilding,
+            actionLabel: t("openBuildingMainMeter"),
+          }),
+        })
+          .then(() => notifyMeterReadingsChanged())
+          .catch((error) => {
+            console.error("Failed to create building main meter delete notification", error);
+          });
+      } else {
+        notifyMeterReadingsChanged();
+      }
+    } catch (error) {
+      console.error("Failed to delete building main meter reading", error);
+      notify.error(t("notifyDeleteError"));
+    } finally {
+      setMainMeterDeleting(false);
+    }
+  }, [buildingEntries, canManageReadings, currentPeriodLabel, monthKey, notify, selectedBuilding?.label, selectedBuildingId, selectedMonthMainEntry, session.userId, t]);
 
   const chartRows = historyRows.slice(0, 12).reverse();
   const width = 960;
@@ -821,10 +986,10 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
   }));
   const combinedConsumptionValues = combinedChartRows
     .flatMap((row) => [
-      row.coldMainConsumption,
-      row.hotMainConsumption,
-      row.residentCold,
-      row.residentHot,
+      visibleCombinedSeries.house ? row.mainConsumptionTotal : 0,
+      visibleCombinedSeries.apartmentsTotal ? row.residentTotal : 0,
+      visibleCombinedSeries.apartmentsCold ? row.residentCold : 0,
+      visibleCombinedSeries.apartmentsHot ? row.residentHot : 0,
     ])
     .filter((value) => value > 0)
     .sort((left, right) => right - left);
@@ -840,8 +1005,8 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
   );
   const submittedApartmentsMax = Math.max(
     1,
-    selectedBuilding?.apartmentCount ?? 0,
-    ...combinedChartRows.map((row) => row.submittedApartmentCount),
+    visibleCombinedSeries.submittedApartments ? selectedBuilding?.apartmentCount ?? 0 : 0,
+    ...combinedChartRows.map((row) => visibleCombinedSeries.submittedApartments ? row.submittedApartmentCount : 0),
   );
   const combinedChartValue = (value: number) => Math.min(value, combinedChartMax);
   const combinedYFor = (value: number) => height - padBottom - (combinedChartValue(value) / combinedChartMax) * (height - padTop - padBottom);
@@ -856,12 +1021,49 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
     value: submittedApartmentsMax * ratio,
     y: height - padBottom - ratio * (height - padTop - padBottom),
   }));
-  const coldHousePoints = combinedChartRows.map((row, index) => `${xFor(index)},${combinedYFor(row.coldMainConsumption)}`).join(" ");
-  const hotHousePoints = combinedChartRows.map((row, index) => `${xFor(index)},${combinedYFor(row.hotMainConsumption)}`).join(" ");
+  const housePoints = combinedChartRows.map((row, index) => `${xFor(index)},${combinedYFor(row.mainConsumptionTotal)}`).join(" ");
+  const totalApartmentsPoints = combinedChartRows.map((row, index) => `${xFor(index)},${combinedYFor(row.residentTotal)}`).join(" ");
   const coldApartmentsPoints = combinedChartRows.map((row, index) => `${xFor(index)},${combinedYFor(row.residentCold)}`).join(" ");
   const hotApartmentsPoints = combinedChartRows.map((row, index) => `${xFor(index)},${combinedYFor(row.residentHot)}`).join(" ");
   const latestCombinedChartRow = combinedChartRows[combinedChartRows.length - 1] ?? null;
   const latestCombinedChartX = combinedChartRows.length > 0 ? xFor(combinedChartRows.length - 1) : 0;
+  const combinedLegendItems: Array<{
+    key: CombinedChartSeriesKey;
+    label: string;
+    dotClassName: string;
+    activeClassName: string;
+  }> = [
+    {
+      key: "house",
+      label: t("buildingMainMeterTitle"),
+      dotClassName: "bg-sky-500",
+      activeClassName: "bg-sky-50 text-sky-700",
+    },
+    {
+      key: "apartmentsTotal",
+      label: t("buildingMainMeterSeriesApartmentsTotal"),
+      dotClassName: "bg-emerald-500",
+      activeClassName: "bg-emerald-50 text-emerald-700",
+    },
+    {
+      key: "apartmentsCold",
+      label: tr("buildingMainMeterSeriesApartmentsCold", "Квартиры ХВ"),
+      dotClassName: "bg-blue-700",
+      activeClassName: "bg-blue-50 text-blue-700",
+    },
+    {
+      key: "apartmentsHot",
+      label: tr("buildingMainMeterSeriesApartmentsHot", "Квартиры ГВ"),
+      dotClassName: "bg-pink-600",
+      activeClassName: "bg-pink-50 text-pink-700",
+    },
+    {
+      key: "submittedApartments",
+      label: tr("buildingMainMeterSeriesSubmittedApartments", "Квартиры с показаниями"),
+      dotClassName: "bg-violet-600",
+      activeClassName: "bg-violet-50 text-violet-700",
+    },
+  ];
   const renderWaterPair = (coldValue: number | null, hotValue: number | null) => (
     <div className="inline-grid min-w-[7.5rem] gap-1 text-right tabular-nums">
       <div className="flex items-center justify-end gap-2 text-blue-700">
@@ -901,24 +1103,19 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
 
   return (
     <>
-      <div className="max-w-full space-y-4 overflow-hidden sm:space-y-5">
-        <div className="rounded-lg border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-4 shadow-sm sm:rounded-[28px] sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0 max-w-3xl">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("buildingMainMeterEyebrow")}</div>
-              <h1 className="mt-2 text-xl font-semibold text-slate-950 sm:text-2xl">{t("buildingMainMeterTitle")}</h1>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{t("buildingMainMeterDescription")}</p>
-            </div>
-            {selectedBuilding ? (
-              <div className="w-full rounded-lg border border-slate-200 bg-white/90 px-4 py-3 text-left shadow-sm sm:w-auto sm:rounded-2xl sm:text-right">
-                <div className="break-words text-sm font-semibold text-slate-900">{selectedBuilding.label}</div>
-                <div className="mt-1 text-xs uppercase tracking-wide text-slate-500">{selectedBuilding.apartmentCount} {t("apts")}</div>
+      <div className="mx-auto max-w-6xl space-y-3 overflow-hidden px-1 sm:space-y-5 sm:px-2">
+        <div className="px-2 sm:px-3">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 pt-3">
+            <div className="flex min-w-0 flex-col items-start gap-1">
+              <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
+                {t("buildingStats")}
               </div>
-            ) : null}
-          </div>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 pt-4">
-            <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
-              {t("buildingStats")}
+              {selectedBuilding ? (
+                <div className="min-w-0 px-2">
+                  <div className="truncate text-sm font-semibold text-slate-900">{selectedBuilding.label}</div>
+                  <div className="text-xs text-slate-500">{selectedBuilding.apartmentCount} {t("apts")}</div>
+                </div>
+              ) : null}
             </div>
             <Link
               href={ROUTES.meterReadings}
@@ -929,28 +1126,9 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
           </div>
         </div>
 
-        <div className="grid min-w-0 max-w-full gap-4 xl:grid-cols-[minmax(0,1fr)_22rem] xl:gap-5">
-          <div className="min-w-0 space-y-4 sm:space-y-5">
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
-              <div className="flex flex-wrap items-end justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("selectBuilding")}</div>
-                  <div className="mt-2">
-                    <select
-                      value={selectedBuildingId}
-                      onChange={(event) => setSelectedBuildingId(event.target.value)}
-                      className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-                    >
-                      {buildings.map((building) => (
-                        <option key={building.id} value={building.id}>{building.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-          <div className="max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
+        <div className="grid min-w-0 max-w-full grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2">
+          <div className="contents">
+          <div className="order-5 max-w-full overflow-hidden border-t border-slate-200/80 px-2 pt-5 sm:px-3 sm:pt-6 lg:col-span-2">
             <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("buildingStats")}</div>
@@ -961,11 +1139,23 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                 </div>
               </div>
               <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:w-auto xl:max-w-xl">
-                <span className="inline-flex min-w-0 items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-sky-500" /><span className="min-w-0 whitespace-normal break-words">{tr("buildingMainMeterSeriesHouseCold", "Дом ХВ")}</span></span>
-                <span className="inline-flex min-w-0 items-center gap-2 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-rose-500" /><span className="min-w-0 whitespace-normal break-words">{tr("buildingMainMeterSeriesHouseHot", "Дом ГВ")}</span></span>
-                <span className="inline-flex min-w-0 items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-700" /><span className="min-w-0 whitespace-normal break-words">{tr("buildingMainMeterSeriesApartmentsCold", "Квартиры ХВ")}</span></span>
-                <span className="inline-flex min-w-0 items-center gap-2 rounded-full bg-pink-50 px-3 py-1.5 text-xs font-semibold text-pink-700"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-pink-600" /><span className="min-w-0 whitespace-normal break-words">{tr("buildingMainMeterSeriesApartmentsHot", "Квартиры ГВ")}</span></span>
-                <span className="inline-flex min-w-0 items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 sm:col-span-2"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-violet-600" /><span className="min-w-0 whitespace-normal break-words">{tr("buildingMainMeterSeriesSubmittedApartments", "Квартиры с показаниями")}</span></span>
+                {combinedLegendItems.map((item) => {
+                  const isVisible = visibleCombinedSeries[item.key];
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => toggleCombinedSeries(item.key)}
+                      aria-pressed={isVisible}
+                      className={`inline-flex min-w-0 items-center gap-2 rounded-full px-3 py-1.5 text-left text-xs font-semibold transition ${
+                        isVisible ? item.activeClassName : "bg-slate-100 text-slate-400 opacity-70"
+                      }`}
+                    >
+                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${isVisible ? item.dotClassName : "bg-slate-300"}`} />
+                      <span className="min-w-0 whitespace-normal break-words">{item.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -978,7 +1168,9 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                 <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full min-w-[680px] overflow-visible sm:h-80 sm:min-w-[760px]">
                   <line x1={padLeft} y1={height - padBottom} x2={width - padRight} y2={height - padBottom} stroke="#cbd5e1" strokeWidth="1" />
                   <line x1={padLeft} y1={padTop} x2={padLeft} y2={height - padBottom} stroke="#cbd5e1" strokeWidth="1" />
-                  <line x1={width - padRight} y1={padTop} x2={width - padRight} y2={height - padBottom} stroke="#ddd6fe" strokeWidth="1" />
+                  {visibleCombinedSeries.submittedApartments ? (
+                    <line x1={width - padRight} y1={padTop} x2={width - padRight} y2={height - padBottom} stroke="#ddd6fe" strokeWidth="1" />
+                  ) : null}
                   {combinedTicks.map((tick) => (
                     <g key={tick.ratio}>
                       <line x1={padLeft} y1={tick.y} x2={width - padRight} y2={tick.y} stroke="#e2e8f0" strokeWidth="1" />
@@ -987,60 +1179,82 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                       </text>
                     </g>
                   ))}
-                  {submittedApartmentTicks.map((tick) => (
+                  {visibleCombinedSeries.submittedApartments ? submittedApartmentTicks.map((tick) => (
                     <text key={`submitted-${tick.ratio}`} x={width - padRight + 10} y={tick.y + 4} textAnchor="start" className="fill-violet-600 text-[11px] font-semibold">
                       {tick.value.toFixed(0)}
                     </text>
-                  ))}
+                  )) : null}
                   <text x={padLeft} y={padTop - 8} textAnchor="start" className="fill-slate-400 text-[10px] font-semibold">
                     m3
                   </text>
-                  <text x={width - padRight} y={padTop - 8} textAnchor="end" className="fill-violet-500 text-[10px] font-semibold">
-                    {t("buildingMainMeterSubmittedAxis")}
-                  </text>
+                  {visibleCombinedSeries.submittedApartments ? (
+                    <text x={width - padRight} y={padTop - 8} textAnchor="end" className="fill-violet-500 text-[10px] font-semibold">
+                      {t("buildingMainMeterSubmittedAxis")}
+                    </text>
+                  ) : null}
                   {combinedChartRows.map((row, index) => (
                     <text key={`${row.monthKey}-label`} x={xFor(index)} y={height - 16} textAnchor="middle" className="fill-slate-500 text-[11px] font-semibold">
                       {row.label}
                     </text>
                   ))}
-                  <polyline points={coldHousePoints} fill="none" stroke="#0ea5e9" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                  <polyline points={hotHousePoints} fill="none" stroke="#f43f5e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                  <polyline points={coldApartmentsPoints} fill="none" stroke="#1d4ed8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                  <polyline points={hotApartmentsPoints} fill="none" stroke="#db2777" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                  {visibleCombinedSeries.house ? (
+                    <polyline points={housePoints} fill="none" stroke="#0ea5e9" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                  ) : null}
+                  {visibleCombinedSeries.apartmentsTotal ? (
+                    <polyline points={totalApartmentsPoints} fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                  ) : null}
+                  {visibleCombinedSeries.apartmentsCold ? (
+                    <polyline points={coldApartmentsPoints} fill="none" stroke="#1d4ed8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                  ) : null}
+                  {visibleCombinedSeries.apartmentsHot ? (
+                    <polyline points={hotApartmentsPoints} fill="none" stroke="#db2777" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                  ) : null}
                   {combinedChartRows.map((row, index) => (
                     <g key={`${row.monthKey}-dots`}>
-                      <rect
-                        x={xFor(index) - 9}
-                        y={submittedApartmentsYFor(row.submittedApartmentCount)}
-                        width="18"
-                        height={height - padBottom - submittedApartmentsYFor(row.submittedApartmentCount)}
-                        rx="6"
-                        fill="#7c3aed"
-                        opacity="0.22"
-                      />
-                      <circle cx={xFor(index)} cy={combinedYFor(row.coldMainConsumption)} r="4.5" fill="#0ea5e9" />
-                      <circle cx={xFor(index)} cy={combinedYFor(row.hotMainConsumption)} r="4.5" fill="#f43f5e" />
-                      <circle cx={xFor(index)} cy={combinedYFor(row.residentCold)} r="4.5" fill="#1d4ed8" />
-                      <circle cx={xFor(index)} cy={combinedYFor(row.residentHot)} r="4.5" fill="#db2777" />
-                      <text x={xFor(index)} y={submittedApartmentsYFor(row.submittedApartmentCount) - 12} textAnchor="middle" className="fill-violet-700 text-[10px] font-semibold">
-                        {row.submittedApartmentCount}
-                      </text>
+                      {visibleCombinedSeries.submittedApartments ? (
+                        <>
+                          <rect
+                            x={xFor(index) - 9}
+                            y={submittedApartmentsYFor(row.submittedApartmentCount)}
+                            width="18"
+                            height={height - padBottom - submittedApartmentsYFor(row.submittedApartmentCount)}
+                            rx="6"
+                            fill="#7c3aed"
+                            opacity="0.22"
+                          />
+                          <text x={xFor(index)} y={submittedApartmentsYFor(row.submittedApartmentCount) - 12} textAnchor="middle" className="fill-violet-700 text-[10px] font-semibold">
+                            {row.submittedApartmentCount}
+                          </text>
+                        </>
+                      ) : null}
+                      {visibleCombinedSeries.house ? <circle cx={xFor(index)} cy={combinedYFor(row.mainConsumptionTotal)} r="4.5" fill="#0ea5e9" /> : null}
+                      {visibleCombinedSeries.apartmentsTotal ? <circle cx={xFor(index)} cy={combinedYFor(row.residentTotal)} r="4.5" fill="#10b981" /> : null}
+                      {visibleCombinedSeries.apartmentsCold ? <circle cx={xFor(index)} cy={combinedYFor(row.residentCold)} r="4.5" fill="#1d4ed8" /> : null}
+                      {visibleCombinedSeries.apartmentsHot ? <circle cx={xFor(index)} cy={combinedYFor(row.residentHot)} r="4.5" fill="#db2777" /> : null}
                     </g>
                   ))}
                   {latestCombinedChartRow ? (
                     <>
-                      <text x={latestCombinedChartX + 12} y={combinedYFor(latestCombinedChartRow.coldMainConsumption) - 4} className="fill-sky-700 text-[10px] font-semibold">
-                        {formatCubic(latestCombinedChartRow.coldMainConsumption)}
-                      </text>
-                      <text x={latestCombinedChartX + 12} y={combinedYFor(latestCombinedChartRow.hotMainConsumption) - 4} className="fill-rose-700 text-[10px] font-semibold">
-                        {formatCubic(latestCombinedChartRow.hotMainConsumption)}
-                      </text>
-                      <text x={latestCombinedChartX + 12} y={combinedYFor(latestCombinedChartRow.residentCold) - 4} className="fill-blue-700 text-[10px] font-semibold">
-                        {formatCubic(latestCombinedChartRow.residentCold)}
-                      </text>
-                      <text x={latestCombinedChartX + 12} y={combinedYFor(latestCombinedChartRow.residentHot) - 4} className="fill-pink-700 text-[10px] font-semibold">
-                        {formatCubic(latestCombinedChartRow.residentHot)}
-                      </text>
+                      {visibleCombinedSeries.house ? (
+                        <text x={latestCombinedChartX + 12} y={combinedYFor(latestCombinedChartRow.mainConsumptionTotal) - 4} className="fill-sky-700 text-[10px] font-semibold">
+                          {formatCubic(latestCombinedChartRow.mainConsumptionTotal)}
+                        </text>
+                      ) : null}
+                      {visibleCombinedSeries.apartmentsTotal ? (
+                        <text x={latestCombinedChartX + 12} y={combinedYFor(latestCombinedChartRow.residentTotal) - 18} className="fill-emerald-700 text-[10px] font-semibold">
+                          {formatCubic(latestCombinedChartRow.residentTotal)}
+                        </text>
+                      ) : null}
+                      {visibleCombinedSeries.apartmentsCold ? (
+                        <text x={latestCombinedChartX + 12} y={combinedYFor(latestCombinedChartRow.residentCold) - 4} className="fill-blue-700 text-[10px] font-semibold">
+                          {formatCubic(latestCombinedChartRow.residentCold)}
+                        </text>
+                      ) : null}
+                      {visibleCombinedSeries.apartmentsHot ? (
+                        <text x={latestCombinedChartX + 12} y={combinedYFor(latestCombinedChartRow.residentHot) - 4} className="fill-pink-700 text-[10px] font-semibold">
+                          {formatCubic(latestCombinedChartRow.residentHot)}
+                        </text>
+                      ) : null}
                     </>
                   ) : null}
                 </svg>
@@ -1048,21 +1262,11 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
             )}
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-white shadow-sm sm:rounded-[28px]">
+          <div className="order-6 overflow-hidden border-t border-slate-200/80 pt-5 sm:pt-6 lg:col-span-2">
             <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-5">
               <div className="min-w-0">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("buildingMainMeterHistoryTitle")}</div>
                 <div className="mt-1 break-words text-sm text-slate-500">{selectedBuilding?.label ?? "—"}</div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                    <span className="h-2 w-2 rounded-full bg-blue-500" />
-                    {t("coldWaterFull")}
-                  </span>
-                  <span className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
-                    <span className="h-2 w-2 rounded-full bg-rose-500" />
-                    {t("hotWaterFull")}
-                  </span>
-                </div>
               </div>
               <div className="grid w-full grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-1 sm:inline-flex sm:w-auto sm:rounded-2xl">
                 <button
@@ -1095,83 +1299,34 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {historyRows.map((row) => {
-                      const isExpanded = expandedMonthKeys.has(row.monthKey);
-                      const apartmentRows = apartmentBreakdownForMonth(row.monthKey);
-                      const submittedApartmentRows = apartmentRows.filter((apartment) => apartment.hasReading);
-
                       return (
                         <React.Fragment key={row.monthKey}>
                           <tr className="hover:bg-slate-50/70">
                             <td className="px-4 py-3.5 sm:px-5">
-                              <button
-                                type="button"
-                                onClick={() => toggleMonthExpanded(row.monthKey)}
-                                className="inline-flex items-center gap-2 rounded-lg text-left transition hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                                aria-expanded={isExpanded}
-                                title={isExpanded ? t("collapseApartmentReadings") : t("expandApartmentReadings")}
-                              >
-                                <svg className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                  <path d="m9 18 6-6-6-6" />
-                                </svg>
-                                <span>
-                                  <span className="block font-semibold text-slate-900">{row.label}</span>
-                                  <span className="block text-xs text-slate-500">{row.readingDate || "—"}</span>
-                                </span>
-                              </button>
+                              <span>
+                                <span className="block font-semibold text-slate-900">{row.label}</span>
+                                <span className="block text-xs text-slate-500">{row.readingDate || "—"}</span>
+                              </span>
                             </td>
                             <td className="px-3 py-3.5 text-right sm:px-5">
-                              {renderWaterPair(row.coldMainCurrentValue, row.hotMainCurrentValue)}
+                              <span className="tabular-nums text-slate-900">
+                                {formatMaybeCubic(
+                                  row.coldMainCurrentValue !== null || row.hotMainCurrentValue !== null
+                                    ? Number(((row.coldMainCurrentValue ?? 0) + (row.hotMainCurrentValue ?? 0)).toFixed(3))
+                                    : null,
+                                )}
+                              </span>
                             </td>
                             <td className="px-3 py-3.5 text-right sm:px-5">
-                              {renderWaterPair(row.coldMainConsumption, row.hotMainConsumption)}
+                              <span className="tabular-nums text-slate-900">{formatCubic(row.mainConsumptionTotal)}</span>
                             </td>
                             <td className="px-3 py-3.5 text-right sm:px-5">
-                              {renderWaterPair(row.residentCold, row.residentHot)}
+                              <span className="tabular-nums text-blue-700">{formatCubic(row.residentTotal)}</span>
                             </td>
                             <td className="px-4 py-3.5 text-right sm:px-5">
-                              {renderWaterPair(row.coldDifference, row.hotDifference)}
+                              <span className="tabular-nums text-amber-800">{formatCubic(row.differenceTotal)}</span>
                             </td>
                           </tr>
-                          {isExpanded ? (
-                            <tr className="bg-white">
-                              <td colSpan={5} className="p-0">
-                                <div className="overflow-x-auto border-t border-slate-100 bg-white">
-                                    <table className="min-w-[560px] text-sm sm:min-w-full">
-                                      <thead className="bg-slate-50/80 text-slate-600">
-                                        <tr>
-                                          <th colSpan={3} className="px-6 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-8">
-                                            {t("apartmentReadingsBreakdown")} · {row.label} · {submittedApartmentRows.length} / {apartmentRows.length}
-                                          </th>
-                                        </tr>
-                                        <tr>
-                                          <th className="px-6 py-2.5 text-left font-semibold sm:px-8">{t("colApartment")}</th>
-                                          <th className="px-4 py-2.5 text-right font-semibold">{t("currentReading")}</th>
-                                          <th className="px-6 py-2.5 text-right font-semibold sm:px-8">{t("colConsumption")}</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100">
-                                        {apartmentRows.map((apartment) => (
-                                          <tr key={apartment.apartmentId} className="hover:bg-slate-50">
-                                            <td className="px-6 py-3 font-semibold text-slate-900 sm:px-8">{apartment.apartment}</td>
-                                            <td className="px-6 py-3 text-right sm:px-8">
-                                              {renderWaterPair(apartment.coldCurrentValue, apartment.hotCurrentValue)}
-                                            </td>
-                                            <td className="px-4 py-3 text-right">
-                                              {renderWaterPair(apartment.coldConsumption, apartment.hotConsumption)}
-                                            </td>
-                                          </tr>
-                                        ))}
-                                        {apartmentRows.length === 0 ? (
-                                          <tr>
-                                            <td colSpan={3} className="px-4 py-8 text-center text-slate-500">{t("apartmentReadingsEmpty")}</td>
-                                          </tr>
-                                        ) : null}
-                                      </tbody>
-                                    </table>
-                                </div>
-                              </td>
-                            </tr>
-                          ) : null}
                         </React.Fragment>
                       );
                     })}
@@ -1183,12 +1338,13 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                   </tbody>
                 </table>
               ) : (
-                <table className="min-w-[520px] text-sm sm:min-w-full">
+                <table className="min-w-[640px] text-sm sm:min-w-full">
                   <thead className="bg-slate-50/80 text-slate-600">
                     <tr>
                       <th className="px-4 py-3 text-left font-semibold sm:px-5">{t("period")}</th>
                       <th className="px-3 py-3 text-right font-semibold sm:px-5">{t("coldWaterShort")}</th>
-                      <th className="px-4 py-3 text-right font-semibold sm:px-5">{t("hotWaterShort")}</th>
+                      <th className="px-3 py-3 text-right font-semibold sm:px-5">{t("hotWaterShort")}</th>
+                      <th className="px-4 py-3 text-right font-semibold sm:px-5">{t("totalShort")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1221,11 +1377,12 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                               </button>
                             </td>
                             <td className="px-3 py-3.5 text-right tabular-nums text-blue-700 sm:px-5">{formatCubic(row.residentCold)}</td>
-                            <td className="px-4 py-3.5 text-right tabular-nums text-rose-700 sm:px-5">{formatCubic(row.residentHot)}</td>
+                            <td className="px-3 py-3.5 text-right tabular-nums text-rose-700 sm:px-5">{formatCubic(row.residentHot)}</td>
+                            <td className="px-4 py-3.5 text-right font-semibold tabular-nums text-slate-900 sm:px-5">{formatCubic(row.residentTotal)}</td>
                           </tr>
                           {isExpanded ? (
                             <tr className="bg-white">
-                              <td colSpan={3} className="p-0">
+                              <td colSpan={4} className="p-0">
                                 <div className="overflow-x-auto border-t border-slate-100 bg-white">
                                     <table className="min-w-[560px] text-sm sm:min-w-full">
                                       <thead className="bg-slate-50/80 text-slate-600">
@@ -1268,7 +1425,7 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                     })}
                     {historyRows.length === 0 && (
                       <tr>
-                        <td colSpan={3} className="px-4 py-10 text-center text-slate-500">{t("buildingMainMeterEmpty")}</td>
+                        <td colSpan={4} className="px-4 py-10 text-center text-slate-500">{t("buildingMainMeterEmpty")}</td>
                       </tr>
                     )}
                   </tbody>
@@ -1279,8 +1436,8 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
 
           </div>
 
-          <div className="min-w-0 space-y-4 xl:sticky xl:top-4 xl:self-start">
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
+          <div className="contents">
+            <div className="order-2 max-w-4xl border-b border-blue-100 bg-blue-50/35 px-3 py-5 sm:rounded-2xl sm:px-5 sm:py-6 lg:col-start-1">
               <div className="mb-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("mainMeterEntryTitle")}</div>
                 <div className="mt-1 text-sm leading-6 text-slate-500">{t("mainMeterEntryDescription")}</div>
@@ -1308,9 +1465,9 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                 <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-3 sm:rounded-3xl sm:p-4">
                   <MeterReadingInput
                     variant="cold"
-                    label={t("mainMeterColdValueLabel")}
-                    previousValue={latestRow?.coldMainCurrentValue ?? null}
-                    previousPeriod={latestRow?.label}
+                    label={t("mainMeterCurrentValueLabel")}
+                    previousValue={previousMonthMainValue}
+                    previousPeriod={previousMonthMainEntry ? monthLabelFromKey(previousMonthMainEntry.monthKey) : undefined}
                     currentPeriod={currentPeriodLabel}
                     value={coldCurrentValueInput}
                     onChange={setColdCurrentValueInput}
@@ -1321,24 +1478,7 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                   />
                 </div>
               ) : null}
-              {hotEnabled ? (
-                <div className="rounded-lg border border-rose-100 bg-rose-50/40 p-3 sm:rounded-3xl sm:p-4">
-                  <MeterReadingInput
-                    variant="hot"
-                    label={t("mainMeterHotValueLabel")}
-                    previousValue={latestRow?.hotMainCurrentValue ?? null}
-                    previousPeriod={latestRow?.label}
-                    currentPeriod={currentPeriodLabel}
-                    value={hotCurrentValueInput}
-                    onChange={setHotCurrentValueInput}
-                    intDigits={5}
-                    decDigits={3}
-                    size="compact"
-                    labels={{ previous: t("previousReading"), current: t("currentReading"), serialPrefix: t("serialPrefix") }}
-                  />
-                </div>
-              ) : null}
-              {!coldEnabled && !hotEnabled ? (
+              {!coldEnabled ? (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
                   {t("buildingMainMeterEmpty")}
                 </div>
@@ -1349,26 +1489,45 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
                 onClick={saveMainReading}
                 disabled={
                   !canManageReadings
+                  || mainMeterSaving
                   || !storageReady
                   || !monthKey
                   || (coldEnabled && !coldCurrentValueInput.trim())
-                  || (hotEnabled && !hotCurrentValueInput.trim())
                 }
                 className="mt-2 h-12 w-full rounded-2xl text-sm font-semibold"
               >
-                {t("saveMainMeterReading")}
+                {mainMeterSaving ? t("saving") : t("saveMainMeterReading")}
               </Button>
+              {selectedMonthMainEntry ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={() => setDeleteMainMeterOpen(true)}
+                  disabled={!canManageReadings || mainMeterSaving || mainMeterDeleting}
+                  className="h-12 w-full rounded-2xl text-sm font-semibold"
+                >
+                  {mainMeterDeleting ? t("deletingMainMeterReading") : t("deleteMainMeterReading")}
+                </Button>
+              ) : null}
             </div>
           </div>
 
             {latestRow ? (
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
-                <div className="mb-4">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("currentMonthBreakdown")}</div>
-                    <div className="mt-1 text-base font-semibold text-slate-900">{latestRow.label}</div>
-                  </div>
+              <div className="order-3 max-w-4xl border-b border-slate-200/80 px-2 pb-5 pt-1 sm:px-3 sm:pb-6 lg:col-start-2">
+                <div className="mb-4 flex items-end justify-between gap-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("currentMonthBreakdown")}</div>
+                  <select
+                    value={reportMonthKey}
+                    onChange={(event) => setReportMonthKey(event.target.value)}
+                    aria-label={t("currentMonthBreakdown")}
+                    className="h-9 rounded-xl border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                  >
+                    {historyRows.map((row) => (
+                      <option key={row.monthKey} value={row.monthKey}>{row.label}</option>
+                    ))}
+                  </select>
                 </div>
+                <div className="mb-3 text-base font-semibold text-slate-900">{latestRow.label}</div>
                 <div className="space-y-3">
                   <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 sm:rounded-2xl">
                     <div className="text-xs font-medium text-slate-500">{t("mainMeterMonthlyConsumption")}</div>
@@ -1391,7 +1550,7 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
             ) : null}
 
             {yearlyTotals.length > 1 ? (
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
+              <div className="order-4 max-w-4xl border-b border-slate-200/80 px-2 pb-5 pt-1 sm:px-3 sm:pb-6 lg:col-start-2">
                 <div className="mb-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{t("yearDifferenceTotal")}</div>
                 <div className="space-y-3">
                   {yearlyTotals.map(([year, total]) => (
@@ -1406,6 +1565,17 @@ export default function BuildingPrimaryMeterPage({ initialData, canManageReading
           </div>
         </div>
       </div>
+      <AlertModal
+        open={deleteMainMeterOpen}
+        onClose={() => setDeleteMainMeterOpen(false)}
+        title={t("deleteMainMeterReadingTitle", { monthKey })}
+        variant="error"
+        confirmLabel={t("deleteMainMeterReading")}
+        cancelLabel={t("cancel")}
+        onConfirm={() => void deleteMainReading()}
+      >
+        {t("confirmDeleteMainMeterReading", { monthKey })}
+      </AlertModal>
     </>
   );
 }

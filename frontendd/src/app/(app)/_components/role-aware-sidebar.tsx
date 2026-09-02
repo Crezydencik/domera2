@@ -324,6 +324,8 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
 
     return matchedRoute ? t(`pageTitles.${matchedRoute.key}`) : title;
   }, [pathname, t, title]);
+  const isBuildingMeterPage = pathname === ROUTES.meterReadingsBuilding;
+  const displayedPageTitle = isBuildingMeterPage ? t("pageTitles.buildingMainMeter") : pageTitle;
 
   function isActive(href: string) {
     if (href === ROUTES.dashboard) {
@@ -739,10 +741,10 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
                 <Menu className="h-5 w-5" aria-hidden="true" />
               </button>
 
-              {/* Title */}
+              {/* Keep the building meter page title in its own page header. */}
               <div className="min-w-0 flex-1">
-                <h1 className="truncate text-base font-semibold text-slate-900 lg:text-xl">{pageTitle}</h1>
-                <p className="hidden text-xs text-slate-500 lg:block">{t("currentWorkspace", { role: roleLabel })}</p>
+                  <h1 className="truncate text-base font-semibold text-slate-900 lg:text-xl">{displayedPageTitle}</h1>
+                  <p className="hidden text-xs text-slate-500 lg:block">{t("currentWorkspace", { role: roleLabel })}</p>
               </div>
 
               {/* Actions */}

@@ -8,6 +8,7 @@ export type CompanyMemberPermissions = {
   manageApiKeys: boolean;
   manageInvoiceSettings: boolean;
   manageMeterReadings: boolean;
+  manageMeterReadingData: boolean;
 };
 
 export type CompanyApiKeyItem = {
@@ -61,6 +62,28 @@ export function addCompanyMember(
     member?: Record<string, unknown>;
   }>(`/company/${encodeURIComponent(companyId)}/members`, {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateCompanyMemberProfile(
+  companyId: string,
+  memberId: string,
+  payload: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
+    position?: string;
+    showContactToResidents?: boolean;
+    role: "ManagementCompany" | "Accountant";
+  },
+) {
+  return apiFetch<{
+    success?: boolean;
+    member?: Record<string, unknown>;
+  }>(`/company/${encodeURIComponent(companyId)}/members/${encodeURIComponent(memberId)}`, {
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }

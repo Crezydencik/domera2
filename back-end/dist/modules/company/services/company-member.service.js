@@ -30,6 +30,15 @@ let CompanyMemberService = class CompanyMemberService {
         void request;
         return (process.env.FRONTEND_URL || process.env.APP_URL || 'https://domera.app').replace(/\/+$/, '');
     }
+    sanitizePermissionsForRole(permissions, role) {
+        if (role !== 'Accountant')
+            return permissions;
+        return {
+            ...permissions,
+            editCompanyInfo: false,
+            manageMembers: false,
+        };
+    }
     async attachMemberToCompany(params) {
         const accountType = (0, role_constants_1.resolveAccountType)({ role: params.role }) ?? 'ManagementCompany';
         const fullName = [params.firstName, params.lastName].filter(Boolean).join(' ');
@@ -181,7 +190,7 @@ let CompanyMemberService = class CompanyMemberService {
             throw new common_1.NotFoundException('Company not found');
         const company = companySnap.data();
         this.accessService.assertCanManageMembers(user, companyId, company);
-        const permissions = this.payloadService.normalizeCompanyMemberPermissions(payload.permissions);
+        const permissions = this.sanitizePermissionsForRole(this.payloadService.normalizeCompanyMemberPermissions(payload.permissions), resolvedRole);
         if (!createAccount) {
             const fullName = [firstName, lastName].filter(Boolean).join(' ');
             const staffContacts = this.payloadService.normalizeStaffContacts(company.staffContacts);
@@ -349,6 +358,107 @@ let CompanyMemberService = class CompanyMemberService {
         }, { merge: true });
         return { success: true, memberId: resolvedMemberId };
     }
+    async update(request, user, companyId, memberId, payload) {
+        this.accessService.assertAuthenticated(user);
+        const normalizedCompanyId = companyId?.trim();
+        const normalizedMemberId = memberId?.trim();
+        if (!normalizedCompanyId || !normalizedMemberId) {
+            throw new common_1.BadRequestException('companyId and memberId are required');
+        }
+        if (normalizedMemberId === normalizedCompanyId) {
+            throw new common_1.ForbiddenException('The main company account cannot be edited here');
+        }
+        await this.accessService.enforceRateLimit(request, 'company:update-member', `${user.uid}:${normalizedCompanyId}`, 20);
+        const db = this.firebaseAdminService.firestore;
+        const companyRef = db.collection('companies').doc(normalizedCompanyId);
+        const companySnap = await companyRef.get();
+        if (!companySnap.exists)
+            throw new common_1.NotFoundException('Company not found');
+        const company = companySnap.data();
+        this.accessService.assertCanManageMembers(user, normalizedCompanyId, company);
+        const userIds = Array.isArray(company.userIds)
+            ? company.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const manager = Array.isArray(company.manager)
+            ? company.manager.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const employees = Array.isArray(company.employees)
+            ? company.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        if ((!userIds.includes(normalizedMemberId) && !employees.includes(normalizedMemberId)) || manager.includes(normalizedMemberId)) {
+            throw new common_1.NotFoundException('Company member not found');
+        }
+        const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+        const role = payload.role === 'Accountant' || payload.role === 'ManagementCompany' ? payload.role : null;
+        const firstName = typeof payload.firstName === 'string' ? payload.firstName.trim() : '';
+        const lastName = typeof payload.lastName === 'string' ? payload.lastName.trim() : '';
+        const phone = this.payloadService.toOptionalTrimmedString(payload.phone);
+        const position = this.payloadService.toOptionalTrimmedString(payload.position);
+        const showContactToResidents = payload.showContactToResidents === true;
+        if (!email || !role || !firstName || !lastName) {
+            throw new common_1.BadRequestException('email, firstName, lastName and role are required');
+        }
+        const memberRef = db.collection('users').doc(normalizedMemberId);
+        const memberSnap = await memberRef.get();
+        if (!memberSnap.exists)
+            throw new common_1.NotFoundException('Company member not found');
+        const memberData = memberSnap.data();
+        const memberCompanyId = typeof memberData.companyId === 'string' ? memberData.companyId : '';
+        if (memberCompanyId && memberCompanyId !== normalizedCompanyId) {
+            throw new common_1.ForbiddenException('User belongs to another company');
+        }
+        const fullName = [firstName, lastName].filter(Boolean).join(' ');
+        const accountType = (0, role_constants_1.resolveAccountType)({ role }) ?? 'ManagementCompany';
+        const memberPermissions = this.payloadService.normalizeCompanyMemberPermissionMap(company.memberPermissions);
+        const nextPermissions = this.sanitizePermissionsForRole(memberPermissions[normalizedMemberId] ?? this.payloadService.defaultCompanyMemberPermissions(), role);
+        const currentEmail = this.payloadService.firstString(memberData.email).toLowerCase();
+        if (email !== currentEmail) {
+            await this.firebaseAdminService.auth.updateUser(normalizedMemberId, { email });
+        }
+        await memberRef.set({
+            email,
+            firstName,
+            lastName,
+            fullName,
+            name: fullName,
+            displayName: fullName,
+            phone: phone ?? firestore_1.FieldValue.delete(),
+            phoneNumber: phone ?? firestore_1.FieldValue.delete(),
+            position: position ?? firestore_1.FieldValue.delete(),
+            jobTitle: position ?? firestore_1.FieldValue.delete(),
+            showContactToResidents,
+            role,
+            accountType,
+            companyId: normalizedCompanyId,
+            updatedAt: new Date(),
+        }, { merge: true });
+        await companyRef.set({
+            memberPermissions: {
+                ...memberPermissions,
+                [normalizedMemberId]: nextPermissions,
+            },
+            updatedAt: new Date(),
+        }, { merge: true });
+        return {
+            success: true,
+            member: {
+                id: normalizedMemberId,
+                uid: normalizedMemberId,
+                email,
+                firstName,
+                lastName,
+                fullName,
+                phone,
+                position,
+                showContactToResidents,
+                role,
+                accountType,
+                companyId: normalizedCompanyId,
+                permissions: nextPermissions,
+                memberType: 'employee',
+            },
+        };
+    }
     async updatePermissions(request, user, companyId, memberId, payload) {
         this.accessService.assertAuthenticated(user);
         const normalizedCompanyId = companyId?.trim();
@@ -376,7 +486,10 @@ let CompanyMemberService = class CompanyMemberService {
             throw new common_1.NotFoundException('Company member not found');
         }
         const memberPermissions = this.payloadService.normalizeCompanyMemberPermissionMap(company.memberPermissions);
-        const nextPermissions = this.payloadService.normalizeCompanyMemberPermissions(payload.permissions);
+        const memberSnap = await this.firebaseAdminService.firestore.collection('users').doc(normalizedMemberId).get();
+        const memberData = memberSnap.exists ? memberSnap.data() : {};
+        const memberRole = memberData.role === 'Accountant' ? 'Accountant' : 'ManagementCompany';
+        const nextPermissions = this.sanitizePermissionsForRole(this.payloadService.normalizeCompanyMemberPermissions(payload.permissions), memberRole);
         await companyRef.set({
             memberPermissions: {
                 ...memberPermissions,

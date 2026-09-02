@@ -100,7 +100,7 @@ export class MeterReadingReminderService {
             user.uid,
           )
         : null;
-      if (!permissions?.manageMeterReadings) {
+      if (!permissions?.manageMeterReadings && !permissions?.manageMeterReadingData) {
         throw new ForbiddenException('You do not have permission to edit meter readings');
       }
     }
@@ -189,7 +189,7 @@ export class MeterReadingReminderService {
             user.uid,
           )
         : null;
-      if (!permissions?.manageMeterReadings) {
+      if (!permissions?.manageMeterReadings && !permissions?.manageMeterReadingData) {
         throw new ForbiddenException('You do not have permission to edit meter readings');
       }
     }

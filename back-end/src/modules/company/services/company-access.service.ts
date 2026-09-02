@@ -60,6 +60,7 @@ export class CompanyAccessService {
         manageApiKeys: true,
         manageInvoiceSettings: true,
         manageMeterReadings: true,
+        manageMeterReadingData: true,
       };
     }
 

@@ -952,23 +952,25 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("buildingStats")}</div>
               <div className="text-base font-semibold text-slate-900 tabular-nums">{summary.label}</div>
             </div>
-            <Link
-              href={ROUTES.meterReadingsBuilding}
-              onClick={() => {
-                try {
-                  window.localStorage.setItem("domera:building-main-meter:selected-building", buildingId);
-                } catch {
-                  // Ignore storage write issues during navigation.
-                }
-              }}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 3v18h18" />
-                <path d="m7 15 4-4 3 3 5-7" />
-              </svg>
-              Показание дома
-            </Link>
+            {canManageReadings ? (
+              <Link
+                href={ROUTES.meterReadingsBuilding}
+                onClick={() => {
+                  try {
+                    window.localStorage.setItem("domera:building-main-meter:selected-building", buildingId);
+                  } catch {
+                    // Ignore storage write issues during navigation.
+                  }
+                }}
+                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 3v18h18" />
+                  <path d="m7 15 4-4 3 3 5-7" />
+                </svg>
+                Показание дома
+              </Link>
+            ) : null}
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             <div className="rounded-md bg-blue-50 px-2.5 py-2">
@@ -983,7 +985,7 @@ export default function ManagementCompanyPage({ initialCompanyId, initialData, c
         </div>
       );
     },
-    [formatCubic, t],
+    [canManageReadings, formatCubic, t],
   );
 
   // View meters modal

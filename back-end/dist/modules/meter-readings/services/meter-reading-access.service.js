@@ -57,7 +57,7 @@ let MeterReadingAccessService = class MeterReadingAccessService {
             throw new common_1.ForbiddenException('Access denied for company');
         }
         const permissions = this.companyPayloadService.getCompanyMemberPermissions(companySnap.data(), user.uid);
-        if (!permissions.manageMeterReadings) {
+        if (!permissions.manageMeterReadings && !permissions.manageMeterReadingData) {
             throw new common_1.ForbiddenException('You do not have permission to edit meter readings');
         }
     }

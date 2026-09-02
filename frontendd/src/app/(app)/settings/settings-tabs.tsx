@@ -25,6 +25,7 @@ import {
   type CompanyApiKeyItem,
   type CompanyMemberPermissions,
   updateCompany,
+  updateCompanyMemberProfile,
   updateCompanyMemberPermissions,
 } from "@/shared/api/company";
 import { type NotificationSettings, updateNotificationSettings } from "@/shared/api/notifications";
@@ -115,6 +116,8 @@ type CompanyMember = {
   id: string;
   email: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
   phone?: string;
   position?: string;
   comment?: string;
@@ -180,10 +183,11 @@ const defaultCompanyMemberPermissions: CompanyMemberPermissions = {
   manageApiKeys: false,
   manageInvoiceSettings: false,
   manageMeterReadings: false,
+  manageMeterReadingData: false,
 };
 const companyMemberPermissionOptions: Record<CompanyMemberRole, CompanyMemberPermissionKey[]> = {
-  ManagementCompany: ["viewApiKeys", "editCompanyInfo", "manageMembers", "manageApiKeys", "manageInvoiceSettings", "manageMeterReadings"],
-  Accountant: ["viewApiKeys", "manageApiKeys", "manageInvoiceSettings", "manageMeterReadings"],
+  ManagementCompany: ["editCompanyInfo", "manageMembers", "manageApiKeys", "manageInvoiceSettings", "manageMeterReadingData"],
+  Accountant: ["manageApiKeys", "manageInvoiceSettings", "manageMeterReadingData"],
 };
 const MAX_INVOICE_LOGO_BYTES = 350 * 1024;
 const DEFAULT_INVOICE_ACCENT_COLOR = "#ef3340";
@@ -378,9 +382,7 @@ function sanitizeMemberPermissionsForRole(
     }
   }
 
-  if (next.manageApiKeys) {
-    next.viewApiKeys = true;
-  }
+  next.viewApiKeys = next.manageApiKeys;
 
   return next;
 }
@@ -929,6 +931,17 @@ function NotificationsPanel({ initialSettings }: { initialSettings: Notification
       </div>
     </div>
   );
+}
+
+function splitMemberName(member: CompanyMember): NameDraft {
+  if (member.firstName || member.lastName) {
+    return {
+      firstName: member.firstName ?? "",
+      lastName: member.lastName ?? "",
+    };
+  }
+
+  return splitDisplayName(member.name);
 }
 
 type EmailTemplateType =
@@ -2909,6 +2922,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   const [memberModalOpen, setMemberModalOpen] = useState(false);
   const [permissionsModalMember, setPermissionsModalMember] = useState<CompanyMember | null>(null);
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
+  const [editingAccountMemberId, setEditingAccountMemberId] = useState<string | null>(null);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<EditableCompanyField>(null);
   const [isEditingBankDetails, setIsEditingBankDetails] = useState(false);
@@ -2961,6 +2975,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     setMemberCreateAccount(true);
     setMemberRole("ManagementCompany");
     setMemberPermissionsDraft(defaultCompanyMemberPermissions);
+    setEditingAccountMemberId(null);
     setEditingContactId(null);
   };
 
@@ -2971,6 +2986,26 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     setFeedbackTone("error");
     setMemberCreateAccount(true);
     setMemberShowContactToResidents(false);
+    setMemberModalOpen(true);
+  };
+
+  const openEditAccountMemberModal = (member: CompanyMember) => {
+    if (!canManageMembers || member.memberType !== "employee") return;
+    const name = splitMemberName(member);
+    setFeedback("");
+    setFeedbackTone("error");
+    setEditingAccountMemberId(member.id);
+    setEditingContactId(null);
+    setMemberEmail(member.email);
+    setMemberFirstName(name.firstName);
+    setMemberLastName(name.lastName);
+    setMemberPhone(member.phone ?? "");
+    setMemberPosition(member.position ?? "");
+    setMemberComment("");
+    setMemberRole(normalizeCompanyMemberRole(member.role));
+    setMemberPermissionsDraft(sanitizeMemberPermissionsForRole(member.permissions, normalizeCompanyMemberRole(member.role)));
+    setMemberCreateAccount(true);
+    setMemberShowContactToResidents(member.showContactToResidents === true);
     setMemberModalOpen(true);
   };
 
@@ -3007,6 +3042,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     setFeedback("");
     setFeedbackTone("error");
     setMemberModalOpen(false);
+    setEditingAccountMemberId(null);
     setEditingContactId(null);
   };
 
@@ -3135,6 +3171,40 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     try {
       const normalizedRole = normalizeCompanyMemberRole(memberRole);
       const normalizedPermissions = sanitizeMemberPermissionsForRole(memberPermissionsDraft, normalizedRole);
+      if (editingAccountMemberId) {
+        const result = await updateCompanyMemberProfile(details.companyId, editingAccountMemberId, {
+          email,
+          firstName,
+          lastName,
+          phone: phone || undefined,
+          position: position || undefined,
+          showContactToResidents: memberShowContactToResidents,
+          role: normalizedRole,
+        });
+        const nextMember = result.member ?? {};
+        const fullName = [firstName, lastName].filter(Boolean).join(" ");
+        setMembers((current) => current.map((item) =>
+          item.id === editingAccountMemberId
+            ? {
+                ...item,
+                email,
+                firstName,
+                lastName,
+                name: typeof nextMember.fullName === "string" ? nextMember.fullName : fullName,
+                phone,
+                position,
+                showContactToResidents: memberShowContactToResidents,
+                role: normalizedRole,
+                permissions: normalizedPermissions,
+              }
+            : item,
+        ));
+        resetMemberForm();
+        setMemberModalOpen(false);
+        notify.success(t("toast.memberProfileSaved"));
+        return;
+      }
+
       const result = await addCompanyMember(details.companyId, {
         memberId: editingContactId ?? undefined,
         email,
@@ -3185,7 +3255,11 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
       setMemberModalOpen(false);
       notify.success(result.mode === "invitation" ? t("toast.memberInvitationSent") : t("toast.memberAdded"));
     } catch (error) {
-      const message = error instanceof Error ? error.message : t("errors.memberAddFailed");
+      const message = error instanceof Error
+        ? error.message
+        : editingAccountMemberId
+          ? t("errors.memberProfileSaveFailed")
+          : t("errors.memberAddFailed");
       setFeedbackTone("error");
       setFeedback(message);
       notify.error(message);
@@ -3379,6 +3453,11 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
         <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
           {accountMembers.length > 0 ? (
             accountMembers.map((member) => {
+              const canEditProfile =
+                canManageMembers &&
+                member.id !== currentUserId &&
+                member.id !== details.companyId &&
+                member.memberType === "employee";
               const canRemove =
                 canManageMembers &&
                 member.id !== currentUserId &&
@@ -3406,6 +3485,17 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
                   <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                     {memberTypeLabel(member)}
                   </span>
+                  {canEditProfile ? (
+                    <Button
+                      type="button"
+                      variant="inlineLink"
+                      size="link"
+                      onClick={() => openEditAccountMemberModal(member)}
+                      className="text-xs font-semibold"
+                    >
+                      {t("company.members.editProfile")}
+                    </Button>
+                  ) : null}
                   {canManageMembers && member.memberType === "employee" ? (
                     <Button
                       type="button"
@@ -3508,7 +3598,9 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
         open={memberModalOpen}
         onClose={closeMemberModal}
         title={
-          memberCreateAccount
+          editingAccountMemberId
+            ? t("company.members.editProfile")
+            : memberCreateAccount
             ? t("company.members.add")
             : editingContactId
               ? t("company.residentContacts.edit")
@@ -3665,8 +3757,12 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
             </Button>
             <Button type="submit" variant="dark" disabled={isAddingMember} className="font-bold">
               {isAddingMember
-                ? t("company.members.adding")
-                : memberCreateAccount
+                ? editingAccountMemberId
+                  ? t("company.members.savingProfile")
+                  : t("company.members.adding")
+                : editingAccountMemberId
+                  ? t("company.members.saveProfile")
+                  : memberCreateAccount
                   ? t("company.members.add")
                   : editingContactId
                     ? t("company.residentContacts.save")
@@ -3697,9 +3793,6 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
               <span>{label}</span>
             </label>
           ))}
-          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-            {t("company.permissions.viewOnlyHint")}
-          </p>
           <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={isSavingPermissions} onClick={() => setPermissionsModalMember(null)}>
               {t("actions.cancel")}

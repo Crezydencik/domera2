@@ -6,6 +6,7 @@ import { BuildingDeleteBackupResult, BuildingStorageService } from './building-s
 import { BuildingPayloadService } from './building-payload.service';
 import { BuildingStatsService } from './building-stats.service';
 import { BuildingPlatformNotificationService } from './building-platform-notification.service';
+import { CompanyPayloadService } from '../../company/services/company-payload.service';
 export declare class BuildingCrudService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
@@ -13,7 +14,8 @@ export declare class BuildingCrudService {
     private readonly buildingStorageService;
     private readonly buildingStatsService;
     private readonly platformNotificationService;
-    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, buildingPayloadService: BuildingPayloadService, buildingStorageService: BuildingStorageService, buildingStatsService: BuildingStatsService, platformNotificationService: BuildingPlatformNotificationService);
+    private readonly companyPayloadService;
+    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, buildingPayloadService: BuildingPayloadService, buildingStorageService: BuildingStorageService, buildingStatsService: BuildingStatsService, platformNotificationService: BuildingPlatformNotificationService, companyPayloadService: CompanyPayloadService);
     list(request: Request, user: RequestUser, companyId: string): Promise<{
         items: {
             apartmentLimit: number;
@@ -55,6 +57,7 @@ export declare class BuildingCrudService {
     }>;
     private assertManagement;
     private assertManagementCompanyMutation;
+    private assertCanUpdateBuilding;
     private effectiveManagementCompanyId;
     private assertManagementCompanyScope;
     private enforceRateLimit;

@@ -19,6 +19,7 @@ import {
 import { BuildingPayloadService } from './building-payload.service';
 import { BuildingStatsService } from './building-stats.service';
 import { BuildingPlatformNotificationService } from './building-platform-notification.service';
+import { CompanyPayloadService } from '../../company/services/company-payload.service';
 
 @Injectable()
 export class BuildingCrudService {
@@ -29,6 +30,7 @@ export class BuildingCrudService {
     private readonly buildingStorageService: BuildingStorageService,
     private readonly buildingStatsService: BuildingStatsService,
     private readonly platformNotificationService: BuildingPlatformNotificationService,
+    private readonly companyPayloadService: CompanyPayloadService,
   ) {}
 
   async list(request: Request, user: RequestUser, companyId: string) {
@@ -93,7 +95,6 @@ export class BuildingCrudService {
 
   async update(request: Request, user: RequestUser, buildingId: string, payload: Record<string, unknown>) {
     this.assertManagement(user);
-    this.assertManagementCompanyMutation(user);
     if (!buildingId?.trim()) throw new BadRequestException('buildingId is required');
 
     await this.enforceRateLimit(request, 'buildings:update', `${user.uid}:${buildingId}`, 40);
@@ -113,6 +114,8 @@ export class BuildingCrudService {
     if (!companyId) {
       throw new BadRequestException('companyId is missing for building');
     }
+
+    await this.assertCanUpdateBuilding(user, companyId, payload);
 
     if (this.isBuildingCreationRequestStatus(current.status)) {
       const deletedAt = new Date();
@@ -323,6 +326,31 @@ export class BuildingCrudService {
   private assertManagementCompanyMutation(user: RequestUser): void {
     if (user.role !== 'ManagementCompany') {
       throw new ForbiddenException('Only management company users can change buildings');
+    }
+  }
+
+  private async assertCanUpdateBuilding(user: RequestUser, companyId: string, payload: Record<string, unknown>): Promise<void> {
+    if (user.role === 'ManagementCompany') return;
+    if (user.role !== 'Accountant') {
+      throw new ForbiddenException('Only management company users can change buildings');
+    }
+
+    const payloadKeys = Object.keys(payload);
+    if (payloadKeys.length !== 1 || !Object.prototype.hasOwnProperty.call(payload, 'buildingMainMeterEntries')) {
+      throw new ForbiddenException('Only management company users can change buildings');
+    }
+
+    const companySnap = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
+    if (!companySnap.exists) {
+      throw new ForbiddenException('Access denied for company');
+    }
+
+    const permissions = this.companyPayloadService.getCompanyMemberPermissions(
+      companySnap.data() as Record<string, unknown>,
+      user.uid,
+    );
+    if (!permissions.manageMeterReadings && !permissions.manageMeterReadingData) {
+      throw new ForbiddenException('You do not have permission to edit meter readings');
     }
   }
 

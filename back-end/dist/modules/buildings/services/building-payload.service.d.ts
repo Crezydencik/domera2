@@ -74,6 +74,11 @@ export declare class BuildingPayloadService {
                 };
             } | null;
         };
+        buildingMainMeterEntries: {
+            monthKey: string;
+            readingDate: string;
+            currentValue: number;
+        }[];
     };
     private firstString;
     private firstNumber;
@@ -87,6 +92,8 @@ export declare class BuildingPayloadService {
     private normalizeSubmissionReminders;
     private normalizeOffsetDays;
     private normalizeTime;
+    private normalizeBuildingMainMeterEntries;
+    private optionalNumber;
     private buildReadablePrefix;
     private buildSecureRandomToken;
 }

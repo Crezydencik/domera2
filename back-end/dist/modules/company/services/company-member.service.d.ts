@@ -12,6 +12,7 @@ export declare class CompanyMemberService {
     private readonly payloadService;
     constructor(firebaseAdminService: FirebaseAdminService, emailService: EmailService, accessService: CompanyAccessService, payloadService: CompanyPayloadService);
     private resolveFrontendUrl;
+    private sanitizePermissionsForRole;
     private attachMemberToCompany;
     private sendMemberRegistrationInvitation;
     private sendExistingMemberAccessNotification;
@@ -66,6 +67,25 @@ export declare class CompanyMemberService {
     remove(request: Request, user: RequestUser, companyId: string, memberId: string): Promise<{
         success: boolean;
         memberId: string;
+    }>;
+    update(request: Request, user: RequestUser, companyId: string, memberId: string, payload: Record<string, unknown>): Promise<{
+        success: boolean;
+        member: {
+            id: string;
+            uid: string;
+            email: string;
+            firstName: string;
+            lastName: string;
+            fullName: string;
+            phone: string | undefined;
+            position: string | undefined;
+            showContactToResidents: boolean;
+            role: string;
+            accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
+            companyId: string;
+            permissions: CompanyMemberPermissions;
+            memberType: string;
+        };
     }>;
     updatePermissions(request: Request, user: RequestUser, companyId: string, memberId: string, payload: Record<string, unknown>): Promise<{
         success: boolean;

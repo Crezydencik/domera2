@@ -94,6 +94,11 @@ export class BuildingPayloadService {
       ),
       status: this.normalizeStatus(payload.status ?? existing?.status),
       readingConfig: this.normalizeReadingConfig(payload, existing),
+      buildingMainMeterEntries: this.normalizeBuildingMainMeterEntries(
+        Object.prototype.hasOwnProperty.call(payload, 'buildingMainMeterEntries')
+          ? payload.buildingMainMeterEntries
+          : existing?.buildingMainMeterEntries,
+      ),
     };
   }
 
@@ -301,6 +306,46 @@ export class BuildingPayloadService {
       }
     }
     return '08:00';
+  }
+
+  private normalizeBuildingMainMeterEntries(value: unknown) {
+    if (!Array.isArray(value)) return [];
+
+    return value
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null;
+        const item = entry as Record<string, unknown>;
+        const monthKey = this.firstString(item.monthKey);
+        const readingDate = this.firstString(item.readingDate);
+        const currentValue = this.optionalNumber(item.currentValue);
+        const coldCurrentValue = this.optionalNumber(item.coldCurrentValue);
+        const hotCurrentValue = this.optionalNumber(item.hotCurrentValue);
+        const legacyTotalValue =
+          coldCurrentValue === null && hotCurrentValue === null
+            ? null
+            : Number(((coldCurrentValue ?? 0) + (hotCurrentValue ?? 0)).toFixed(3));
+
+        if (!/^\d{4}-\d{2}$/.test(monthKey)) return null;
+        if (currentValue === null && legacyTotalValue === null) return null;
+
+        return {
+          monthKey,
+          readingDate,
+          currentValue: currentValue ?? legacyTotalValue,
+        };
+      })
+      .filter((entry): entry is {
+        monthKey: string;
+        readingDate: string;
+        currentValue: number;
+      } => Boolean(entry))
+      .sort((left, right) => left.monthKey.localeCompare(right.monthKey));
+  }
+
+  private optionalNumber(value: unknown) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   private buildReadablePrefix(name: string) {

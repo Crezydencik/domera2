@@ -30,6 +30,7 @@ export declare class CompanyService {
             manageApiKeys: boolean;
             manageInvoiceSettings: boolean;
             manageMeterReadings: boolean;
+            manageMeterReadingData: boolean;
         };
         publicContacts: {
             id: string;
@@ -137,6 +138,25 @@ export declare class CompanyService {
     removeMember(request: Request, user: RequestUser, companyId: string, memberId: string): Promise<{
         success: boolean;
         memberId: string;
+    }>;
+    updateMember(request: Request, user: RequestUser, companyId: string, memberId: string, payload: Record<string, unknown>): Promise<{
+        success: boolean;
+        member: {
+            id: string;
+            uid: string;
+            email: string;
+            firstName: string;
+            lastName: string;
+            fullName: string;
+            phone: string | undefined;
+            position: string | undefined;
+            showContactToResidents: boolean;
+            role: string;
+            accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
+            companyId: string;
+            permissions: import("./company-payload.service").CompanyMemberPermissions;
+            memberType: string;
+        };
     }>;
     updateMemberPermissions(request: Request, user: RequestUser, companyId: string, memberId: string, payload: Record<string, unknown>): Promise<{
         success: boolean;

@@ -18,14 +18,16 @@ const building_storage_service_1 = require("./building-storage.service");
 const building_payload_service_1 = require("./building-payload.service");
 const building_stats_service_1 = require("./building-stats.service");
 const building_platform_notification_service_1 = require("./building-platform-notification.service");
+const company_payload_service_1 = require("../../company/services/company-payload.service");
 let BuildingCrudService = class BuildingCrudService {
-    constructor(firebaseAdminService, rateLimitService, buildingPayloadService, buildingStorageService, buildingStatsService, platformNotificationService) {
+    constructor(firebaseAdminService, rateLimitService, buildingPayloadService, buildingStorageService, buildingStatsService, platformNotificationService, companyPayloadService) {
         this.firebaseAdminService = firebaseAdminService;
         this.rateLimitService = rateLimitService;
         this.buildingPayloadService = buildingPayloadService;
         this.buildingStorageService = buildingStorageService;
         this.buildingStatsService = buildingStatsService;
         this.platformNotificationService = platformNotificationService;
+        this.companyPayloadService = companyPayloadService;
     }
     async list(request, user, companyId) {
         this.assertManagement(user);
@@ -77,7 +79,6 @@ let BuildingCrudService = class BuildingCrudService {
     }
     async update(request, user, buildingId, payload) {
         this.assertManagement(user);
-        this.assertManagementCompanyMutation(user);
         if (!buildingId?.trim())
             throw new common_1.BadRequestException('buildingId is required');
         await this.enforceRateLimit(request, 'buildings:update', `${user.uid}:${buildingId}`, 40);
@@ -95,6 +96,7 @@ let BuildingCrudService = class BuildingCrudService {
         if (!companyId) {
             throw new common_1.BadRequestException('companyId is missing for building');
         }
+        await this.assertCanUpdateBuilding(user, companyId, payload);
         if (this.isBuildingCreationRequestStatus(current.status)) {
             const deletedAt = new Date();
             const requestedBy = this.firstString(current.requestedBy);
@@ -258,6 +260,25 @@ let BuildingCrudService = class BuildingCrudService {
             throw new common_1.ForbiddenException('Only management company users can change buildings');
         }
     }
+    async assertCanUpdateBuilding(user, companyId, payload) {
+        if (user.role === 'ManagementCompany')
+            return;
+        if (user.role !== 'Accountant') {
+            throw new common_1.ForbiddenException('Only management company users can change buildings');
+        }
+        const payloadKeys = Object.keys(payload);
+        if (payloadKeys.length !== 1 || !Object.prototype.hasOwnProperty.call(payload, 'buildingMainMeterEntries')) {
+            throw new common_1.ForbiddenException('Only management company users can change buildings');
+        }
+        const companySnap = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
+        if (!companySnap.exists) {
+            throw new common_1.ForbiddenException('Access denied for company');
+        }
+        const permissions = this.companyPayloadService.getCompanyMemberPermissions(companySnap.data(), user.uid);
+        if (!permissions.manageMeterReadings && !permissions.manageMeterReadingData) {
+            throw new common_1.ForbiddenException('You do not have permission to edit meter readings');
+        }
+    }
     effectiveManagementCompanyId(user) {
         const companyId = this.firstString(user.companyId);
         if (companyId)
@@ -314,5 +335,6 @@ exports.BuildingCrudService = BuildingCrudService = __decorate([
         building_payload_service_1.BuildingPayloadService,
         building_storage_service_1.BuildingStorageService,
         building_stats_service_1.BuildingStatsService,
-        building_platform_notification_service_1.BuildingPlatformNotificationService])
+        building_platform_notification_service_1.BuildingPlatformNotificationService,
+        company_payload_service_1.CompanyPayloadService])
 ], BuildingCrudService);
