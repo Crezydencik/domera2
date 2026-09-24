@@ -1910,24 +1910,24 @@ curl -X POST https://domera.lv/api/invoices/upload \\
                     <pre className="overflow-x-auto rounded-lg bg-slate-100 px-3 py-3 text-xs leading-6 text-slate-800">
 {`[
   {
-    "fileName": "apt-12-owner.pdf",
-    "apartmentNumber": "12",
+    "fileName": "apt-1-owner.pdf",
+    "apartmentNumber": "1",
     "period": "2026-05",
     "invoiceDate": "2026-05-27",
     "amount": 98.20,
     "currency": "EUR",
-    "externalId": "invoice-2026-05-apt-12",
+    "externalId": "invoice-2026-05-apt-1",
     "recipientType": "owner",
     "status": "issued"
   },
   {
-    "fileName": "apt-12-tenant.pdf",
-    "apartmentNumber": "12",
+    "fileName": "apt-1-2-tenant.pdf",
+    "apartmentNumber": "1",
     "period": "2026-05",
     "invoiceDate": "2026-05-27",
     "amount": 125.50,
     "currency": "EUR",
-    "externalId": "invoice-2026-05-apt-12",
+    "externalId": "invoice-2026-05-apt-1-2",
     "recipientType": "tenant",
     "status": "issued"
   }

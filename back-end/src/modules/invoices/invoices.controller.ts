@@ -65,7 +65,7 @@ type UploadedBinaryFile = {
   size?: number;
 };
 
-const INVOICE_ZIP_MAX_BYTES = 100 * 1024 * 1024;
+const INVOICE_ZIP_MAX_BYTES = 500 * 1024 * 1024;
 const INVOICE_BATCH_MAX_FILES = 50;
 const INVOICE_ITEMS_MAX_BYTES = 1 * 1024 * 1024;
 

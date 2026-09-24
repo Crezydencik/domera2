@@ -1417,6 +1417,7 @@
       },
       "invoiceColumns": {
         "id": "KLIENTS / M\u0100JA",
+        "recipient": "SA\u0145\u0112M\u0112JS",
         "amount": "SUMMA",
         "dueDate": "APMAKSAS TERMIŅŠ",
         "status": "STATUSS",

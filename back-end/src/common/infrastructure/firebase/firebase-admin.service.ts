@@ -43,7 +43,9 @@ export class FirebaseAdminService {
   }
 
   private getBucketName(): string {
-    const bucket = this.configService.get<string>('FIREBASE_STORAGE_BUCKET');
+    const bucket =
+      this.configService.get<string>('FIREBASE_STORAGE_BUCKET') ||
+      this.configService.get<string>('NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET');
     if (bucket && bucket.trim()) {
       return bucket.trim();
     }

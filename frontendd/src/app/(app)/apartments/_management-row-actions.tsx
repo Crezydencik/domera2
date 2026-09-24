@@ -225,7 +225,6 @@ export function ApartmentsManagementRowActions({
             t("details.columns.status"),
           ]}
           tenantsTitle={t("details.tenants")}
-          selfManagement={apartmentRecord.selfManagement === true || apartmentRecord.selfManagement === "true"}
           readOnly={readOnly}
         />
       </ModalShell>

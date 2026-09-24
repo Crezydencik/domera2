@@ -1338,6 +1338,7 @@
       },
       "invoiceColumns": {
         "id": "CLIENT / HOME",
+        "recipient": "RECIPIENT",
         "amount": "AMOUNT",
         "dueDate": "DUE DATE",
         "status": "STATUS",

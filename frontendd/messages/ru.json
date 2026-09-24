@@ -1333,6 +1333,7 @@
       },
       "invoiceColumns": {
         "id": "\u041A\u041B\u0418\u0415\u041D\u0422 / \u0414\u041E\u041C",
+        "recipient": "\u041F\u041E\u041B\u0423\u0427\u0410\u0422\u0415\u041B\u042C",
         "amount": "СУММА",
         "dueDate": "СРОК ОПЛАТЫ",
         "status": "СТАТУС",

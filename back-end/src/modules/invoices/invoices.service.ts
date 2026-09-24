@@ -82,9 +82,11 @@ type ApartmentInvoiceContext = {
 
 type InvoiceMeterReadingKey = 'coldmeterwater' | 'hotmeterwater' | 'electricitymeter';
 
-const MAX_INVOICE_PDF_BYTES = 10 * 1024 * 1024;
+const MAX_INVOICE_PDF_BYTES = 25 * 1024 * 1024;
 const MAX_INVOICE_BATCH_FILES = 50;
-const MAX_INVOICE_ZIP_BYTES = 100 * 1024 * 1024;
+const INVOICE_APPROVAL_BATCH_CONCURRENCY = 4;
+const INVOICE_BATCH_UPLOAD_CONCURRENCY = 4;
+const MAX_INVOICE_ZIP_BYTES = 500 * 1024 * 1024;
 const MAX_INVOICE_ZIP_ENTRIES = 200;
 const MAX_INVOICE_ZIP_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
 const INVOICE_STATUSES = new Set(['draft', 'pending', 'issued', 'paid', 'overdue', 'cancelled']);
@@ -217,9 +219,6 @@ export class InvoicesService {
 
   private assertRecipientTypeAllowed(apartment: Record<string, unknown>, recipientType: InvoiceRecipientType): void {
     if (recipientType === 'general') return;
-    if (apartment.selfManagement !== true) {
-      throw new BadRequestException('Apartment must allow separate owner and tenant invoices');
-    }
     if (recipientType === 'tenant' && !this.hasActiveTenant(apartment)) {
       throw new BadRequestException('Apartment has no active tenant for a tenant invoice');
     }
@@ -2906,7 +2905,9 @@ export class InvoicesService {
 
     const db = this.firebaseAdminService.firestore;
     const invoiceId = this.buildInvoiceId();
-    const externalKey = this.firstString(data.externalIdKey) || this.hashExternalId(companyId, externalId);
+    const recipientType = this.normalizeRecipientType(data.recipientType ?? data.recipient_type);
+    const externalKey = this.firstString(data.externalIdKey)
+      || this.hashExternalId(companyId, this.externalDedupeValue(externalId, recipientType));
     const invoiceRef = this.getApartmentInvoiceCollection(apartmentId).doc(invoiceId);
     const invoicePath = invoiceRef.path;
     const invoiceExternalRef = this.getApartmentInvoiceExternalIdsCollection(apartmentId).doc(externalKey);
@@ -2960,6 +2961,7 @@ export class InvoicesService {
         buildingId,
         source: this.firstString(data.source, 'api'),
         approvalId,
+        recipientType,
         createdAt: now,
         createdByUid: user.uid,
       });
@@ -3100,29 +3102,55 @@ export class InvoicesService {
     return Array.from(new Set(raw.map((value) => this.firstString(value)).filter(Boolean)));
   }
 
+  private async processApprovalIds<T>(
+    approvalIds: string[],
+    worker: (approvalId: string) => Promise<T>,
+  ): Promise<T[]> {
+    const results: T[] = [];
+    let nextIndex = 0;
+
+    const runWorker = async () => {
+      while (nextIndex < approvalIds.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        const approvalId = approvalIds[index];
+        if (!approvalId) continue;
+        results[index] = await worker(approvalId);
+      }
+    };
+
+    await Promise.all(
+      Array.from(
+        { length: Math.min(INVOICE_APPROVAL_BATCH_CONCURRENCY, approvalIds.length) },
+        () => runWorker(),
+      ),
+    );
+
+    return results;
+  }
+
   async approvePendingApprovals(request: Request, user: RequestUser, payload: Record<string, unknown>) {
     const approvalIds = this.normalizeApprovalIds(payload);
     if (approvalIds.length === 0) {
       throw new BadRequestException('approvalIds are required');
     }
 
-    const results: Array<{ approval_id: string; success: boolean; invoice_id?: string; error?: string }> = [];
-    for (const approvalId of approvalIds) {
+    const results = await this.processApprovalIds(approvalIds, async (approvalId) => {
       try {
         const result = await this.approvePendingApproval(request, user, approvalId);
-        results.push({
+        return {
           approval_id: approvalId,
           success: true,
           invoice_id: this.firstString(result.invoice_id) || undefined,
-        });
+        };
       } catch (error) {
-        results.push({
+        return {
           approval_id: approvalId,
           success: false,
           error: this.errorMessage(error),
-        });
+        };
       }
-    }
+    });
 
     const processed = results.filter((item) => item.success).length;
     return {
@@ -3140,22 +3168,21 @@ export class InvoicesService {
       throw new BadRequestException('approvalIds are required');
     }
 
-    const results: Array<{ approval_id: string; success: boolean; error?: string }> = [];
-    for (const approvalId of approvalIds) {
+    const results = await this.processApprovalIds(approvalIds, async (approvalId) => {
       try {
         await this.cancelPendingApproval(request, user, approvalId);
-        results.push({
+        return {
           approval_id: approvalId,
           success: true,
-        });
+        };
       } catch (error) {
-        results.push({
+        return {
           approval_id: approvalId,
           success: false,
           error: this.errorMessage(error),
-        });
+        };
       }
-    }
+    });
 
     const processed = results.filter((item) => item.success).length;
     return {
@@ -3288,9 +3315,31 @@ export class InvoicesService {
       success: boolean;
       invoice_id?: string;
       approval_id?: string;
+      company_id?: string;
+      building_id?: string;
+      apartment_id?: string;
       message?: string;
       error?: string;
     }> = [];
+    const uploadJobs: Array<{
+      index: number;
+      item: Record<string, unknown>;
+      file: UploadedInvoiceFile;
+      fileName: string;
+      payload: Record<string, unknown>;
+    }> = [];
+    const commonExternalId = this.firstString(commonPayload.externalId, commonPayload.external_id);
+    const externalIdCounts = new Map<string, number>();
+
+    for (const item of items) {
+      const externalId = this.firstString(item.externalId, item.external_id, commonExternalId);
+      if (!externalId) continue;
+
+      const key = externalId.trim().toLowerCase();
+      externalIdCounts.set(key, (externalIdCounts.get(key) ?? 0) + 1);
+    }
+
+    const externalIdSeen = new Map<string, number>();
 
     for (const [index, item] of items.entries()) {
       let fileName = this.normalizeFileName(
@@ -3306,64 +3355,124 @@ export class InvoicesService {
         });
         fileName = this.normalizeFileName(file.originalname ?? fileName);
         const itemExternalId = this.firstString(item.externalId, item.external_id);
-        const commonExternalId = this.firstString(commonPayload.externalId, commonPayload.external_id);
-        const batchItemExternalId = !itemExternalId && commonExternalId
-          ? `${commonExternalId}-${index + 1}`
-          : itemExternalId;
-
-        const result = await this.upload(request, user, file, {
-          ...commonPayload,
-          ...item,
-          ...(batchItemExternalId ? { externalId: batchItemExternalId, external_id: batchItemExternalId } : {}),
-          source: item.source ?? item.uploadSource ?? commonPayload.source ?? commonPayload.uploadSource ?? 'api',
-          batchId,
-          batchIndex: index,
-          uploadHistoryId: batchId,
-          uploadHistoryBuildingId: initialHistoryBuildingId,
-          uploadHistoryApartmentId: initialHistoryApartmentId,
-          __skipUploadHistory: true,
-        });
-        const uploadResult = result as {
-          invoice_id?: string;
-          approval_id?: string;
-          company_id?: string;
-          building_id?: string;
-          apartment_id?: string;
-          message?: string;
-        };
-        historyCompanyId = this.firstString(historyCompanyId, uploadResult.company_id);
-        historyBuildingId = this.firstString(historyBuildingId, uploadResult.building_id);
-        historyApartmentId = this.firstString(historyApartmentId, uploadResult.apartment_id);
-
-        results.push({
-          index,
-          fileName,
-          success: true,
-          invoice_id: uploadResult.invoice_id,
-          approval_id: uploadResult.approval_id,
-          message: uploadResult.message,
-        });
-      } catch (error) {
-        const message = this.errorMessage(error);
-        const waitingApprovalId = message.match(/waiting for approval:\s*([A-Za-z0-9_-]+)/)?.[1];
-        if (waitingApprovalId) {
-          results.push({
-            index,
-            fileName,
-            success: true,
-            approval_id: waitingApprovalId,
-            message: 'Invoice is waiting for approval',
-          });
-          continue;
+        const baseExternalId = this.firstString(itemExternalId, commonExternalId);
+        const duplicateExternalIdInBatch =
+          baseExternalId && (externalIdCounts.get(baseExternalId.trim().toLowerCase()) ?? 0) > 1;
+        const batchItemExternalId = baseExternalId;
+        const itemRecipientType = this.firstString(item.recipientType, item.recipient_type, item.target);
+        let duplicateExternalIdOccurrence = 0;
+        if (duplicateExternalIdInBatch && baseExternalId) {
+          const key = baseExternalId.trim().toLowerCase();
+          duplicateExternalIdOccurrence = (externalIdSeen.get(key) ?? 0) + 1;
+          externalIdSeen.set(key, duplicateExternalIdOccurrence);
+        }
+        let batchItemRecipientType = itemRecipientType;
+        if (duplicateExternalIdOccurrence > 0) {
+          const normalizedItemRecipientType = this.normalizeRecipientType(itemRecipientType);
+          const automaticRecipientType =
+            duplicateExternalIdOccurrence === 1 ? 'owner' : duplicateExternalIdOccurrence === 2 ? 'tenant' : 'general';
+          batchItemRecipientType =
+            itemRecipientType && normalizedItemRecipientType !== 'owner'
+              ? normalizedItemRecipientType
+              : automaticRecipientType;
         }
 
+        uploadJobs.push({
+          index,
+          item,
+          file,
+          fileName,
+          payload: {
+            ...commonPayload,
+            ...item,
+            ...(batchItemExternalId ? { externalId: batchItemExternalId, external_id: batchItemExternalId } : {}),
+            ...(batchItemRecipientType ? { recipientType: batchItemRecipientType, recipient_type: batchItemRecipientType } : {}),
+            source: item.source ?? item.uploadSource ?? commonPayload.source ?? commonPayload.uploadSource ?? 'api',
+            batchId,
+            batchIndex: index,
+            uploadHistoryId: batchId,
+            uploadHistoryBuildingId: initialHistoryBuildingId,
+            uploadHistoryApartmentId: initialHistoryApartmentId,
+            __skipUploadHistory: true,
+          },
+        });
+      } catch (error) {
         results.push({
           index,
           fileName,
           success: false,
-          error: message,
+          error: this.errorMessage(error),
         });
       }
+    }
+
+    let nextJobIndex = 0;
+    const runUploadJob = async () => {
+      while (nextJobIndex < uploadJobs.length) {
+        const job = uploadJobs[nextJobIndex];
+        nextJobIndex += 1;
+        if (!job) continue;
+
+        try {
+          const result = await this.upload(request, user, job.file, {
+            ...job.payload,
+          });
+          const uploadResult = result as {
+            invoice_id?: string;
+            approval_id?: string;
+            company_id?: string;
+            building_id?: string;
+            apartment_id?: string;
+            message?: string;
+          };
+
+          results.push({
+            index: job.index,
+            fileName: job.fileName,
+            success: true,
+            invoice_id: uploadResult.invoice_id,
+            approval_id: uploadResult.approval_id,
+            company_id: uploadResult.company_id,
+            building_id: uploadResult.building_id,
+            apartment_id: uploadResult.apartment_id,
+            message: uploadResult.message,
+          });
+        } catch (error) {
+          const message = this.errorMessage(error);
+          const waitingApprovalId = message.match(/waiting for approval:\s*([A-Za-z0-9_-]+)/)?.[1];
+          if (waitingApprovalId) {
+            results.push({
+              index: job.index,
+              fileName: job.fileName,
+              success: true,
+              approval_id: waitingApprovalId,
+              message: 'Invoice is waiting for approval',
+            });
+            continue;
+          }
+
+          results.push({
+            index: job.index,
+            fileName: job.fileName,
+            success: false,
+            error: message,
+          });
+        }
+      }
+    };
+
+    await Promise.all(
+      Array.from(
+        { length: Math.min(INVOICE_BATCH_UPLOAD_CONCURRENCY, uploadJobs.length) },
+        () => runUploadJob(),
+      ),
+    );
+
+    results.sort((left, right) => left.index - right.index);
+    for (const result of results) {
+      historyCompanyId = this.firstString(historyCompanyId, result.company_id);
+      historyBuildingId = this.firstString(historyBuildingId, result.building_id);
+      historyApartmentId = this.firstString(historyApartmentId, result.apartment_id);
     }
 
     const processed = results.filter((item) => item.success).length;

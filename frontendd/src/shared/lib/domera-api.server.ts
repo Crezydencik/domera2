@@ -394,6 +394,7 @@ export function toInvoice(item: UnknownRecord): Invoice {
     amount: formatCurrency(firstNumber(item.amount), currency),
     dueDate: formatDate(item.dueDate ?? item.invoiceDate ?? item.createdAt),
     status: firstString(item.status, "Pending").replace(/^./, (value) => value.toUpperCase()),
+    recipientType: firstDisplayString(item.recipientType, item.recipient_type, item.target) || undefined,
     apartmentId: typeof item.apartmentId === "string" ? item.apartmentId : undefined,
     buildingId: typeof item.buildingId === "string" ? item.buildingId : undefined,
     companyId: typeof item.companyId === "string" ? item.companyId : undefined,

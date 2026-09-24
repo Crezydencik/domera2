@@ -177,15 +177,18 @@ function isTenantActive(record: UnknownRecord) {
   return status === "accepted";
 }
 
-function isTrueFlag(value: unknown) {
-  return value === true || (typeof value === "string" && value.trim().toLowerCase() === "true");
-}
-
 function isAccountantRole(value: unknown) {
   return String(value ?? "")
     .trim()
     .replace(/[^a-z]/gi, "")
     .toLowerCase() === "accountant";
+}
+
+function invoiceRecipientLabel(value: unknown) {
+  const normalized = String(value ?? "general").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalized === "tenant") return "Арендатор";
+  if (normalized === "owner" || normalized === "self_government") return "Владелец";
+  return "Квартира";
 }
 
 export default async function ApartmentDetailsPage({
@@ -323,7 +326,6 @@ export default async function ApartmentDetailsPage({
   );
   const owner = firstText(apartment.owner, apartment.ownerName, baseApartment.owner, baseApartment.ownerName, t("common.notSpecified"));
   const ownerEmail = firstText(apartment.ownerEmail, baseApartment.ownerEmail, t("common.notSpecified"));
-  const selfManagementEnabled = isTrueFlag(apartment.selfManagement) || isTrueFlag(baseApartment.selfManagement);
   const companyName = firstText(
     company?.companyName,
     company?.name,
@@ -483,6 +485,7 @@ export default async function ApartmentDetailsPage({
   const canDeleteInvoices = data.role === "managementCompany";
   const invoiceColumns = [
     t("details.invoiceColumns.id"),
+    t("details.invoiceColumns.recipient"),
     t("details.invoiceColumns.amount"),
     t("details.invoiceColumns.dueDate"),
     t("details.invoiceColumns.status"),
@@ -495,6 +498,7 @@ export default async function ApartmentDetailsPage({
 
         return [
           invoiceLabel,
+          invoiceRecipientLabel(inv.recipientType),
           inv.amount,
           inv.dueDate,
           <span
@@ -547,7 +551,7 @@ export default async function ApartmentDetailsPage({
           </div>,
         ];
       })
-    : [["—", "—", "—", "—", <span key="no-inv">{t("details.noInvoices")}</span>]];
+    : [["—", "—", "—", "—", "—", <span key="no-inv">{t("details.noInvoices")}</span>]];
   const invoiceMobileRows = apartmentInvoices.length
     ? apartmentInvoices.map((inv) => {
         const pdfUrl = inv.pdfUrl?.trim();
@@ -722,7 +726,6 @@ export default async function ApartmentDetailsPage({
                 t("details.columns.status"),
               ]}
               tenantsTitle={t("details.tenants")}
-              selfManagement={selfManagementEnabled}
             />
           </SectionCard>
         ) : null}

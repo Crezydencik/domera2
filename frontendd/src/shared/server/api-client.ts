@@ -38,7 +38,7 @@ const appConfig = {
   apiBaseUrl: resolveServerApiBaseUrl(),
 };
 
-const DEFAULT_SERVER_API_TIMEOUT_MS = process.env.NODE_ENV === "production" ? 15_000 : 5_000;
+const DEFAULT_SERVER_API_TIMEOUT_MS = process.env.NODE_ENV === "production" ? 30_000 : 30_000;
 const DEFAULT_SERVER_STALE_TIME_MS = 5_000;
 
 type ServerCacheEntry = {
