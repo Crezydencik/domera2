@@ -5,7 +5,6 @@ import { randomBytes } from 'node:crypto';
 import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { hashInvitationToken } from '../../../common/utils/invitation-token';
-import { EmailService } from '../../emails/services/email.service';
 import { ApartmentsRepository } from '../repositories/apartments.repository';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -22,7 +21,6 @@ export class ApartmentInvitationService {
 
   constructor(
     private readonly firebaseAdminService: FirebaseAdminService,
-    private readonly emailService: EmailService,
     private readonly apartmentsRepository: ApartmentsRepository,
   ) {}
 
@@ -212,53 +210,6 @@ export class ApartmentInvitationService {
     }
   }
 
-  async emailPlatformAdminsAboutApartmentRequest(params: {
-    request: Request;
-    inviteType: 'owner' | 'tenant';
-    inviteeEmail: string;
-    apartmentId: string;
-    apartmentNumber: string;
-    buildingName: string;
-    companyName: string;
-  }) {
-    const admins = await this.getPlatformAdminDocs();
-    if (admins.length === 0) return;
-
-    const targetEmails = Array.from(
-      new Set(
-        admins
-          .map((admin) => this.firstString((admin.data() as Record<string, unknown>).email).toLowerCase())
-          .filter(Boolean),
-      ),
-    );
-
-    if (targetEmails.length === 0) return;
-
-    const roleLabel = params.inviteType === 'owner' ? 'owner' : 'tenant';
-    const apartmentLabel = [params.apartmentNumber, params.buildingName].filter(Boolean).join(', ') || params.apartmentId;
-    const actionLink = `${this.resolveFrontendUrl(params.request)}/apartments/${encodeURIComponent(params.apartmentId)}`;
-    const message = [
-      `A new apartment ${roleLabel} request was created.`,
-      `Apartment: ${apartmentLabel}.`,
-      params.companyName ? `Company: ${params.companyName}.` : '',
-      `Invitee email: ${params.inviteeEmail}.`,
-    ].filter(Boolean).join('<br />');
-
-    await Promise.all(
-      targetEmails.map((email) =>
-        this.emailService.sendNotification({
-          to: email,
-          title: 'New apartment request',
-          message,
-          actionLabel: 'Open apartment',
-          actionLink,
-          footer: 'This email was sent because an apartment access request exists in Domera.',
-          language: 'en',
-        }),
-      ),
-    );
-  }
-
   private buildInvitationLink(rawToken: string, request?: Request): string {
     const frontendUrl = this.resolveFrontendUrl(request);
     return `${frontendUrl}/accept-invitation?token=${encodeURIComponent(rawToken)}`;
@@ -287,21 +238,6 @@ export class ApartmentInvitationService {
         });
       }),
     );
-  }
-
-  private async getPlatformAdminDocs() {
-    const db = this.firebaseAdminService.firestore;
-    const [byRole, byAccountType] = await Promise.all([
-      db.collection('users').where('role', '==', 'PlatformAdmin').get(),
-      db.collection('users').where('accountType', '==', 'PlatformAdmin').get(),
-    ]);
-
-    const admins = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-    for (const doc of [...byRole.docs, ...byAccountType.docs]) {
-      admins.set(doc.id, doc);
-    }
-
-    return Array.from(admins.values());
   }
 
   private firstString(...values: unknown[]): string {

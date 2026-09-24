@@ -1101,7 +1101,14 @@
             "title": "Delete apartments",
             "description": "Delete all apartments in the current list?",
             "scope": "There are currently {count} apartments in this list.",
-            "hint": "Occupied apartments will be skipped automatically.",
+            "statuses": {
+              "vacant": "Vacant",
+              "pending": "Pending",
+              "occupied": "Occupied"
+            },
+            "deletable": "Will be deleted: {count}.",
+            "locked": "Locked apartments will be skipped: {count}.",
+            "hint": "Select the statuses you want to delete. Occupied apartments cannot be deleted.",
             "deleting": "Deleting..."
           },
           "invitations": {
@@ -1112,8 +1119,11 @@
             "apartment": "Apartment: {apartment}",
             "revoke": "Cancel invitation",
             "revoking": "Cancelling...",
+            "revokeAll": "Cancel all invitations",
+            "revokeSelected": "Cancel selected",
             "sendSelected": "Send invitation",
             "sending": "Sending...",
+            "selectAllAvailable": "Select all available",
             "selectAllReady": "Select all ready",
             "selected": "Selected: {count}",
             "columns": {
@@ -1136,10 +1146,13 @@
           "apartmentCreated": "Apartment {apartment} was created.",
           "residentCreated": "Resident {resident} was created.",
           "nothingToExport": "There is no data to export.",
-          "noVacantApartmentsToDelete": "There are no vacant apartments to delete.",
+          "noVacantApartmentsToDelete": "There are no apartments available to delete.",
           "bulkDeleteSuccess": "Deleted apartments: {deleted}. Skipped: {skipped}.",
+          "bulkDeletePartial": "Deleted apartments: {deleted}. Failed: {failed}. Skipped: {skipped}.",
           "noInvitationsToSend": "There are no ready invitations to send.",
+          "noInvitationsToRevoke": "There are no selected invitations to cancel.",
           "bulkInvitationsResult": "Invitations sent: {sent}. Failed: {failed}.",
+          "bulkInvitationsRevoked": "Invitations cancelled: {revoked}. Failed: {failed}.",
           "invitationRevoked": "Invitation was cancelled."
         },
         "errors": {
@@ -1159,6 +1172,7 @@
           "bulkDeleteFailed": "Failed to delete apartments.",
           "invitationsLoadFailed": "Failed to load invitations.",
           "bulkInvitationsFailed": "Failed to send invitations.",
+          "bulkInvitationRevokeFailed": "Failed to cancel invitations.",
           "invitationRevokeFailed": "Failed to cancel invitation."
         }
       },
@@ -1182,6 +1196,11 @@
       "compactUnavailable": "Access management is unavailable in compact mode.",
       "contractTitle": "Rental contract - {tenant}",
       "contractTitleSearch": "contract",
+      "splitInvoicesTitle": "Allow two invoices for this apartment",
+      "splitInvoicesDescription": "Use separate invoices for the owner and the tenant when a tenant is assigned.",
+      "splitInvoicesEnabled": "Two-invoice mode enabled.",
+      "splitInvoicesDisabled": "Two-invoice mode disabled.",
+      "splitInvoicesSaveFailed": "Could not update invoice mode.",
       "tabs": {
         "owner": "Owner",
         "tenants": "Tenants"
@@ -2039,6 +2058,7 @@
       "batchItemsFileHint": "Attach items.json with the metadata array for the uploaded PDFs, or place items.json inside the ZIP archive.",
       "contentTypeWarning": "Do not add Content-Type manually in Insomnia/Postman. The client must generate multipart/form-data with boundary automatically.",
       "itemsJsonTitle": "items.json example",
+      "itemsJsonRecipientHint": "To send two invoices for one apartment, add two items with the same apartmentNumber or apartmentId. Use recipientType=owner for the owner invoice and recipientType=tenant for the tenant invoice. The same externalId is allowed for these two items because recipientType separates them.",
       "requiredFieldsTitle": "Request fields",
       "required": "Required",
       "optionalShort": "Optional",
@@ -2054,11 +2074,12 @@
         "currency": "Currency code in ISO format, for example EUR.",
         "externalId": "Unique invoice ID from your accounting system. Used to prevent duplicates.",
         "status": "Invoice status, for example issued, paid, overdue, cancelled.",
+        "recipientType": "Invoice recipient: general, owner, or tenant. Omit it for ordinary apartments. Separate owner/tenant invoices are allowed only when the apartment is set to allow two invoices; tenant also requires an active tenant.",
         "comment": "Optional internal comment for the upload history."
       },
       "rulesTitle": "Processing rules",
       "rulePdf": "PDF files are validated by type and signature before saving.",
-      "ruleDuplicate": "The same externalId cannot be uploaded twice for one company.",
+      "ruleDuplicate": "The same externalId cannot be uploaded twice for one company and recipientType. When two invoices are allowed for an apartment, owner and tenant invoices may use the same externalId.",
       "ruleCompany": "The API key can upload invoices only for the management company it belongs to.",
       "exampleTitle": "cURL example",
       "responsesTitle": "API responses",

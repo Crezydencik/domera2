@@ -16,4 +16,9 @@ export class ListInvoicesQueryDto {
   @IsOptional()
   @IsString()
   buildingId?: string;
+
+  @ApiPropertyOptional({ enum: ['owner', 'tenant', 'general'], description: 'Optional recipient type filter.' })
+  @IsOptional()
+  @IsString()
+  recipientType?: string;
 }

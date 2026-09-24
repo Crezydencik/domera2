@@ -194,7 +194,14 @@ export class ApartmentAccessService {
       if (!tenant || typeof tenant !== 'object') return false;
       const record = tenant as Record<string, unknown>;
       const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
-      if (['removed', 'deleted', 'revoked', 'inactive'].includes(status)) return false;
+      const isActiveTenant =
+        record.activated === true ||
+        Boolean(record.acceptedAt) ||
+        Boolean(record.activatedAt) ||
+        status === 'active' ||
+        status === 'accepted';
+
+      if (!isActiveTenant || ['removed', 'deleted', 'revoked', 'inactive'].includes(status)) return false;
 
       return (
         (typeof record.userId === 'string' && record.userId.trim().length > 0) ||

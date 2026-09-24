@@ -95,6 +95,7 @@ export interface Invoice {
   amount: string;
   dueDate: string;
   status: string;
+  recipientType?: "owner" | "tenant" | "general" | string;
   apartmentId?: string;
   buildingId?: string;
   companyId?: string;

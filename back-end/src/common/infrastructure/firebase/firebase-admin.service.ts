@@ -16,6 +16,14 @@ const normalizePrivateKey = (value: string): string => {
   return unwrapped.replace(/\\n/g, '\n').trim();
 };
 
+function isStorageNotFoundError(error: unknown): boolean {
+  const record = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+  const code = record.code;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+
+  return code === 404 || /bucket does not exist|not found/i.test(message);
+}
+
 @Injectable()
 export class FirebaseAdminService {
   private app?: App;
@@ -120,10 +128,18 @@ export class FirebaseAdminService {
       throw new Error('Storage folder path is required');
     }
 
-    await this.storageBucket.deleteFiles({
-      prefix: `${normalized}/`,
-      force: true,
-    });
+    try {
+      await this.storageBucket.deleteFiles({
+        prefix: `${normalized}/`,
+        force: true,
+      });
+    } catch (error) {
+      if (!isStorageNotFoundError(error)) {
+        throw error;
+      }
+
+      return { path: normalized, deleted: false };
+    }
 
     return { path: normalized, deleted: true };
   }

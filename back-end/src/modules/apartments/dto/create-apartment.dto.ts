@@ -46,6 +46,10 @@ export class CreateApartmentDto {
   declaredResidents?: number;
 
   @IsOptional()
+  @IsBoolean()
+  selfManagement?: boolean;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => ApartmentReadingConfigOverrideDto)
   readingConfigOverride?: ApartmentReadingConfigOverrideDto;
@@ -84,6 +88,10 @@ export class UpdateApartmentDto {
   @IsNumber()
   @Min(0)
   declaredResidents?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  selfManagement?: boolean;
 
   @IsOptional()
   @IsString()

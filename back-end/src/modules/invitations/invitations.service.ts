@@ -732,6 +732,11 @@ export class InvitationsService {
       throw new ForbiddenException('Access denied for invitation company');
     }
 
+    const status = typeof data.status === 'string' ? data.status.trim().toLowerCase() : '';
+    const apartmentId = typeof data.apartmentId === 'string' ? data.apartmentId.trim() : '';
+    const inviteType = typeof data.inviteType === 'string' ? data.inviteType.trim().toLowerCase() : '';
+    const email = typeof data.email === 'string' ? normalizeEmail(data.email) : '';
+
     await ref.set(
       {
         status: 'revoked',
@@ -739,6 +744,10 @@ export class InvitationsService {
       },
       { merge: true },
     );
+
+    if (status === 'pending' && apartmentId && email) {
+      await this.clearPendingApartmentInvite(apartmentId, inviteType, email, normalizedInvitationId);
+    }
 
     void this.auditLogService.write({
       request,
@@ -751,5 +760,67 @@ export class InvitationsService {
     });
 
     return { success: true };
+  }
+
+  private async clearPendingApartmentInvite(
+    apartmentId: string,
+    inviteType: string,
+    email: string,
+    invitationId: string,
+  ): Promise<void> {
+    const ref = this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId);
+    const snap = await ref.get();
+    if (!snap.exists) return;
+
+    const apartment = snap.data() as Record<string, unknown>;
+    if (inviteType === 'owner') {
+      const ownerEmail = typeof apartment.ownerEmail === 'string' ? normalizeEmail(apartment.ownerEmail) : '';
+      const ownerInvitationId = typeof apartment.ownerInvitationId === 'string' ? apartment.ownerInvitationId : '';
+      const ownerActivated = apartment.ownerActivated === true || Boolean(apartment.ownerAcceptedAt);
+      const matchesOwner = ownerEmail === email || ownerInvitationId === invitationId;
+      if (!matchesOwner || ownerActivated) return;
+
+      await ref.set(
+        {
+          ownerEmail: null,
+          ownerId: null,
+          owner: null,
+          ownerFirstName: null,
+          ownerLastName: null,
+          ownerContractNumber: null,
+          ownerInvitedAt: null,
+          ownerAcceptedAt: null,
+          ownerInvitationId: null,
+          ownerActivated: null,
+        },
+        { merge: true },
+      );
+      return;
+    }
+
+    const tenants = Array.isArray(apartment.tenants)
+      ? (apartment.tenants as Record<string, unknown>[])
+      : [];
+    if (tenants.length === 0) return;
+
+    const nextTenants = tenants.filter((tenant) => {
+      if (!tenant || typeof tenant !== 'object') return true;
+      const tenantEmail = typeof tenant.email === 'string' ? normalizeEmail(tenant.email) : '';
+      const tenantInvitationId = typeof tenant.invitationId === 'string' ? tenant.invitationId : '';
+      const tenantStatus = typeof tenant.status === 'string' ? tenant.status.trim().toLowerCase() : '';
+      const accepted = tenant.activated === true || Boolean(tenant.acceptedAt) || ['active', 'accepted'].includes(tenantStatus);
+      const matchesTenant = tenantEmail === email || tenantInvitationId === invitationId;
+      return !matchesTenant || accepted;
+    });
+
+    if (nextTenants.length === tenants.length) return;
+
+    await ref.set(
+      {
+        tenants: nextTenants,
+        ...(nextTenants.length === 0 ? { residentId: null } : {}),
+      },
+      { merge: true },
+    );
   }
 }

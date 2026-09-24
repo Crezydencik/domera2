@@ -1180,7 +1180,14 @@
             "title": "Dzēst dzīvokļus",
             "description": "Vai dzēst visus dzīvokļus pašreizējā sarakstā?",
             "scope": "Šajā sarakstā pašlaik ir {count} dzīvokļi.",
-            "hint": "Aizņemtie dzīvokļi tiks automātiski izlaisti.",
+            "statuses": {
+              "vacant": "Brīvs",
+              "pending": "Gaida",
+              "occupied": "Aizņemts"
+            },
+            "deletable": "Tiks dzēsti: {count}.",
+            "locked": "Bloķētie dzīvokļi tiks izlaisti: {count}.",
+            "hint": "Atzīmējiet statusus, kurus vēlaties dzēst. Aizņemtos dzīvokļus nevar dzēst.",
             "deleting": "Dzēš..."
           },
           "invitations": {
@@ -1191,8 +1198,11 @@
             "apartment": "Dzīvoklis: {apartment}",
             "revoke": "Atcelt uzaicinājumu",
             "revoking": "Atceļ...",
+            "revokeAll": "Atcelt visus uzaicinājumus",
+            "revokeSelected": "Atcelt izvēlētos",
             "sendSelected": "Nosūtīt uzaicinājumu",
             "sending": "Sūta...",
+            "selectAllAvailable": "Izvēlēties visus pieejamos",
             "selectAllReady": "Izvēlēties visus gatavos",
             "selected": "Izvēlēts: {count}",
             "columns": {
@@ -1215,10 +1225,13 @@
           "apartmentCreated": "Dzīvoklis {apartment} tika izveidots.",
           "residentCreated": "Iedzīvotājs {resident} tika izveidots.",
           "nothingToExport": "Nav datu eksportēšanai.",
-          "noVacantApartmentsToDelete": "Nav brīvu dzīvokļu dzēšanai.",
+          "noVacantApartmentsToDelete": "Nav dzīvokļu, kurus var dzēst.",
           "bulkDeleteSuccess": "Dzēsti dzīvokļi: {deleted}. Izlaisti: {skipped}.",
+          "bulkDeletePartial": "Dzēsti dzīvokļi: {deleted}. Kļūdas: {failed}. Izlaisti: {skipped}.",
           "noInvitationsToSend": "Nav gatavu uzaicinājumu nosūtīšanai.",
+          "noInvitationsToRevoke": "Nav izvēlētu uzaicinājumu atcelšanai.",
           "bulkInvitationsResult": "Uzaicinājumi nosūtīti: {sent}. Kļūdas: {failed}.",
+          "bulkInvitationsRevoked": "Uzaicinājumi atcelti: {revoked}. Kļūdas: {failed}.",
           "invitationRevoked": "Uzaicinājums atcelts."
         },
         "errors": {
@@ -1238,6 +1251,7 @@
           "bulkDeleteFailed": "Neizdevās dzēst dzīvokļus.",
           "invitationsLoadFailed": "Neizdevās ielādēt uzaicinājumus.",
           "bulkInvitationsFailed": "Neizdevās nosūtīt uzaicinājumus.",
+          "bulkInvitationRevokeFailed": "Neizdevās atcelt uzaicinājumus.",
           "invitationRevokeFailed": "Neizdevās atcelt uzaicinājumu."
         }
       },
@@ -1261,6 +1275,11 @@
       "compactUnavailable": "Piekļuves pārvaldība kompaktajā režīmā nav pieejama.",
       "contractTitle": "Īres līgums - {tenant}",
       "contractTitleSearch": "līgums",
+      "splitInvoicesTitle": "Atļaut divus rēķinus šim dzīvoklim",
+      "splitInvoicesDescription": "Izmantot atsevišķus rēķinus īpašniekam un īrniekam, ja īrnieks ir piesaistīts.",
+      "splitInvoicesEnabled": "Divu rēķinu režīms ieslēgts.",
+      "splitInvoicesDisabled": "Divu rēķinu režīms izslēgts.",
+      "splitInvoicesSaveFailed": "Neizdevās atjaunināt rēķinu režīmu.",
       "tabs": {
         "owner": "Īpašnieks",
         "tenants": "Iemītnieki"
@@ -2032,6 +2051,7 @@
       "batchItemsFileHint": "Pievienojiet items.json ar metadatu masīvu augšupielādētajiem PDF vai ievietojiet items.json ZIP arhīvā.",
       "contentTypeWarning": "Nepievienojiet Content-Type manuāli Insomnia/Postman. Klientam pašam jāizveido multipart/form-data ar boundary.",
       "itemsJsonTitle": "items.json piemērs",
+      "itemsJsonRecipientHint": "Lai nosūtītu divus rēķinus vienam dzīvoklim, pievienojiet divus ierakstus ar vienādu apartmentNumber vai apartmentId. Izmantojiet recipientType=owner īpašnieka rēķinam un recipientType=tenant īrnieka rēķinam. Šiem diviem ierakstiem drīkst būt vienāds externalId, jo tos atdala recipientType.",
       "requiredFieldsTitle": "Pieprasījuma lauki",
       "required": "Obligāts",
       "optionalShort": "Neobligāts",
@@ -2047,11 +2067,12 @@
         "currency": "ISO valūtas kods, piemēram EUR.",
         "externalId": "Unikāls rēķina ID no grāmatvedības sistēmas. Tiek izmantots dublikātu novēršanai.",
         "status": "Rēķina statuss, piemēram issued, paid, overdue, cancelled.",
+        "recipientType": "Rēķina saņēmējs: general, owner vai tenant. Parastiem dzīvokļiem lauku var nenorādīt. Atsevišķi owner/tenant rēķini ir atļauti tikai tad, ja dzīvoklim ir ieslēgts divu rēķinu režīms; tenant papildus prasa aktīvu īrnieku.",
         "comment": "Neobligāts iekšējs komentārs augšupielādes vēsturei."
       },
       "rulesTitle": "Apstrādes noteikumi",
       "rulePdf": "PDF pirms saglabāšanas tiek pārbaudīts pēc faila tipa un paraksta.",
-      "ruleDuplicate": "Vienu externalId nevar augšupielādēt atkārtoti vienam uzņēmumam.",
+      "ruleDuplicate": "Vienu externalId nevar augšupielādēt atkārtoti vienam uzņēmumam un recipientType. Ja dzīvoklim ir atļauti divi rēķini, owner un tenant rēķini var izmantot vienu externalId.",
       "ruleCompany": "API atslēga var augšupielādēt rēķinus tikai savam pārvaldības uzņēmumam.",
       "exampleTitle": "cURL piemērs",
       "responsesTitle": "API atbildes",

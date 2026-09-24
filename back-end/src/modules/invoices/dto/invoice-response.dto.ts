@@ -19,6 +19,9 @@ export class InvoiceItemDto {
   @ApiProperty({ example: 'pending' })
   status!: string;
 
+  @ApiPropertyOptional({ enum: ['owner', 'tenant', 'general'], nullable: true })
+  recipientType?: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   pdfUrl?: string;
 

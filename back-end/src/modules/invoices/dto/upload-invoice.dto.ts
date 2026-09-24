@@ -34,6 +34,9 @@ export class UploadInvoiceDto {
   @ApiProperty({ example: 'pending' })
   status!: string;
 
+  @ApiPropertyOptional({ enum: ['owner', 'tenant', 'general'], description: 'Who should see/receive this invoice.' })
+  recipientType?: 'owner' | 'tenant' | 'general';
+
   @ApiPropertyOptional({ description: 'Optional company id. API keys are already company-scoped.' })
   companyId?: string;
 
@@ -63,6 +66,7 @@ export class UploadInvoicesBatchDto {
         amount: 125.5,
         currency: 'EUR',
         externalId: 'erp-2026-05-apt-12',
+        recipientType: 'tenant',
         status: 'issued',
       },
     ]),

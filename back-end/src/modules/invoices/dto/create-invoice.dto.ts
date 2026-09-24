@@ -24,6 +24,11 @@ export class CreateInvoiceDto {
   @IsIn(['pending', 'paid', 'overdue'])
   status!: 'pending' | 'paid' | 'overdue';
 
+  @ApiPropertyOptional({ enum: ['owner', 'tenant', 'general'], description: 'Who should see/receive this invoice.' })
+  @IsOptional()
+  @IsIn(['owner', 'tenant', 'general'])
+  recipientType?: 'owner' | 'tenant' | 'general';
+
   @ApiPropertyOptional({ description: 'Optional PDF URL.' })
   @IsOptional()
   @IsString()

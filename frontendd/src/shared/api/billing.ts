@@ -13,6 +13,7 @@ export type UploadInvoiceParams = {
   meterReadingId?: string;
   queueApproval?: boolean;
   status: string;
+  recipientType?: "owner" | "tenant" | "general";
   comment?: string;
   companyId?: string;
   source?: "api" | "manual";
@@ -34,12 +35,13 @@ export type PendingInvoiceApprovalsResponse = {
   items?: Record<string, unknown>[];
 };
 
-export function getInvoices(query: { companyId?: string; apartmentId?: string; userId?: string } = {}) {
+export function getInvoices(query: { companyId?: string; apartmentId?: string; userId?: string; recipientType?: string } = {}) {
   const params = new URLSearchParams();
 
   if (query.companyId) params.set("companyId", query.companyId);
   if (query.apartmentId) params.set("apartmentId", query.apartmentId);
   if (query.userId) params.set("userId", query.userId);
+  if (query.recipientType) params.set("recipientType", query.recipientType);
 
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return apiFetch<{ items?: Record<string, unknown>[] }>(`/invoices${suffix}`);
@@ -58,6 +60,7 @@ export function uploadInvoice(params: UploadInvoiceParams) {
   if (params.meterReadingId?.trim()) formData.append("meterReadingId", params.meterReadingId.trim());
   if (params.queueApproval) formData.append("queueApproval", "true");
   formData.append("status", params.status);
+  if (params.recipientType) formData.append("recipientType", params.recipientType);
   formData.append("source", params.source ?? "manual");
 
   if (params.comment?.trim()) formData.append("comment", params.comment.trim());

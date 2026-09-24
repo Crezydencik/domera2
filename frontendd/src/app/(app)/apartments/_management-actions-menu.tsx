@@ -230,6 +230,8 @@ export function ApartmentsManagementActionsMenu({
   const [addOpen, setAddOpen] = useState(false);
   const [addTab, setAddTab] = useState<AddTab>("resident");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteVacantSelected, setDeleteVacantSelected] = useState(true);
+  const [deletePendingSelected, setDeletePendingSelected] = useState(true);
   const [invitesOpen, setInvitesOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importResultOpen, setImportResultOpen] = useState(false);
@@ -241,6 +243,7 @@ export function ApartmentsManagementActionsMenu({
   const [loadingDeleteAll, setLoadingDeleteAll] = useState(false);
   const [loadingInvites, setLoadingInvites] = useState(false);
   const [revokingInvitationId, setRevokingInvitationId] = useState<string | null>(null);
+  const [loadingBulkRevokeInvites, setLoadingBulkRevokeInvites] = useState(false);
   const [loadingBulkInvites, setLoadingBulkInvites] = useState(false);
   const [loadingExport, setLoadingExport] = useState(false);
   const [invitations, setInvitations] = useState<InvitationRecord[]>([]);
@@ -288,6 +291,19 @@ export function ApartmentsManagementActionsMenu({
   const importApartmentLimitReached = typeof importBuilding?.apartmentLimit === "number"
     && apartmentCountForBuilding(importBuilding.id) >= importBuilding.apartmentLimit;
   const apartmentLimitMessage = "Достигнут лимит квартир для этого дома. Измените дом и дождитесь подтверждения.";
+  const deleteStatusSummary = useMemo(() => {
+    const occupied = apartments.filter((apartment) => apartment.isOccupied === true).length;
+    const vacant = apartments.filter((apartment) => apartment.isVacant === true).length;
+    const pending = apartments.length - occupied - vacant;
+    const locked = apartments.filter((apartment) => apartment.isLocked === true).length;
+    const deletable = apartments.filter((apartment) => {
+      if (apartment.isLocked || apartment.isOccupied === true) return false;
+      if (apartment.isVacant === true) return deleteVacantSelected;
+      return deletePendingSelected;
+    }).length;
+
+    return { occupied, pending, vacant, locked, deletable };
+  }, [apartments, deletePendingSelected, deleteVacantSelected]);
 
   const invitationRows = useMemo<InvitationListRow[]>(() => {
     const pendingInvitationsByApartment = new Map<string, InvitationRecord>();
@@ -343,11 +359,27 @@ export function ApartmentsManagementActionsMenu({
     () => invitationRows.filter((row) => row.status === "ready"),
     [invitationRows],
   );
+  const pendingInvitationRows = useMemo(
+    () => invitationRows.filter((row) => row.status === "pending" && row.invitationId),
+    [invitationRows],
+  );
+  const actionableInvitationRows = useMemo(
+    () => invitationRows.filter((row) => row.status === "ready" || (row.status === "pending" && row.invitationId)),
+    [invitationRows],
+  );
   const selectedInvitationRows = useMemo(() => {
     const selectedKeys = new Set(selectedInvitationRowKeys);
-    return readyInvitationRows.filter((row) => selectedKeys.has(row.key));
-  }, [readyInvitationRows, selectedInvitationRowKeys]);
-  const allReadyInvitationRowsSelected = readyInvitationRows.length > 0 && selectedInvitationRows.length === readyInvitationRows.length;
+    return actionableInvitationRows.filter((row) => selectedKeys.has(row.key));
+  }, [actionableInvitationRows, selectedInvitationRowKeys]);
+  const selectedReadyInvitationRows = useMemo(
+    () => selectedInvitationRows.filter((row) => row.status === "ready"),
+    [selectedInvitationRows],
+  );
+  const selectedPendingInvitationRows = useMemo(
+    () => selectedInvitationRows.filter((row) => row.status === "pending" && row.invitationId),
+    [selectedInvitationRows],
+  );
+  const allActionableInvitationRowsSelected = actionableInvitationRows.length > 0 && selectedInvitationRows.length === actionableInvitationRows.length;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -681,7 +713,11 @@ export function ApartmentsManagementActionsMenu({
       return;
     }
 
-    const deletable = apartments.filter((apartment) => !apartment.isLocked && (apartment.isVacant ?? !apartment.isOccupied));
+    const deletable = apartments.filter((apartment) => {
+      if (apartment.isLocked || apartment.isOccupied === true) return false;
+      if (apartment.isVacant === true) return deleteVacantSelected;
+      return deletePendingSelected;
+    });
     if (deletable.length === 0) {
       notifications.info(t("feedback.noVacantApartmentsToDelete"));
       setDeleteOpen(false);
@@ -690,14 +726,32 @@ export function ApartmentsManagementActionsMenu({
 
     setLoadingDeleteAll(true);
     try {
+      let deleted = 0;
+      let failed = 0;
+
       for (const apartment of deletable) {
-        await deleteApartment(apartment.id);
+        try {
+          await deleteApartment(apartment.id);
+          deleted += 1;
+        } catch (error) {
+          failed += 1;
+          console.error("Failed to delete apartment", apartment.id, error);
+        }
       }
 
-      const skipped = apartments.length - deletable.length;
-      notifications.success(t("feedback.bulkDeleteSuccess", { deleted: deletable.length, skipped }));
-      setDeleteOpen(false);
-      router.refresh();
+      const skipped = apartments.length - deleted - failed;
+      if (deleted > 0 && failed > 0) {
+        notifications.warning(t("feedback.bulkDeletePartial", { deleted, failed, skipped }));
+      } else if (deleted > 0) {
+        notifications.success(t("feedback.bulkDeleteSuccess", { deleted, skipped }));
+      } else {
+        notifications.error(t("errors.bulkDeleteFailed"));
+      }
+
+      if (deleted > 0) {
+        setDeleteOpen(false);
+        router.refresh();
+      }
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : t("errors.bulkDeleteFailed"));
     } finally {
@@ -758,6 +812,35 @@ export function ApartmentsManagementActionsMenu({
     }
   }
 
+  async function handleRevokeAllInvitations() {
+    if (loadingBulkRevokeInvites || !pendingInvitationRows.length) return;
+
+    setLoadingBulkRevokeInvites(true);
+    let revoked = 0;
+    let failed = 0;
+
+    for (const row of pendingInvitationRows) {
+      if (!row.invitationId) continue;
+      try {
+        await revokeInvitation(row.invitationId);
+        revoked += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    setLoadingBulkRevokeInvites(false);
+    if (revoked > 0) {
+      const revokedIds = new Set(pendingInvitationRows.map((row) => row.invitationId).filter(Boolean));
+      setInvitations((items) => items.filter((item) => !revokedIds.has(item.id)));
+      notifications.success(t("feedback.bulkInvitationsRevoked", { revoked, failed }));
+      router.refresh();
+      return;
+    }
+
+    notifications.error(t("errors.bulkInvitationRevokeFailed"));
+  }
+
   function toggleInvitationRow(rowKey: string) {
     setSelectedInvitationRowKeys((current) =>
       current.includes(rowKey) ? current.filter((key) => key !== rowKey) : [...current, rowKey],
@@ -765,16 +848,16 @@ export function ApartmentsManagementActionsMenu({
   }
 
   function selectAllReadyInvitationRows() {
-    setSelectedInvitationRowKeys(readyInvitationRows.map((row) => row.key));
+    setSelectedInvitationRowKeys(actionableInvitationRows.map((row) => row.key));
   }
 
   function toggleAllReadyInvitationRows() {
-    setSelectedInvitationRowKeys(allReadyInvitationRowsSelected ? [] : readyInvitationRows.map((row) => row.key));
+    setSelectedInvitationRowKeys(allActionableInvitationRowsSelected ? [] : actionableInvitationRows.map((row) => row.key));
   }
 
   async function handleSendSelectedInvitations() {
     if (loadingBulkInvites) return;
-    if (!selectedInvitationRows.length) {
+    if (!selectedReadyInvitationRows.length) {
       notifications.info(t("feedback.noInvitationsToSend"));
       return;
     }
@@ -783,7 +866,7 @@ export function ApartmentsManagementActionsMenu({
     let sent = 0;
     let failed = 0;
 
-    for (const row of selectedInvitationRows) {
+    for (const row of selectedReadyInvitationRows) {
       try {
         await updateApartmentOwner(row.apartmentId, row.email, {
           firstName: row.firstName,
@@ -807,6 +890,41 @@ export function ApartmentsManagementActionsMenu({
     }
 
     notifications.error(t("errors.bulkInvitationsFailed"));
+  }
+
+  async function handleRevokeSelectedInvitations() {
+    if (loadingBulkRevokeInvites) return;
+    if (!selectedPendingInvitationRows.length) {
+      notifications.info(t("feedback.noInvitationsToRevoke"));
+      return;
+    }
+
+    setLoadingBulkRevokeInvites(true);
+    let revoked = 0;
+    let failed = 0;
+
+    for (const row of selectedPendingInvitationRows) {
+      if (!row.invitationId) continue;
+      try {
+        await revokeInvitation(row.invitationId);
+        revoked += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    setLoadingBulkRevokeInvites(false);
+    const revokedIds = new Set(selectedPendingInvitationRows.map((row) => row.invitationId).filter(Boolean));
+    setSelectedInvitationRowKeys((keys) => keys.filter((key) => !selectedPendingInvitationRows.some((row) => row.key === key)));
+
+    if (revoked > 0) {
+      setInvitations((items) => items.filter((item) => !revokedIds.has(item.id)));
+      notifications.success(t("feedback.bulkInvitationsRevoked", { revoked, failed }));
+      router.refresh();
+      return;
+    }
+
+    notifications.error(t("errors.bulkInvitationRevokeFailed"));
   }
 
   return (
@@ -1220,11 +1338,61 @@ export function ApartmentsManagementActionsMenu({
           <p>{t("dialogs.deleteAll.description")}</p>
           <div className="rounded-2xl bg-slate-50 px-4 py-3">
             <p>{t("dialogs.deleteAll.scope", { count: apartments.length })}</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <label className={`rounded-xl border px-3 py-2 transition ${
+                deleteVacantSelected
+                  ? "border-blue-200 bg-blue-50"
+                  : "border-slate-200 bg-white"
+              }`}>
+                <span className="flex items-start justify-between gap-2">
+                  <span>
+                    <span className="block text-xs text-slate-500">{t("dialogs.deleteAll.statuses.vacant")}</span>
+                    <span className="mt-1 block text-lg font-semibold text-slate-900">{deleteStatusSummary.vacant}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={deleteVacantSelected}
+                    onChange={(event) => setDeleteVacantSelected(event.target.checked)}
+                    disabled={loadingDeleteAll}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                </span>
+              </label>
+              <label className={`rounded-xl border px-3 py-2 transition ${
+                deletePendingSelected
+                  ? "border-amber-200 bg-amber-50"
+                  : "border-slate-200 bg-white"
+              }`}>
+                <span className="flex items-start justify-between gap-2">
+                  <span>
+                    <span className="block text-xs text-amber-700">{t("dialogs.deleteAll.statuses.pending")}</span>
+                    <span className="mt-1 block text-lg font-semibold text-amber-800">{deleteStatusSummary.pending}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={deletePendingSelected}
+                    onChange={(event) => setDeletePendingSelected(event.target.checked)}
+                    disabled={loadingDeleteAll}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                </span>
+              </label>
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2">
+                <p className="text-xs text-rose-700">{t("dialogs.deleteAll.statuses.occupied")}</p>
+                <p className="mt-1 text-lg font-semibold text-rose-800">{deleteStatusSummary.occupied}</p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs font-medium text-slate-600">
+              {t("dialogs.deleteAll.deletable", { count: deleteStatusSummary.deletable })}
+            </p>
+            {deleteStatusSummary.locked > 0 ? (
+              <p className="mt-1 text-xs text-slate-500">{t("dialogs.deleteAll.locked", { count: deleteStatusSummary.locked })}</p>
+            ) : null}
             <p className="mt-1 text-xs text-slate-500">{t("dialogs.deleteAll.hint")}</p>
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <Button type="button" variant="secondary" size="sm" onClick={() => setDeleteOpen(false)} disabled={loadingDeleteAll}>{ui("cancel")}</Button>
-            <Button type="button" variant="danger" size="sm" onClick={() => void handleDeleteAll()} disabled={loadingDeleteAll}>{loadingDeleteAll ? t("dialogs.deleteAll.deleting") : t("items.deleteAll")}</Button>
+            <Button type="button" variant="danger" size="sm" onClick={() => void handleDeleteAll()} disabled={loadingDeleteAll || deleteStatusSummary.deletable === 0}>{loadingDeleteAll ? t("dialogs.deleteAll.deleting") : t("items.deleteAll")}</Button>
           </div>
         </div>
       </ModalShell>
@@ -1244,8 +1412,8 @@ export function ApartmentsManagementActionsMenu({
                       <th className="w-10 px-2 py-3 text-center">
                         <input
                           type="checkbox"
-                          checked={allReadyInvitationRowsSelected}
-                          disabled={!readyInvitationRows.length || loadingBulkInvites}
+                          checked={allActionableInvitationRowsSelected}
+                          disabled={!actionableInvitationRows.length || loadingBulkInvites || loadingBulkRevokeInvites}
                           onChange={toggleAllReadyInvitationRows}
                           aria-label={t("dialogs.invitations.columns.select")}
                           className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
@@ -1261,6 +1429,7 @@ export function ApartmentsManagementActionsMenu({
                     {invitationRows.map((row) => {
                       const ready = row.status === "ready";
                       const pending = row.status === "pending";
+                      const actionable = ready || (pending && Boolean(row.invitationId));
                       const selected = selectedInvitationRowKeys.includes(row.key);
 
                       return (
@@ -1269,7 +1438,7 @@ export function ApartmentsManagementActionsMenu({
                             <input
                               type="checkbox"
                               checked={selected}
-                              disabled={!ready || loadingBulkInvites}
+                              disabled={!actionable || loadingBulkInvites || loadingBulkRevokeInvites}
                               onChange={() => toggleInvitationRow(row.key)}
                               className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
                             />
@@ -1292,7 +1461,7 @@ export function ApartmentsManagementActionsMenu({
                                 <button
                                   type="button"
                                   onClick={() => void handleRevokeInvitation(row)}
-                                  disabled={Boolean(revokingInvitationId)}
+                                  disabled={Boolean(revokingInvitationId) || loadingBulkRevokeInvites}
                                   className="rounded-xl border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   {revokingInvitationId === row.invitationId ? t("dialogs.invitations.revoking") : t("dialogs.invitations.revoke")}
@@ -1312,12 +1481,20 @@ export function ApartmentsManagementActionsMenu({
           )}
 
           <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <Button type="button" variant="secondary" size="sm" onClick={selectAllReadyInvitationRows} disabled={!readyInvitationRows.length || loadingBulkInvites}>
-              {t("dialogs.invitations.selectAllReady")}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" size="sm" onClick={selectAllReadyInvitationRows} disabled={!actionableInvitationRows.length || loadingBulkInvites || loadingBulkRevokeInvites}>
+                {t("dialogs.invitations.selectAllAvailable")}
+              </Button>
+              <Button type="button" variant="danger" size="sm" onClick={() => void handleRevokeAllInvitations()} disabled={!pendingInvitationRows.length || loadingBulkInvites || loadingBulkRevokeInvites}>
+                {loadingBulkRevokeInvites ? t("dialogs.invitations.revoking") : t("dialogs.invitations.revokeAll")}
+              </Button>
+            </div>
             <div className="flex items-center justify-end gap-3">
               <span className="text-sm text-slate-500">{t("dialogs.invitations.selected", { count: selectedInvitationRows.length })}</span>
-              <Button type="button" size="sm" onClick={() => void handleSendSelectedInvitations()} disabled={!selectedInvitationRows.length || loadingBulkInvites}>
+              <Button type="button" variant="danger" size="sm" onClick={() => void handleRevokeSelectedInvitations()} disabled={!selectedPendingInvitationRows.length || loadingBulkInvites || loadingBulkRevokeInvites}>
+                {loadingBulkRevokeInvites ? t("dialogs.invitations.revoking") : t("dialogs.invitations.revokeSelected")}
+              </Button>
+              <Button type="button" size="sm" onClick={() => void handleSendSelectedInvitations()} disabled={!selectedReadyInvitationRows.length || loadingBulkInvites || loadingBulkRevokeInvites}>
                 {loadingBulkInvites ? t("dialogs.invitations.sending") : t("dialogs.invitations.sendSelected")}
               </Button>
             </div>

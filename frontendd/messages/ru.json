@@ -1096,7 +1096,14 @@
             "title": "Удалить квартиры",
             "description": "Удалить все квартиры в текущем списке?",
             "scope": "В списке сейчас {count} квартир.",
-            "hint": "Занятые квартиры будут пропущены автоматически.",
+            "statuses": {
+              "vacant": "Свободна",
+              "pending": "Ожидает",
+              "occupied": "Занята"
+            },
+            "deletable": "Будет удалено: {count}.",
+            "locked": "Заблокированные квартиры будут пропущены: {count}.",
+            "hint": "Отметьте статусы, которые нужно удалить. Занятые квартиры удалить нельзя.",
             "deleting": "Удаление..."
           },
           "invitations": {
@@ -1107,8 +1114,11 @@
             "apartment": "Квартира: {apartment}",
             "revoke": "Отменить приглашение",
             "revoking": "Отмена...",
+            "revokeAll": "Отменить все приглашения",
+            "revokeSelected": "Отменить выбранные",
             "sendSelected": "Отправить приглашение",
             "sending": "Отправляем...",
+            "selectAllAvailable": "Выбрать все доступные",
             "selectAllReady": "Выбрать все готовые",
             "selected": "Выбрано: {count}",
             "columns": {
@@ -1131,10 +1141,13 @@
           "apartmentCreated": "Квартира {apartment} создана.",
           "residentCreated": "Жилец {resident} создан.",
           "nothingToExport": "Нет данных для экспорта.",
-          "noVacantApartmentsToDelete": "Нет свободных квартир для удаления.",
+          "noVacantApartmentsToDelete": "Нет квартир, доступных для удаления.",
           "bulkDeleteSuccess": "Удалено квартир: {deleted}. Пропущено: {skipped}.",
+          "bulkDeletePartial": "Удалено квартир: {deleted}. Ошибок: {failed}. Пропущено: {skipped}.",
           "noInvitationsToSend": "Нет готовых приглашений для отправки.",
+          "noInvitationsToRevoke": "Нет выбранных приглашений для отмены.",
           "bulkInvitationsResult": "Приглашения отправлены: {sent}. Ошибок: {failed}.",
+          "bulkInvitationsRevoked": "Приглашения отменены: {revoked}. Ошибок: {failed}.",
           "invitationRevoked": "Приглашение отменено."
         },
         "errors": {
@@ -1154,6 +1167,7 @@
           "bulkDeleteFailed": "Не удалось удалить квартиры.",
           "invitationsLoadFailed": "Не удалось загрузить приглашения.",
           "bulkInvitationsFailed": "Не удалось отправить приглашения.",
+          "bulkInvitationRevokeFailed": "Не удалось отменить приглашения.",
           "invitationRevokeFailed": "Не удалось отменить приглашение."
         }
       },
@@ -1177,6 +1191,11 @@
       "compactUnavailable": "Управление доступом недоступно в компактном режиме.",
       "contractTitle": "Договор аренды - {tenant}",
       "contractTitleSearch": "договор",
+      "splitInvoicesTitle": "Разрешить два счёта для квартиры",
+      "splitInvoicesDescription": "Использовать отдельные счета для владельца и арендатора, если арендатор привязан.",
+      "splitInvoicesEnabled": "Режим двух счетов включён.",
+      "splitInvoicesDisabled": "Режим двух счетов выключен.",
+      "splitInvoicesSaveFailed": "Не удалось обновить режим счетов.",
       "tabs": {
         "owner": "Владелец",
         "tenants": "Арендатора"
@@ -2034,6 +2053,7 @@
       "batchItemsFileHint": "Прикрепите items.json с массивом данных для загруженных PDF или положите items.json внутрь ZIP архива.",
       "contentTypeWarning": "Не добавляйте Content-Type вручную в Insomnia/Postman. Клиент должен сам сформировать multipart/form-data с boundary.",
       "itemsJsonTitle": "Пример items.json",
+      "itemsJsonRecipientHint": "Чтобы отправить два счёта для одной квартиры, добавьте два объекта с одинаковым apartmentNumber или apartmentId. Используйте recipientType=owner для счёта владельцу и recipientType=tenant для счёта арендатору. Один и тот же externalId разрешён для этих двух объектов, потому что их разделяет recipientType.",
       "requiredFieldsTitle": "Поля запроса",
       "required": "Обязательно",
       "optionalShort": "Опционально",
@@ -2049,11 +2069,12 @@
         "currency": "Код валюты ISO, например EUR.",
         "externalId": "Уникальный ID счета из вашей бухгалтерской системы. Используется для защиты от дублей.",
         "status": "Статус счета, например issued, paid, overdue, cancelled.",
+        "recipientType": "Получатель счета: general, owner или tenant. Для обычных квартир поле можно не передавать. Отдельные owner/tenant счета разрешены только если для квартиры включены два счёта; tenant дополнительно требует активного арендатора.",
         "comment": "Опциональный внутренний комментарий для истории загрузки."
       },
       "rulesTitle": "Правила обработки",
       "rulePdf": "PDF проверяется по типу файла и сигнатуре перед сохранением.",
-      "ruleDuplicate": "Один и тот же externalId нельзя загрузить повторно для одной компании.",
+      "ruleDuplicate": "Один и тот же externalId нельзя загрузить повторно для одной компании и recipientType. Если для квартиры разрешены два счёта, owner и tenant счета могут использовать один externalId.",
       "ruleCompany": "API ключ может загружать счета только для своей управляющей компании.",
       "exampleTitle": "Пример cURL",
       "responsesTitle": "Ответы API",

@@ -21,6 +21,8 @@ export type ImportApartmentsParams = {
   fileName?: string;
 };
 
+const APARTMENT_IMPORT_TIMEOUT_MS = 120_000;
+
 function buildQueryString(query?: ApartmentsQuery) {
   const params = new URLSearchParams();
 
@@ -155,10 +157,14 @@ export function importApartments(params: ImportApartmentsParams) {
   formData.append("buildingId", params.buildingId);
   formData.append("companyId", params.companyId);
 
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), APARTMENT_IMPORT_TIMEOUT_MS);
+
   return apiFetch<ApartmentMutationResponse>("/apartments/import", {
     method: "POST",
     body: formData,
-  });
+    signal: controller.signal,
+  }).finally(() => window.clearTimeout(timeout));
 }
 
 export function resendOwnerInvitation(apartmentId: string, ownerEmail: string) {

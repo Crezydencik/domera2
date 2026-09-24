@@ -64,6 +64,10 @@ API-адрес - это URL, на который фронт отправляет
 - `GET /apartments/:apartmentId/audit-logs` - история действий.
 - `POST /apartments/migrate/readable-ids` - техмаршрут миграции readable ids.
 
+Для квартир:
+- `POST /apartments` и `PATCH /apartments/:apartmentId` принимают `selfManagement: boolean`;
+- `selfManagement=true` включает режим двух отдельных счетов для владельца и арендатора.
+
 Показания:
 - `GET /meter-readings` - список показаний.
 - `GET /meter-readings/electricity-payments` - список оплат по электричеству.
@@ -93,6 +97,18 @@ API-адрес - это URL, на который фронт отправляет
 - `GET /invoices/:invoiceId` - один счет.
 - `PATCH /invoices/:invoiceId` - изменить счет.
 - `DELETE /invoices/:invoiceId` - удалить счет.
+
+Для счетов:
+- `POST /invoices`, `POST /invoices/upload` и `POST /invoices/upload-batch` принимают `recipientType`;
+- значения `recipientType`: `general`, `owner`, `tenant`;
+- если поле не передано, используется `general`;
+- `GET /invoices?recipientType=tenant` фильтрует счета по адресату;
+- обычная квартира принимает только `general`;
+- `owner` и `tenant` разрешены только если у квартиры `selfManagement=true`;
+- `tenant` разрешен только если у квартиры есть активный арендатор;
+- если для квартиры включены два счета, но активного арендатора нет, используется один счет владельцу (`recipientType=owner`);
+- если для квартиры включены два счета и активный арендатор есть, можно вести два счета на одну квартиру: `owner` и `tenant`;
+- проверка дублей по `externalId` учитывает `recipientType`, поэтому один `externalId` может быть у `owner`- и `tenant`-счета одной квартиры.
 
 Уведомления:
 - `GET /notifications/settings` - настройки.

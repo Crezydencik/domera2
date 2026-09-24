@@ -1598,6 +1598,7 @@ export class ApartmentsService {
       ...(typeof payload.floor === 'number' ? { floor: payload.floor } : {}),
       ...(typeof payload.area === 'number' ? { area: payload.area } : {}),
       ...(typeof payload.declaredResidents === 'number' ? { declaredResidents: payload.declaredResidents } : {}),
+      ...(typeof payload.selfManagement === 'boolean' ? { selfManagement: payload.selfManagement } : {}),
       ...(readingConfigOverride ? { readingConfigOverride } : {}),
       ...(Object.keys(waterReadings).length > 0 ? { waterReadings } : {}),
       createdAt: FieldValue.serverTimestamp(),
@@ -1702,6 +1703,7 @@ export class ApartmentsService {
     if (typeof payload.floor === 'number') updateData.floor = payload.floor;
     if (typeof payload.area === 'number') updateData.area = payload.area;
     if (typeof payload.declaredResidents === 'number') updateData.declaredResidents = payload.declaredResidents;
+    if (typeof payload.selfManagement === 'boolean') updateData.selfManagement = payload.selfManagement;
     if (typeof payload.cadastralNumber === 'string') updateData.cadastralNumber = payload.cadastralNumber.trim();
     if (typeof payload.cadastralPart === 'string') updateData.cadastralPart = payload.cadastralPart.trim();
     if (typeof payload.commonPropertyShare === 'string') updateData.commonPropertyShare = payload.commonPropertyShare.trim();
@@ -1769,10 +1771,40 @@ export class ApartmentsService {
 
     const context = this.resolveApartmentStorageContext(apartmentId, data);
     if (context) {
-      await this.apartmentStorageService.deleteStorageFolder(context.path);
+      try {
+        await this.apartmentStorageService.deleteStorageFolder(context.path);
+      } catch (error) {
+        this.logger.error(
+          `Failed to delete apartment storage folder ${context.path}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
     }
 
     const buildingId = typeof data.buildingId === 'string' ? data.buildingId : undefined;
+    try {
+      const pendingInvitations = await db.collection('invitations')
+        .where('apartmentId', '==', apartmentId)
+        .where('status', '==', 'pending')
+        .get();
+
+      if (!pendingInvitations.empty) {
+        await this.apartmentsRepository.commitInChunks(
+          pendingInvitations.docs.map((document) => (batch) => {
+            batch.update(document.ref, {
+              status: 'revoked',
+              revokedAt: FieldValue.serverTimestamp(),
+            });
+          }),
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to revoke pending invitations for apartment ${apartmentId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+
     await ref.delete();
 
     if (buildingId) {
@@ -1978,20 +2010,6 @@ export class ApartmentsService {
     } catch (error) {
       this.logger.error('Failed to send owner invitation email', error instanceof Error ? error.stack : String(error));
       // Don't throw - operation succeeded even if email fails
-    }
-
-    try {
-      await this.apartmentInvitationService.emailPlatformAdminsAboutApartmentRequest({
-        request,
-        inviteType: 'owner',
-        inviteeEmail: email,
-        apartmentId,
-        apartmentNumber: ownerInvitationContext.apartmentNumber,
-        buildingName: ownerInvitationContext.buildingName,
-        companyName: ownerInvitationContext.companyName,
-      });
-    } catch (error) {
-      this.logger.error('Failed to send apartment request email to platform admins', error instanceof Error ? error.stack : String(error));
     }
 
     void this.auditLogService.write({
@@ -2216,20 +2234,6 @@ export class ApartmentsService {
     } catch (error) {
       this.logger.error('Failed to send tenant invitation email', error instanceof Error ? error.stack : String(error));
       // Don't throw - operation succeeded even if email fails
-    }
-
-    try {
-      await this.apartmentInvitationService.emailPlatformAdminsAboutApartmentRequest({
-        request,
-        inviteType: 'tenant',
-        inviteeEmail: email,
-        apartmentId,
-        apartmentNumber: invitationContext.apartmentNumber,
-        buildingName: invitationContext.buildingName,
-        companyName: invitationContext.companyName,
-      });
-    } catch (error) {
-      this.logger.error('Failed to send apartment request email to platform admins', error instanceof Error ? error.stack : String(error));
     }
 
     return { success: true, invitationLink, invitationId };
@@ -2514,20 +2518,6 @@ export class ApartmentsService {
       // Don't throw - operation succeeded even if email fails
     }
 
-    try {
-      await this.apartmentInvitationService.emailPlatformAdminsAboutApartmentRequest({
-        request,
-        inviteType: 'owner',
-        inviteeEmail: ownerEmail.toLowerCase(),
-        apartmentId,
-        apartmentNumber: ownerInvitationContext.apartmentNumber,
-        buildingName: ownerInvitationContext.buildingName,
-        companyName: ownerInvitationContext.companyName,
-      });
-    } catch (error) {
-      this.logger.error('Failed to send apartment request email to platform admins', error instanceof Error ? error.stack : String(error));
-    }
-
     // Update invitedAt timestamp to track resend
     await apartmentRef.set(
       {
@@ -2607,20 +2597,6 @@ export class ApartmentsService {
     } catch (error) {
       this.logger.error('Failed to send tenant invitation email', error instanceof Error ? error.stack : String(error));
       // Don't throw - operation succeeded even if email fails
-    }
-
-    try {
-      await this.apartmentInvitationService.emailPlatformAdminsAboutApartmentRequest({
-        request,
-        inviteType: 'tenant',
-        inviteeEmail: tenantEmail.toLowerCase(),
-        apartmentId,
-        apartmentNumber: invitationContext.apartmentNumber,
-        buildingName: invitationContext.buildingName,
-        companyName: invitationContext.companyName,
-      });
-    } catch (error) {
-      this.logger.error('Failed to send apartment request email to platform admins', error instanceof Error ? error.stack : String(error));
     }
 
     // Update the invitedAt timestamp to track resend

@@ -1398,6 +1398,7 @@ function ApiKeyPanel({
     { name: "currency", description: t("apiKeys.usageFields.currency") },
     { name: "externalId", description: t("apiKeys.usageFields.externalId") },
     { name: "status", description: t("apiKeys.usageFields.status") },
+    { name: "recipientType", description: t("apiKeys.usageFields.recipientType"), optional: true },
     { name: "comment", description: t("apiKeys.usageFields.comment"), optional: true },
   ];
 
@@ -1903,26 +1904,31 @@ curl -X POST https://domera.lv/api/invoices/upload \\
   -F "files=@invoices.zip;type=application/zip"`}
                     </pre>
                     <p className="text-sm font-bold text-black">{t("apiKeys.itemsJsonTitle")}</p>
+                    <p className="rounded-lg bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
+                      {t("apiKeys.itemsJsonRecipientHint")}
+                    </p>
                     <pre className="overflow-x-auto rounded-lg bg-slate-100 px-3 py-3 text-xs leading-6 text-slate-800">
 {`[
   {
-    "fileName": "apt-12.pdf",
+    "fileName": "apt-12-owner.pdf",
+    "apartmentNumber": "12",
+    "period": "2026-05",
+    "invoiceDate": "2026-05-27",
+    "amount": 98.20,
+    "currency": "EUR",
+    "externalId": "invoice-2026-05-apt-12",
+    "recipientType": "owner",
+    "status": "issued"
+  },
+  {
+    "fileName": "apt-12-tenant.pdf",
     "apartmentNumber": "12",
     "period": "2026-05",
     "invoiceDate": "2026-05-27",
     "amount": 125.50,
     "currency": "EUR",
     "externalId": "invoice-2026-05-apt-12",
-    "status": "issued"
-  },
-  {
-    "fileName": "apt-15.pdf",
-    "contractNumber": "CONTRACT-15",
-    "period": "2026-05",
-    "invoiceDate": "2026-05-27",
-    "amount": 98.20,
-    "currency": "EUR",
-    "externalId": "invoice-2026-05-apt-15",
+    "recipientType": "tenant",
     "status": "issued"
   }
 ]`}
@@ -2030,6 +2036,7 @@ curl -X POST https://domera.lv/api/invoices/upload \\
   -F "amount=125.50" \\
   -F "currency=EUR" \\
   -F "externalId=invoice-2026-05-apt-12" \\
+  -F "recipientType=general" \\
   -F "status=issued" \\
   -F "comment=optional"`}
                     </pre>

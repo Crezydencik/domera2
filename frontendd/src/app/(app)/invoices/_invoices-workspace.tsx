@@ -25,6 +25,7 @@ type RawRecord = Record<string, unknown>;
 
 type QueueStatus = "ready" | "uploading" | "success" | "error";
 type InvoiceKind = "electricity" | "utility";
+type InvoiceRecipientType = "owner" | "tenant" | "general";
 
 type InvoiceQueueItem = {
   id: string;
@@ -45,6 +46,8 @@ type ApartmentOption = {
   id: string;
   label: string;
   buildingId: string;
+  selfManagement: boolean;
+  hasTenant: boolean;
 };
 
 const COPY = {
@@ -120,6 +123,10 @@ const COPY = {
     invoiceDate: "Invoice date",
     currency: "Currency",
     status: "Status",
+    recipient: "Recipient",
+    recipientOwner: "Owner",
+    recipientTenant: "Tenant",
+    recipientGeneral: "General",
     comment: "Comment",
     amount: "Amount",
     externalId: "External ID",
@@ -236,6 +243,10 @@ const COPY = {
     invoiceDate: "Дата счета",
     currency: "Валюта",
     status: "Статус",
+    recipient: "Получатель",
+    recipientOwner: "Владелец",
+    recipientTenant: "Арендатор",
+    recipientGeneral: "Общий",
     comment: "Комментарий",
     amount: "Сумма",
     externalId: "Внешний ID",
@@ -392,6 +403,10 @@ const COPY = {
     invoiceDate: "Rekina datums",
     currency: "Valuta",
     status: "Statuss",
+    recipient: "Sanemejs",
+    recipientOwner: "Ipasnieks",
+    recipientTenant: "Irnieks",
+    recipientGeneral: "Kopejs",
     comment: "Komentars",
     amount: "Summa",
     externalId: "Arejais ID",
@@ -477,6 +492,27 @@ function firstString(...values: unknown[]): string {
 
 function asRecord(value: unknown): RawRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as RawRecord) : {};
+}
+
+function hasActiveTenant(value: unknown) {
+  const tenants = Array.isArray(value) ? value : [];
+  const now = new Date();
+
+  return tenants.some((tenant) => {
+    if (!tenant || typeof tenant !== "object") return false;
+    const record = tenant as RawRecord;
+    const status = firstString(record.status).toLowerCase();
+    if (["removed", "deleted", "revoked", "inactive"].includes(status)) return false;
+
+    const fromDateRaw = firstString(record.fromDate);
+    const untilRaw = firstString(record.until);
+    const fromDate = fromDateRaw ? new Date(fromDateRaw) : null;
+    const until = untilRaw ? new Date(untilRaw) : null;
+    if (fromDate && !Number.isNaN(fromDate.getTime()) && now < fromDate) return false;
+    if (until && !Number.isNaN(until.getTime()) && now > until) return false;
+
+    return Boolean(firstString(record.userId, record.email));
+  });
 }
 
 function todayInputValue() {
@@ -589,6 +625,17 @@ function statusLabel(status: string, copy: Copy) {
   return copy[key] ?? status;
 }
 
+function recipientTypeLabel(recipientType: string | undefined, copy: Copy) {
+  switch (recipientType) {
+    case "owner":
+      return copy.recipientOwner;
+    case "tenant":
+      return copy.recipientTenant;
+    default:
+      return copy.recipientGeneral;
+  }
+}
+
 function StatusBadge({ status, copy }: { status: string; copy: Copy }) {
   const normalized = status.toLowerCase();
   const styles =
@@ -680,6 +727,8 @@ export function InvoicesWorkspace({
             id,
             label: address ? `${number} - ${address}` : number,
             buildingId: firstString(item.buildingId),
+            selfManagement: item.selfManagement === true || item.selfManagement === "true",
+            hasTenant: hasActiveTenant(item.tenants),
           };
         })
         .filter((item): item is ApartmentOption => Boolean(item)),
@@ -694,6 +743,7 @@ export function InvoicesWorkspace({
   const [defaultInvoiceDate, setDefaultInvoiceDate] = useState(todayInputValue());
   const [defaultAmount, setDefaultAmount] = useState("");
   const [defaultStatus, setDefaultStatus] = useState("pending");
+  const [defaultRecipientType, setDefaultRecipientType] = useState<InvoiceRecipientType>("owner");
   const [defaultComment, setDefaultComment] = useState("");
   const [queue, setQueue] = useState<InvoiceQueueItem[]>([]);
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
@@ -734,12 +784,26 @@ export function InvoicesWorkspace({
         : apartmentOptions,
     [apartmentOptions, selectedBuildingId],
   );
+  const selectedApartmentOption = useMemo(
+    () => apartmentOptions.find((apartment) => apartment.id === selectedApartmentId),
+    [apartmentOptions, selectedApartmentId],
+  );
+  const availableRecipientTypeOptions = useMemo<InvoiceRecipientType[]>(() => {
+    if (!selectedApartmentOption?.selfManagement) return ["general"];
+    return selectedApartmentOption.hasTenant ? ["owner", "tenant"] : ["owner"];
+  }, [selectedApartmentOption]);
 
   useEffect(() => {
     if (selectedApartmentId && !filteredApartmentOptions.some((apartment) => apartment.id === selectedApartmentId)) {
       setSelectedApartmentId("");
     }
   }, [filteredApartmentOptions, selectedApartmentId]);
+
+  useEffect(() => {
+    if (!availableRecipientTypeOptions.includes(defaultRecipientType)) {
+      setDefaultRecipientType(availableRecipientTypeOptions[0] ?? "general");
+    }
+  }, [availableRecipientTypeOptions, defaultRecipientType]);
 
   useEffect(() => {
     if (canImport) return;
@@ -843,6 +907,7 @@ export function InvoicesWorkspace({
     setDefaultInvoiceDate(todayInputValue());
     setDefaultAmount("");
     setDefaultStatus("pending");
+    setDefaultRecipientType("owner");
     setDefaultComment("");
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
@@ -890,6 +955,7 @@ export function InvoicesWorkspace({
       formData.append("currency", "EUR");
       formData.append("externalId", item.externalId);
       formData.append("status", defaultStatus);
+      formData.append("recipientType", defaultRecipientType);
       formData.append("source", "manual");
       if (defaultComment.trim()) formData.append("comment", defaultComment.trim());
       if (companyId?.trim()) formData.append("companyId", companyId.trim());
@@ -1073,8 +1139,8 @@ export function InvoicesWorkspace({
     kind: invoiceKind(item),
   }));
   const invoiceColumns = canImport
-    ? [copy.colInvoice, copy.colType, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colStatus, copy.colFile]
-    : [copy.colInvoice, copy.colType, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colFile];
+    ? [copy.colInvoice, copy.colType, copy.recipient, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colStatus, copy.colFile]
+    : [copy.colInvoice, copy.colType, copy.recipient, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colFile];
   const buildInvoiceRows = (items: typeof typedInvoices) => items.map(({ item, kind }) => {
     const invoiceLabel = item.displayNumber || item.externalId || item.id;
     const invoiceTitle = item.fileName || invoiceLabel;
@@ -1094,6 +1160,7 @@ export function InvoicesWorkspace({
         ) : null}
       </div>,
       <InvoiceKindBadge key={`${item.id}-type`} kind={kind} copy={copy} />,
+      recipientTypeLabel(item.recipientType, copy),
       item.apartment,
       item.resident,
       item.amount,
@@ -1479,7 +1546,7 @@ export function InvoicesWorkspace({
                 </label>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-5">
                 <label className="flex flex-col gap-1.5 text-sm">
                   <span className="font-medium text-slate-700">{copy.period}</span>
                   <input
@@ -1525,6 +1592,20 @@ export function InvoicesWorkspace({
                     className="rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   >
                     {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{statusLabel(status, copy)}</option>)}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-slate-700">{copy.recipient}</span>
+                  <select
+                    value={defaultRecipientType}
+                    onChange={(event) => setDefaultRecipientType(event.target.value as InvoiceRecipientType)}
+                    className="rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  >
+                    {availableRecipientTypeOptions.map((recipientType) => (
+                      <option key={recipientType} value={recipientType}>
+                        {recipientTypeLabel(recipientType, copy)}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>

@@ -102,6 +102,10 @@ function contextFromProfile(profile: UnknownRecord, roleHint?: string) {
   };
 }
 
+function isRecoverableProfileError(error: unknown) {
+  return error instanceof DomeraApiError && (error.status === 0 || error.status >= 500);
+}
+
 export const getCurrentProfile = cache(async () => {
   return apiFetch<UnknownRecord>("/users/me");
 });
@@ -147,6 +151,14 @@ export async function getAuthenticatedContext(roleHint?: string, options?: { req
         companyId: undefined,
         apartmentId: undefined,
       };
+    }
+
+    if (isRecoverableProfileError(error)) {
+      if (headerProfile) {
+        return contextFromProfile(headerProfile, roleHint);
+      }
+
+      redirectToExpiredLogin();
     }
 
     throw error;

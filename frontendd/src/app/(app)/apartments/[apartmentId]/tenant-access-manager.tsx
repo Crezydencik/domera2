@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
-import { inviteApartmentTenant, removeApartmentOwner, removeApartmentTenant, updateApartmentOwner, resendOwnerInvitation, updateApartmentTenant } from "@/shared/api/apartments";
+import { inviteApartmentTenant, removeApartmentOwner, removeApartmentTenant, updateApartment, updateApartmentOwner, resendOwnerInvitation, updateApartmentTenant } from "@/shared/api/apartments";
 import { getDocuments, uploadDocument, type DocumentRecord } from "@/shared/api/documents";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { FiEdit2, FiPaperclip, FiRefreshCw, FiTrash2 } from "react-icons/fi";
@@ -51,6 +51,8 @@ type TenantAccessManagerProps = {
   tenantColumns?: string[];
   tenantsTitle?: string;
   canManageOwner?: boolean;
+  selfManagement?: boolean;
+  readOnly?: boolean;
 };
 
 function buildDocumentHref(item: DocumentRecord) {
@@ -92,6 +94,8 @@ export function TenantAccessManager({
   tenantRows,
   tenantColumns,
   canManageOwner = true,
+  selfManagement: initialSelfManagement = false,
+  readOnly = false,
 }: TenantAccessManagerProps) {
   const t = useTranslations("apartments.tenantAccess");
   const documentsT = useTranslations("documents");
@@ -139,6 +143,8 @@ export function TenantAccessManager({
   const [editTenantContractFile, setEditTenantContractFile] = useState<File | null>(null);
   const [tenantEditLoading, setTenantEditLoading] = useState(false);
   const editTenantContractInputRef = useRef<HTMLInputElement>(null);
+  const [selfManagement, setSelfManagement] = useState(initialSelfManagement);
+  const [selfManagementSaving, setSelfManagementSaving] = useState(false);
 
   // Owner form fields
   const [ownerFirstName, setOwnerFirstName] = useState("");
@@ -171,6 +177,10 @@ export function TenantAccessManager({
   useEffect(() => {
     setTenantsState(tenants ?? []);
   }, [tenants]);
+
+  useEffect(() => {
+    setSelfManagement(initialSelfManagement);
+  }, [initialSelfManagement]);
 
   useEffect(() => {
     let mounted = true;
@@ -440,8 +450,44 @@ export function TenantAccessManager({
     }
   }
 
+  async function handleToggleSelfManagement() {
+    if (readOnly || selfManagementSaving) return;
+
+    const nextValue = !selfManagement;
+    setSelfManagement(nextValue);
+    setSelfManagementSaving(true);
+
+    try {
+      await updateApartment(apartmentId, { selfManagement: nextValue });
+      notifications.success(nextValue ? t("splitInvoicesEnabled") : t("splitInvoicesDisabled"));
+      router.refresh();
+    } catch (error) {
+      setSelfManagement(!nextValue);
+      notifications.error(error instanceof Error ? error.message : t("splitInvoicesSaveFailed"));
+    } finally {
+      setSelfManagementSaving(false);
+    }
+  }
+
   return (
     <div>
+      {canManageOwner ? (
+        <label className="mb-4 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={selfManagement}
+            onChange={() => void handleToggleSelfManagement()}
+            disabled={readOnly || selfManagementSaving}
+            className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          <span>
+            <span className="block font-medium text-slate-900">{t("splitInvoicesTitle")}</span>
+            <span className="mt-1 block text-xs text-slate-500">
+              {t("splitInvoicesDescription")}
+            </span>
+          </span>
+        </label>
+      ) : null}
       {canManageOwner && (
         <div className="mb-4 flex gap-2 border-b border-slate-200">
           <button

@@ -38,6 +38,7 @@ type InvoiceUploadRequest = Request & {
 };
 
 type InvoiceUploadSource = 'api' | 'manual' | 'sftp' | 'email' | 'zip' | 'accounting';
+type InvoiceRecipientType = 'owner' | 'tenant' | 'general';
 
 type ResolvedApartment = {
   id: string;
@@ -87,6 +88,7 @@ const MAX_INVOICE_ZIP_BYTES = 100 * 1024 * 1024;
 const MAX_INVOICE_ZIP_ENTRIES = 200;
 const MAX_INVOICE_ZIP_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
 const INVOICE_STATUSES = new Set(['draft', 'pending', 'issued', 'paid', 'overdue', 'cancelled']);
+const INVOICE_RECIPIENT_TYPES = new Set<InvoiceRecipientType>(['owner', 'tenant', 'general']);
 const UPLOAD_SOURCES = new Set<InvoiceUploadSource>(['api', 'manual', 'sftp', 'email', 'zip', 'accounting']);
 const ALLOWED_PDF_PROXY_HOSTS = new Set(['firebasestorage.googleapis.com', 'storage.googleapis.com']);
 const PUBLIC_INVOICE_LINK_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -150,6 +152,77 @@ export class InvoicesService {
   private normalizeStatus(value: unknown): string {
     const normalized = this.firstString(value).toLowerCase().replace(/\s+/g, '_');
     return INVOICE_STATUSES.has(normalized) ? normalized : 'pending';
+  }
+
+  private normalizeRecipientType(value: unknown): InvoiceRecipientType {
+    const normalized = this.firstString(value).toLowerCase().replace(/[\s-]+/g, '_');
+    return INVOICE_RECIPIENT_TYPES.has(normalized as InvoiceRecipientType)
+      ? (normalized as InvoiceRecipientType)
+      : 'general';
+  }
+
+  private externalDedupeValue(externalId: string, recipientType: InvoiceRecipientType): string {
+    return recipientType === 'general' ? externalId : `${recipientType}:${externalId}`;
+  }
+
+  private isActiveTenantRecord(tenant: unknown, now = new Date()): tenant is Record<string, unknown> {
+    if (!tenant || typeof tenant !== 'object') return false;
+    const record = tenant as Record<string, unknown>;
+    const status = this.firstString(record.status).toLowerCase();
+    if (['removed', 'deleted', 'revoked', 'inactive', 'pending'].includes(status)) return false;
+
+    const isConfirmed =
+      record.activated === true ||
+      Boolean(record.acceptedAt) ||
+      Boolean(record.activatedAt) ||
+      status === 'active' ||
+      status === 'accepted';
+    if (!isConfirmed) return false;
+
+    const fromDate = this.parseOptionalDate(record.fromDate);
+    const until = this.parseOptionalDate(record.until);
+    if (fromDate && now < fromDate) return false;
+    if (until && now > until) return false;
+
+    return Boolean(this.firstString(record.userId, record.email));
+  }
+
+  private hasActiveTenant(apartment: Record<string, unknown>): boolean {
+    const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
+    const now = new Date();
+
+    return tenants.some((tenant) => this.isActiveTenantRecord(tenant, now));
+  }
+
+  private hasActiveOwner(apartment: Record<string, unknown>): boolean {
+    return apartment.ownerActivated === true && Boolean(this.firstString(apartment.ownerId, apartment.ownerEmail));
+  }
+
+  private resolveEffectiveRecipientType(
+    apartment: Record<string, unknown>,
+    requestedRecipientType: InvoiceRecipientType,
+  ): InvoiceRecipientType {
+    if (requestedRecipientType === 'tenant' && !this.hasActiveTenant(apartment)) {
+      return 'general';
+    }
+
+    if (
+      requestedRecipientType === 'owner' && !this.hasActiveOwner(apartment)
+    ) {
+      return 'general';
+    }
+
+    return requestedRecipientType;
+  }
+
+  private assertRecipientTypeAllowed(apartment: Record<string, unknown>, recipientType: InvoiceRecipientType): void {
+    if (recipientType === 'general') return;
+    if (apartment.selfManagement !== true) {
+      throw new BadRequestException('Apartment must allow separate owner and tenant invoices');
+    }
+    if (recipientType === 'tenant' && !this.hasActiveTenant(apartment)) {
+      throw new BadRequestException('Apartment has no active tenant for a tenant invoice');
+    }
   }
 
   private parseAmount(value: unknown): number {
@@ -752,7 +825,7 @@ export class InvoicesService {
 
     const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
     for (const tenant of tenants) {
-      if (!tenant || typeof tenant !== 'object') continue;
+      if (!this.isActiveTenantRecord(tenant)) continue;
       const record = tenant as Record<string, unknown>;
       const tenantEmail = typeof record.email === 'string' ? normalizeEmail(record.email) : '';
       const matches =
@@ -777,6 +850,9 @@ export class InvoicesService {
     if (!apartment) return false;
     const access = this.memberAccessForApartment(user, apartment);
     if (!access) return false;
+    const recipientType = this.normalizeRecipientType(invoice.recipientType ?? invoice.recipient_type);
+    if (recipientType === 'tenant' && access.type !== 'tenant') return false;
+    if (recipientType === 'owner' && access.type === 'tenant') return false;
     if (access.type !== 'tenant') return true;
 
     const range = this.invoiceDateRange(invoice);
@@ -823,6 +899,7 @@ export class InvoicesService {
         apartmentData?.apartmentNumber,
       ) || undefined,
       invoicePath: this.firstString(data.invoicePath, doc.ref.path),
+      recipientType: this.normalizeRecipientType(data.recipientType ?? data.recipient_type),
     };
   }
 
@@ -1441,6 +1518,68 @@ export class InvoicesService {
     return this.firstString(invoice.amount, invoice.totalAmount, invoice.total, `0 ${currency}`);
   }
 
+  private resolveInvoiceRecipient(params: {
+    invoice: Record<string, unknown>;
+    apartment: Record<string, unknown>;
+  }): { email: string; name: string } {
+    const recipientType = this.normalizeRecipientType(params.invoice.recipientType ?? params.invoice.recipient_type);
+    const ownerName = this.firstString(
+      params.apartment.ownerName,
+      params.apartment.owner,
+      [params.apartment.ownerFirstName, params.apartment.ownerLastName]
+        .filter((value) => typeof value === 'string' && value.trim())
+        .join(' '),
+    );
+
+    if (recipientType === 'owner') {
+      if (!this.hasActiveOwner(params.apartment)) {
+        return { email: '', name: '' };
+      }
+
+      return {
+        email: normalizeEmail(this.firstString(params.apartment.ownerEmail, params.invoice.ownerEmail)),
+        name: ownerName,
+      };
+    }
+
+    if (recipientType === 'tenant') {
+      const tenants = Array.isArray(params.apartment.tenants) ? params.apartment.tenants : [];
+      const activeTenant = tenants.find((tenant) => this.isActiveTenantRecord(tenant)) as Record<string, unknown> | undefined;
+      if (!activeTenant) {
+        return { email: '', name: '' };
+      }
+
+      return {
+        email: normalizeEmail(this.firstString(
+          activeTenant?.email,
+          params.invoice.residentEmail,
+          params.apartment.residentEmail,
+        )),
+        name: this.firstString(
+          params.invoice.residentName,
+          activeTenant?.name,
+          activeTenant?.fullName,
+          [activeTenant?.firstName, activeTenant?.lastName]
+            .filter((value) => typeof value === 'string' && value.trim())
+            .join(' '),
+          params.apartment.residentName,
+        ),
+      };
+    }
+
+    const activeResidentEmail = this.firstString(params.apartment.residentId)
+      ? normalizeEmail(this.firstString(params.invoice.residentEmail, params.apartment.residentEmail))
+      : '';
+    const activeOwnerEmail = this.hasActiveOwner(params.apartment)
+      ? normalizeEmail(this.firstString(params.apartment.ownerEmail, params.invoice.ownerEmail))
+      : '';
+
+    return {
+      email: this.firstString(activeResidentEmail, activeOwnerEmail),
+      name: this.firstString(params.invoice.residentName, params.apartment.residentName, ownerName),
+    };
+  }
+
   private async sendApprovedInvoiceEmail(params: {
     request: Request;
     invoiceId: string;
@@ -1451,11 +1590,8 @@ export class InvoicesService {
     buildingId: string;
     invoicePath: string;
   }): Promise<void> {
-    const recipientEmail = normalizeEmail(this.firstString(
-      params.invoiceData.residentEmail,
-      params.apartment.residentEmail,
-      params.apartment.ownerEmail,
-    ));
+    const recipient = this.resolveInvoiceRecipient({ invoice: params.invoiceData, apartment: params.apartment });
+    const recipientEmail = recipient.email;
     if (!recipientEmail) {
       this.logger.warn(`invoice.email.skipped_missing_recipient invoiceId=${params.invoiceId}`);
       return;
@@ -1476,7 +1612,7 @@ export class InvoicesService {
 
     await this.emailService.sendInvoiceGenerated({
       to: recipientEmail,
-      tenantName: this.firstString(params.invoiceData.residentName, params.apartment.residentName, params.apartment.ownerName),
+      tenantName: recipient.name,
       brandName: this.firstString(params.invoiceData.companyName, params.apartment.companyName, params.apartment.managementCompanyName),
       apartmentNumber: this.firstString(params.invoiceData.apartmentNumber, params.apartment.number, params.apartment.apartmentNumber),
       buildingName: this.firstString(params.invoiceData.buildingName, params.apartment.buildingName),
@@ -2310,6 +2446,9 @@ export class InvoicesService {
       const amount = this.parseAmount(payload.amount);
       const currency = this.normalizeCurrency(payload.currency);
       const status = this.normalizeStatus(payload.status);
+      const requestedRecipientType = this.normalizeRecipientType(payload.recipientType ?? payload.recipient_type ?? payload.target);
+      const recipientType = this.resolveEffectiveRecipientType(apartment.data, requestedRecipientType);
+      this.assertRecipientTypeAllowed(apartment.data, recipientType);
       const comment = this.firstString(payload.comment);
       const meterReadingId = this.firstString(payload.meterReadingId, payload.meter_reading_id);
       const residentContext = this.resolveResidentContext(apartment.data);
@@ -2322,7 +2461,7 @@ export class InvoicesService {
       });
 
       const db = this.firebaseAdminService.firestore;
-      const externalKey = this.hashExternalId(companyId, externalId);
+      const externalKey = this.hashExternalId(companyId, this.externalDedupeValue(externalId, recipientType));
       const now = new Date();
       const baseInvoiceData = {
         apartmentId: apartment.id,
@@ -2343,6 +2482,7 @@ export class InvoicesService {
         amount,
         currency,
         status,
+        recipientType,
         comment: comment || null,
         meterReadingId: meterReadingId || null,
         externalId,
@@ -2438,6 +2578,7 @@ export class InvoicesService {
             apartmentId: apartment.id,
             buildingId,
             source,
+            recipientType,
             createdAt: now,
             createdByUid: user.uid,
           });
@@ -2489,6 +2630,7 @@ export class InvoicesService {
           metadata: {
             approvalId,
             externalId,
+            recipientType,
             source,
             period: billingPeriod.period,
             fileName: originalFileName,
@@ -2545,6 +2687,7 @@ export class InvoicesService {
           apartmentId: apartment.id,
           buildingId,
           source,
+          recipientType,
           createdAt: now,
           createdByUid: user.uid,
         });
@@ -2596,6 +2739,7 @@ export class InvoicesService {
         metadata: {
           invoiceId,
           externalId,
+          recipientType,
           source,
           period: billingPeriod.period,
           fileName: originalFileName,
@@ -3524,18 +3668,13 @@ export class InvoicesService {
           ((ownerId && ownerId === user.uid) || Boolean(normalizedUserEmail && ownerEmail === normalizedUserEmail));
         const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
         const isTenant = tenants.some((tenant) => {
-          if (!tenant || typeof tenant !== 'object') return false;
+          if (!this.isActiveTenantRecord(tenant)) return false;
           const t = tenant as Record<string, unknown>;
-          if (typeof t.userId === 'string' && t.userId === user.uid) {
-            // Check tenant lease dates
-            const fromDate = typeof t.fromDate === 'string' ? new Date(t.fromDate) : null;
-            const until = typeof t.until === 'string' ? new Date(t.until) : null;
-            const now = new Date();
-            if (fromDate && now < fromDate) return false; // Lease hasn't started
-            if (until && now > until) return false; // Lease has ended
-            return true; // Within lease period
-          }
-          return false;
+          const tenantEmail = typeof t.email === 'string' ? normalizeEmail(t.email) : '';
+          return (
+            (typeof t.userId === 'string' && t.userId === user.uid) ||
+            Boolean(normalizedUserEmail && tenantEmail === normalizedUserEmail)
+          );
         });
 
         return isResident || isOwner || isTenant;
@@ -3582,6 +3721,9 @@ export class InvoicesService {
 
     const ref = this.getApartmentInvoiceCollection(apartmentId).doc();
     const invoiceId = ref.id;
+    const requestedRecipientType = this.normalizeRecipientType(payload.recipientType ?? payload.recipient_type ?? payload.target);
+    const recipientType = this.resolveEffectiveRecipientType(apartmentData, requestedRecipientType);
+    this.assertRecipientTypeAllowed(apartmentData, recipientType);
     const data = {
       id: invoiceId,
       apartmentId,
@@ -3602,6 +3744,7 @@ export class InvoicesService {
       pdfUrl: typeof payload.pdfUrl === 'string' ? payload.pdfUrl : '',
       companyId: targetCompanyId,
       buildingId: this.firstString(payload.buildingId, apartmentData.buildingId, apartmentData.houseId) || null,
+      recipientType,
       createdAt: new Date(),
       createdByUid: user.uid,
     };
@@ -3641,8 +3784,11 @@ export class InvoicesService {
           snapshot: await this.getApartmentInvoiceCollection(apartment.id).get(),
         })),
       );
+      const recipientType = query.recipientType ? this.normalizeRecipientType(query.recipientType) : null;
       const items = snapshots.flatMap(({ apartment, snapshot }) =>
-        snapshot.docs.map((doc) => this.invoiceItemFromDoc(doc, apartment.id, apartment.data)),
+        snapshot.docs
+          .map((doc) => this.invoiceItemFromDoc(doc, apartment.id, apartment.data))
+          .filter((item) => !recipientType || item.recipientType === recipientType),
       );
 
       return { items, query };
@@ -3663,6 +3809,7 @@ export class InvoicesService {
     }
 
     const apartmentIdsToLoad = requestedApartmentId ? [requestedApartmentId] : accessibleApartmentIds;
+    const recipientType = query.recipientType ? this.normalizeRecipientType(query.recipientType) : null;
     const snapshots = await Promise.all(
       apartmentIdsToLoad.map(async (apartmentId) => {
         const [apartmentSnap, snapshot] = await Promise.all([
@@ -3681,6 +3828,7 @@ export class InvoicesService {
     const items = snapshots.flatMap(({ apartmentId, apartment, snapshot }) =>
       snapshot.docs
         .map((doc) => this.invoiceItemFromDoc(doc, apartmentId, apartment))
+        .filter((item) => !recipientType || item.recipientType === recipientType)
         .filter((item) => this.isInvoiceVisibleForPropertyMember(user, apartment, item)),
     );
 
