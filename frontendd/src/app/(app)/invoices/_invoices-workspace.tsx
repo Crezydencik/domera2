@@ -1334,6 +1334,7 @@ export function InvoicesWorkspace({
     );
     const amount = firstString(item.amount);
     const currency = firstString(item.currency, "EUR");
+    const recipientType = firstString(item.recipientType, item.recipient_type);
 
     return [
       <div key={`${approvalId || index}-approval-invoice`} className="min-w-44">
@@ -1343,6 +1344,7 @@ export function InvoicesWorkspace({
         ) : null}
       </div>,
       firstString(item.apartmentNumber, item.apartmentId) || "-",
+      recipientTypeLabel(recipientType, copy),
       amount ? `${currency} ${amount}` : "-",
       firstString(item.period, item.invoiceDate, item.createdAt) || "-",
       <div key={`${approvalId || index}-approval-actions`} className="flex items-center justify-end gap-2">
@@ -1464,7 +1466,7 @@ export function InvoicesWorkspace({
                 </div>
               ) : approvalRows.length ? (
                 <DataTable
-                  columns={[copy.colInvoice, copy.colApartment, copy.colAmount, copy.colPeriod, copy.colFile]}
+                  columns={[copy.colInvoice, copy.colApartment, copy.recipient, copy.colAmount, copy.colPeriod, copy.colFile]}
                   rows={approvalRows}
                   pageSize={25}
                 />

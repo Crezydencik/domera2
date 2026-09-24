@@ -177,6 +177,10 @@ function isTenantActive(record: UnknownRecord) {
   return status === "accepted";
 }
 
+function isTrueFlag(value: unknown) {
+  return value === true || (typeof value === "string" && value.trim().toLowerCase() === "true");
+}
+
 function isAccountantRole(value: unknown) {
   return String(value ?? "")
     .trim()
@@ -249,7 +253,9 @@ export default async function ApartmentDetailsPage({
   let apartment: UnknownRecord = baseApartment;
   try {
     if (resolvedApartmentId && resolvedApartmentId !== "—") {
-      apartment = await apiFetch<UnknownRecord>(`/apartments/${encodeURIComponent(resolvedApartmentId)}`);
+      apartment = await apiFetch<UnknownRecord>(`/apartments/${encodeURIComponent(resolvedApartmentId)}`, {
+        skipServerCache: true,
+      });
     }
   } catch {
     apartment = baseApartment;
@@ -317,6 +323,7 @@ export default async function ApartmentDetailsPage({
   );
   const owner = firstText(apartment.owner, apartment.ownerName, baseApartment.owner, baseApartment.ownerName, t("common.notSpecified"));
   const ownerEmail = firstText(apartment.ownerEmail, baseApartment.ownerEmail, t("common.notSpecified"));
+  const selfManagementEnabled = isTrueFlag(apartment.selfManagement) || isTrueFlag(baseApartment.selfManagement);
   const companyName = firstText(
     company?.companyName,
     company?.name,
@@ -715,6 +722,7 @@ export default async function ApartmentDetailsPage({
                 t("details.columns.status"),
               ]}
               tenantsTitle={t("details.tenants")}
+              selfManagement={selfManagementEnabled}
             />
           </SectionCard>
         ) : null}

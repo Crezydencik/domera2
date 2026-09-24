@@ -3305,10 +3305,16 @@ export class InvoicesService {
           usedIndexes,
         });
         fileName = this.normalizeFileName(file.originalname ?? fileName);
+        const itemExternalId = this.firstString(item.externalId, item.external_id);
+        const commonExternalId = this.firstString(commonPayload.externalId, commonPayload.external_id);
+        const batchItemExternalId = !itemExternalId && commonExternalId
+          ? `${commonExternalId}-${index + 1}`
+          : itemExternalId;
 
         const result = await this.upload(request, user, file, {
           ...commonPayload,
           ...item,
+          ...(batchItemExternalId ? { externalId: batchItemExternalId, external_id: batchItemExternalId } : {}),
           source: item.source ?? item.uploadSource ?? commonPayload.source ?? commonPayload.uploadSource ?? 'api',
           batchId,
           batchIndex: index,
