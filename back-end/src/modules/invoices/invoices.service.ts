@@ -86,6 +86,7 @@ const MAX_INVOICE_PDF_BYTES = 25 * 1024 * 1024;
 const MAX_INVOICE_BATCH_FILES = 50;
 const INVOICE_APPROVAL_BATCH_CONCURRENCY = 4;
 const INVOICE_BATCH_UPLOAD_CONCURRENCY = 4;
+const INVOICE_TRASH_RETENTION_DAYS = 30;
 const MAX_INVOICE_ZIP_BYTES = 500 * 1024 * 1024;
 const MAX_INVOICE_ZIP_ENTRIES = 200;
 const MAX_INVOICE_ZIP_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
@@ -204,24 +205,13 @@ export class InvoicesService {
     apartment: Record<string, unknown>,
     requestedRecipientType: InvoiceRecipientType,
   ): InvoiceRecipientType {
-    if (requestedRecipientType === 'tenant' && !this.hasActiveTenant(apartment)) {
-      return 'general';
-    }
-
-    if (
-      requestedRecipientType === 'owner' && !this.hasActiveOwner(apartment)
-    ) {
-      return 'general';
-    }
-
+    void apartment;
     return requestedRecipientType;
   }
 
   private assertRecipientTypeAllowed(apartment: Record<string, unknown>, recipientType: InvoiceRecipientType): void {
-    if (recipientType === 'general') return;
-    if (recipientType === 'tenant' && !this.hasActiveTenant(apartment)) {
-      throw new BadRequestException('Apartment has no active tenant for a tenant invoice');
-    }
+    void apartment;
+    void recipientType;
   }
 
   private parseAmount(value: unknown): number {
@@ -759,6 +749,13 @@ export class InvoicesService {
       .collection('invoice_uploads');
   }
 
+  private getBuildingTrashCollection(buildingId: string): FirebaseFirestore.CollectionReference {
+    return this.firebaseAdminService.firestore
+      .collection('buildings')
+      .doc(buildingId)
+      .collection('trash');
+  }
+
   private resolveInvoiceApartmentId(
     ref: FirebaseFirestore.DocumentReference,
     data: Record<string, unknown>,
@@ -851,7 +848,7 @@ export class InvoicesService {
     const access = this.memberAccessForApartment(user, apartment);
     if (!access) return false;
     const recipientType = this.normalizeRecipientType(invoice.recipientType ?? invoice.recipient_type);
-    if (recipientType === 'tenant' && access.type !== 'tenant') return false;
+    if (recipientType === 'tenant' && access.type === 'resident') return false;
     if (recipientType === 'owner' && access.type !== 'owner') return false;
     if (recipientType !== 'general' && access.type === 'resident') return false;
     if (access.type !== 'tenant') return true;
@@ -2917,19 +2914,45 @@ export class InvoicesService {
     const now = new Date();
 
     const invoiceData: Record<string, unknown> = {
-      ...data,
       id: invoiceId,
-      invoicePath,
-      approvalId,
-      approvedFromApprovalId: approvalId,
+      apartmentId,
+      accountId: data.accountId ?? null,
+      buildingId,
+      companyId,
+      month: data.month ?? null,
+      year: data.year ?? null,
+      period: this.firstString(data.period) || null,
+      invoiceDate: data.invoiceDate ?? null,
+      dueDate: data.dueDate ?? data.invoiceDate ?? null,
+      amount: data.amount ?? null,
+      currency: this.firstString(data.currency, 'EUR'),
       status: this.normalizeStatus(data.invoiceStatus ?? data.status),
+      recipientType,
+      comment: data.comment ?? null,
+      meterReadingId: data.meterReadingId ?? null,
+      externalId,
+      externalIdKey: externalKey,
+      source: this.firstString(data.source, 'api'),
+      pdfUrl: this.firstString(data.pdfUrl),
+      storagePath: this.firstString(data.storagePath) || null,
+      storageBucket: this.firstString(data.storageBucket) || null,
+      residentId: data.residentId ?? null,
+      residentUserIds: Array.isArray(data.residentUserIds) ? data.residentUserIds : [],
+      residentName: data.residentName ?? null,
+      residentEmail: data.residentEmail ?? null,
+      apartmentNumber: data.apartmentNumber ?? null,
+      originalFileName: data.originalFileName ?? null,
+      fileSize: data.fileSize ?? null,
+      createdAt: data.createdAt ?? now,
+      createdByUid: data.createdByUid ?? user.uid,
+      uploadedByUid: data.uploadedByUid ?? data.createdByUid ?? user.uid,
+      invoicePath,
+      approvedFromApprovalId: approvalId,
       uploadStatus: 'success',
       updatedAt: now,
       approvedAt: now,
       approvedByUid: user.uid,
     };
-    delete invoiceData.approvalPath;
-    delete invoiceData.invoiceStatus;
 
     await db.runTransaction(async (transaction) => {
       const [approvalSnap, duplicate] = await Promise.all([
@@ -3372,7 +3395,7 @@ export class InvoicesService {
         if (duplicateExternalIdOccurrence > 0) {
           const normalizedItemRecipientType = this.normalizeRecipientType(itemRecipientType);
           const automaticRecipientType =
-            duplicateExternalIdOccurrence === 1 ? 'owner' : duplicateExternalIdOccurrence === 2 ? 'tenant' : 'general';
+            duplicateExternalIdOccurrence === 1 ? 'owner' : 'tenant';
           batchItemRecipientType =
             itemRecipientType && normalizedItemRecipientType !== 'owner'
               ? normalizedItemRecipientType
@@ -4137,6 +4160,206 @@ export class InvoicesService {
     return { success: true };
   }
 
+  private async findInvoiceTrashDocument(
+    trashId: string,
+    user: RequestUser,
+  ): Promise<{ ref: FirebaseFirestore.DocumentReference; data: Record<string, unknown> }> {
+    const normalizedTrashId = this.firstString(trashId);
+    if (!normalizedTrashId) {
+      throw new BadRequestException('trashId is required');
+    }
+
+    const snapshot = await this.firebaseAdminService.firestore
+      .collectionGroup('trash')
+      .where('id', '==', normalizedTrashId)
+      .where('type', '==', 'invoice')
+      .limit(1)
+      .get();
+    const doc = snapshot.docs[0];
+    if (!doc) {
+      throw new NotFoundException('Trash item not found');
+    }
+
+    const data = doc.data() as Record<string, unknown>;
+    const companyId = this.firstString(data.companyId);
+    if (!companyId || companyId !== this.requireStaffCompanyId(user)) {
+      throw new ForbiddenException('Access denied for company');
+    }
+
+    return { ref: doc.ref, data };
+  }
+
+  async listTrash(user: RequestUser, query: Record<string, string | undefined>) {
+    this.assertAuthenticated(user);
+    if (!this.isStaff(user)) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    const companyId = this.requireStaffCompanyId(user);
+    const requestedBuildingId = this.firstString(query.buildingId);
+    const limitValue = Number(query.limit ?? 100);
+    const limit = Number.isFinite(limitValue) && limitValue > 0 ? Math.min(Math.floor(limitValue), 200) : 100;
+    let trashQuery: FirebaseFirestore.Query = this.firebaseAdminService.firestore
+      .collectionGroup('trash')
+      .where('type', '==', 'invoice')
+      .where('companyId', '==', companyId);
+
+    if (requestedBuildingId) {
+      trashQuery = trashQuery.where('buildingId', '==', requestedBuildingId);
+    }
+
+    const snapshot = await trashQuery
+      .orderBy('deletedAt', 'desc')
+      .limit(limit)
+      .get();
+
+    return {
+      items: snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Record<string, unknown>),
+      })),
+      query,
+    };
+  }
+
+  async restoreTrash(request: Request, user: RequestUser, trashId: string) {
+    this.assertAuthenticated(user);
+    if (!this.isStaff(user)) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    const trash = await this.findInvoiceTrashDocument(trashId, user);
+    const data = trash.data;
+    const invoiceData = data.invoiceData && typeof data.invoiceData === 'object'
+      ? data.invoiceData as Record<string, unknown>
+      : null;
+    if (!invoiceData) {
+      throw new BadRequestException('Trash item is missing invoice data');
+    }
+
+    const apartmentId = this.firstString(data.apartmentId, invoiceData.apartmentId);
+    const invoiceId = this.firstString(data.originalInvoiceId, invoiceData.id);
+    const buildingId = this.firstString(data.buildingId, invoiceData.buildingId);
+    const companyId = this.firstString(data.companyId, invoiceData.companyId);
+    const externalId = this.firstString(invoiceData.externalId);
+    const recipientType = this.normalizeRecipientType(invoiceData.recipientType ?? invoiceData.recipient_type);
+    const externalIdKey = this.firstString(invoiceData.externalIdKey)
+      || (companyId && externalId ? this.hashExternalId(companyId, this.externalDedupeValue(externalId, recipientType)) : '');
+
+    if (!apartmentId || !invoiceId || !companyId || companyId !== this.requireStaffCompanyId(user)) {
+      throw new BadRequestException('Trash item cannot be restored');
+    }
+
+    const invoiceRef = this.getApartmentInvoiceCollection(apartmentId).doc(invoiceId);
+    const externalRef = externalIdKey ? this.getApartmentInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey) : null;
+    const invoicePath = invoiceRef.path;
+    const now = new Date();
+
+    await this.firebaseAdminService.firestore.runTransaction(async (transaction) => {
+      const [invoiceSnap, externalSnap] = await Promise.all([
+        transaction.get(invoiceRef),
+        externalRef ? transaction.get(externalRef) : Promise.resolve(null),
+      ]);
+
+      if (invoiceSnap.exists) {
+        throw new ConflictException('Invoice already exists');
+      }
+
+      if (externalSnap?.exists) {
+        const duplicateInvoiceId = await this.activeExternalMarkerId(transaction, externalSnap, 'invoice', false);
+        if (duplicateInvoiceId) {
+          throw new ConflictException(`Invoice with external_id already exists: ${duplicateInvoiceId}`);
+        }
+      }
+
+      transaction.set(invoiceRef, {
+        ...invoiceData,
+        id: invoiceId,
+        apartmentId,
+        buildingId: buildingId || invoiceData.buildingId || null,
+        companyId,
+        invoicePath,
+        restoredAt: now,
+        restoredByUid: user.uid,
+        updatedAt: now,
+      });
+
+      if (externalRef && externalIdKey) {
+        transaction.set(externalRef, {
+          companyId,
+          externalId,
+          externalIdKey,
+          invoiceId,
+          invoicePath,
+          apartmentId,
+          buildingId: buildingId || invoiceData.buildingId || null,
+          source: this.firstString(invoiceData.source, 'api'),
+          recipientType,
+          restoredAt: now,
+          restoredByUid: user.uid,
+        });
+      }
+
+      transaction.delete(trash.ref);
+    });
+
+    void this.auditLogService.write({
+      request,
+      action: 'invoice.restore',
+      status: 'success',
+      actorUid: user.uid,
+      actorRole: user.role,
+      companyId,
+      apartmentId,
+      metadata: { invoiceId, trashId },
+    });
+
+    return { success: true, invoice_id: invoiceId };
+  }
+
+  async purgeTrash(request: Request, user: RequestUser, trashId: string) {
+    this.assertAuthenticated(user);
+    if (!this.isStaff(user)) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    const trash = await this.findInvoiceTrashDocument(trashId, user);
+    const data = trash.data;
+    const expiresAt = this.parseOptionalDate(data.expiresAt);
+    if (!expiresAt || expiresAt.getTime() > Date.now()) {
+      throw new BadRequestException('Trash item can be purged after retention expires');
+    }
+
+    const invoiceData = data.invoiceData && typeof data.invoiceData === 'object'
+      ? data.invoiceData as Record<string, unknown>
+      : {};
+    const storagePath = this.firstString(data.storagePath, invoiceData.storagePath);
+    const storageBucket = this.firstString(data.storageBucket, invoiceData.storageBucket);
+    const companyId = this.firstString(data.companyId, invoiceData.companyId);
+    const apartmentId = this.firstString(data.apartmentId, invoiceData.apartmentId);
+
+    await trash.ref.delete();
+    if (storagePath) {
+      await (storageBucket
+        ? this.firebaseAdminService.storage.bucket(storageBucket)
+        : this.firebaseAdminService.storageBucket
+      ).file(storagePath).delete({ ignoreNotFound: true }).catch(() => null);
+    }
+
+    void this.auditLogService.write({
+      request,
+      action: 'invoice.trash_purge',
+      status: 'success',
+      actorUid: user.uid,
+      actorRole: user.role,
+      companyId,
+      apartmentId,
+      metadata: { trashId, storagePath },
+    });
+
+    return { success: true };
+  }
+
   async remove(request: Request, user: RequestUser, invoiceId: string) {
     this.assertAuthenticated(user);
     if (!this.isStaff(user)) {
@@ -4161,51 +4384,76 @@ export class InvoicesService {
     const storagePath = typeof current.storagePath === 'string' ? current.storagePath : '';
     const storageBucket = typeof current.storageBucket === 'string' ? current.storageBucket : '';
     const apartmentId = this.firstString(current.apartmentId, ref.parent.parent?.id);
-    const buildingId = this.firstString(current.buildingId);
-    const meterReadingId = this.firstString(current.meterReadingId, current.meter_reading_id);
+    let buildingId = this.firstString(current.buildingId);
+    if (!buildingId && apartmentId) {
+      const apartmentSnap = await this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId).get();
+      const apartment = apartmentSnap.exists ? apartmentSnap.data() as Record<string, unknown> : {};
+      buildingId = this.firstString(apartment.buildingId, apartment.houseId);
+    }
+    if (!buildingId) {
+      throw new BadRequestException('Invoice is missing buildingId for trash retention');
+    }
     const externalId = this.firstString(current.externalId);
     const companyId = this.firstString(targetCompanyId, user.companyId);
+    const recipientType = this.normalizeRecipientType(current.recipientType ?? current.recipient_type);
     const externalIdKey = this.firstString(current.externalIdKey)
-      || (companyId && externalId ? this.hashExternalId(companyId, externalId) : '');
+      || (companyId && externalId ? this.hashExternalId(companyId, this.externalDedupeValue(externalId, recipientType)) : '');
     const deleteQueryDocs = async (query: FirebaseFirestore.Query) => {
       const snap = await query.get();
       await Promise.all(snap.docs.map((doc) => doc.ref.delete()));
     };
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + INVOICE_TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const trashId = `invoice_${invoiceId}_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const trashRef = this.getBuildingTrashCollection(buildingId).doc(trashId);
+    const invoicePath = ref.path;
 
-    await ref.delete();
+    await this.firebaseAdminService.firestore.runTransaction(async (transaction) => {
+      const invoiceSnap = await transaction.get(ref);
+      if (!invoiceSnap.exists) {
+        throw new NotFoundException('Invoice not found');
+      }
+
+      transaction.set(trashRef, {
+        id: trashId,
+        type: 'invoice',
+        originalInvoiceId: invoiceId,
+        originalInvoicePath: invoicePath,
+        invoiceData: {
+          ...current,
+          id: invoiceId,
+          apartmentId,
+          buildingId,
+          companyId,
+          invoicePath,
+        },
+        apartmentId,
+        buildingId,
+        companyId,
+        externalId: externalId || null,
+        externalIdKey: externalIdKey || null,
+        recipientType,
+        storagePath: storagePath || null,
+        storageBucket: storageBucket || null,
+        pdfUrl: this.firstString(current.pdfUrl) || null,
+        deletedAt: now,
+        deletedByUid: user.uid,
+        deletedByRole: user.role,
+        expiresAt,
+        retentionDays: INVOICE_TRASH_RETENTION_DAYS,
+      });
+      transaction.delete(ref);
+      if (externalIdKey && apartmentId) {
+        transaction.delete(this.getApartmentInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey));
+        transaction.delete(this.getApartmentPendingInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey));
+      }
+    });
 
     await Promise.allSettled([
-      externalIdKey && apartmentId
-        ? this.getApartmentInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey).delete()
-        : Promise.resolve(),
-      externalIdKey && apartmentId
-        ? this.getApartmentPendingInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey).delete()
-        : Promise.resolve(),
       apartmentId
         ? deleteQueryDocs(this.getApartmentInvoicePublicLinksCollection(apartmentId).where('invoiceId', '==', invoiceId))
         : Promise.resolve(),
       deleteQueryDocs(this.firebaseAdminService.firestore.collection('invoice_public_links').where('invoiceId', '==', invoiceId)),
-      apartmentId
-        ? deleteQueryDocs(this.getApartmentInvoiceUploadHistoryCollection(apartmentId).where('invoiceId', '==', invoiceId))
-        : Promise.resolve(),
-      apartmentId
-        ? deleteQueryDocs(this.getApartmentInvoiceUploadHistoryCollection(apartmentId).where('metadata.invoiceId', '==', invoiceId))
-        : Promise.resolve(),
-      buildingId
-        ? deleteQueryDocs(this.getLegacyBuildingInvoiceUploadHistoryCollection(buildingId).where('invoiceId', '==', invoiceId))
-        : Promise.resolve(),
-      buildingId
-        ? deleteQueryDocs(this.getLegacyBuildingInvoiceUploadHistoryCollection(buildingId).where('metadata.invoiceId', '==', invoiceId))
-        : Promise.resolve(),
-      meterReadingId && apartmentId
-        ? this.removeLinkedMeterReading({ apartmentId, readingId: meterReadingId })
-        : Promise.resolve(),
-      storagePath
-        ? (storageBucket
-            ? this.firebaseAdminService.storage.bucket(storageBucket)
-            : this.firebaseAdminService.storageBucket
-          ).file(storagePath).delete({ ignoreNotFound: true })
-        : Promise.resolve(),
     ]);
 
     void this.auditLogService.write({
@@ -4218,11 +4466,13 @@ export class InvoicesService {
       apartmentId: typeof current.apartmentId === 'string' ? current.apartmentId : undefined,
       metadata: {
         invoiceId,
+        trashId,
+        expiresAt: expiresAt.toISOString(),
         hadPdf: typeof current.pdfUrl === 'string' && current.pdfUrl.length > 0,
         hadStorageFile: Boolean(storagePath),
       },
     });
 
-    return { success: true };
+    return { success: true, trash_id: trashId, expires_at: expiresAt.toISOString() };
   }
 }

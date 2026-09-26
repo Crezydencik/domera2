@@ -492,6 +492,17 @@ export class InvoicesController {
     response.end(pdf.buffer);
   }
 
+  @Get('trash')
+  @UseGuards(FirebaseAuthGuard, RolesGuard)
+  @Roles(...STAFF_ROLES)
+  @ApiOperation({ summary: 'List deleted invoices retained in building trash' })
+  listTrash(
+    @CurrentUser() user: RequestUser,
+    @Query() query: Record<string, string | undefined>,
+  ) {
+    return this.invoicesService.listTrash(user, query);
+  }
+
   @Get(':invoiceId')
   @UseGuards(FirebaseAuthGuard, RolesGuard)
   @Roles(...PROPERTY_MEMBER_ROLES, ...STAFF_ROLES)
@@ -522,6 +533,33 @@ export class InvoicesController {
     @Body() body: UpdateInvoiceDto,
   ) {
     return this.invoicesService.update(request, user, invoiceId, body as unknown as Record<string, unknown>);
+  }
+
+  @Post('trash/:trashId/restore')
+  @UseGuards(FirebaseAuthGuard, RolesGuard)
+  @Roles(...STAFF_ROLES)
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Restore a deleted invoice from building trash' })
+  @ApiParam({ name: 'trashId', type: String })
+  restoreTrash(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('trashId') trashId: string,
+  ) {
+    return this.invoicesService.restoreTrash(request, user, trashId);
+  }
+
+  @Delete('trash/:trashId')
+  @UseGuards(FirebaseAuthGuard, RolesGuard)
+  @Roles(...STAFF_ROLES)
+  @ApiOperation({ summary: 'Permanently purge an expired invoice trash item' })
+  @ApiParam({ name: 'trashId', type: String })
+  purgeTrash(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Param('trashId') trashId: string,
+  ) {
+    return this.invoicesService.purgeTrash(request, user, trashId);
   }
 
   @Delete(':invoiceId')

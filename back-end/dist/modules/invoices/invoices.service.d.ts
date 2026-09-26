@@ -67,6 +67,7 @@ export declare class InvoicesService {
     private removeLinkedMeterReading;
     private getApartmentInvoiceUploadHistoryCollection;
     private getLegacyBuildingInvoiceUploadHistoryCollection;
+    private getBuildingTrashCollection;
     private resolveInvoiceApartmentId;
     private invoiceApartmentCompanyId;
     private parseOptionalDate;
@@ -249,8 +250,24 @@ export declare class InvoicesService {
     update(request: Request, user: RequestUser, invoiceId: string, payload: Record<string, unknown>): Promise<{
         success: boolean;
     }>;
+    private findInvoiceTrashDocument;
+    listTrash(user: RequestUser, query: Record<string, string | undefined>): Promise<{
+        items: {
+            id: string;
+        }[];
+        query: Record<string, string | undefined>;
+    }>;
+    restoreTrash(request: Request, user: RequestUser, trashId: string): Promise<{
+        success: boolean;
+        invoice_id: string;
+    }>;
+    purgeTrash(request: Request, user: RequestUser, trashId: string): Promise<{
+        success: boolean;
+    }>;
     remove(request: Request, user: RequestUser, invoiceId: string): Promise<{
         success: boolean;
+        trash_id: string;
+        expires_at: string;
     }>;
 }
 export {};

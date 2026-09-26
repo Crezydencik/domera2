@@ -207,11 +207,20 @@ let InvoicesController = class InvoicesController {
         response.setHeader('X-Content-Type-Options', 'nosniff');
         response.end(pdf.buffer);
     }
+    listTrash(user, query) {
+        return this.invoicesService.listTrash(user, query);
+    }
     byId(user, invoiceId) {
         return this.invoicesService.byId(user, invoiceId);
     }
     update(request, user, invoiceId, body) {
         return this.invoicesService.update(request, user, invoiceId, body);
+    }
+    restoreTrash(request, user, trashId) {
+        return this.invoicesService.restoreTrash(request, user, trashId);
+    }
+    purgeTrash(request, user, trashId) {
+        return this.invoicesService.purgeTrash(request, user, trashId);
     }
     remove(request, user, invoiceId) {
         return this.invoicesService.remove(request, user, invoiceId);
@@ -487,6 +496,17 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], InvoicesController.prototype, "pdf", null);
 __decorate([
+    (0, common_1.Get)('trash'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, swagger_1.ApiOperation)({ summary: 'List deleted invoices retained in building trash' }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "listTrash", null);
+__decorate([
     (0, common_1.Get)(':invoiceId'),
     (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(...role_constants_1.PROPERTY_MEMBER_ROLES, ...role_constants_1.STAFF_ROLES),
@@ -521,6 +541,33 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, String, update_invoice_dto_1.UpdateInvoiceDto]),
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "update", null);
+__decorate([
+    (0, common_1.Post)('trash/:trashId/restore'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({ summary: 'Restore a deleted invoice from building trash' }),
+    (0, swagger_1.ApiParam)({ name: 'trashId', type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('trashId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "restoreTrash", null);
+__decorate([
+    (0, common_1.Delete)('trash/:trashId'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, swagger_1.ApiOperation)({ summary: 'Permanently purge an expired invoice trash item' }),
+    (0, swagger_1.ApiParam)({ name: 'trashId', type: String }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Param)('trashId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "purgeTrash", null);
 __decorate([
     (0, common_1.Delete)(':invoiceId'),
     (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),

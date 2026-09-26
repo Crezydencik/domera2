@@ -33,7 +33,7 @@ export declare class InvoicesController {
             pdfUrl: string;
             companyId: string;
             buildingId: string | null;
-            recipientType: "tenant" | "owner" | "general";
+            recipientType: "owner" | "tenant" | "general";
             createdAt: Date;
             createdByUid: string;
         };
@@ -151,6 +151,12 @@ export declare class InvoicesController {
         success: boolean;
     }>;
     pdf(user: RequestUser, invoiceId: string, response: Response): Promise<void>;
+    listTrash(user: RequestUser, query: Record<string, string | undefined>): Promise<{
+        items: {
+            id: string;
+        }[];
+        query: Record<string, string | undefined>;
+    }>;
     byId(user: RequestUser, invoiceId: string): Promise<{
         apartmentId: string | undefined;
         id: string;
@@ -158,8 +164,17 @@ export declare class InvoicesController {
     update(request: Request, user: RequestUser, invoiceId: string, body: UpdateInvoiceDto): Promise<{
         success: boolean;
     }>;
+    restoreTrash(request: Request, user: RequestUser, trashId: string): Promise<{
+        success: boolean;
+        invoice_id: string;
+    }>;
+    purgeTrash(request: Request, user: RequestUser, trashId: string): Promise<{
+        success: boolean;
+    }>;
     remove(request: Request, user: RequestUser, invoiceId: string): Promise<{
         success: boolean;
+        trash_id: string;
+        expires_at: string;
     }>;
 }
 export {};

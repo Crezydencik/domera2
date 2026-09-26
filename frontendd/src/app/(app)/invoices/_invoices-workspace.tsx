@@ -1,8 +1,8 @@
 "use client";
 
 import { useLocale } from "next-intl";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { FiAlertCircle, FiCheckCircle, FiEye, FiFileText, FiRefreshCw, FiTrash2, FiUploadCloud, FiX } from "react-icons/fi";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { FiAlertCircle, FiCheckCircle, FiEye, FiFileText, FiFolder, FiRefreshCw, FiTrash2, FiUploadCloud, FiX } from "react-icons/fi";
 import { DataTable } from "@/components/data-table";
 import { InvoiceDeleteButton } from "@/components/invoice-delete-button";
 import { InvoiceMobileRow } from "@/components/invoice-mobile-row";
@@ -26,6 +26,13 @@ type RawRecord = Record<string, unknown>;
 type QueueStatus = "ready" | "uploading" | "success" | "error";
 type InvoiceKind = "electricity" | "utility";
 type InvoiceRecipientType = "owner" | "tenant" | "general";
+type TypedInvoice = { item: Invoice; kind: InvoiceKind };
+type InvoiceFolder = {
+  id: string;
+  items: TypedInvoice[];
+  primary: TypedInvoice;
+  kind: InvoiceKind;
+};
 
 type InvoiceQueueItem = {
   id: string;
@@ -180,7 +187,7 @@ const COPY = {
     invoicesUtilityGroup: "Utilities",
     invoiceTypeElectricity: "Electricity",
     invoiceTypeUtility: "Utilities",
-    colInvoice: "Client / home",
+    colInvoice: "Invoice / ID",
     colType: "Type",
     colApartment: "Apartment",
     colResident: "Resident",
@@ -300,7 +307,7 @@ const COPY = {
     invoicesUtilityGroup: "Коммунальные",
     invoiceTypeElectricity: "Электричество",
     invoiceTypeUtility: "Коммунальные",
-    colInvoice: "Клиент / дом",
+    colInvoice: "Счёт / ID",
     colType: "Тип",
     colApartment: "Квартира",
     colResident: "Жилец",
@@ -460,7 +467,7 @@ const COPY = {
     invoicesUtilityGroup: "Komunalie",
     invoiceTypeElectricity: "Elektriba",
     invoiceTypeUtility: "Komunalie",
-    colInvoice: "Klients / maja",
+    colInvoice: "Rēķins / ID",
     colType: "Tips",
     colApartment: "Dzivoklis",
     colResident: "Iedzivotajs",
@@ -636,6 +643,46 @@ function recipientTypeLabel(recipientType: string | undefined, copy: Copy) {
   }
 }
 
+function invoiceFolderKey(entry: TypedInvoice) {
+  const item = entry.item;
+  return [
+    entry.kind,
+    firstString(item.apartmentId, item.apartment, item.apartmentNumber),
+    firstString(item.period, item.invoiceDate, item.dueDate),
+    firstString(item.amount),
+  ].join("|").toLowerCase();
+}
+
+function groupInvoiceFolders(entries: TypedInvoice[], enabled: boolean): InvoiceFolder[] {
+  if (!enabled) {
+    return entries.map((entry) => ({
+      id: entry.item.id,
+      items: [entry],
+      primary: entry,
+      kind: entry.kind,
+    }));
+  }
+
+  const grouped = new Map<string, InvoiceFolder>();
+  for (const entry of entries) {
+    const key = invoiceFolderKey(entry);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.items.push(entry);
+      continue;
+    }
+
+    grouped.set(key, {
+      id: key,
+      items: [entry],
+      primary: entry,
+      kind: entry.kind,
+    });
+  }
+
+  return Array.from(grouped.values());
+}
+
 function StatusBadge({ status, copy }: { status: string; copy: Copy }) {
   const normalized = status.toLowerCase();
   const styles =
@@ -756,6 +803,7 @@ export function InvoicesWorkspace({
   const [cancellingApprovalId, setCancellingApprovalId] = useState<string | null>(null);
   const [approvingAllApprovals, setApprovingAllApprovals] = useState(false);
   const [cancellingAllApprovals, setCancellingAllApprovals] = useState(false);
+  const [openInvoiceFolderIds, setOpenInvoiceFolderIds] = useState<Set<string>>(() => new Set());
   useEffect(() => {
     queueRef.current = queue;
   }, [queue]);
@@ -1134,44 +1182,17 @@ export function InvoicesWorkspace({
   });
   const filteredPendingApprovals = pendingApprovals.filter((item) => matchesSelectedBuilding(item.buildingId));
   const hasVisibleApprovals = filteredPendingApprovals.length > 0;
-  const typedInvoices = filteredInvoices.map((item) => ({
+  const typedInvoices: TypedInvoice[] = filteredInvoices.map((item) => ({
     item,
     kind: invoiceKind(item),
   }));
   const invoiceColumns = canImport
-    ? [copy.colInvoice, copy.colType, copy.recipient, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colStatus, copy.colFile]
-    : [copy.colInvoice, copy.colType, copy.recipient, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colFile];
-  const buildInvoiceRows = (items: typeof typedInvoices) => items.map(({ item, kind }) => {
-    const invoiceLabel = item.displayNumber || item.externalId || item.id;
+    ? [copy.colInvoice, copy.recipient, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colStatus, copy.colFile]
+    : [copy.colInvoice, copy.recipient, copy.colApartment, copy.colResident, copy.colAmount, copy.colPeriod, copy.colFile];
+  const renderInvoiceActions = (item: Invoice, invoiceLabel: string) => {
     const invoiceTitle = item.fileName || invoiceLabel;
-    const secondaryLabel = firstString(
-      item.accountNumber,
-      item.contractNumber,
-      item.apartmentNumber,
-      item.buildingNumber,
-      item.externalId,
-    );
 
-    const row = [
-      <div key={`${item.id}-invoice`} className="min-w-44">
-        <p className="font-medium text-slate-900">{invoiceLabel}</p>
-        {secondaryLabel && secondaryLabel !== invoiceLabel ? (
-          <p className="mt-0.5 text-xs text-slate-500">{secondaryLabel}</p>
-        ) : null}
-      </div>,
-      <InvoiceKindBadge key={`${item.id}-type`} kind={kind} copy={copy} />,
-      recipientTypeLabel(item.recipientType, copy),
-      item.apartment,
-      item.resident,
-      item.amount,
-      item.period ?? item.invoiceDate ?? item.dueDate,
-    ];
-
-    if (canImport) {
-      row.push(<StatusBadge key={`${item.id}-status`} status={item.status} copy={copy} />);
-    }
-
-    row.push(
+    return (
       <div key={`${item.id}-actions`} className="flex items-center gap-2">
         {item.pdfUrl ? (
           <InvoicePdfViewerButton
@@ -1207,6 +1228,91 @@ export function InvoicesWorkspace({
             errorLabel={copy.deleteInvoiceFailed}
           />
         ) : null}
+      </div>
+    );
+  };
+
+  const renderInvoiceFolderActions = (folder: InvoiceFolder) => {
+    if (folder.items.length === 1) {
+      const item = folder.primary.item;
+      return renderInvoiceActions(item, item.displayNumber || item.externalId || item.id);
+    }
+    const isOpen = openInvoiceFolderIds.has(folder.id);
+
+    return (
+      <div className="min-w-56 rounded-md border border-slate-200 bg-slate-50 p-2">
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded px-1 py-1 text-left text-xs font-medium text-slate-600 hover:bg-white"
+          aria-expanded={isOpen}
+          onClick={() => {
+            setOpenInvoiceFolderIds((current) => {
+              const next = new Set(current);
+              if (next.has(folder.id)) {
+                next.delete(folder.id);
+              } else {
+                next.add(folder.id);
+              }
+              return next;
+            });
+          }}
+        >
+          <FiFolder aria-hidden className="h-4 w-4" />
+          <span>{folder.items.length}</span>
+        </button>
+        {isOpen ? (
+          <div className="mt-2 space-y-2">
+            {folder.items.map(({ item }) => {
+              const invoiceLabel = item.displayNumber || item.externalId || item.id;
+              return (
+                <div key={item.id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1">
+                  <span className="min-w-20 text-xs font-medium text-slate-700">
+                    {recipientTypeLabel(item.recipientType, copy)}
+                  </span>
+                  {renderInvoiceActions(item, invoiceLabel)}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const buildInvoiceRows = (items: InvoiceFolder[]) => items.map((folder) => {
+    const { item, kind } = folder.primary;
+    const invoiceLabel = item.displayNumber || item.externalId || item.id;
+    const secondaryLabel = firstString(
+      item.accountNumber,
+      item.contractNumber,
+      item.apartmentNumber,
+      item.buildingNumber,
+      item.externalId,
+    );
+
+    const row: ReactNode[] = [
+      <div key={`${item.id}-invoice`} className="min-w-24 max-w-32">
+        <p className="font-medium text-slate-900">{invoiceLabel}</p>
+        {secondaryLabel && secondaryLabel !== invoiceLabel ? (
+          <p className="mt-0.5 text-xs text-slate-500">{secondaryLabel}</p>
+        ) : null}
+      </div>,
+      folder.items.length > 1
+        ? folder.items.map(({ item: nested }) => recipientTypeLabel(nested.recipientType, copy)).join(" / ")
+        : recipientTypeLabel(item.recipientType, copy),
+      item.apartment,
+      item.resident,
+      item.amount,
+      item.period ?? item.invoiceDate ?? item.dueDate,
+    ];
+
+    if (canImport) {
+      row.push(<StatusBadge key={`${item.id}-status`} status={item.status} copy={copy} />);
+    }
+
+    row.push(
+      <div key={`${folder.id}-actions`} className="flex items-center gap-2">
+        {renderInvoiceFolderActions(folder)}
       </div>,
     );
 
@@ -1236,17 +1342,19 @@ export function InvoicesWorkspace({
   });
   const electricityInvoiceItems = typedInvoices.filter((entry) => entry.kind === "electricity");
   const utilityInvoiceItems = typedInvoices.filter((entry) => entry.kind === "utility");
+  const electricityInvoiceFolders = groupInvoiceFolders(electricityInvoiceItems, canImport);
+  const utilityInvoiceFolders = groupInvoiceFolders(utilityInvoiceItems, canImport);
   const invoiceSections = [
     {
       key: "electricity",
       title: copy.invoicesElectricityGroup,
-      rows: buildInvoiceRows(electricityInvoiceItems),
+      rows: buildInvoiceRows(electricityInvoiceFolders),
       mobileRows: buildInvoiceMobileRows(electricityInvoiceItems),
     },
     {
       key: "utility",
       title: copy.invoicesUtilityGroup,
-      rows: buildInvoiceRows(utilityInvoiceItems),
+      rows: buildInvoiceRows(utilityInvoiceFolders),
       mobileRows: buildInvoiceMobileRows(utilityInvoiceItems),
     },
   ].filter((section) => section.rows.length > 0);

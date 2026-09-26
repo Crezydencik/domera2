@@ -1,6 +1,6 @@
 import { getLocale, getTranslations } from "next-intl/server";
 import Link from "next/link";
-import { FiChevronDown, FiExternalLink } from "react-icons/fi";
+import { FiChevronDown, FiExternalLink, FiFolder } from "react-icons/fi";
 import { DataTable } from "@/components/data-table";
 import { InvoiceDeleteButton } from "@/components/invoice-delete-button";
 import { InvoiceMobileRow } from "@/components/invoice-mobile-row";
@@ -184,11 +184,16 @@ function isAccountantRole(value: unknown) {
     .toLowerCase() === "accountant";
 }
 
-function invoiceRecipientLabel(value: unknown) {
+function invoiceRecipientLabel(value: unknown, locale: string) {
   const normalized = String(value ?? "general").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  if (normalized === "tenant") return "Арендатор";
-  if (normalized === "owner" || normalized === "self_government") return "Владелец";
-  return "Квартира";
+  const labels = locale.startsWith("lv")
+    ? { tenant: "Īrnieks", owner: "Īpašnieks", general: "Dzīvoklis" }
+    : locale.startsWith("ru")
+      ? { tenant: "Арендатор", owner: "Владелец", general: "Квартира" }
+      : { tenant: "Tenant", owner: "Owner", general: "Apartment" };
+  if (normalized === "tenant") return labels.tenant;
+  if (normalized === "owner" || normalized === "self_government") return labels.owner;
+  return labels.general;
 }
 
 export default async function ApartmentDetailsPage({
@@ -483,6 +488,21 @@ export default async function ApartmentDetailsPage({
     (typeof inv.apartmentId === "string" && apartmentInvoiceCandidates.has(inv.apartmentId))
   ));
   const canDeleteInvoices = data.role === "managementCompany";
+  const groupedApartmentInvoices = canDeleteInvoices
+    ? Array.from(
+        apartmentInvoices.reduce((groups, inv) => {
+          const key = [
+            toText(inv.apartmentId, toText(inv.apartment, "")),
+            toText(inv.period, toText(inv.invoiceDate, toText(inv.dueDate, ""))),
+            toText(inv.amount, ""),
+          ].join("|").toLowerCase();
+          const group = groups.get(key) ?? [];
+          group.push(inv);
+          groups.set(key, group);
+          return groups;
+        }, new Map<string, typeof apartmentInvoices>()),
+      ).map(([, group]) => group)
+    : apartmentInvoices.map((inv) => [inv]);
   const invoiceColumns = [
     t("details.invoiceColumns.id"),
     t("details.invoiceColumns.recipient"),
@@ -491,14 +511,79 @@ export default async function ApartmentDetailsPage({
     t("details.invoiceColumns.status"),
     t("details.invoiceColumns.file"),
   ];
-  const invoiceRows = apartmentInvoices.length
-    ? apartmentInvoices.map((inv) => {
-        const pdfUrl = inv.pdfUrl?.trim();
+  const renderInvoiceActions = (inv: typeof apartmentInvoices[number]) => {
+    const pdfUrl = inv.pdfUrl?.trim();
+    const invoiceLabel = inv.displayNumber || inv.externalId || inv.id;
+
+    return (
+      <div key={`${inv.id}-actions`} className="flex items-center gap-2">
+        {pdfUrl ? (
+          <InvoicePdfViewerButton
+            href={pdfUrl}
+            label={t("details.viewInvoice")}
+            title={t("details.invoiceViewTitle", { invoice: invoiceLabel })}
+            closeLabel={ui("close")}
+            loadingLabel={t("details.invoiceLoading")}
+            errorLabel={t("details.invoiceLoadFailed")}
+          />
+        ) : (
+          <span className="text-xs text-slate-400">—</span>
+        )}
+        {canDeleteInvoices ? (
+          <InvoiceResendEmailButton
+            invoiceId={inv.id}
+            label={t("details.resendInvoice")}
+            sendingLabel={t("details.resendingInvoice")}
+            successLabel={t("details.resendInvoiceSuccess")}
+            errorLabel={t("details.resendInvoiceFailed")}
+          />
+        ) : null}
+        {canDeleteInvoices ? (
+          <InvoiceDeleteButton
+            invoiceId={inv.id}
+            label={t("details.deleteInvoice")}
+            title={t("details.deleteInvoiceTitle", { invoice: invoiceLabel })}
+            message={t("details.deleteInvoiceMessage")}
+            confirmLabel={ui("delete")}
+            cancelLabel={ui("cancel")}
+            deletingLabel={t("details.deletingInvoice")}
+            successLabel={t("details.deleteInvoiceSuccess")}
+            errorLabel={t("details.deleteInvoiceFailed")}
+          />
+        ) : null}
+      </div>
+    );
+  };
+  const renderInvoiceFolder = (group: typeof apartmentInvoices) => {
+    if (group.length === 1) return renderInvoiceActions(group[0]);
+
+    return (
+      <details className="min-w-56 rounded-md border border-slate-200 bg-slate-50 p-2">
+        <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-1 py-1 text-xs font-medium text-slate-600 hover:bg-white">
+          <FiFolder aria-hidden className="h-4 w-4" />
+          <span>{group.length}</span>
+        </summary>
+        <div className="mt-2 space-y-2">
+          {group.map((inv) => (
+            <div key={inv.id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1">
+              <span className="min-w-20 text-xs font-medium text-slate-700">
+                {invoiceRecipientLabel(inv.recipientType, locale)}
+              </span>
+              {renderInvoiceActions(inv)}
+            </div>
+          ))}
+        </div>
+      </details>
+    );
+  };
+  const invoiceRows = groupedApartmentInvoices.length
+    ? groupedApartmentInvoices.map((group) => {
+        const inv = group[0];
         const invoiceLabel = inv.displayNumber || inv.externalId || inv.id;
 
         return [
           invoiceLabel,
-          invoiceRecipientLabel(inv.recipientType),
+          group.map((item) => invoiceRecipientLabel(item.recipientType, locale)).join(" / "),
           inv.amount,
           inv.dueDate,
           <span
@@ -513,41 +598,8 @@ export default async function ApartmentDetailsPage({
           >
             {inv.status}
           </span>,
-          <div key={`${inv.id}-actions`} className="flex items-center gap-2">
-            {pdfUrl ? (
-              <InvoicePdfViewerButton
-                href={pdfUrl}
-                label={t("details.viewInvoice")}
-                title={t("details.invoiceViewTitle", { invoice: invoiceLabel })}
-                closeLabel={ui("close")}
-                loadingLabel={t("details.invoiceLoading")}
-                errorLabel={t("details.invoiceLoadFailed")}
-              />
-            ) : (
-              <span className="text-xs text-slate-400">—</span>
-            )}
-            {canDeleteInvoices ? (
-              <InvoiceResendEmailButton
-                invoiceId={inv.id}
-                label={t("details.resendInvoice")}
-                sendingLabel={t("details.resendingInvoice")}
-                successLabel={t("details.resendInvoiceSuccess")}
-                errorLabel={t("details.resendInvoiceFailed")}
-              />
-            ) : null}
-            {canDeleteInvoices ? (
-              <InvoiceDeleteButton
-                invoiceId={inv.id}
-                label={t("details.deleteInvoice")}
-                title={t("details.deleteInvoiceTitle", { invoice: invoiceLabel })}
-                message={t("details.deleteInvoiceMessage")}
-                confirmLabel={ui("delete")}
-                cancelLabel={ui("cancel")}
-                deletingLabel={t("details.deletingInvoice")}
-                successLabel={t("details.deleteInvoiceSuccess")}
-                errorLabel={t("details.deleteInvoiceFailed")}
-              />
-            ) : null}
+          <div key={`${invoiceLabel}-actions`} className="flex items-center gap-2">
+            {renderInvoiceFolder(group)}
           </div>,
         ];
       })
