@@ -8,15 +8,59 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var ResidentService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ResidentService = void 0;
 const common_1 = require("@nestjs/common");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const role_constants_1 = require("../../../common/auth/role.constants");
 const invitation_token_1 = require("../../../common/utils/invitation-token");
-let ResidentService = class ResidentService {
+let ResidentService = ResidentService_1 = class ResidentService {
     constructor(firebaseAdminService) {
         this.firebaseAdminService = firebaseAdminService;
+        this.logger = new common_1.Logger(ResidentService_1.name);
+        this.apartmentsTimeoutMs = Number(process.env.RESIDENT_APARTMENTS_TIMEOUT_MS ?? 6500);
+        this.apartmentsFallbackCache = new Map();
+    }
+    emptyApartmentsResponse() {
+        return {
+            apartments: [],
+            buildings: [],
+            managementCompanies: [],
+        };
+    }
+    getCachedApartmentsResponse(userId) {
+        const cached = this.apartmentsFallbackCache.get(userId);
+        if (!cached)
+            return null;
+        if (cached.expiresAt <= Date.now()) {
+            this.apartmentsFallbackCache.delete(userId);
+            return null;
+        }
+        return cached.value;
+    }
+    setCachedApartmentsResponse(userId, value) {
+        this.apartmentsFallbackCache.set(userId, {
+            expiresAt: Date.now() + 60_000,
+            value,
+        });
+    }
+    withTimeout(promise, label) {
+        const timeoutMs = Number.isFinite(this.apartmentsTimeoutMs) && this.apartmentsTimeoutMs > 0
+            ? this.apartmentsTimeoutMs
+            : 6500;
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+            }, timeoutMs);
+            promise.then((value) => {
+                clearTimeout(timeout);
+                resolve(value);
+            }, (error) => {
+                clearTimeout(timeout);
+                reject(error);
+            });
+        });
     }
     toOptionalString(value) {
         return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
@@ -73,6 +117,18 @@ let ResidentService = class ResidentService {
             throw new common_1.UnauthorizedException('Authentication required');
         if (!(0, role_constants_1.isPropertyMemberRole)(user.role))
             throw new common_1.ForbiddenException('Residents and landlords only');
+        try {
+            const response = await this.withTimeout(this.loadApartments(user), 'Resident apartments lookup');
+            this.setCachedApartmentsResponse(user.uid, response);
+            return response;
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.logger.warn(`Returning fallback resident apartments for ${user.uid}: ${message}`);
+            return this.getCachedApartmentsResponse(user.uid) ?? this.emptyApartmentsResponse();
+        }
+    }
+    async loadApartments(user) {
         const db = this.firebaseAdminService.firestore;
         const userSnap = await db.collection('users').doc(user.uid).get();
         const userData = userSnap.exists ? userSnap.data() : {};
@@ -233,7 +289,7 @@ let ResidentService = class ResidentService {
     }
 };
 exports.ResidentService = ResidentService;
-exports.ResidentService = ResidentService = __decorate([
+exports.ResidentService = ResidentService = ResidentService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService])
 ], ResidentService);

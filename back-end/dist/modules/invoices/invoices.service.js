@@ -581,8 +581,6 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
         const residentId = typeof apartment.residentId === 'string' ? apartment.residentId : '';
         const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
-        if (residentId === user.uid)
-            return { type: 'resident' };
         if (apartment.ownerActivated === true &&
             ((ownerId && ownerId === user.uid) || Boolean(normalizedUserEmail && ownerEmail === normalizedUserEmail))) {
             return { type: 'owner' };
@@ -603,6 +601,8 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
                 until: this.parseOptionalDate(record.until),
             };
         }
+        if (residentId === user.uid)
+            return { type: 'resident' };
         return null;
     }
     isInvoiceVisibleForPropertyMember(user, apartment, invoice) {
@@ -614,7 +614,9 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const recipientType = this.normalizeRecipientType(invoice.recipientType ?? invoice.recipient_type);
         if (recipientType === 'tenant' && access.type !== 'tenant')
             return false;
-        if (recipientType === 'owner' && access.type === 'tenant')
+        if (recipientType === 'owner' && access.type !== 'owner')
+            return false;
+        if (recipientType !== 'general' && access.type === 'resident')
             return false;
         if (access.type !== 'tenant')
             return true;
@@ -3129,6 +3131,11 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             const accessibleApartmentIds = await this.getAccessibleApartmentIds(user);
             if (!apartmentId || !accessibleApartmentIds.includes(apartmentId)) {
                 throw new common_1.ForbiddenException('Access denied for apartment');
+            }
+            const apartmentSnap = await this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId).get();
+            const apartment = apartmentSnap.exists ? apartmentSnap.data() : undefined;
+            if (!this.isInvoiceVisibleForPropertyMember(user, apartment, data)) {
+                throw new common_1.ForbiddenException('Access denied for invoice');
             }
         }
         return { id: invoice.ref.id, ...data, apartmentId };

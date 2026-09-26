@@ -3,7 +3,7 @@ import { ROUTES } from "@/shared/lib/routes";
 
 const appConfig = {
   name: "Domera",
-  apiBaseUrl: "/api",
+  apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") || "/api",
 };
 
 const DEFAULT_API_TIMEOUT_MS = process.env.NODE_ENV === "production" ? 30_000 : 8_000;

@@ -814,7 +814,6 @@ export class InvoicesService {
     const residentId = typeof apartment.residentId === 'string' ? apartment.residentId : '';
     const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
 
-    if (residentId === user.uid) return { type: 'resident' };
     if (
       apartment.ownerActivated === true &&
       ((ownerId && ownerId === user.uid) || Boolean(normalizedUserEmail && ownerEmail === normalizedUserEmail))
@@ -838,6 +837,8 @@ export class InvoicesService {
       };
     }
 
+    if (residentId === user.uid) return { type: 'resident' };
+
     return null;
   }
 
@@ -851,7 +852,8 @@ export class InvoicesService {
     if (!access) return false;
     const recipientType = this.normalizeRecipientType(invoice.recipientType ?? invoice.recipient_type);
     if (recipientType === 'tenant' && access.type !== 'tenant') return false;
-    if (recipientType === 'owner' && access.type === 'tenant') return false;
+    if (recipientType === 'owner' && access.type !== 'owner') return false;
+    if (recipientType !== 'general' && access.type === 'resident') return false;
     if (access.type !== 'tenant') return true;
 
     const range = this.invoiceDateRange(invoice);
@@ -3969,6 +3971,12 @@ export class InvoicesService {
       const accessibleApartmentIds = await this.getAccessibleApartmentIds(user);
       if (!apartmentId || !accessibleApartmentIds.includes(apartmentId)) {
         throw new ForbiddenException('Access denied for apartment');
+      }
+
+      const apartmentSnap = await this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId).get();
+      const apartment = apartmentSnap.exists ? apartmentSnap.data() as Record<string, unknown> : undefined;
+      if (!this.isInvoiceVisibleForPropertyMember(user, apartment, data)) {
+        throw new ForbiddenException('Access denied for invoice');
       }
     }
 

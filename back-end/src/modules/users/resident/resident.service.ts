@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { RequestUser } from '../../../common/auth/request-user.type';
 import { isPropertyMemberRole } from '../../../common/auth/role.constants';
@@ -6,7 +6,61 @@ import { normalizeEmail } from '../../../common/utils/invitation-token';
 
 @Injectable()
 export class ResidentService {
+  private readonly logger = new Logger(ResidentService.name);
+  private readonly apartmentsTimeoutMs = Number(process.env.RESIDENT_APARTMENTS_TIMEOUT_MS ?? 6500);
+  private readonly apartmentsFallbackCache = new Map<string, { expiresAt: number; value: unknown }>();
+
   constructor(private readonly firebaseAdminService: FirebaseAdminService) {}
+
+  private emptyApartmentsResponse() {
+    return {
+      apartments: [],
+      buildings: [],
+      managementCompanies: [],
+    };
+  }
+
+  private getCachedApartmentsResponse(userId: string) {
+    const cached = this.apartmentsFallbackCache.get(userId);
+    if (!cached) return null;
+
+    if (cached.expiresAt <= Date.now()) {
+      this.apartmentsFallbackCache.delete(userId);
+      return null;
+    }
+
+    return cached.value;
+  }
+
+  private setCachedApartmentsResponse(userId: string, value: unknown) {
+    this.apartmentsFallbackCache.set(userId, {
+      expiresAt: Date.now() + 60_000,
+      value,
+    });
+  }
+
+  private withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+    const timeoutMs = Number.isFinite(this.apartmentsTimeoutMs) && this.apartmentsTimeoutMs > 0
+      ? this.apartmentsTimeoutMs
+      : 6500;
+
+    return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      promise.then(
+        (value) => {
+          clearTimeout(timeout);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        },
+      );
+    });
+  }
 
   private toOptionalString(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
@@ -76,6 +130,18 @@ export class ResidentService {
     if (!user?.uid) throw new UnauthorizedException('Authentication required');
     if (!isPropertyMemberRole(user.role)) throw new ForbiddenException('Residents and landlords only');
 
+    try {
+      const response = await this.withTimeout(this.loadApartments(user), 'Resident apartments lookup');
+      this.setCachedApartmentsResponse(user.uid, response);
+      return response;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Returning fallback resident apartments for ${user.uid}: ${message}`);
+      return this.getCachedApartmentsResponse(user.uid) ?? this.emptyApartmentsResponse();
+    }
+  }
+
+  private async loadApartments(user: RequestUser) {
     const db = this.firebaseAdminService.firestore;
     const userSnap = await db.collection('users').doc(user.uid).get();
     const userData = userSnap.exists ? (userSnap.data() as Record<string, unknown>) : {};

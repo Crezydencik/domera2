@@ -11,7 +11,10 @@ const requiredFiles = [
 const pidFile = path.join(rootDir, '.dev-server.pid');
 const timeoutMs = 5000;
 const intervalMs = 100;
+const restartDelayMs = Number(process.env.DEV_SERVER_RESTART_DELAY_MS || 1000);
 const startedAt = Date.now();
+let child = null;
+let shuttingDown = false;
 
 function cleanupPidFile(pid) {
   try {
@@ -54,7 +57,7 @@ function stopPreviousServer() {
 function start() {
   stopPreviousServer();
 
-  const child = spawn(process.execPath, [entry], {
+  child = spawn(process.execPath, [entry], {
     stdio: 'inherit',
     cwd: rootDir,
     env: process.env,
@@ -64,29 +67,38 @@ function start() {
     fs.writeFileSync(pidFile, String(child.pid), 'utf8');
   }
 
-  const shutdownChild = () => {
-    try {
-      if (child.pid) {
-        if (process.platform === 'win32') {
-          spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-        } else {
-          process.kill(child.pid, 'SIGTERM');
-        }
-      }
-    } catch {
-      // child already exited
-    }
-    cleanupPidFile(child.pid);
-  };
+  child.on('exit', (code, signal) => {
+    const childPid = child && child.pid;
+    cleanupPidFile(childPid);
 
-  process.on('SIGINT', shutdownChild);
-  process.on('SIGTERM', shutdownChild);
-  process.on('exit', () => cleanupPidFile(child.pid));
+    if (shuttingDown) return;
 
-  child.on('exit', () => {
-    cleanupPidFile(child.pid);
+    console.error(
+      `Backend process exited${code === null ? '' : ` with code ${code}`}${signal ? ` (${signal})` : ''}. Restarting...`,
+    );
+    setTimeout(start, Math.max(250, restartDelayMs));
   });
 }
+
+function shutdownChild() {
+  shuttingDown = true;
+  try {
+    if (child && child.pid) {
+      if (process.platform === 'win32') {
+        spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      } else {
+        process.kill(child.pid, 'SIGTERM');
+      }
+    }
+  } catch {
+    // child already exited
+  }
+  cleanupPidFile(child && child.pid);
+}
+
+process.on('SIGINT', shutdownChild);
+process.on('SIGTERM', shutdownChild);
+process.on('exit', () => cleanupPidFile(child && child.pid));
 
 function waitForEntry() {
   if (requiredFiles.every((file) => fs.existsSync(file))) {

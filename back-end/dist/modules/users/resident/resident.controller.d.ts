@@ -3,9 +3,5 @@ import { ResidentService } from './resident.service';
 export declare class ResidentController {
     private readonly residentService;
     constructor(residentService: ResidentService);
-    apartments(user: RequestUser): Promise<{
-        apartments: unknown;
-        buildings: unknown;
-        managementCompanies: unknown;
-    }>;
+    apartments(user: RequestUser): Promise<{}>;
 }
