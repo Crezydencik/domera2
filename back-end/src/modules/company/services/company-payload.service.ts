@@ -317,15 +317,11 @@ export class CompanyPayloadService {
       existing?.invoiceSettings,
     );
 
-    const normalizedUserIds = Array.isArray(payload.userIds)
-      ? payload.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : Array.isArray(existing?.userIds)
+    const normalizedUserIds = Array.isArray(existing?.userIds)
         ? existing.userIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         : [];
 
-    const normalizedEmployees = Array.isArray(payload.employees)
-      ? payload.employees.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : Array.isArray(existing?.employees)
+    const normalizedEmployees = Array.isArray(existing?.employees)
         ? existing.employees.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         : [];
 
@@ -340,12 +336,6 @@ export class CompanyPayloadService {
         : [];
 
     const normalizedManager = Array.from(new Set([
-      ...(Array.isArray(payload.manager)
-        ? payload.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-        : []),
-      ...(typeof payload.manager === 'string' && payload.manager.trim().length > 0
-        ? [payload.manager.trim()]
-        : []),
       ...(Array.isArray(existing?.manager)
         ? existing.manager.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         : []),
@@ -365,14 +355,12 @@ export class CompanyPayloadService {
         invoiceSettings: normalizedInvoiceSettings,
         manager: normalizedManager,
         companyId:
-          typeof payload.companyId === 'string'
-            ? payload.companyId.trim()
-            : typeof existing?.companyId === 'string'
+          typeof existing?.companyId === 'string'
               ? existing.companyId
               : undefined,
         userIds: normalizedUserIds,
         employees: normalizedEmployees,
-        memberPermissions: this.normalizeCompanyMemberPermissionMap(payload.memberPermissions ?? existing?.memberPermissions),
+        memberPermissions: this.normalizeCompanyMemberPermissionMap(existing?.memberPermissions),
         buildings: normalizedBuildings,
         name: FieldValue.delete(),
         email: FieldValue.delete(),

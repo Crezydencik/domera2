@@ -67,15 +67,7 @@ export class InvitationsService {
 
   private invitationPublicItem(doc: FirebaseFirestore.QueryDocumentSnapshot | FirebaseFirestore.DocumentSnapshot) {
     const data = doc.data() as Record<string, unknown>;
-    const expiresAtRaw = data.expiresAt as { toDate?: () => Date } | Date | string | undefined;
-    const expiresAt =
-      expiresAtRaw instanceof Date
-        ? expiresAtRaw
-        : typeof expiresAtRaw === 'string'
-          ? new Date(expiresAtRaw)
-          : typeof expiresAtRaw?.toDate === 'function'
-            ? expiresAtRaw.toDate()
-            : undefined;
+    const expiresAt = this.toDate(data.expiresAt) ?? undefined;
 
     return {
       id: doc.id,
@@ -90,6 +82,28 @@ export class InvitationsService {
           : new Date(),
       expiresAt,
     };
+  }
+
+  private toDate(value: unknown): Date | null {
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+    if (typeof value === 'string' && value.trim()) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    if (value && typeof value === 'object') {
+      const record = value as { toDate?: () => Date; seconds?: number; _seconds?: number };
+      if (typeof record.toDate === 'function') {
+        const date = record.toDate();
+        return Number.isNaN(date.getTime()) ? null : date;
+      }
+
+      const seconds = typeof record.seconds === 'number' ? record.seconds : record._seconds;
+      if (typeof seconds === 'number') return new Date(seconds * 1000);
+    }
+
+    return null;
   }
 
   private apartmentCompanyId(apartment: Record<string, unknown>): string {
@@ -337,15 +351,7 @@ export class InvitationsService {
     if (status === 'revoked') throw new ForbiddenException('Invitation revoked');
     if (status === 'accepted') throw new ForbiddenException('Invitation already accepted');
 
-    const expiresAtRaw = invitation.expiresAt as { toDate?: () => Date } | Date | string | undefined;
-    const expiresAt =
-      expiresAtRaw instanceof Date
-        ? expiresAtRaw
-        : typeof expiresAtRaw === 'string'
-          ? new Date(expiresAtRaw)
-          : typeof expiresAtRaw?.toDate === 'function'
-            ? expiresAtRaw.toDate()
-            : null;
+    const expiresAt = this.toDate(invitation.expiresAt);
 
     if (expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() < Date.now()) {
       throw new ForbiddenException('Invitation expired');
@@ -410,6 +416,7 @@ export class InvitationsService {
 
     if (!gdprConsent) throw new BadRequestException('GDPR consent is required');
     if (!token && !invitationId) throw new BadRequestException('token or invitationId is required');
+    if (!user?.uid && !token) throw new ForbiddenException('Token is required');
 
     const discriminator = token
       ? (await hashInvitationToken(token)).slice(0, 12)
@@ -450,6 +457,11 @@ export class InvitationsService {
     if (status === 'revoked') throw new ForbiddenException('Invitation revoked');
     if (status === 'accepted') throw new ForbiddenException('Invitation already accepted');
     if (status !== 'pending') throw new ForbiddenException('Invitation is not pending');
+
+    const expiresAt = this.toDate(invitation.expiresAt);
+    if (expiresAt && expiresAt.getTime() < Date.now()) {
+      throw new ForbiddenException('Invitation expired');
+    }
 
     const markAccepted = async (uid: string, email?: string) => {
       const companyId = typeof invitation.companyId === 'string' ? invitation.companyId : '';
@@ -593,17 +605,33 @@ export class InvitationsService {
           { merge: true },
         );
       }
-      await db.collection('invitations').doc(docId).set(
-        {
-          status: 'accepted',
-          acceptedAt: new Date(),
-          gdpr: {
-            ...(typeof invitation.gdpr === 'object' && invitation.gdpr ? invitation.gdpr : {}),
-            dataSubjectConsentAt: new Date(),
+      const invitationRef = db.collection('invitations').doc(docId);
+      await db.runTransaction(async (tx) => {
+        const fresh = await tx.get(invitationRef);
+        const freshData = fresh.data() as Record<string, unknown> | undefined;
+        const freshStatus = typeof freshData?.status === 'string' ? freshData.status : 'pending';
+        if (!fresh.exists || freshStatus !== 'pending') {
+          throw new ForbiddenException('Invitation is not pending');
+        }
+
+        const freshExpiresAt = this.toDate(freshData?.expiresAt);
+        if (freshExpiresAt && freshExpiresAt.getTime() < Date.now()) {
+          throw new ForbiddenException('Invitation expired');
+        }
+
+        tx.set(
+          invitationRef,
+          {
+            status: 'accepted',
+            acceptedAt: new Date(),
+            gdpr: {
+              ...(typeof freshData?.gdpr === 'object' && freshData.gdpr ? freshData.gdpr : {}),
+              dataSubjectConsentAt: new Date(),
+            },
           },
-        },
-        { merge: true },
-      );
+          { merge: true },
+        );
+      });
     };
 
     if (user?.uid) {
@@ -640,7 +668,7 @@ export class InvitationsService {
     const createdUser = await this.firebaseAdminService.auth.createUser({
       email: invitationEmail,
       password,
-      emailVerified: false,
+      emailVerified: true,
     });
 
     await markAccepted(createdUser.uid, invitationEmail);

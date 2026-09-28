@@ -5,12 +5,14 @@ export declare class DocumentHelperService {
     sanitizeFileName(value: unknown): string;
     buildAsciiDownloadFileName(value: string): string;
     buildContentDisposition(fileName: string): string;
+    buildAttachmentContentDisposition(fileName: string): string;
     sanitizePathSegment(value: string): string;
     formatDate(value: unknown): string;
     parseOptionalDate(value: unknown): Date | null;
     omitUndefined(input: UnknownRecord): UnknownRecord;
     isApartmentScopedDocument(scope: unknown): boolean;
     validateFile(file: UploadedDocumentFile): void;
+    detectAllowedMimeType(buffer: Buffer): string;
     serializeDocument(id: string, data: UnknownRecord): {
         id: string;
         title: string;

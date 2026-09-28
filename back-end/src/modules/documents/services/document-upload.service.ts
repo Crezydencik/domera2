@@ -28,6 +28,7 @@ export class DocumentUploadService {
     const scope = this.helperService.normalizeScope(body.scope);
     const title = this.helperService.firstString(body.title, file.originalname, 'Document');
     const fileName = this.helperService.sanitizeFileName(file.originalname);
+    const detectedMimeType = this.helperService.detectAllowedMimeType(file.buffer);
     const documentId = `doc_${randomUUID().replace(/-/g, '').slice(0, 18)}`;
     const now = new Date();
 
@@ -131,8 +132,11 @@ export class DocumentUploadService {
       await bucket.file(storagePath).save(file.buffer, {
         resumable: false,
         metadata: {
-          contentType: file.mimetype || 'application/octet-stream',
-          contentDisposition: this.helperService.buildContentDisposition(fileName),
+          contentType: detectedMimeType,
+          contentDisposition:
+            detectedMimeType === 'application/pdf' || detectedMimeType.startsWith('image/')
+              ? this.helperService.buildContentDisposition(fileName)
+              : this.helperService.buildAttachmentContentDisposition(fileName),
         },
       });
     } catch (error) {
@@ -145,7 +149,7 @@ export class DocumentUploadService {
       id: documentId,
       title,
       fileName,
-      mimeType: file.mimetype || 'application/octet-stream',
+      mimeType: detectedMimeType,
       size: file.size ?? file.buffer.length,
       scope,
       companyId: companyId || undefined,

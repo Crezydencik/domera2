@@ -270,6 +270,7 @@ __decorate([
 ], EmailController.prototype, "deliveries", null);
 __decorate([
     (0, common_1.Post)('registration-code'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin'),
     (0, common_1.HttpCode)(200),
     (0, swagger_1.ApiOperation)({ summary: 'Send registration code email' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Email sent successfully' }),
@@ -280,6 +281,7 @@ __decorate([
 ], EmailController.prototype, "sendRegistrationCode", null);
 __decorate([
     (0, common_1.Post)('password-reset'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin'),
     (0, common_1.HttpCode)(200),
     (0, swagger_1.ApiOperation)({ summary: 'Send password reset email' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Email sent successfully' }),
@@ -290,6 +292,7 @@ __decorate([
 ], EmailController.prototype, "sendPasswordReset", null);
 __decorate([
     (0, common_1.Post)('owner-invitation'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin'),
     (0, common_1.HttpCode)(200),
     (0, swagger_1.ApiOperation)({ summary: 'Send owner invitation email' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Email sent successfully' }),
@@ -300,6 +303,7 @@ __decorate([
 ], EmailController.prototype, "sendOwnerInvitation", null);
 __decorate([
     (0, common_1.Post)('tenant-invitation'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin'),
     (0, common_1.HttpCode)(200),
     (0, swagger_1.ApiOperation)({ summary: 'Send tenant invitation email' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Email sent successfully' }),
@@ -310,6 +314,7 @@ __decorate([
 ], EmailController.prototype, "sendTenantInvitation", null);
 __decorate([
     (0, common_1.Post)('tenant-invited-by-owner'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin'),
     (0, common_1.HttpCode)(200),
     (0, swagger_1.ApiOperation)({ summary: 'Send email when owner invites tenant' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Email sent successfully' }),
@@ -320,6 +325,7 @@ __decorate([
 ], EmailController.prototype, "sendTenantInvitedByOwner", null);
 __decorate([
     (0, common_1.Post)('invoice-generated'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin'),
     (0, common_1.HttpCode)(200),
     (0, swagger_1.ApiOperation)({ summary: 'Send invoice generated email' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Email sent successfully' }),
@@ -330,6 +336,7 @@ __decorate([
 ], EmailController.prototype, "sendInvoiceGenerated", null);
 __decorate([
     (0, common_1.Post)('meter-reading-reminder'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin'),
     (0, common_1.HttpCode)(200),
     (0, swagger_1.ApiOperation)({ summary: 'Send meter reading reminder email' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Email sent successfully' }),
@@ -340,6 +347,7 @@ __decorate([
 ], EmailController.prototype, "sendMeterReadingReminder", null);
 __decorate([
     (0, common_1.Post)('notification'),
+    (0, roles_decorator_1.Roles)('PlatformAdmin'),
     (0, common_1.HttpCode)(200),
     (0, swagger_1.ApiOperation)({ summary: 'Send generic notification email' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Email sent successfully' }),

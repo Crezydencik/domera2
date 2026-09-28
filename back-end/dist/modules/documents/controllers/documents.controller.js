@@ -31,8 +31,10 @@ function buildAsciiFileName(value) {
         .replace(/\s+/g, ' ')
         .trim() || 'document';
 }
-function buildContentDisposition(fileName) {
-    return `inline; filename="${buildAsciiFileName(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+function buildContentDisposition(fileName, contentType) {
+    const inlineSafe = contentType === 'application/pdf' || contentType.startsWith('image/');
+    const disposition = inlineSafe ? 'inline' : 'attachment';
+    return `${disposition}; filename="${buildAsciiFileName(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 let DocumentsController = class DocumentsController {
     constructor(documentsService) {
@@ -50,7 +52,9 @@ let DocumentsController = class DocumentsController {
     async download(user, documentId, response) {
         const file = await this.documentsService.download(user, documentId);
         response.setHeader('Content-Type', file.contentType);
-        response.setHeader('Content-Disposition', buildContentDisposition(file.fileName));
+        response.setHeader('X-Content-Type-Options', 'nosniff');
+        response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+        response.setHeader('Content-Disposition', buildContentDisposition(file.fileName, file.contentType));
         response.send(file.buffer);
     }
     remove(user, documentId) {

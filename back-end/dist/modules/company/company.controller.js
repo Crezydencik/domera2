@@ -17,6 +17,9 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const current_user_decorator_1 = require("../../common/auth/current-user.decorator");
 const firebase_auth_guard_1 = require("../../common/auth/firebase-auth.guard");
+const role_constants_1 = require("../../common/auth/role.constants");
+const roles_decorator_1 = require("../../common/auth/roles.decorator");
+const roles_guard_1 = require("../../common/auth/roles.guard");
 const company_service_1 = require("./services/company.service");
 let CompanyController = class CompanyController {
     constructor(companyService) {
@@ -179,7 +182,8 @@ __decorate([
 exports.CompanyController = CompanyController = __decorate([
     (0, swagger_1.ApiTags)('Company'),
     (0, common_1.Controller)('company'),
-    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)('PlatformAdmin', ...role_constants_1.STAFF_ROLES),
     (0, swagger_1.ApiBearerAuth)(),
     (0, swagger_1.ApiCookieAuth)('__session'),
     __metadata("design:paramtypes", [company_service_1.CompanyService])

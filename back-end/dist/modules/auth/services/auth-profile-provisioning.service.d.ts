@@ -7,6 +7,7 @@ export declare class AuthProfileProvisioningService {
     isConfiguredPlatformAdmin(input: {
         uid?: string;
         email?: string;
+        emailVerified?: boolean;
     }): boolean;
     ensureUserProfileDocument(input: {
         uid: string;

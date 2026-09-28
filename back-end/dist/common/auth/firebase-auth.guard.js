@@ -17,7 +17,7 @@ const node_crypto_1 = require("node:crypto");
 const firebase_admin_service_1 = require("../infrastructure/firebase/firebase-admin.service");
 const role_constants_1 = require("./role.constants");
 const SESSION_COOKIE_NAME = '__session';
-const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED === 'true';
+const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED !== 'false';
 const AUTH_CACHE_TTL_MS = Math.max(0, Number(process.env.FIREBASE_AUTH_CACHE_TTL_MS ?? (CHECK_REVOKED_TOKENS ? 0 : 60000)));
 const USER_PROFILE_CACHE_TTL_MS = Math.max(0, Number(process.env.FIREBASE_USER_PROFILE_CACHE_TTL_MS ?? 60000));
 const AUTH_CACHE_MAX_ENTRIES = Math.max(50, Number(process.env.FIREBASE_AUTH_CACHE_MAX_ENTRIES ?? 1000));
@@ -74,6 +74,7 @@ let FirebaseAuthGuard = FirebaseAuthGuard_1 = class FirebaseAuthGuard {
             request.user = {
                 uid: decoded.uid,
                 email: decoded.email,
+                emailVerified: decoded.email_verified === true,
                 role,
                 accountType,
                 companyId,

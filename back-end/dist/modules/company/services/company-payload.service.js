@@ -261,16 +261,12 @@ let CompanyPayloadService = class CompanyPayloadService {
                         ? existing.beneficiaryName
                         : undefined;
         const normalizedInvoiceSettings = this.normalizeInvoiceSettings(payload.invoiceSettings, existing?.invoiceSettings);
-        const normalizedUserIds = Array.isArray(payload.userIds)
-            ? payload.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
-            : Array.isArray(existing?.userIds)
-                ? existing.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
-                : [];
-        const normalizedEmployees = Array.isArray(payload.employees)
-            ? payload.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
-            : Array.isArray(existing?.employees)
-                ? existing.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
-                : [];
+        const normalizedUserIds = Array.isArray(existing?.userIds)
+            ? existing.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const normalizedEmployees = Array.isArray(existing?.employees)
+            ? existing.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
         const normalizedBuildings = Array.isArray(payload.buildings)
             ? payload.buildings
                 .filter((value) => typeof value === 'string' && value.trim().length > 0)
@@ -281,12 +277,6 @@ let CompanyPayloadService = class CompanyPayloadService {
                     .map((value) => value.trim())
                 : [];
         const normalizedManager = Array.from(new Set([
-            ...(Array.isArray(payload.manager)
-                ? payload.manager.filter((value) => typeof value === 'string' && value.trim().length > 0)
-                : []),
-            ...(typeof payload.manager === 'string' && payload.manager.trim().length > 0
-                ? [payload.manager.trim()]
-                : []),
             ...(Array.isArray(existing?.manager)
                 ? existing.manager.filter((value) => typeof value === 'string' && value.trim().length > 0)
                 : []),
@@ -303,14 +293,12 @@ let CompanyPayloadService = class CompanyPayloadService {
             bankBeneficiary: normalizedBankBeneficiary,
             invoiceSettings: normalizedInvoiceSettings,
             manager: normalizedManager,
-            companyId: typeof payload.companyId === 'string'
-                ? payload.companyId.trim()
-                : typeof existing?.companyId === 'string'
-                    ? existing.companyId
-                    : undefined,
+            companyId: typeof existing?.companyId === 'string'
+                ? existing.companyId
+                : undefined,
             userIds: normalizedUserIds,
             employees: normalizedEmployees,
-            memberPermissions: this.normalizeCompanyMemberPermissionMap(payload.memberPermissions ?? existing?.memberPermissions),
+            memberPermissions: this.normalizeCompanyMemberPermissionMap(existing?.memberPermissions),
             buildings: normalizedBuildings,
             name: firestore_1.FieldValue.delete(),
             email: firestore_1.FieldValue.delete(),

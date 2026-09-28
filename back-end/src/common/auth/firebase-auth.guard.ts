@@ -12,7 +12,7 @@ import { resolveAccountType, resolveUserRole } from './role.constants';
 import { RequestUser } from './request-user.type';
 
 const SESSION_COOKIE_NAME = '__session';
-const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED === 'true';
+const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED !== 'false';
 const AUTH_CACHE_TTL_MS = Math.max(
   0,
   Number(process.env.FIREBASE_AUTH_CACHE_TTL_MS ?? (CHECK_REVOKED_TOKENS ? 0 : 60000)),
@@ -102,6 +102,7 @@ export class FirebaseAuthGuard implements CanActivate {
       request.user = {
         uid: decoded.uid,
         email: decoded.email,
+        emailVerified: decoded.email_verified === true,
         role,
         accountType,
         companyId,

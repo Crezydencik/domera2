@@ -32,7 +32,11 @@ export class AuthSessionService {
     let companyId = typeof profile?.companyId === 'string' ? profile.companyId : undefined;
     let apartmentId = typeof profile?.apartmentId === 'string' ? profile.apartmentId : undefined;
 
-    if (this.profileProvisioningService.isConfiguredPlatformAdmin({ uid: input.userId, email })) {
+    if (this.profileProvisioningService.isConfiguredPlatformAdmin({
+      uid: input.userId,
+      email,
+      emailVerified: input.profile?.emailVerified === true,
+    })) {
       role = 'PlatformAdmin';
       accountType = 'PlatformAdmin';
       companyId = undefined;
@@ -148,7 +152,11 @@ export class AuthSessionService {
       }
     }
 
-    if (this.profileProvisioningService.isConfiguredPlatformAdmin({ uid: decoded.uid, email: decoded.email })) {
+    if (this.profileProvisioningService.isConfiguredPlatformAdmin({
+      uid: decoded.uid,
+      email: decoded.email,
+      emailVerified: decoded.email_verified === true,
+    })) {
       role = 'PlatformAdmin';
       accountType = 'PlatformAdmin';
       companyId = undefined;

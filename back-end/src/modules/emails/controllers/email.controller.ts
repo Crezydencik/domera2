@@ -124,6 +124,7 @@ export class EmailController {
   }
 
   @Post('registration-code')
+  @Roles('PlatformAdmin')
   @HttpCode(200)
   @ApiOperation({ summary: 'Send registration code email' })
   @ApiResponse({ status: 200, description: 'Email sent successfully' })
@@ -132,6 +133,7 @@ export class EmailController {
   }
 
   @Post('password-reset')
+  @Roles('PlatformAdmin')
   @HttpCode(200)
   @ApiOperation({ summary: 'Send password reset email' })
   @ApiResponse({ status: 200, description: 'Email sent successfully' })
@@ -140,6 +142,7 @@ export class EmailController {
   }
 
   @Post('owner-invitation')
+  @Roles('PlatformAdmin')
   @HttpCode(200)
   @ApiOperation({ summary: 'Send owner invitation email' })
   @ApiResponse({ status: 200, description: 'Email sent successfully' })
@@ -148,6 +151,7 @@ export class EmailController {
   }
 
   @Post('tenant-invitation')
+  @Roles('PlatformAdmin')
   @HttpCode(200)
   @ApiOperation({ summary: 'Send tenant invitation email' })
   @ApiResponse({ status: 200, description: 'Email sent successfully' })
@@ -156,6 +160,7 @@ export class EmailController {
   }
 
   @Post('tenant-invited-by-owner')
+  @Roles('PlatformAdmin')
   @HttpCode(200)
   @ApiOperation({ summary: 'Send email when owner invites tenant' })
   @ApiResponse({ status: 200, description: 'Email sent successfully' })
@@ -164,6 +169,7 @@ export class EmailController {
   }
 
   @Post('invoice-generated')
+  @Roles('PlatformAdmin')
   @HttpCode(200)
   @ApiOperation({ summary: 'Send invoice generated email' })
   @ApiResponse({ status: 200, description: 'Email sent successfully' })
@@ -172,6 +178,7 @@ export class EmailController {
   }
 
   @Post('meter-reading-reminder')
+  @Roles('PlatformAdmin')
   @HttpCode(200)
   @ApiOperation({ summary: 'Send meter reading reminder email' })
   @ApiResponse({ status: 200, description: 'Email sent successfully' })
@@ -180,6 +187,7 @@ export class EmailController {
   }
 
   @Post('notification')
+  @Roles('PlatformAdmin')
   @HttpCode(200)
   @ApiOperation({ summary: 'Send generic notification email' })
   @ApiResponse({ status: 200, description: 'Email sent successfully' })

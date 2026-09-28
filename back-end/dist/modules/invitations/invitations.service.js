@@ -58,14 +58,7 @@ let InvitationsService = class InvitationsService {
     }
     invitationPublicItem(doc) {
         const data = doc.data();
-        const expiresAtRaw = data.expiresAt;
-        const expiresAt = expiresAtRaw instanceof Date
-            ? expiresAtRaw
-            : typeof expiresAtRaw === 'string'
-                ? new Date(expiresAtRaw)
-                : typeof expiresAtRaw?.toDate === 'function'
-                    ? expiresAtRaw.toDate()
-                    : undefined;
+        const expiresAt = this.toDate(data.expiresAt) ?? undefined;
         return {
             id: doc.id,
             companyId: typeof data.companyId === 'string' ? data.companyId : undefined,
@@ -78,6 +71,25 @@ let InvitationsService = class InvitationsService {
                 : new Date(),
             expiresAt,
         };
+    }
+    toDate(value) {
+        if (value instanceof Date)
+            return Number.isNaN(value.getTime()) ? null : value;
+        if (typeof value === 'string' && value.trim()) {
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? null : date;
+        }
+        if (value && typeof value === 'object') {
+            const record = value;
+            if (typeof record.toDate === 'function') {
+                const date = record.toDate();
+                return Number.isNaN(date.getTime()) ? null : date;
+            }
+            const seconds = typeof record.seconds === 'number' ? record.seconds : record._seconds;
+            if (typeof seconds === 'number')
+                return new Date(seconds * 1000);
+        }
+        return null;
     }
     apartmentCompanyId(apartment) {
         if (typeof apartment.companyId === 'string' && apartment.companyId.trim()) {
@@ -264,14 +276,7 @@ let InvitationsService = class InvitationsService {
             throw new common_1.ForbiddenException('Invitation revoked');
         if (status === 'accepted')
             throw new common_1.ForbiddenException('Invitation already accepted');
-        const expiresAtRaw = invitation.expiresAt;
-        const expiresAt = expiresAtRaw instanceof Date
-            ? expiresAtRaw
-            : typeof expiresAtRaw === 'string'
-                ? new Date(expiresAtRaw)
-                : typeof expiresAtRaw?.toDate === 'function'
-                    ? expiresAtRaw.toDate()
-                    : null;
+        const expiresAt = this.toDate(invitation.expiresAt);
         if (expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() < Date.now()) {
             throw new common_1.ForbiddenException('Invitation expired');
         }
@@ -333,6 +338,8 @@ let InvitationsService = class InvitationsService {
             throw new common_1.BadRequestException('GDPR consent is required');
         if (!token && !invitationId)
             throw new common_1.BadRequestException('token or invitationId is required');
+        if (!user?.uid && !token)
+            throw new common_1.ForbiddenException('Token is required');
         const discriminator = token
             ? (await (0, invitation_token_1.hashInvitationToken)(token)).slice(0, 12)
             : invitationId.slice(0, 12);
@@ -372,6 +379,10 @@ let InvitationsService = class InvitationsService {
             throw new common_1.ForbiddenException('Invitation already accepted');
         if (status !== 'pending')
             throw new common_1.ForbiddenException('Invitation is not pending');
+        const expiresAt = this.toDate(invitation.expiresAt);
+        if (expiresAt && expiresAt.getTime() < Date.now()) {
+            throw new common_1.ForbiddenException('Invitation expired');
+        }
         const markAccepted = async (uid, email) => {
             const companyId = typeof invitation.companyId === 'string' ? invitation.companyId : '';
             const firstName = typeof invitation.firstName === 'string' ? invitation.firstName : undefined;
@@ -498,14 +509,27 @@ let InvitationsService = class InvitationsService {
                     updatedAt: firestore_1.FieldValue.serverTimestamp(),
                 }, { merge: true });
             }
-            await db.collection('invitations').doc(docId).set({
-                status: 'accepted',
-                acceptedAt: new Date(),
-                gdpr: {
-                    ...(typeof invitation.gdpr === 'object' && invitation.gdpr ? invitation.gdpr : {}),
-                    dataSubjectConsentAt: new Date(),
-                },
-            }, { merge: true });
+            const invitationRef = db.collection('invitations').doc(docId);
+            await db.runTransaction(async (tx) => {
+                const fresh = await tx.get(invitationRef);
+                const freshData = fresh.data();
+                const freshStatus = typeof freshData?.status === 'string' ? freshData.status : 'pending';
+                if (!fresh.exists || freshStatus !== 'pending') {
+                    throw new common_1.ForbiddenException('Invitation is not pending');
+                }
+                const freshExpiresAt = this.toDate(freshData?.expiresAt);
+                if (freshExpiresAt && freshExpiresAt.getTime() < Date.now()) {
+                    throw new common_1.ForbiddenException('Invitation expired');
+                }
+                tx.set(invitationRef, {
+                    status: 'accepted',
+                    acceptedAt: new Date(),
+                    gdpr: {
+                        ...(typeof freshData?.gdpr === 'object' && freshData.gdpr ? freshData.gdpr : {}),
+                        dataSubjectConsentAt: new Date(),
+                    },
+                }, { merge: true });
+            });
         };
         if (user?.uid) {
             const userEmail = (0, invitation_token_1.normalizeEmail)(user.email ?? '');
@@ -536,7 +560,7 @@ let InvitationsService = class InvitationsService {
         const createdUser = await this.firebaseAdminService.auth.createUser({
             email: invitationEmail,
             password,
-            emailVerified: false,
+            emailVerified: true,
         });
         await markAccepted(createdUser.uid, invitationEmail);
         return { success: true, mode: 'registration' };

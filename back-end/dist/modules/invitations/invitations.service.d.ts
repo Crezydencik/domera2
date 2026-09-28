@@ -13,6 +13,7 @@ export declare class InvitationsService {
     private effectiveStaffCompanyId;
     private assertHouseholdOrStaff;
     private invitationPublicItem;
+    private toDate;
     private apartmentCompanyId;
     private isActiveApartmentMember;
     private assertCanUseApartment;

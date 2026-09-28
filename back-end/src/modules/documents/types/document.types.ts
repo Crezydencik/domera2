@@ -55,8 +55,8 @@ export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 
 export const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
-  'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'image/jpeg',
   'image/png',
 ]);

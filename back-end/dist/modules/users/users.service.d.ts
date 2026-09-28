@@ -16,6 +16,8 @@ export declare class UsersService {
     private ensureCompanyAccess;
     private toOptionalString;
     private normalizedEmail;
+    private pickStringField;
+    private resolveTargetCompanyIds;
     private resolveProfileNames;
     private propertyMembershipCacheKey;
     private trimPropertyMembershipCache;

@@ -44,8 +44,10 @@ function buildAsciiFileName(value: string): string {
     .trim() || 'document';
 }
 
-function buildContentDisposition(fileName: string) {
-  return `inline; filename="${buildAsciiFileName(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+function buildContentDisposition(fileName: string, contentType: string) {
+  const inlineSafe = contentType === 'application/pdf' || contentType.startsWith('image/');
+  const disposition = inlineSafe ? 'inline' : 'attachment';
+  return `${disposition}; filename="${buildAsciiFileName(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
 @Controller('documents')
@@ -79,7 +81,9 @@ export class DocumentsController {
   ) {
     const file = await this.documentsService.download(user, documentId);
     response.setHeader('Content-Type', file.contentType);
-    response.setHeader('Content-Disposition', buildContentDisposition(file.fileName));
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    response.setHeader('Content-Disposition', buildContentDisposition(file.fileName, file.contentType));
     response.send(file.buffer);
   }
 

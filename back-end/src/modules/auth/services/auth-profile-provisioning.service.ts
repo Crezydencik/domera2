@@ -14,12 +14,12 @@ export class AuthProfileProvisioningService {
     private readonly configService: ConfigService,
   ) {}
 
-  isConfiguredPlatformAdmin(input: { uid?: string; email?: string }): boolean {
+  isConfiguredPlatformAdmin(input: { uid?: string; email?: string; emailVerified?: boolean }): boolean {
     const { emails, uids } = this.getConfiguredPlatformAdmins();
     const uid = input.uid?.trim().toLowerCase();
     const email = input.email?.trim().toLowerCase();
 
-    return Boolean((uid && uids.has(uid)) || (email && emails.has(email)));
+    return Boolean((uid && uids.has(uid)) || (email && input.emailVerified === true && emails.has(email)));
   }
 
   async ensureUserProfileDocument(input: {

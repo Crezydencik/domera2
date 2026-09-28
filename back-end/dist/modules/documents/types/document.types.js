@@ -12,8 +12,8 @@ exports.DOCUMENT_SCOPES = new Set([
 exports.MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 exports.ALLOWED_MIME_TYPES = new Set([
     'application/pdf',
-    'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'image/jpeg',
     'image/png',
 ]);

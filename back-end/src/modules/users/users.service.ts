@@ -64,10 +64,18 @@ export class UsersService {
     return isPlatformAdminRole(user.role);
   }
 
-  private ensureUserAccess(currentUser: RequestUser, targetUserId: string) {
+  private async ensureUserAccess(currentUser: RequestUser, targetUserId: string) {
     if (currentUser.uid === targetUserId) return;
     if (this.isPlatformAdmin(currentUser)) return;
     if (!this.isStaff(currentUser)) throw new ForbiddenException('Access denied');
+
+    const myCompanyId = currentUser.companyId || (currentUser.role === 'ManagementCompany' ? currentUser.uid : '');
+    if (!myCompanyId) throw new ForbiddenException('Access denied for company');
+
+    const targetCompanyIds = await this.resolveTargetCompanyIds(targetUserId);
+    if (!targetCompanyIds.has(myCompanyId)) {
+      throw new ForbiddenException('Access denied for company');
+    }
   }
 
   private ensureCompanyAccess(currentUser: RequestUser, companyId: string) {
@@ -84,6 +92,64 @@ export class UsersService {
 
   private normalizedEmail(value: unknown): string {
     return this.toOptionalString(value)?.toLowerCase() ?? '';
+  }
+
+  private pickStringField(payload: Record<string, unknown>, key: string): Record<string, unknown> {
+    if (!Object.prototype.hasOwnProperty.call(payload, key)) return {};
+    const value = payload[key];
+    if (value === null) return { [key]: null };
+    if (typeof value !== 'string') throw new BadRequestException(`${key} must be a string`);
+    return { [key]: value.trim() };
+  }
+
+  private async resolveTargetCompanyIds(targetUserId: string): Promise<Set<string>> {
+    const db = this.firebaseAdminService.firestore;
+    const targetSnap = await db.collection('users').doc(targetUserId).get();
+    const target = targetSnap.exists ? (targetSnap.data() as Record<string, unknown>) : {};
+    const companyIds = new Set<string>();
+    const addCompanyId = (value: unknown) => {
+      const companyId = this.toOptionalString(value);
+      if (companyId) companyIds.add(companyId);
+    };
+
+    addCompanyId(target.companyId);
+    if (Array.isArray(target.companyIds)) {
+      target.companyIds.forEach(addCompanyId);
+    }
+
+    const apartmentIds = new Set<string>();
+    const addApartmentId = (value: unknown) => {
+      const apartmentId = this.toOptionalString(value);
+      if (apartmentId) apartmentIds.add(apartmentId);
+    };
+
+    addApartmentId(target.apartmentId);
+    if (Array.isArray(target.apartmentIds)) {
+      target.apartmentIds.forEach(addApartmentId);
+    }
+
+    const targetEmail = this.normalizedEmail(target.email);
+    const apartmentRefs = Array.from(apartmentIds).map((id) => db.collection('apartments').doc(id));
+    const [directApartmentSnaps, ownerEmailSnap, residentEmailSnap] = await Promise.all([
+      apartmentRefs.length ? db.getAll(...apartmentRefs) : Promise.resolve([]),
+      targetEmail ? db.collection('apartments').where('ownerEmail', '==', targetEmail).limit(50).get() : Promise.resolve(null),
+      targetEmail ? db.collection('apartments').where('residentEmail', '==', targetEmail).limit(50).get() : Promise.resolve(null),
+    ]);
+
+    const inspectApartment = (apartment: Record<string, unknown>) => {
+      addCompanyId(apartment.companyId);
+      if (Array.isArray(apartment.companyIds)) apartment.companyIds.forEach(addCompanyId);
+    };
+
+    for (const snap of directApartmentSnaps) {
+      if (snap.exists) inspectApartment(snap.data() as Record<string, unknown>);
+    }
+    for (const snap of [ownerEmailSnap, residentEmailSnap]) {
+      if (!snap) continue;
+      snap.docs.forEach((doc) => inspectApartment(doc.data() as Record<string, unknown>));
+    }
+
+    return companyIds;
   }
 
   private resolveProfileNames(data: Record<string, unknown>) {
@@ -399,9 +465,44 @@ export class UsersService {
     currentData: Record<string, unknown>,
     payload: Record<string, unknown>,
   ): Record<string, unknown> {
-    const nextPayload: Record<string, unknown> = { ...payload };
-    const hasRole = Object.prototype.hasOwnProperty.call(payload, 'role');
-    const hasAccountType = Object.prototype.hasOwnProperty.call(payload, 'accountType');
+    const isSelf = currentUser.uid === targetUserId;
+    if (!isSelf && !this.isPlatformAdmin(currentUser)) {
+      throw new ForbiddenException('Only platform administrators can edit another user profile');
+    }
+
+    const allowedKeys = new Set([
+      'firstName',
+      'lastName',
+      'phone',
+      'preferredLang',
+      'position',
+      'showContactToResidents',
+    ]);
+    const nextPayload: Record<string, unknown> = {};
+    for (const key of allowedKeys) {
+      if (!Object.prototype.hasOwnProperty.call(payload, key)) continue;
+      if (key === 'showContactToResidents') {
+        if (typeof payload[key] !== 'boolean') throw new BadRequestException(`${key} must be a boolean`);
+        nextPayload[key] = payload[key];
+      } else {
+        Object.assign(nextPayload, this.pickStringField(payload, key));
+      }
+    }
+
+    if (this.isPlatformAdmin(currentUser)) {
+      for (const key of ['role', 'accountType', 'companyId', 'canCreateBuildings']) {
+        if (Object.prototype.hasOwnProperty.call(payload, key)) nextPayload[key] = payload[key];
+      }
+    } else {
+      for (const key of ['role', 'accountType', 'companyId', 'companyIds', 'apartmentId', 'apartmentIds', 'email', 'uid', 'canCreateBuildings']) {
+        if (Object.prototype.hasOwnProperty.call(payload, key)) {
+          throw new ForbiddenException(`${key} cannot be changed here`);
+        }
+      }
+    }
+
+    const hasRole = Object.prototype.hasOwnProperty.call(nextPayload, 'role');
+    const hasAccountType = Object.prototype.hasOwnProperty.call(nextPayload, 'accountType');
 
     const requestedRole = hasRole
       ? normalizeUserRole(payload.role)
@@ -506,7 +607,7 @@ export class UsersService {
   async byId(request: Request, user: RequestUser, userId: string) {
     this.assertAuth(user);
     if (!userId?.trim()) throw new BadRequestException('userId is required');
-    this.ensureUserAccess(user, userId);
+    await this.ensureUserAccess(user, userId);
 
     await this.enforceRateLimit(request, 'users:by-id', `${user.uid}:${userId}`, 80);
 
@@ -564,6 +665,14 @@ export class UsersService {
     if (snap.empty) return null;
 
     const doc = snap.docs[0];
+    if (this.isStaff(user) && !this.isPlatformAdmin(user) && doc.id !== user.uid) {
+      const myCompanyId = user.companyId || (user.role === 'ManagementCompany' ? user.uid : '');
+      const targetCompanyIds = await this.resolveTargetCompanyIds(doc.id);
+      if (!myCompanyId || !targetCompanyIds.has(myCompanyId)) {
+        throw new ForbiddenException('Access denied for company');
+      }
+    }
+
     return { id: doc.id, ...(doc.data() as Record<string, unknown>) };
   }
 
@@ -725,7 +834,7 @@ export class UsersService {
   ) {
     this.assertAuth(user);
     if (!userId?.trim()) throw new BadRequestException('userId is required');
-    this.ensureUserAccess(user, userId);
+    await this.ensureUserAccess(user, userId);
 
     await this.enforceRateLimit(request, 'users:upsert', `${user.uid}:${userId}`, 40);
 
@@ -759,7 +868,7 @@ export class UsersService {
   ) {
     this.assertAuth(user);
     if (!userId?.trim()) throw new BadRequestException('userId is required');
-    this.ensureUserAccess(user, userId);
+    await this.ensureUserAccess(user, userId);
 
     await this.enforceRateLimit(request, 'users:update', `${user.uid}:${userId}`, 50);
 

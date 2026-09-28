@@ -45,6 +45,10 @@ let DocumentHelperService = class DocumentHelperService {
         const asciiName = this.buildAsciiDownloadFileName(fileName);
         return `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
     }
+    buildAttachmentContentDisposition(fileName) {
+        const asciiName = this.buildAsciiDownloadFileName(fileName);
+        return `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+    }
     sanitizePathSegment(value) {
         return value
             .trim()
@@ -100,10 +104,35 @@ let DocumentHelperService = class DocumentHelperService {
         if (size > document_types_1.MAX_DOCUMENT_BYTES) {
             throw new common_1.BadRequestException('Document file is too large');
         }
-        const mimeType = this.firstString(file.mimetype).toLowerCase();
+        const mimeType = this.detectAllowedMimeType(file.buffer);
         if (!document_types_1.ALLOWED_MIME_TYPES.has(mimeType)) {
-            throw new common_1.BadRequestException('Only PDF, DOC, DOCX, JPG, and PNG files are allowed');
+            throw new common_1.BadRequestException('Only PDF, DOCX, XLSX, JPG, and PNG files are allowed');
         }
+    }
+    detectAllowedMimeType(buffer) {
+        if (!buffer || buffer.length < 4) {
+            throw new common_1.BadRequestException('File is required');
+        }
+        if (buffer.subarray(0, 4).equals(Buffer.from([0x25, 0x50, 0x44, 0x46]))) {
+            return 'application/pdf';
+        }
+        if (buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) {
+            return 'image/jpeg';
+        }
+        if (buffer.length >= 8 &&
+            buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+            return 'image/png';
+        }
+        if (buffer.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) {
+            const ascii = buffer.subarray(0, Math.min(buffer.length, 8192)).toString('latin1');
+            if (ascii.includes('word/')) {
+                return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            }
+            if (ascii.includes('xl/')) {
+                return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            }
+        }
+        throw new common_1.BadRequestException('File type not allowed');
     }
     serializeDocument(id, data) {
         return {

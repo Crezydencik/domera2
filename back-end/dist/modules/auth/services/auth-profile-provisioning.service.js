@@ -24,7 +24,7 @@ let AuthProfileProvisioningService = class AuthProfileProvisioningService {
         const { emails, uids } = this.getConfiguredPlatformAdmins();
         const uid = input.uid?.trim().toLowerCase();
         const email = input.email?.trim().toLowerCase();
-        return Boolean((uid && uids.has(uid)) || (email && emails.has(email)));
+        return Boolean((uid && uids.has(uid)) || (email && input.emailVerified === true && emails.has(email)));
     }
     async ensureUserProfileDocument(input) {
         const ref = this.firebaseAdminService.firestore.collection('users').doc(input.uid);
