@@ -15,6 +15,9 @@ export declare class ResidentService {
     private compareApartmentOrder;
     private normalizeStaffContacts;
     private toSerializable;
+    private compactWaterReadings;
+    private compactApartment;
+    private compactBuilding;
     apartments(user: RequestUser): Promise<{}>;
     private loadApartments;
 }

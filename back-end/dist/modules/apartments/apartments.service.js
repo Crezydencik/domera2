@@ -295,6 +295,31 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
     async assertApartmentBuildingEditableForStaff(user, apartment) {
         return this.apartmentAccessService.assertApartmentBuildingEditableForStaff(user, apartment);
     }
+    buildFormerOwnerArchiveUpdate(apartmentId, apartment) {
+        const ownerId = this.firstString(apartment.ownerId);
+        const ownerEmail = this.firstString(apartment.ownerEmail).toLowerCase();
+        if (!ownerId && !ownerEmail)
+            return {};
+        const update = {
+            formerOwners: firestore_1.FieldValue.arrayUnion({
+                ownerId: ownerId || null,
+                ownerEmail: ownerEmail || null,
+                owner: this.firstString(apartment.owner) || null,
+                ownerFirstName: this.firstString(apartment.ownerFirstName) || null,
+                ownerLastName: this.firstString(apartment.ownerLastName) || null,
+                ownerContractNumber: this.firstString(apartment.ownerContractNumber) || null,
+                ownerStartedAt: apartment.ownerAcceptedAt ?? apartment.ownerInvitedAt ?? null,
+                ownerAcceptedAt: apartment.ownerAcceptedAt ?? null,
+                removedFromApartmentId: apartmentId,
+                removedAt: new Date(),
+            }),
+        };
+        if (ownerId)
+            update.formerOwnerIds = firestore_1.FieldValue.arrayUnion(ownerId);
+        if (ownerEmail)
+            update.formerOwnerEmails = firestore_1.FieldValue.arrayUnion(ownerEmail);
+        return update;
+    }
     assertAuthenticated(user) {
         return this.apartmentAccessService.assertAuthenticated(user);
     }
@@ -1550,6 +1575,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             }
         }
         await apartmentRef.set({
+            ...this.buildFormerOwnerArchiveUpdate(apartmentId, apartment),
             residentId: null,
             residentEmail: null,
             residentName: null,
@@ -1606,6 +1632,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             ownerId = undefined;
         }
         const previousOwnerId = typeof apartment.ownerId === 'string' ? apartment.ownerId.trim() : '';
+        const previousOwnerEmail = typeof apartment.ownerEmail === 'string' ? apartment.ownerEmail.trim().toLowerCase() : '';
         const { invitationLink, invitationId } = await this.apartmentInvitationService.createApartmentInvitation({
             apartmentId,
             apartment,
@@ -1637,6 +1664,16 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         }, { merge: true });
         try {
             const profileUpdates = [];
+            const ownerChanged = previousOwnerId
+                ? previousOwnerId !== ownerId
+                : Boolean(previousOwnerEmail && previousOwnerEmail !== email);
+            if (ownerChanged) {
+                await apartmentRef.set(this.buildFormerOwnerArchiveUpdate(apartmentId, {
+                    ...apartment,
+                    ownerId: previousOwnerId,
+                    ownerEmail: previousOwnerEmail,
+                }), { merge: true });
+            }
             if (previousOwnerId && previousOwnerId !== ownerId) {
                 profileUpdates.push(db.collection('users').doc(previousOwnerId).set({
                     apartmentIds: firestore_1.FieldValue.arrayRemove(apartmentId),
@@ -1704,6 +1741,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             throw new common_1.NotFoundException('Owner not found in this apartment');
         }
         await apartmentRef.set({
+            ...this.buildFormerOwnerArchiveUpdate(apartmentId, apartment),
             ownerEmail: null,
             ownerId: null,
             owner: null,

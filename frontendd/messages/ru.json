@@ -523,6 +523,9 @@
     "documentCenterDesc": "Часто используемые файлы и отчёты",
     "updated": "Обновлено {date}",
     "managementCompany": {
+      "companyCardTitle": "УПРАВЛЯЮЩАЯ КОМПАНИЯ",
+      "companyFallback": "Управляющая компания",
+      "companyEmail": "E-mail: {email}",
       "managedObjects": "Объекты в управлении",
       "buildings": "Дома",
       "apartments": "Квартиры",

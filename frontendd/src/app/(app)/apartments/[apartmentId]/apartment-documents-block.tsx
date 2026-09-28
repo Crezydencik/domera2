@@ -42,11 +42,13 @@ export function ApartmentDocumentsBlock({
   apartmentLabel,
   role,
   userId,
+  sectionTitle,
 }: {
   apartmentId: string;
   apartmentLabel: string;
   role: DashboardRole;
   userId?: string;
+  sectionTitle: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const notifications = useNotifications();
@@ -161,9 +163,7 @@ export function ApartmentDocumentsBlock({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-950">{blockT("blockTitle")}</p>
-        </div>
+        <h2 className="text-base font-semibold text-slate-950">{sectionTitle}</h2>
         <button
           type="button"
           onClick={openCreateModal}
@@ -299,10 +299,10 @@ export function ApartmentDocumentsBlock({
               })}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
-              <FiFileText className="mx-auto h-7 w-7 text-slate-400" />
-              <p className="mt-2 text-sm font-semibold text-slate-800">{blockT("emptyTitle")}</p>
-              <p className="mt-1 text-xs text-slate-500">{blockT("emptyDescription")}</p>
+            <div className="flex min-h-[240px] flex-col items-center justify-center px-4 py-8 text-center">
+              <FiFileText className="h-8 w-8 text-slate-400" />
+              <p className="mt-3 text-sm font-semibold text-slate-800">{blockT("emptyTitle")}</p>
+              <p className="mt-1 text-sm text-slate-500">{blockT("emptyDescription")}</p>
             </div>
           )}
       </div>

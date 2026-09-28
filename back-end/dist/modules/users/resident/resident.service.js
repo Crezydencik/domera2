@@ -112,6 +112,52 @@ let ResidentService = ResidentService_1 = class ResidentService {
         }
         return value;
     }
+    compactWaterReadings(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value))
+            return {};
+        return Object.fromEntries(Object.entries(value)
+            .filter(([, meter]) => meter && typeof meter === 'object' && !Array.isArray(meter))
+            .map(([key, meter]) => {
+            const data = meter;
+            return [
+                key,
+                {
+                    id: this.toOptionalString(data.id),
+                    meterId: this.toOptionalString(data.meterId),
+                    serialNumber: this.toOptionalString(data.serialNumber),
+                    currentValue: data.currentValue,
+                    previousValue: data.previousValue,
+                    meterDigits: data.meterDigits,
+                },
+            ];
+        }));
+    }
+    compactApartment(apartment) {
+        return {
+            id: this.toOptionalString(apartment.id),
+            apartmentId: this.toOptionalString(apartment.apartmentId),
+            number: apartment.number,
+            apartmentNumber: apartment.apartmentNumber,
+            readableId: apartment.readableId,
+            buildingId: apartment.buildingId,
+            waterReadings: this.compactWaterReadings(apartment.waterReadings),
+            submissionPeriod: apartment.submissionPeriod,
+            waterSubmissionPeriod: apartment.waterSubmissionPeriod,
+            electricitySubmissionPeriod: apartment.electricitySubmissionPeriod,
+            electricityAllowMultipleMonthlySubmissions: apartment.electricityAllowMultipleMonthlySubmissions,
+            electricityFixedPriceEnabled: apartment.electricityFixedPriceEnabled,
+            electricityPricePerKwh: apartment.electricityPricePerKwh,
+        };
+    }
+    compactBuilding(building) {
+        return {
+            id: building.id,
+            buildingId: building.buildingId,
+            name: building.name,
+            address: building.address,
+            readingConfig: building.readingConfig,
+        };
+    }
     async apartments(user) {
         if (!user?.uid)
             throw new common_1.UnauthorizedException('Authentication required');
@@ -282,8 +328,8 @@ let ResidentService = ResidentService_1 = class ResidentService {
             };
         });
         return {
-            apartments: this.toSerializable(apartments),
-            buildings: this.toSerializable(buildings),
+            apartments: this.toSerializable(apartments.map((apartment) => this.compactApartment(apartment))),
+            buildings: this.toSerializable(buildings.map((building) => this.compactBuilding(building))),
             managementCompanies: this.toSerializable(managementCompanies),
         };
     }

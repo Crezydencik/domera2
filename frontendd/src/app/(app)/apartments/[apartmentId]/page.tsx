@@ -1,6 +1,6 @@
 import { getLocale, getTranslations } from "next-intl/server";
 import Link from "next/link";
-import { FiChevronDown, FiExternalLink, FiFolder } from "react-icons/fi";
+import { FiChevronDown, FiExternalLink, FiFileText, FiFolder } from "react-icons/fi";
 import { DataTable } from "@/components/data-table";
 import { InvoiceDeleteButton } from "@/components/invoice-delete-button";
 import { InvoiceMobileRow } from "@/components/invoice-mobile-row";
@@ -435,12 +435,6 @@ export default async function ApartmentDetailsPage({
     [t("management.dialogs.apartmentInfo.fields.updatedAt"), formatPossibleDate(apartment.updatedAt ?? baseApartment.updatedAt)],
   ];
 
-  const companyInfoRows: [string, string][] = [
-    [t("common.managementCompany"), companyName],
-    [t("common.email"), companyEmail],
-    [t("common.phone"), companyPhone],
-  ];
-
   const fullInfoDialog = (
     <ApartmentFullInfoDialog
       buttonLabel={t("details.more")}
@@ -448,11 +442,9 @@ export default async function ApartmentDetailsPage({
       description={t("management.dialogs.apartmentInfo.description")}
       closeLabel={ui("close")}
       generalTitle={t("management.dialogs.apartmentInfo.generalTableTitle")}
-      companyTitle={t("common.managementCompany")}
       fieldColumnLabel={t("management.dialogs.apartmentInfo.tableColumns.field")}
       valueColumnLabel={t("management.dialogs.apartmentInfo.tableColumns.value")}
       generalRows={generalInfoRows}
-      companyRows={companyInfoRows}
     />
   );
 
@@ -576,34 +568,32 @@ export default async function ApartmentDetailsPage({
       </details>
     );
   };
-  const invoiceRows = groupedApartmentInvoices.length
-    ? groupedApartmentInvoices.map((group) => {
-        const inv = group[0];
-        const invoiceLabel = inv.displayNumber || inv.externalId || inv.id;
+  const invoiceRows = groupedApartmentInvoices.map((group) => {
+    const inv = group[0];
+    const invoiceLabel = inv.displayNumber || inv.externalId || inv.id;
 
-        return [
-          invoiceLabel,
-          group.map((item) => invoiceRecipientLabel(item.recipientType, locale)).join(" / "),
-          inv.amount,
-          inv.dueDate,
-          <span
-            key={`${inv.id}-status`}
-            className={
-              inv.status.toLowerCase() === "paid"
-                ? "text-emerald-700"
-                : inv.status.toLowerCase() === "overdue"
-                  ? "text-red-600"
-                  : "text-amber-600"
-            }
-          >
-            {inv.status}
-          </span>,
-          <div key={`${invoiceLabel}-actions`} className="flex items-center gap-2">
-            {renderInvoiceFolder(group)}
-          </div>,
-        ];
-      })
-    : [["—", "—", "—", "—", "—", <span key="no-inv">{t("details.noInvoices")}</span>]];
+    return [
+      invoiceLabel,
+      group.map((item) => invoiceRecipientLabel(item.recipientType, locale)).join(" / "),
+      inv.amount,
+      inv.dueDate,
+      <span
+        key={`${inv.id}-status`}
+        className={
+          inv.status.toLowerCase() === "paid"
+            ? "text-emerald-700"
+            : inv.status.toLowerCase() === "overdue"
+              ? "text-red-600"
+              : "text-amber-600"
+        }
+      >
+        {inv.status}
+      </span>,
+      <div key={`${invoiceLabel}-actions`} className="flex items-center gap-2">
+        {renderInvoiceFolder(group)}
+      </div>,
+    ];
+  });
   const invoiceMobileRows = apartmentInvoices.length
     ? apartmentInvoices.map((inv) => {
         const pdfUrl = inv.pdfUrl?.trim();
@@ -627,12 +617,14 @@ export default async function ApartmentDetailsPage({
           />
         );
       })
-    : [
-        <div key="no-invoices-mobile" className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
-          {t("details.noInvoices")}
-        </div>,
-      ];
-  const invoicesBlock = (
+    : [];
+  const noInvoicesBlock = (
+    <div className="flex min-h-[360px] flex-col items-center justify-center px-4 py-8 text-center text-slate-500">
+      <FiFileText className="mb-3 h-7 w-7 text-slate-400" aria-hidden="true" />
+      <p className="text-base font-medium">{t("details.noInvoices")}</p>
+    </div>
+  );
+  const invoicesBlock = apartmentInvoices.length ? (
     <>
       <div className="grid gap-2 md:hidden">{invoiceMobileRows}</div>
       <div className="hidden md:block">
@@ -642,7 +634,7 @@ export default async function ApartmentDetailsPage({
         />
       </div>
     </>
-  );
+  ) : noInvoicesBlock;
 
   const apartmentReadings = data.meterReadings.filter(
     (r) => r.apartment === resolvedApartmentId || r.apartment === apartmentLabel,
@@ -708,6 +700,44 @@ export default async function ApartmentDetailsPage({
         rows: [meterColumns.map(() => emptyMeterCell)],
         count: 0,
       }];
+  const meterReadingsSection = (
+    <SectionCard
+      title={t("details.meterReadings")}
+      titleMeta={
+        <Link
+          href={ROUTES.meterReadings}
+          aria-label={t("details.meterReadings")}
+          title={t("details.meterReadings")}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-blue-200 bg-white text-blue-600 transition hover:bg-blue-50"
+        >
+          <FiExternalLink className="h-4 w-4" aria-hidden="true" />
+        </Link>
+      }
+    >
+      <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
+        {readingAccordionItems.map((group) => (
+          <details
+            key={group.key}
+            name={`meter-readings-${resolvedApartmentId}`}
+            className="group overflow-hidden rounded-2xl border border-slate-200 bg-white"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
+              <span className="min-w-0 truncate">{group.label}</span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-500 ring-1 ring-slate-200">
+                  {group.count}
+                </span>
+                <FiChevronDown className="h-4 w-4 text-slate-500 transition group-open:rotate-180" aria-hidden="true" />
+              </span>
+            </summary>
+            <div className="border-t border-slate-200 p-3">
+              <DataTable columns={meterColumns} rows={group.rows} />
+            </div>
+          </details>
+        ))}
+      </div>
+    </SectionCard>
+  );
 
   // ── MANAGEMENT COMPANY view ──────────────────────────────────────────────
   if (data.role === "managementCompany") {
@@ -715,7 +745,7 @@ export default async function ApartmentDetailsPage({
       <div className="space-y-6">
         <ApartmentSelector apartments={apartmentOptions} currentId={resolvedApartmentId || normalizedId} />
 
-        <div className="grid gap-5 xl:grid-cols-[2fr_1fr]">
+        <div className="grid gap-5">
           <SectionCard title={t("details.managementTitle", { apartment: apartmentLabel })}>
             <div className="border-t border-slate-200 pt-5">
               <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">{t("details.basicInfo")}</p>
@@ -748,10 +778,6 @@ export default async function ApartmentDetailsPage({
               {fullInfoDialog}
             </div>
           </SectionCard>
-
-          <SectionCard title={t("common.managementCompany")}>
-            {renderCompanyContacts(false)}
-          </SectionCard>
         </div>
 
         {canManageApartmentResidents ? (
@@ -782,59 +808,25 @@ export default async function ApartmentDetailsPage({
           </SectionCard>
         ) : null}
 
+        <div className="grid gap-5 xl:grid-cols-2">
+          {meterReadingsSection}
+
+          <SectionCard title={t("details.invoices")}>
+            {invoicesBlock}
+          </SectionCard>
+        </div>
+
         {canViewApartmentDocuments ? (
-          <SectionCard title={documentsT("apartmentBlock.sectionTitle")}>
+          <SectionCard>
             <ApartmentDocumentsBlock
               apartmentId={resolvedApartmentId}
               apartmentLabel={apartmentLabel}
               role={data.role}
               userId={data.userId}
+              sectionTitle={documentsT("apartmentBlock.sectionTitle")}
             />
           </SectionCard>
         ) : null}
-
-        <div className="grid gap-5 xl:grid-cols-2">
-          <SectionCard title={t("details.invoices")}>
-            {invoicesBlock}
-          </SectionCard>
-
-          <SectionCard
-            title={t("details.meterReadings")}
-            titleMeta={
-              <Link
-                href={ROUTES.meterReadings}
-                aria-label={t("details.meterReadings")}
-                title={t("details.meterReadings")}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-blue-200 bg-white text-blue-600 transition hover:bg-blue-50"
-              >
-                <FiExternalLink className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            }
-          >
-            <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
-              {readingAccordionItems.map((group, index) => (
-                <details
-                  key={group.key}
-                  name={`meter-readings-${resolvedApartmentId}`}
-                  className="group overflow-hidden rounded-2xl border border-slate-200 bg-white"
-                >
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
-                    <span className="min-w-0 truncate">{group.label}</span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-500 ring-1 ring-slate-200">
-                        {group.count}
-                      </span>
-                      <FiChevronDown className="h-4 w-4 text-slate-500 transition group-open:rotate-180" aria-hidden="true" />
-                    </span>
-                  </summary>
-                  <div className="border-t border-slate-200 p-3">
-                    <DataTable columns={meterColumns} rows={group.rows} />
-                  </div>
-                </details>
-              ))}
-            </div>
-          </SectionCard>
-        </div>
 
         <SectionCard title={t("details.auditLogs")}>
           <AuditLogsBlock apartmentId={resolvedApartmentId} />
@@ -851,7 +843,7 @@ export default async function ApartmentDetailsPage({
           <ApartmentSelector apartments={apartmentOptions} currentId={resolvedApartmentId || normalizedId} />
         )}
 
-        <div className="grid gap-5 xl:grid-cols-[2fr_1fr]">
+        <div className="grid gap-5">
           <SectionCard title={t("details.landlordTitle", { apartment: apartmentLabel })}>
             <div className="border-t border-slate-200 pt-5">
               <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">{t("details.apartmentInfo")}</p>
@@ -875,10 +867,6 @@ export default async function ApartmentDetailsPage({
               </div>
               {fullInfoDialog}
             </div>
-          </SectionCard>
-
-          <SectionCard title={t("common.managementCompany")}>
-            {renderCompanyContacts(true)}
           </SectionCard>
         </div>
 
@@ -904,17 +892,24 @@ export default async function ApartmentDetailsPage({
           </div>
         </SectionCard>
 
-        <SectionCard title={documentsT("apartmentBlock.sectionTitle")}>
+        {meterReadingsSection}
+
+        <SectionCard title={t("details.invoices")}>
+          {invoicesBlock}
+        </SectionCard>
+
+        <SectionCard>
           <ApartmentDocumentsBlock
             apartmentId={resolvedApartmentId}
             apartmentLabel={apartmentLabel}
             role={data.role}
             userId={data.userId}
+            sectionTitle={documentsT("apartmentBlock.sectionTitle")}
           />
         </SectionCard>
 
-        <SectionCard title={t("details.invoices")}>
-          {invoicesBlock}
+        <SectionCard title={t("common.managementCompany")}>
+          {renderCompanyContacts(true)}
         </SectionCard>
       </div>
     );
@@ -923,7 +918,7 @@ export default async function ApartmentDetailsPage({
   // ── RESIDENT view ────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
-      <div className="grid gap-5 xl:grid-cols-[2fr_1fr]">
+      <div className="grid gap-5">
         <SectionCard title={t("details.residentTitle", { apartment: apartmentLabel })}>
           <div className="border-t border-slate-200 pt-5">
             <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">{t("details.yourApartment")}</p>
@@ -947,23 +942,26 @@ export default async function ApartmentDetailsPage({
             </div>
           </div>
         </SectionCard>
-
-        <SectionCard title={t("common.managementCompany")}>
-          {renderCompanyContacts(true, true)}
-        </SectionCard>
       </div>
+
+      {meterReadingsSection}
 
       <SectionCard title={t("details.invoices")}>
         {invoicesBlock}
       </SectionCard>
 
-      <SectionCard title={documentsT("apartmentBlock.sectionTitle")}>
+      <SectionCard>
         <ApartmentDocumentsBlock
           apartmentId={resolvedApartmentId}
           apartmentLabel={apartmentLabel}
           role={data.role}
           userId={data.userId}
+          sectionTitle={documentsT("apartmentBlock.sectionTitle")}
         />
+      </SectionCard>
+
+      <SectionCard title={t("common.managementCompany")}>
+        {renderCompanyContacts(true, true)}
       </SectionCard>
     </div>
   );

@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
-import { inviteApartmentTenant, removeApartmentOwner, removeApartmentTenant, updateApartmentOwner, resendOwnerInvitation, updateApartmentTenant } from "@/shared/api/apartments";
+import { inviteApartmentTenant, removeApartmentOwner, removeApartmentTenant, resendApartmentTenantInvitation, updateApartmentOwner, resendOwnerInvitation, updateApartmentTenant } from "@/shared/api/apartments";
 import { getDocuments, uploadDocument, type DocumentRecord } from "@/shared/api/documents";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { FiEdit2, FiPaperclip, FiRefreshCw, FiTrash2 } from "react-icons/fi";
@@ -321,6 +321,39 @@ export function TenantAccessManager({
         return [
           ...baseRow,
           <div key={`tenant-actions-${tenantId}-${idx}`} className="flex items-center gap-2">
+            {!tenantConfirmed && tenantEmail ? (
+              <button
+                title={t("actions.resend")}
+                aria-label={t("actions.resend")}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-100 text-blue-600 transition hover:bg-blue-50"
+                type="button"
+                onClick={() => setAlert({
+                  type: 'resend',
+                  title: t("alerts.resendConfirmTitle"),
+                  message: t("alerts.resendConfirm"),
+                  variant: 'info',
+                  onConfirm: async () => {
+                    try {
+                      await resendApartmentTenantInvitation(apartmentId, tenantEmail);
+                      setTenantsState((current: any[]) => current.map((item, itemIndex) => {
+                        if (itemIndex !== idx) return item;
+                        return {
+                          ...item,
+                          status: "Pending",
+                          invitedAt: new Date().toISOString(),
+                        };
+                      }));
+                      notifications.success(t("alerts.resendSuccess"));
+                      router.refresh();
+                    } catch {
+                      notifications.error(t("alerts.resendError"));
+                    }
+                  }
+                })}
+              >
+                <FiRefreshCw size={15} />
+              </button>
+            ) : null}
             <button
               title={t("actions.edit")}
               aria-label={t("actions.edit")}

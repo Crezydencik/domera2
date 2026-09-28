@@ -651,7 +651,7 @@ export function ResidentOwnerMeterReadings() {
       setValues({});
       setMeterDigits({});
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : t("loadFailed"));
+      setError(t("loadFailed"));
     } finally {
       if (showLoading) setLoading(false);
     }

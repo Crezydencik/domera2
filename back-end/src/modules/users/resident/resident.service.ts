@@ -126,6 +126,57 @@ export class ResidentService {
     return value;
   }
 
+  private compactWaterReadings(value: unknown) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, meter]) => meter && typeof meter === 'object' && !Array.isArray(meter))
+        .map(([key, meter]) => {
+          const data = meter as Record<string, unknown>;
+          return [
+            key,
+            {
+              id: this.toOptionalString(data.id),
+              meterId: this.toOptionalString(data.meterId),
+              serialNumber: this.toOptionalString(data.serialNumber),
+              currentValue: data.currentValue,
+              previousValue: data.previousValue,
+              meterDigits: data.meterDigits,
+            },
+          ];
+        }),
+    );
+  }
+
+  private compactApartment(apartment: Record<string, unknown>) {
+    return {
+      id: this.toOptionalString(apartment.id),
+      apartmentId: this.toOptionalString(apartment.apartmentId),
+      number: apartment.number,
+      apartmentNumber: apartment.apartmentNumber,
+      readableId: apartment.readableId,
+      buildingId: apartment.buildingId,
+      waterReadings: this.compactWaterReadings(apartment.waterReadings),
+      submissionPeriod: apartment.submissionPeriod,
+      waterSubmissionPeriod: apartment.waterSubmissionPeriod,
+      electricitySubmissionPeriod: apartment.electricitySubmissionPeriod,
+      electricityAllowMultipleMonthlySubmissions: apartment.electricityAllowMultipleMonthlySubmissions,
+      electricityFixedPriceEnabled: apartment.electricityFixedPriceEnabled,
+      electricityPricePerKwh: apartment.electricityPricePerKwh,
+    };
+  }
+
+  private compactBuilding(building: { id: string } & Record<string, unknown>) {
+    return {
+      id: building.id,
+      buildingId: building.buildingId,
+      name: building.name,
+      address: building.address,
+      readingConfig: building.readingConfig,
+    };
+  }
+
   async apartments(user: RequestUser) {
     if (!user?.uid) throw new UnauthorizedException('Authentication required');
     if (!isPropertyMemberRole(user.role)) throw new ForbiddenException('Residents and landlords only');
@@ -322,8 +373,8 @@ export class ResidentService {
       });
 
     return {
-      apartments: this.toSerializable(apartments),
-      buildings: this.toSerializable(buildings),
+      apartments: this.toSerializable(apartments.map((apartment) => this.compactApartment(apartment))),
+      buildings: this.toSerializable(buildings.map((building) => this.compactBuilding(building))),
       managementCompanies: this.toSerializable(managementCompanies),
     };
   }

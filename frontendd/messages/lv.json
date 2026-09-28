@@ -607,6 +607,9 @@
     "documentCenterDesc": "Bieži izmantotie faili un atskaites",
     "updated": "Atjaunots {date}",
     "managementCompany": {
+      "companyCardTitle": "APSAIMNIEKOŠANAS UZŅĒMUMS",
+      "companyFallback": "Apsaimniekošanas uzņēmums",
+      "companyEmail": "E-pasts: {email}",
       "managedObjects": "Pārvaldībā esošie objekti",
       "buildings": "Ēkas",
       "apartments": "Dzīvokļi",

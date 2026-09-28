@@ -12,11 +12,9 @@ interface ApartmentFullInfoDialogProps {
   description: string;
   closeLabel: string;
   generalTitle: string;
-  companyTitle: string;
   fieldColumnLabel: string;
   valueColumnLabel: string;
   generalRows: DetailRow[];
-  companyRows: DetailRow[];
 }
 
 function ModalShell({
@@ -76,11 +74,9 @@ export function ApartmentFullInfoDialog({
   description,
   closeLabel,
   generalTitle,
-  companyTitle,
   fieldColumnLabel,
   valueColumnLabel,
   generalRows,
-  companyRows,
 }: ApartmentFullInfoDialogProps) {
   const [open, setOpen] = useState(false);
 
@@ -105,15 +101,6 @@ export function ApartmentFullInfoDialog({
             <DataTable
               columns={[fieldColumnLabel, valueColumnLabel]}
               rows={generalRows}
-              pageSize={100}
-            />
-          </div>
-
-          <div>
-            <p className="mb-3 text-sm font-semibold text-slate-900">{companyTitle}</p>
-            <DataTable
-              columns={[fieldColumnLabel, valueColumnLabel]}
-              rows={companyRows}
               pageSize={100}
             />
           </div>

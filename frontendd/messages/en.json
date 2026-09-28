@@ -528,6 +528,9 @@
     "documentCenterDesc": "Frequently used files and reports",
     "updated": "Updated {date}",
     "managementCompany": {
+      "companyCardTitle": "MANAGEMENT COMPANY",
+      "companyFallback": "Management company",
+      "companyEmail": "E-mail: {email}",
       "managedObjects": "Managed objects",
       "buildings": "Buildings",
       "apartments": "Apartments",

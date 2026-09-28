@@ -8,6 +8,7 @@ export declare class DocumentAccessService {
     constructor(firebaseAdminService: FirebaseAdminService, helperService: DocumentHelperService);
     assertAuthenticated(user: RequestUser | undefined): asserts user is RequestUser;
     requireStaffCompanyId(user: RequestUser): string;
+    private formerOwnerAccessForApartment;
     isApartmentMember(apartment: UnknownRecord, user: RequestUser): boolean;
     private memberAccessForApartment;
     private documentVisibleForApartmentAccess;

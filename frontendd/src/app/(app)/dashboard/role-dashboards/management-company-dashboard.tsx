@@ -3,10 +3,30 @@ import { getLocale, getTranslations } from "next-intl/server";
 import { FiCheckCircle, FiExternalLink, FiPlus } from "react-icons/fi";
 import { BuildingReadingsSelector } from "./building-readings-selector";
 import type { RoleDataBundle } from "@/shared/server/auth-context";
+import { apiFetch } from "@/shared/server/api-client";
 import { isApprovedBuilding } from "@/shared/lib/buildings";
 import { ROUTES } from "@/shared/lib/routes";
 
 type SubmissionPeriod = NonNullable<RoleDataBundle["buildings"][number]["readingConfig"]>["submissionPeriod"];
+type UnknownRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): UnknownRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
+}
+
+function text(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+
+  return "";
+}
 
 function getReadingApartmentKey(reading: RoleDataBundle["meterReadings"][number]): string | undefined {
   return reading.apartmentId || reading.apartment;
@@ -132,6 +152,35 @@ export async function ManagementCompanyDashboard({ data, selectedBuildingId }: {
   const t = await getTranslations("dashboard.managementCompany");
   const locale = await getLocale();
   const approvedBuildings = data.buildings.filter(isApprovedBuilding);
+  const profile = asRecord(data.profile);
+  const companyId = text(data.companyId, profile.companyId, data.userId);
+  const company = companyId
+    ? await apiFetch<UnknownRecord>(`/company/${encodeURIComponent(companyId)}`).catch(() => null)
+    : null;
+  const companyRecord = asRecord(company);
+  const fallbackBuilding = asRecord(approvedBuildings[0]);
+  const managedBy = asRecord(fallbackBuilding.managedBy);
+  const companyName = text(
+    companyRecord.companyName,
+    companyRecord.name,
+    companyRecord.title,
+    profile.companyName,
+    managedBy.companyName,
+    managedBy.name,
+    fallbackBuilding.companyName,
+    companyId,
+    t("companyFallback"),
+  );
+  const companyEmail = text(
+    companyRecord.companyEmail,
+    companyRecord.email,
+    companyRecord.contactEmail,
+    profile.companyEmail,
+    profile.email,
+    managedBy.companyEmail,
+    managedBy.email,
+    fallbackBuilding.companyEmail,
+  );
 
   if (approvedBuildings.length === 0) {
     return (
@@ -199,6 +248,14 @@ export async function ManagementCompanyDashboard({ data, selectedBuildingId }: {
 
   return (
     <div>
+      <section className="mb-4 max-w-4xl rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-sm font-semibold uppercase text-slate-900">{t("companyCardTitle")}</p>
+        <h2 className="mt-5 text-2xl font-semibold text-slate-950">{companyName}</h2>
+        {companyEmail ? (
+          <p className="mt-1 text-sm text-slate-700">{t("companyEmail", { email: companyEmail })}</p>
+        ) : null}
+      </section>
+
       <section className="grid max-w-4xl gap-4 md:grid-cols-2">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-start justify-between gap-4">

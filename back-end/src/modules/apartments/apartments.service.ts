@@ -366,6 +366,32 @@ export class ApartmentsService {
     return this.apartmentAccessService.assertApartmentBuildingEditableForStaff(user, apartment);
   }
 
+  private buildFormerOwnerArchiveUpdate(apartmentId: string, apartment: Record<string, unknown>) {
+    const ownerId = this.firstString(apartment.ownerId);
+    const ownerEmail = this.firstString(apartment.ownerEmail).toLowerCase();
+    if (!ownerId && !ownerEmail) return {};
+
+    const update: Record<string, unknown> = {
+      formerOwners: FieldValue.arrayUnion({
+        ownerId: ownerId || null,
+        ownerEmail: ownerEmail || null,
+        owner: this.firstString(apartment.owner) || null,
+        ownerFirstName: this.firstString(apartment.ownerFirstName) || null,
+        ownerLastName: this.firstString(apartment.ownerLastName) || null,
+        ownerContractNumber: this.firstString(apartment.ownerContractNumber) || null,
+        ownerStartedAt: apartment.ownerAcceptedAt ?? apartment.ownerInvitedAt ?? null,
+        ownerAcceptedAt: apartment.ownerAcceptedAt ?? null,
+        removedFromApartmentId: apartmentId,
+        removedAt: new Date(),
+      }),
+    };
+
+    if (ownerId) update.formerOwnerIds = FieldValue.arrayUnion(ownerId);
+    if (ownerEmail) update.formerOwnerEmails = FieldValue.arrayUnion(ownerEmail);
+
+    return update;
+  }
+
   private assertAuthenticated(user: RequestUser | undefined): asserts user is RequestUser {
     return this.apartmentAccessService.assertAuthenticated(user);
   }
@@ -1854,6 +1880,7 @@ export class ApartmentsService {
 
     await apartmentRef.set(
       {
+        ...this.buildFormerOwnerArchiveUpdate(apartmentId, apartment),
         residentId: null,
         residentEmail: null,
         residentName: null,
@@ -1930,6 +1957,7 @@ export class ApartmentsService {
     }
 
     const previousOwnerId = typeof apartment.ownerId === 'string' ? apartment.ownerId.trim() : '';
+    const previousOwnerEmail = typeof apartment.ownerEmail === 'string' ? apartment.ownerEmail.trim().toLowerCase() : '';
     const { invitationLink, invitationId } = await this.apartmentInvitationService.createApartmentInvitation({
       apartmentId,
       apartment,
@@ -1967,6 +1995,18 @@ export class ApartmentsService {
 
     try {
       const profileUpdates: Promise<unknown>[] = [];
+      const ownerChanged = previousOwnerId
+        ? previousOwnerId !== ownerId
+        : Boolean(previousOwnerEmail && previousOwnerEmail !== email);
+
+      if (ownerChanged) {
+        await apartmentRef.set(this.buildFormerOwnerArchiveUpdate(apartmentId, {
+          ...apartment,
+          ownerId: previousOwnerId,
+          ownerEmail: previousOwnerEmail,
+        }), { merge: true });
+      }
+
       if (previousOwnerId && previousOwnerId !== ownerId) {
         profileUpdates.push(
           db.collection('users').doc(previousOwnerId).set(
@@ -2050,6 +2090,7 @@ export class ApartmentsService {
 
     await apartmentRef.set(
       {
+        ...this.buildFormerOwnerArchiveUpdate(apartmentId, apartment),
         ownerEmail: null,
         ownerId: null,
         owner: null,

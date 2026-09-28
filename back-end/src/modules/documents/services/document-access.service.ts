@@ -22,6 +22,38 @@ export class DocumentAccessService {
     return companyId;
   }
 
+  private formerOwnerAccessForApartment(apartment: UnknownRecord, user: RequestUser) {
+    const userEmail = this.helperService.firstString(user.email).toLowerCase();
+    const formerOwnerIds = Array.isArray(apartment.formerOwnerIds) ? apartment.formerOwnerIds : [];
+    const formerOwnerEmails = Array.isArray(apartment.formerOwnerEmails) ? apartment.formerOwnerEmails : [];
+    const hasFormerOwnerMatch =
+      formerOwnerIds.some((value) => this.helperService.firstString(value) === user.uid) ||
+      Boolean(
+        userEmail &&
+        formerOwnerEmails.some((value) => this.helperService.firstString(value).toLowerCase() === userEmail),
+      );
+
+    if (!hasFormerOwnerMatch) return null;
+
+    const formerOwners = Array.isArray(apartment.formerOwners) ? apartment.formerOwners : [];
+    for (const owner of formerOwners) {
+      if (!owner || typeof owner !== 'object') continue;
+      const record = owner as UnknownRecord;
+      const ownerId = this.helperService.firstString(record.ownerId);
+      const ownerEmail = this.helperService.firstString(record.ownerEmail).toLowerCase();
+      const matches = ownerId === user.uid || Boolean(userEmail && ownerEmail === userEmail);
+      if (!matches) continue;
+
+      const fromDate = this.helperService.parseOptionalDate(record.ownerStartedAt ?? record.ownerAcceptedAt);
+      const until = this.helperService.parseOptionalDate(record.removedAt);
+      if (!fromDate || !until) continue;
+
+      return { type: 'formerOwner' as const, fromDate, until };
+    }
+
+    return null;
+  }
+
   isApartmentMember(apartment: UnknownRecord, user: RequestUser): boolean {
     const ownerEmail = this.helperService.firstString(apartment.ownerEmail).toLowerCase();
     const userEmail = this.helperService.firstString(user.email).toLowerCase();
@@ -54,13 +86,15 @@ export class DocumentAccessService {
   private memberAccessForApartment(
     apartment: UnknownRecord,
     user: RequestUser,
-  ): { type: 'resident' | 'owner' | 'tenant'; fromDate?: Date | null; until?: Date | null; canViewDocuments?: boolean } | null {
+  ): { type: 'resident' | 'owner' | 'tenant' | 'formerOwner'; fromDate?: Date | null; until?: Date | null; canViewDocuments?: boolean } | null {
     const ownerEmail = this.helperService.firstString(apartment.ownerEmail).toLowerCase();
     const userEmail = this.helperService.firstString(user.email).toLowerCase();
 
     if (this.helperService.firstString(apartment.residentId) === user.uid) return { type: 'resident' };
     if (this.helperService.firstString(apartment.ownerId) === user.uid) return { type: 'owner' };
     if (userEmail && ownerEmail && ownerEmail === userEmail && apartment.ownerActivated === true) return { type: 'owner' };
+    const formerOwnerAccess = this.formerOwnerAccessForApartment(apartment, user);
+    if (formerOwnerAccess) return formerOwnerAccess;
 
     const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
     for (const tenant of tenants) {
@@ -86,6 +120,20 @@ export class DocumentAccessService {
 
     const access = this.memberAccessForApartment(apartment.data, user);
     if (!access) return false;
+    if (access.type === 'formerOwner') {
+      const scope = this.helperService.firstString(document.scope);
+      const documentDate = this.helperService.parseOptionalDate(document.createdAt ?? document.uploadedAt ?? document.updatedAt);
+      const fromDate = access.fromDate;
+      const until = access.until;
+      return Boolean(
+        documentDate &&
+        fromDate &&
+        until &&
+        documentDate >= fromDate &&
+        documentDate <= until &&
+        (scope === 'apartmentResidents' || scope === 'buildingResidents'),
+      );
+    }
     if (access.type !== 'tenant') return true;
     return access.canViewDocuments === true;
   }
@@ -123,7 +171,9 @@ export class DocumentAccessService {
     await Promise.all([
       db.collection('apartments').where('residentId', '==', user.uid).get().then(addSnap),
       db.collection('apartments').where('ownerId', '==', user.uid).get().then(addSnap),
+      db.collection('apartments').where('formerOwnerIds', 'array-contains', user.uid).get().then(addSnap),
       userEmail ? db.collection('apartments').where('ownerEmail', '==', userEmail).get().then(addSnap) : Promise.resolve(),
+      userEmail ? db.collection('apartments').where('formerOwnerEmails', 'array-contains', userEmail).get().then(addSnap) : Promise.resolve(),
     ]);
 
     return Array.from(apartmentMap.entries()).map(([id, data]) => ({ id, data }));
