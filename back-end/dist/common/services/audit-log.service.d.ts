@@ -21,6 +21,5 @@ export declare class AuditLogService {
     private toActionLabel;
     private buildEventDescription;
     private buildLogEntry;
-    private generateReadableId;
     write(event: AuditEventInput): Promise<void>;
 }

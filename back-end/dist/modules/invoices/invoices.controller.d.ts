@@ -33,7 +33,7 @@ export declare class InvoicesController {
             pdfUrl: string;
             companyId: string;
             buildingId: string | null;
-            recipientType: "tenant" | "owner" | "general";
+            recipientType: "owner" | "tenant" | "general";
             createdAt: Date;
             createdByUid: string;
         };

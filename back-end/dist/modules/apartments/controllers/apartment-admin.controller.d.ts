@@ -6,7 +6,7 @@ export declare class ApartmentAdminController {
     constructor(apartmentsService: ApartmentsService);
     auditLogs(request: Request, user: RequestUser, apartmentId: string, limit?: string): Promise<{
         items: {
-            createdAt: any;
+            createdAt: string;
             id: string;
         }[];
     }>;

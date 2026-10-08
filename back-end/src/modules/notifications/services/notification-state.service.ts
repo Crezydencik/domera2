@@ -25,7 +25,7 @@ export class NotificationStateService {
     const targetUserId = this.repositoryService.notificationOwnerId(snap, user);
     if (!targetUserId) throw new ForbiddenException('Invalid notification owner');
 
-    this.accessService.ensureUserAccess(user, targetUserId);
+    await this.accessService.ensureUserAccess(user, targetUserId);
 
     await snap.ref.set({ read: true, readAt: new Date(), updatedAt: new Date() }, { merge: true });
     return { success: true };
@@ -36,7 +36,7 @@ export class NotificationStateService {
     const normalizedUserId = userId?.trim();
     if (!normalizedUserId) throw new BadRequestException('userId is required');
 
-    this.accessService.ensureUserAccess(user, normalizedUserId);
+    await this.accessService.ensureUserAccess(user, normalizedUserId);
     await this.accessService.enforceRateLimit(request, 'notifications:read-all', `${user.uid}:${normalizedUserId}`, 20);
 
     const [nestedSnap, legacySnap] = await Promise.all([
@@ -72,7 +72,7 @@ export class NotificationStateService {
     const targetUserId = this.repositoryService.notificationOwnerId(snap, user);
     if (!targetUserId) throw new ForbiddenException('Invalid notification owner');
 
-    this.accessService.ensureUserAccess(user, targetUserId);
+    await this.accessService.ensureUserAccess(user, targetUserId);
 
     await snap.ref.delete();
     return { success: true };

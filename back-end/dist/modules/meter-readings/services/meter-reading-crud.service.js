@@ -168,6 +168,9 @@ let MeterReadingCrudService = class MeterReadingCrudService {
         if (!readingId || !apartmentId) {
             throw new common_1.BadRequestException('readingId and apartmentId are required');
         }
+        if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
+            throw new common_1.ForbiddenException('Residents cannot edit meter readings');
+        }
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'meter-reading:update', readingId), 30, 60_000);
         if (!rl.allowed)
             throw new common_1.BadRequestException('Too many requests');
@@ -223,12 +226,25 @@ let MeterReadingCrudService = class MeterReadingCrudService {
                 },
             },
         }, { merge: true });
+        void this.auditLogService.write({
+            request,
+            action: 'meter_reading.update',
+            status: 'success',
+            actorUid: user.uid,
+            actorRole: user.role,
+            companyId: user.companyId,
+            apartmentId,
+            metadata: { readingId, meterKey: foundKey },
+        });
         return { success: true };
     }
     async remove(request, user, readingId, apartmentId) {
         this.accessService.assertAuthenticated(user);
         if (!readingId || !apartmentId) {
             throw new common_1.BadRequestException('readingId and apartmentId are required');
+        }
+        if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
+            throw new common_1.ForbiddenException('Residents cannot delete meter readings');
         }
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'meter-reading:delete', readingId), 20, 60_000);
         if (!rl.allowed)
@@ -273,15 +289,6 @@ let MeterReadingCrudService = class MeterReadingCrudService {
                 : typeof submittedAtRaw?.toDate === 'function'
                     ? submittedAtRaw.toDate()
                     : null;
-        const now = new Date();
-        if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
-            if (!submittedAt ||
-                Number.isNaN(submittedAt.getTime()) ||
-                submittedAt.getFullYear() !== now.getFullYear() ||
-                submittedAt.getMonth() !== now.getMonth()) {
-                throw new common_1.ForbiddenException('Cannot delete readings from previous months');
-            }
-        }
         const history = foundGroup.history.filter((h) => String(h.id ?? '') !== readingId);
         const allowMultipleMonthlyElectricityReadings = foundKey === 'electricitymeter'
             ? this.helperService.hasInvoiceLinkedElectricityReadings(history) || await this.buildingService.electricityAllowsMultipleMonthlySubmissions(apartment)
@@ -301,6 +308,16 @@ let MeterReadingCrudService = class MeterReadingCrudService {
                 },
             },
         }, { merge: true });
+        void this.auditLogService.write({
+            request,
+            action: 'meter_reading.delete',
+            status: 'success',
+            actorUid: user.uid,
+            actorRole: user.role,
+            companyId: user.companyId,
+            apartmentId,
+            metadata: { readingId, meterKey: foundKey, submittedAt: submittedAt?.toISOString() },
+        });
         return { success: true };
     }
 };

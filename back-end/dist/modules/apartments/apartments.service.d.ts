@@ -190,7 +190,7 @@ export declare class ApartmentsService {
     }>;
     getAuditLogs(request: Request, user: RequestUser, apartmentId: string, limit?: number): Promise<{
         items: {
-            createdAt: any;
+            createdAt: string;
             id: string;
         }[];
     }>;

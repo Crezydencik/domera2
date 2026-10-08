@@ -2684,23 +2684,27 @@ export class ApartmentsService {
       .where('apartmentId', '==', apartmentId)
       .get();
 
-    // Sort in-memory to avoid composite index requirement
-    const sortedDocs = logs.docs.sort((a, b) => {
-      return this.timestampMillis(b.data().createdAt) - this.timestampMillis(a.data().createdAt);
-    }).slice(0, limit);
+    // New audit entries are one document per event. Expand legacy grouped
+    // records as well, so historical entries stay visible after the switch.
+    const auditEntries = logs.docs.flatMap((doc) => {
+      const data = doc.data() as Record<string, unknown>;
+      const history = Array.isArray(data.history) ? data.history : [];
+      if (history.length > 0) {
+        return history
+          .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+          .map((entry, index) => ({ ...entry, id: `${doc.id}:${index}` }));
+      }
+      return [{ ...data, id: doc.id }];
+    });
+
+    const sortedEntries = auditEntries
+      .sort((a, b) => this.timestampMillis(b.createdAt ?? b.timestamp) - this.timestampMillis(a.createdAt ?? a.timestamp))
+      .slice(0, limit);
 
     return {
-      items: sortedDocs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt:
-          doc.data().createdAt instanceof Date
-            ? doc.data().createdAt.toISOString()
-            : typeof doc.data().createdAt === 'string'
-              ? doc.data().createdAt
-              : typeof doc.data().createdAt?.toDate === 'function'
-                ? doc.data().createdAt.toDate().toISOString()
-                : new Date().toISOString(),
+      items: sortedEntries.map((entry) => ({
+        ...entry,
+        createdAt: new Date(this.timestampMillis(entry.createdAt ?? entry.timestamp) || Date.now()).toISOString(),
       })),
     };
   }

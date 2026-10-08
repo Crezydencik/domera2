@@ -415,28 +415,23 @@ export class InvitationsService {
     const gdprConsent = payload.gdprConsent === true;
 
     if (!gdprConsent) throw new BadRequestException('GDPR consent is required');
-    if (!token && !invitationId) throw new BadRequestException('token or invitationId is required');
-    if (!user?.uid && !token) throw new ForbiddenException('Token is required');
+    if (!token) throw new ForbiddenException('Token is required');
 
-    const discriminator = token
-      ? (await hashInvitationToken(token)).slice(0, 12)
-      : invitationId.slice(0, 12);
+    const tokenHash = await hashInvitationToken(token);
+    const discriminator = tokenHash.slice(0, 12);
     await this.enforceRateLimit(request, 'invitations:accept', discriminator, 10);
 
     const db = this.firebaseAdminService.firestore;
 
-    let docId = invitationId;
+    let docId = '';
     let invitation: Record<string, unknown> | null = null;
-    if (docId) {
-      const invitationSnap = await db.collection('invitations').doc(docId).get();
-      invitation = invitationSnap.exists ? (invitationSnap.data() as Record<string, unknown>) : null;
-    } else if (token) {
-      const tokenHash = await hashInvitationToken(token);
-      const snapshot = await db.collection('invitations').where('tokenHash', '==', tokenHash).limit(1).get();
-      if (!snapshot.empty) {
-        docId = snapshot.docs[0].id;
-        invitation = snapshot.docs[0].data() as Record<string, unknown>;
-      }
+    const snapshot = await db.collection('invitations').where('tokenHash', '==', tokenHash).limit(1).get();
+    if (!snapshot.empty) {
+      docId = snapshot.docs[0].id;
+      invitation = snapshot.docs[0].data() as Record<string, unknown>;
+    }
+    if (invitationId && invitationId !== docId) {
+      throw new ForbiddenException('Invitation token does not match invitation');
     }
 
     const invitationEmail = typeof invitation?.email === 'string' ? normalizeEmail(invitation.email) : '';
@@ -668,7 +663,7 @@ export class InvitationsService {
     const createdUser = await this.firebaseAdminService.auth.createUser({
       email: invitationEmail,
       password,
-      emailVerified: true,
+      emailVerified: false,
     });
 
     await markAccepted(createdUser.uid, invitationEmail);

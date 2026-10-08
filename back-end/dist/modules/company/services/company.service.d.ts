@@ -128,7 +128,7 @@ export declare class CompanyService {
             position: string | undefined;
             showContactToResidents: boolean;
             role: "ManagementCompany" | "Accountant";
-            accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
+            accountType: "Resident" | "PlatformAdmin" | "ManagementCompany" | "Landlord";
             companyId: string;
             permissions: import("./company-payload.service").CompanyMemberPermissions;
             memberType: string;
@@ -152,7 +152,7 @@ export declare class CompanyService {
             position: string | undefined;
             showContactToResidents: boolean;
             role: string;
-            accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
+            accountType: "Resident" | "PlatformAdmin" | "ManagementCompany" | "Landlord";
             companyId: string;
             permissions: import("./company-payload.service").CompanyMemberPermissions;
             memberType: string;

@@ -52,6 +52,8 @@ const actionLabels = {
     'invoice.upload_batch': 'Invoice batch uploaded',
     'invoice.upload_pending_approval': 'Invoice upload awaiting approval',
     'meter_reading.submit': 'Meter reading submitted',
+    'meter_reading.update': 'Meter reading updated',
+    'meter_reading.delete': 'Meter reading deleted',
 };
 let AuditLogService = AuditLogService_1 = class AuditLogService {
     constructor(firebaseAdminService) {
@@ -119,76 +121,11 @@ let AuditLogService = AuditLogService_1 = class AuditLogService {
             [timestampField]: new Date(),
         };
     }
-    generateReadableId(apartmentId, apartmentNumber, companyId) {
-        const companyCode = companyId
-            ? companyId.substring(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, 'X')
-            : 'UNK';
-        let aptNum;
-        if (apartmentNumber) {
-            aptNum = String(apartmentNumber).substring(0, 3).toUpperCase();
-        }
-        else {
-            const first = apartmentId.charAt(0).toUpperCase();
-            const last = apartmentId.charAt(apartmentId.length - 1).toUpperCase();
-            const middle = apartmentId.charAt(Math.floor(apartmentId.length / 2)).toUpperCase();
-            aptNum = `${first}${middle}${last}`;
-        }
-        const idHash = apartmentId.slice(-6).toUpperCase();
-        return `AUDITAPT${companyCode}${aptNum}${idHash}`;
-    }
     async write(event) {
         try {
-            if (event.apartmentId) {
-                let apartmentNumber = event.metadata?.apartmentNumber;
-                if (!apartmentNumber) {
-                    try {
-                        const apartmentSnap = await this.firebaseAdminService.firestore
-                            .collection('apartments')
-                            .doc(event.apartmentId)
-                            .get();
-                        if (apartmentSnap.exists) {
-                            const apartmentData = apartmentSnap.data();
-                            const number = apartmentData.number;
-                            if (typeof number === 'string' || typeof number === 'number') {
-                                apartmentNumber = number;
-                            }
-                        }
-                    }
-                    catch (error) {
-                        this.logger.debug(`Failed to fetch apartment number for ${event.apartmentId}`);
-                    }
-                }
-                const readableDocId = this.generateReadableId(event.apartmentId, apartmentNumber, event.companyId);
-                const logEntry = this.buildLogEntry(event, 'timestamp');
-                const docRef = this.firebaseAdminService.firestore
-                    .collection('audit_logs')
-                    .doc(readableDocId);
-                const docSnap = await docRef.get();
-                if (docSnap.exists) {
-                    const existingData = docSnap.data();
-                    const history = Array.isArray(existingData.history) ? existingData.history : [];
-                    await docRef.set({
-                        ...logEntry,
-                        apartmentId: event.apartmentId,
-                        history: [...history, logEntry],
-                        updatedAt: new Date(),
-                    }, { merge: true });
-                }
-                else {
-                    await docRef.set({
-                        ...logEntry,
-                        apartmentId: event.apartmentId,
-                        history: [logEntry],
-                        createdAt: new Date(),
-                        updatedAt: new Date(),
-                    });
-                }
-            }
-            else {
-                await this.firebaseAdminService.firestore
-                    .collection('audit_logs')
-                    .add(this.buildLogEntry(event, 'createdAt'));
-            }
+            await this.firebaseAdminService.firestore
+                .collection('audit_logs')
+                .add(this.buildLogEntry(event, 'createdAt'));
         }
         catch (error) {
             this.logger.warn(`audit.log.write.failed action=${event.action} status=${event.status} reason=${error instanceof Error ? error.message : 'unknown_error'}`);

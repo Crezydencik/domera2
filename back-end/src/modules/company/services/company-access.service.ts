@@ -39,14 +39,9 @@ export class CompanyAccessService {
     if (user.role === 'PlatformAdmin') return true;
 
     const manager = this.listMemberIds(company.manager);
-    const userIds = this.listMemberIds(company.userIds);
-    const employees = this.listMemberIds(company.employees);
-
-    return (
-      user.uid === companyId ||
-      manager.includes(user.uid) ||
-      (userIds.includes(user.uid) && !employees.includes(user.uid))
-    );
+    // Membership in userIds is an index, not an authority grant. Legacy
+    // partial records must never be inferred to be company managers.
+    return user.uid === companyId || manager.includes(user.uid);
   }
 
   getCompanyPermissions(user: RequestUser, companyId: string, company: Record<string, unknown>) {

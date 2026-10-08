@@ -194,6 +194,11 @@ export class MeterReadingCrudService {
     if (!readingId || !apartmentId) {
       throw new BadRequestException('readingId and apartmentId are required');
     }
+    // A property member may submit a reading, but must never be able to
+    // rewrite an already submitted value through the API.
+    if (isPropertyMemberRole(user.role)) {
+      throw new ForbiddenException('Residents cannot edit meter readings');
+    }
 
     const rl = await this.rateLimitService.consume(
       this.rateLimitService.buildKey(request, 'meter-reading:update', readingId),
@@ -258,6 +263,17 @@ export class MeterReadingCrudService {
       { merge: true },
     );
 
+    void this.auditLogService.write({
+      request,
+      action: 'meter_reading.update',
+      status: 'success',
+      actorUid: user.uid,
+      actorRole: user.role,
+      companyId: user.companyId,
+      apartmentId,
+      metadata: { readingId, meterKey: foundKey },
+    });
+
     return { success: true };
   }
 
@@ -265,6 +281,11 @@ export class MeterReadingCrudService {
     this.accessService.assertAuthenticated(user);
     if (!readingId || !apartmentId) {
       throw new BadRequestException('readingId and apartmentId are required');
+    }
+    // Deletion follows the same rule as editing: only authorised staff can
+    // change the submitted meter-reading history.
+    if (isPropertyMemberRole(user.role)) {
+      throw new ForbiddenException('Residents cannot delete meter readings');
     }
 
     const rl = await this.rateLimitService.consume(
@@ -314,18 +335,6 @@ export class MeterReadingCrudService {
           : typeof submittedAtRaw?.toDate === 'function'
             ? submittedAtRaw.toDate()
             : null;
-    const now = new Date();
-    if (isPropertyMemberRole(user.role)) {
-      if (
-        !submittedAt ||
-        Number.isNaN(submittedAt.getTime()) ||
-        submittedAt.getFullYear() !== now.getFullYear() ||
-        submittedAt.getMonth() !== now.getMonth()
-      ) {
-        throw new ForbiddenException('Cannot delete readings from previous months');
-      }
-    }
-
     const history = (foundGroup.history as Record<string, unknown>[]).filter((h) => String(h.id ?? '') !== readingId);
     const allowMultipleMonthlyElectricityReadings = foundKey === 'electricitymeter'
       ? this.helperService.hasInvoiceLinkedElectricityReadings(history) || await this.buildingService.electricityAllowsMultipleMonthlySubmissions(apartment)
@@ -349,6 +358,17 @@ export class MeterReadingCrudService {
       },
       { merge: true },
     );
+
+    void this.auditLogService.write({
+      request,
+      action: 'meter_reading.delete',
+      status: 'success',
+      actorUid: user.uid,
+      actorRole: user.role,
+      companyId: user.companyId,
+      apartmentId,
+      metadata: { readingId, meterKey: foundKey, submittedAt: submittedAt?.toISOString() },
+    });
 
     return { success: true };
   }

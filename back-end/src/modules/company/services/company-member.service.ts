@@ -291,37 +291,13 @@ export class CompanyMemberService {
       };
     }
 
-    let targetUid = '';
-    try {
-      const authUser = await this.firebaseAdminService.auth.getUserByEmail(email);
-      targetUid = authUser.uid;
-    } catch {
-      const invitation = await this.sendMemberRegistrationInvitation({
-        request,
-        companyId,
-        company,
-        inviterUid: user.uid,
-        email,
-        firstName,
-        lastName,
-        phone,
-        position,
-        showContactToResidents,
-        role: resolvedRole,
-        permissions,
-      });
-
-      return {
-        success: true,
-        mode: 'invitation',
-        invitation,
-      };
-    }
-
-    const member = await this.attachMemberToCompany({
+    // Adding a company member grants a role to a global account. Always make
+    // the mailbox holder accept a capability-bearing invitation first.
+    const invitation = await this.sendMemberRegistrationInvitation({
+      request,
       companyId,
       company,
-      targetUid,
+      inviterUid: user.uid,
       email,
       firstName,
       lastName,
@@ -331,17 +307,8 @@ export class CompanyMemberService {
       role: resolvedRole,
       permissions,
     });
-    await this.sendExistingMemberAccessNotification({
-      request,
-      company,
-      email,
-    });
 
-    return {
-      success: true,
-      mode: 'attached',
-      member,
-    };
+    return { success: true, mode: 'invitation', invitation };
   }
 
   async remove(request: Request, user: RequestUser, companyId: string, memberId: string) {
@@ -418,11 +385,13 @@ export class CompanyMemberService {
       throw new NotFoundException('Company member not found');
     }
 
+    let removedMemberEmail = '';
     const memberRef = db.collection('users').doc(resolvedMemberId);
     const memberSnap = await memberRef.get();
     if (memberSnap.exists) {
       const member = memberSnap.data() as Record<string, unknown>;
       const memberCompanyId = typeof member.companyId === 'string' ? member.companyId : '';
+      removedMemberEmail = this.payloadService.firstString(member.email).toLowerCase();
       if (memberCompanyId && memberCompanyId !== normalizedCompanyId) {
         throw new ForbiddenException('User belongs to another company');
       }
@@ -450,6 +419,25 @@ export class CompanyMemberService {
       },
       { merge: true },
     );
+
+    // A removed staff member must not be able to replay a pending invitation.
+    // Revoke every still-pending company invitation issued for their mailbox.
+    if (removedMemberEmail) {
+      const pendingInvitations = await db
+        .collection('company_invitations')
+        .where('companyId', '==', normalizedCompanyId)
+        .get();
+      const revocationBatch = db.batch();
+      pendingInvitations.docs.forEach((doc) => {
+        const invitation = doc.data() as Record<string, unknown>;
+        const invitationEmail = this.payloadService.firstString(invitation.email).toLowerCase();
+        const status = this.payloadService.firstString(invitation.status).toLowerCase();
+        if (invitationEmail === removedMemberEmail && status === 'pending') {
+          revocationBatch.set(doc.ref, { status: 'revoked', revokedAt: new Date(), revokedByUid: user.uid }, { merge: true });
+        }
+      });
+      await revocationBatch.commit();
+    }
 
     return { success: true, memberId: resolvedMemberId };
   }
@@ -520,7 +508,7 @@ export class CompanyMemberService {
     );
     const currentEmail = this.payloadService.firstString(memberData.email).toLowerCase();
     if (email !== currentEmail) {
-      await this.firebaseAdminService.auth.updateUser(normalizedMemberId, { email });
+      throw new ForbiddenException('A member email can only be changed by the account holder');
     }
 
     await memberRef.set(
