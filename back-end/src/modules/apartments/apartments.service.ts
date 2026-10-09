@@ -2686,7 +2686,7 @@ export class ApartmentsService {
 
     // New audit entries are one document per event. Expand legacy grouped
     // records as well, so historical entries stay visible after the switch.
-    const auditEntries = logs.docs.flatMap((doc) => {
+    const auditEntries = logs.docs.flatMap<Record<string, unknown> & { id: string }>((doc) => {
       const data = doc.data() as Record<string, unknown>;
       const history = Array.isArray(data.history) ? data.history : [];
       if (history.length > 0) {
