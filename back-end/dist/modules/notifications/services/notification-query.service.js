@@ -25,7 +25,7 @@ let NotificationQueryService = class NotificationQueryService {
         const normalizedUserId = userId?.trim();
         if (!normalizedUserId)
             throw new common_1.BadRequestException('userId is required');
-        this.accessService.ensureUserAccess(user, normalizedUserId);
+        await this.accessService.ensureUserAccess(user, normalizedUserId);
         await this.accessService.enforceRateLimit(request, 'notifications:list', `${user.uid}:${normalizedUserId}`, 60);
         const settings = await this.settingsService.getUserNotificationSettings(normalizedUserId);
         if (!settings.general) {
@@ -67,7 +67,7 @@ let NotificationQueryService = class NotificationQueryService {
         const targetUserId = typeof payload.userId === 'string' ? payload.userId.trim() : '';
         if (!targetUserId)
             throw new common_1.BadRequestException('userId is required');
-        this.accessService.ensureUserAccess(user, targetUserId);
+        await this.accessService.ensureUserAccess(user, targetUserId);
         await this.accessService.enforceRateLimit(request, 'notifications:create', `${user.uid}:${targetUserId}`, 40);
         const ref = this.repositoryService.userNotificationsCollection(targetUserId).doc();
         const data = {

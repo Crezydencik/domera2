@@ -222,36 +222,11 @@ let CompanyMemberService = class CompanyMemberService {
                 member: nextContact,
             };
         }
-        let targetUid = '';
-        try {
-            const authUser = await this.firebaseAdminService.auth.getUserByEmail(email);
-            targetUid = authUser.uid;
-        }
-        catch {
-            const invitation = await this.sendMemberRegistrationInvitation({
-                request,
-                companyId,
-                company,
-                inviterUid: user.uid,
-                email,
-                firstName,
-                lastName,
-                phone,
-                position,
-                showContactToResidents,
-                role: resolvedRole,
-                permissions,
-            });
-            return {
-                success: true,
-                mode: 'invitation',
-                invitation,
-            };
-        }
-        const member = await this.attachMemberToCompany({
+        const invitation = await this.sendMemberRegistrationInvitation({
+            request,
             companyId,
             company,
-            targetUid,
+            inviterUid: user.uid,
             email,
             firstName,
             lastName,
@@ -261,16 +236,7 @@ let CompanyMemberService = class CompanyMemberService {
             role: resolvedRole,
             permissions,
         });
-        await this.sendExistingMemberAccessNotification({
-            request,
-            company,
-            email,
-        });
-        return {
-            success: true,
-            mode: 'attached',
-            member,
-        };
+        return { success: true, mode: 'invitation', invitation };
     }
     async remove(request, user, companyId, memberId) {
         this.accessService.assertAuthenticated(user);
@@ -334,11 +300,13 @@ let CompanyMemberService = class CompanyMemberService {
         if (!userIds.includes(resolvedMemberId) && !manager.includes(resolvedMemberId)) {
             throw new common_1.NotFoundException('Company member not found');
         }
+        let removedMemberEmail = '';
         const memberRef = db.collection('users').doc(resolvedMemberId);
         const memberSnap = await memberRef.get();
         if (memberSnap.exists) {
             const member = memberSnap.data();
             const memberCompanyId = typeof member.companyId === 'string' ? member.companyId : '';
+            removedMemberEmail = this.payloadService.firstString(member.email).toLowerCase();
             if (memberCompanyId && memberCompanyId !== normalizedCompanyId) {
                 throw new common_1.ForbiddenException('User belongs to another company');
             }
@@ -356,6 +324,22 @@ let CompanyMemberService = class CompanyMemberService {
             memberPermissions: Object.fromEntries(Object.entries(memberPermissions).filter(([key]) => key !== resolvedMemberId)),
             updatedAt: new Date(),
         }, { merge: true });
+        if (removedMemberEmail) {
+            const pendingInvitations = await db
+                .collection('company_invitations')
+                .where('companyId', '==', normalizedCompanyId)
+                .get();
+            const revocationBatch = db.batch();
+            pendingInvitations.docs.forEach((doc) => {
+                const invitation = doc.data();
+                const invitationEmail = this.payloadService.firstString(invitation.email).toLowerCase();
+                const status = this.payloadService.firstString(invitation.status).toLowerCase();
+                if (invitationEmail === removedMemberEmail && status === 'pending') {
+                    revocationBatch.set(doc.ref, { status: 'revoked', revokedAt: new Date(), revokedByUid: user.uid }, { merge: true });
+                }
+            });
+            await revocationBatch.commit();
+        }
         return { success: true, memberId: resolvedMemberId };
     }
     async update(request, user, companyId, memberId, payload) {
@@ -413,7 +397,7 @@ let CompanyMemberService = class CompanyMemberService {
         const nextPermissions = this.sanitizePermissionsForRole(memberPermissions[normalizedMemberId] ?? this.payloadService.defaultCompanyMemberPermissions(), role);
         const currentEmail = this.payloadService.firstString(memberData.email).toLowerCase();
         if (email !== currentEmail) {
-            await this.firebaseAdminService.auth.updateUser(normalizedMemberId, { email });
+            throw new common_1.ForbiddenException('A member email can only be changed by the account holder');
         }
         await memberRef.set({
             email,

@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthCatalogController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const firebase_auth_guard_1 = require("../../../common/auth/firebase-auth.guard");
 const role_constants_1 = require("../../../common/auth/role.constants");
 let AuthCatalogController = class AuthCatalogController {
     getAccountCatalog() {
@@ -24,7 +25,10 @@ let AuthCatalogController = class AuthCatalogController {
 exports.AuthCatalogController = AuthCatalogController;
 __decorate([
     (0, common_1.Get)('account-catalog'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard),
     (0, swagger_1.ApiOperation)({ summary: 'Get available account types and roles for registration and access control' }),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiCookieAuth)('__session'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)

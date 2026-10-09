@@ -36,11 +36,7 @@ let CompanyAccessService = class CompanyAccessService {
         if (user.role === 'PlatformAdmin')
             return true;
         const manager = this.listMemberIds(company.manager);
-        const userIds = this.listMemberIds(company.userIds);
-        const employees = this.listMemberIds(company.employees);
-        return (user.uid === companyId ||
-            manager.includes(user.uid) ||
-            (userIds.includes(user.uid) && !employees.includes(user.uid)));
+        return user.uid === companyId || manager.includes(user.uid);
     }
     getCompanyPermissions(user, companyId, company) {
         if (user.role === 'PlatformAdmin' || this.isMainCompanyManager(user, companyId, company)) {

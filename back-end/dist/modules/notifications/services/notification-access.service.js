@@ -11,19 +11,32 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NotificationAccessService = void 0;
 const common_1 = require("@nestjs/common");
+const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const rate_limit_service_1 = require("../../../common/services/rate-limit.service");
 let NotificationAccessService = class NotificationAccessService {
-    constructor(rateLimitService) {
+    constructor(rateLimitService, firebaseAdminService) {
         this.rateLimitService = rateLimitService;
+        this.firebaseAdminService = firebaseAdminService;
     }
     assertAuth(user) {
         if (!user?.uid)
             throw new common_1.UnauthorizedException('Authentication required');
     }
-    ensureUserAccess(currentUser, targetUserId) {
+    async ensureUserAccess(currentUser, targetUserId) {
         if (currentUser.uid === targetUserId)
             return;
         if (!['ManagementCompany', 'Accountant'].includes(currentUser.role ?? '')) {
+            throw new common_1.ForbiddenException('Access denied');
+        }
+        const callerCompanyId = currentUser.companyId || (currentUser.role === 'ManagementCompany' ? currentUser.uid : '');
+        if (!callerCompanyId)
+            throw new common_1.ForbiddenException('Company scope is required');
+        const targetSnap = await this.firebaseAdminService.firestore.collection('users').doc(targetUserId).get();
+        if (!targetSnap.exists)
+            throw new common_1.ForbiddenException('Access denied');
+        const target = targetSnap.data();
+        const targetCompanyId = typeof target.companyId === 'string' ? target.companyId.trim() : '';
+        if (targetCompanyId !== callerCompanyId || target.role === 'PlatformAdmin') {
             throw new common_1.ForbiddenException('Access denied');
         }
     }
@@ -36,5 +49,6 @@ let NotificationAccessService = class NotificationAccessService {
 exports.NotificationAccessService = NotificationAccessService;
 exports.NotificationAccessService = NotificationAccessService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [rate_limit_service_1.RateLimitService])
+    __metadata("design:paramtypes", [rate_limit_service_1.RateLimitService,
+        firebase_admin_service_1.FirebaseAdminService])
 ], NotificationAccessService);

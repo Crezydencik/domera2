@@ -336,28 +336,21 @@ let InvitationsService = class InvitationsService {
         const gdprConsent = payload.gdprConsent === true;
         if (!gdprConsent)
             throw new common_1.BadRequestException('GDPR consent is required');
-        if (!token && !invitationId)
-            throw new common_1.BadRequestException('token or invitationId is required');
-        if (!user?.uid && !token)
+        if (!token)
             throw new common_1.ForbiddenException('Token is required');
-        const discriminator = token
-            ? (await (0, invitation_token_1.hashInvitationToken)(token)).slice(0, 12)
-            : invitationId.slice(0, 12);
+        const tokenHash = await (0, invitation_token_1.hashInvitationToken)(token);
+        const discriminator = tokenHash.slice(0, 12);
         await this.enforceRateLimit(request, 'invitations:accept', discriminator, 10);
         const db = this.firebaseAdminService.firestore;
-        let docId = invitationId;
+        let docId = '';
         let invitation = null;
-        if (docId) {
-            const invitationSnap = await db.collection('invitations').doc(docId).get();
-            invitation = invitationSnap.exists ? invitationSnap.data() : null;
+        const snapshot = await db.collection('invitations').where('tokenHash', '==', tokenHash).limit(1).get();
+        if (!snapshot.empty) {
+            docId = snapshot.docs[0].id;
+            invitation = snapshot.docs[0].data();
         }
-        else if (token) {
-            const tokenHash = await (0, invitation_token_1.hashInvitationToken)(token);
-            const snapshot = await db.collection('invitations').where('tokenHash', '==', tokenHash).limit(1).get();
-            if (!snapshot.empty) {
-                docId = snapshot.docs[0].id;
-                invitation = snapshot.docs[0].data();
-            }
+        if (invitationId && invitationId !== docId) {
+            throw new common_1.ForbiddenException('Invitation token does not match invitation');
         }
         const invitationEmail = typeof invitation?.email === 'string' ? (0, invitation_token_1.normalizeEmail)(invitation.email) : '';
         const invitationType = typeof invitation?.inviteType === 'string' ? invitation.inviteType : 'resident';
@@ -560,7 +553,7 @@ let InvitationsService = class InvitationsService {
         const createdUser = await this.firebaseAdminService.auth.createUser({
             email: invitationEmail,
             password,
-            emailVerified: true,
+            emailVerified: false,
         });
         await markAccepted(createdUser.uid, invitationEmail);
         return { success: true, mode: 'registration' };

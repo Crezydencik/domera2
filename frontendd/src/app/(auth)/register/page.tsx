@@ -3,7 +3,7 @@
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { IconType } from "react-icons";
 import {
   FiArrowLeft,
@@ -31,16 +31,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { requestRegistrationCode } from "@/shared/lib/auth-client";
-import { apiFetch } from "@/shared/lib/domera-api";
 import { savePendingRegistration } from "@/shared/lib/pending-registration";
 import { isStrongPassword } from "@/shared/lib/password-validation";
 import { ROUTES } from "@/shared/lib/routes";
 
 type AccountType = "ManagementCompany" | "Resident" | "Landlord";
-
-type AccountCatalogResponse = {
-  accountTypes?: string[];
-};
 
 const DEFAULT_ACCOUNT_TYPES: AccountType[] = ["ManagementCompany", "Resident", "Landlord"];
 
@@ -114,30 +109,8 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
-  const [availableAccountTypes, setAvailableAccountTypes] = useState<AccountType[]>(DEFAULT_ACCOUNT_TYPES);
+  const availableAccountTypes = DEFAULT_ACCOUNT_TYPES;
   const [hasAcceptedLegal, setHasAcceptedLegal] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    apiFetch<AccountCatalogResponse>("/auth/account-catalog")
-      .then((data) => {
-        const next = (data.accountTypes ?? []).filter(
-          (value): value is AccountType => DEFAULT_ACCOUNT_TYPES.includes(value as AccountType),
-        );
-
-        if (isMounted && next.length > 0) {
-          setAvailableAccountTypes(next);
-        }
-      })
-      .catch(() => {
-        // Fallback to local defaults when backend is unavailable.
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   function update<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm((current) => ({ ...current, [key]: value }));

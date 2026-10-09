@@ -4,7 +4,6 @@ import { FirebaseAdminService } from '../../../common/infrastructure/firebase/fi
 import { EmailService } from '../../emails/services/email.service';
 import { CompanyAccessService } from './company-access.service';
 import { CompanyMemberPermissions, CompanyPayloadService } from './company-payload.service';
-type CompanyMemberRole = 'ManagementCompany' | 'Accountant';
 export declare class CompanyMemberService {
     private readonly firebaseAdminService;
     private readonly emailService;
@@ -43,26 +42,6 @@ export declare class CompanyMemberService {
             invitationLink: string;
         };
         member?: undefined;
-    } | {
-        success: boolean;
-        mode: string;
-        member: {
-            id: string;
-            uid: string;
-            email: string;
-            firstName: string;
-            lastName: string;
-            fullName: string;
-            phone: string | undefined;
-            position: string | undefined;
-            showContactToResidents: boolean;
-            role: CompanyMemberRole;
-            accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
-            companyId: string;
-            permissions: CompanyMemberPermissions;
-            memberType: string;
-        };
-        invitation?: undefined;
     }>;
     remove(request: Request, user: RequestUser, companyId: string, memberId: string): Promise<{
         success: boolean;
@@ -93,4 +72,3 @@ export declare class CompanyMemberService {
         permissions: CompanyMemberPermissions;
     }>;
 }
-export {};

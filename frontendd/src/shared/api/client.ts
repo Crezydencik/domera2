@@ -59,8 +59,7 @@ function isPublicAuthPath(path: string) {
     path.startsWith("/auth/register-email-code") ||
     path.startsWith("/auth/send-password-reset") ||
     path.startsWith("/auth/preview-password-reset") ||
-    path.startsWith("/auth/confirm-password-reset") ||
-    path.startsWith("/auth/account-catalog")
+    path.startsWith("/auth/confirm-password-reset")
   );
 }
 

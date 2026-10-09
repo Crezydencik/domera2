@@ -11,23 +11,12 @@ const common_1 = require("@nestjs/common");
 const auth_constants_1 = require("../constants/auth.constants");
 let AuthCookieService = class AuthCookieService {
     applySessionCookies(response, session) {
-        const cookieOptions = {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-            maxAge: session.maxAgeSeconds * 1000,
-            path: '/',
-        };
+        const cookieOptions = this.getCookieOptions(session.maxAgeSeconds * 1000);
         response.cookie(auth_constants_1.SESSION_COOKIE_NAME, session.cookie, cookieOptions);
         this.clearLegacyAuthCookies(response);
     }
     clearAuthCookies(response) {
-        const cookieOptions = {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-            path: '/',
-        };
+        const cookieOptions = this.getCookieOptions();
         response.clearCookie(auth_constants_1.SESSION_COOKIE_NAME, cookieOptions);
         response.clearCookie(auth_constants_1.SESSION_COOKIE_NAME, { path: '/' });
         this.clearLegacyAuthCookies(response);
@@ -36,6 +25,18 @@ let AuthCookieService = class AuthCookieService {
         for (const name of auth_constants_1.LEGACY_AUTH_COOKIE_NAMES) {
             response.clearCookie(name, { path: '/' });
         }
+    }
+    getCookieOptions(maxAge) {
+        const isProduction = process.env.NODE_ENV === 'production';
+        const domain = process.env.SESSION_COOKIE_DOMAIN?.trim();
+        return {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: isProduction ? (domain ? 'lax' : 'none') : 'lax',
+            ...(domain ? { domain } : {}),
+            ...(maxAge === undefined ? {} : { maxAge }),
+            path: '/',
+        };
     }
 };
 exports.AuthCookieService = AuthCookieService;

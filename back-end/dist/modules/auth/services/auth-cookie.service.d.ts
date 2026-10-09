@@ -4,4 +4,5 @@ export declare class AuthCookieService {
     applySessionCookies(response: Response, session: AuthSessionCookie): void;
     clearAuthCookies(response: Response): void;
     private clearLegacyAuthCookies;
+    private getCookieOptions;
 }

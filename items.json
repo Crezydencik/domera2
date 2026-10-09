@@ -1,22 +1,24 @@
 [
   {
-    "fileName": "Artboard 1.pdf",
-    "apartmentNumber": "89",
-    "period": "2026-05",
-    "invoiceDate": "2026-05-28",
-    "amount": 125.50,
+    "fileName": "apt-1-owner.pdf",
+    "apartmentNumber": "1",
+    "period": "2026-09",
+    "invoiceDate": "2026-09-27",
+    "amount": 98.20,
     "currency": "EUR",
-    "externalId": "test-001",
+    "externalId": "invoice-2026-09-apt-1",
+    "recipientType": "owner",
     "status": "issued"
   },
   {
-    "fileName": "Artboard.pdf",
-    "apartmentNumber": "8",
-    "period": "2026-05",
-    "invoiceDate": "2026-05-28",
+    "fileName": "apt-1-2-tenant.pdf",
+    "apartmentNumber": "1",
+    "period": "2026-09",
+    "invoiceDate": "2026-09-27",
     "amount": 125.50,
     "currency": "EUR",
-    "externalId": "test-002",
+    "externalId": "invoice-2026-09-apt-1-2",
+    "recipientType": "tenant",
     "status": "issued"
   }
 ]

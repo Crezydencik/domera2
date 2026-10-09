@@ -119,6 +119,7 @@ let CompanyInvitationsService = class CompanyInvitationsService {
             status: 'pending',
             invitedByUid: user.uid,
             createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         });
         void this.auditLogService.write({
             request,
@@ -158,41 +159,68 @@ let CompanyInvitationsService = class CompanyInvitationsService {
         if (!invitationEmail || invitationEmail !== authEmail) {
             throw new common_1.ForbiddenException('You cannot accept this invitation');
         }
+        const invitationStatus = typeof invitation.status === 'string' ? invitation.status.trim().toLowerCase() : '';
+        if (invitationStatus !== 'pending') {
+            throw new common_1.ForbiddenException('Invitation is not pending');
+        }
+        const expiresAt = invitation.expiresAt instanceof Date
+            ? invitation.expiresAt
+            : typeof invitation.expiresAt?.toDate === 'function'
+                ? invitation.expiresAt.toDate()
+                : null;
+        if (expiresAt && expiresAt.getTime() < Date.now()) {
+            throw new common_1.ForbiddenException('Invitation expired');
+        }
         if (!companyId || !invitedRole) {
             throw new common_1.BadRequestException('Invitation is missing company data');
         }
         const companyRef = db.collection('companies').doc(companyId);
-        const companySnap = await companyRef.get();
-        if (!companySnap.exists) {
-            throw new common_1.NotFoundException('Company not found');
-        }
-        const company = companySnap.data();
-        const currentUserIds = Array.isArray(company.userIds)
-            ? company.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
-            : [];
-        const userIds = currentUserIds.includes(user.uid) ? currentUserIds : [...currentUserIds, user.uid];
         const userRef = db.collection('users').doc(user.uid);
-        const userSnap = await userRef.get();
-        const currentUserData = userSnap.exists ? userSnap.data() : {};
-        await userRef.set({
-            ...currentUserData,
-            uid: user.uid,
-            email: authEmail,
-            companyId,
-            role: invitedRole,
-            accountType: (0, role_constants_1.resolveAccountType)({ role: invitedRole }),
-            updatedAt: new Date(),
-            createdAt: currentUserData.createdAt ?? new Date(),
-        }, { merge: true });
-        await companyRef.set({
-            userIds,
-            updatedAt: new Date(),
-        }, { merge: true });
-        await invitationRef.set({
-            status: 'accepted',
-            acceptedAt: new Date(),
-            acceptedByUid: user.uid,
-        }, { merge: true });
+        await db.runTransaction(async (tx) => {
+            const [freshInvitationSnap, companySnap, userSnap] = await Promise.all([
+                tx.get(invitationRef),
+                tx.get(companyRef),
+                tx.get(userRef),
+            ]);
+            if (!freshInvitationSnap.exists)
+                throw new common_1.NotFoundException('Invitation not found');
+            if (!companySnap.exists)
+                throw new common_1.NotFoundException('Company not found');
+            const freshInvitation = freshInvitationSnap.data();
+            const freshStatus = typeof freshInvitation.status === 'string' ? freshInvitation.status.trim().toLowerCase() : '';
+            const freshEmail = typeof freshInvitation.email === 'string' ? (0, invitation_token_1.normalizeEmail)(freshInvitation.email) : '';
+            const freshExpiresAt = freshInvitation.expiresAt instanceof Date
+                ? freshInvitation.expiresAt
+                : typeof freshInvitation.expiresAt?.toDate === 'function'
+                    ? freshInvitation.expiresAt.toDate()
+                    : null;
+            if (freshStatus !== 'pending' || freshEmail !== authEmail || (freshExpiresAt && freshExpiresAt.getTime() < Date.now())) {
+                throw new common_1.ForbiddenException('Invitation is no longer valid');
+            }
+            const company = companySnap.data();
+            const userIds = Array.isArray(company.userIds)
+                ? company.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+                : [];
+            const employees = Array.isArray(company.employees)
+                ? company.employees.filter((value) => typeof value === 'string' && value.trim().length > 0)
+                : [];
+            const currentUserData = userSnap.exists ? userSnap.data() : {};
+            const existingCompanyId = typeof currentUserData.companyId === 'string' ? currentUserData.companyId : '';
+            if (existingCompanyId && existingCompanyId !== companyId) {
+                throw new common_1.ForbiddenException('User belongs to another company');
+            }
+            tx.set(userRef, {
+                ...currentUserData, uid: user.uid, email: authEmail, companyId, role: invitedRole,
+                accountType: (0, role_constants_1.resolveAccountType)({ role: invitedRole }), updatedAt: new Date(),
+                createdAt: currentUserData.createdAt ?? new Date(),
+            }, { merge: true });
+            tx.set(companyRef, {
+                userIds: userIds.includes(user.uid) ? userIds : [...userIds, user.uid],
+                employees: employees.includes(user.uid) ? employees : [...employees, user.uid],
+                updatedAt: new Date(),
+            }, { merge: true });
+            tx.set(invitationRef, { status: 'accepted', acceptedAt: new Date(), acceptedByUid: user.uid }, { merge: true });
+        });
         void this.auditLogService.write({
             request,
             action: 'company_invitation.accept',

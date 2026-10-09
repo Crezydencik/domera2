@@ -114,26 +114,6 @@ export declare class CompanyService {
             invitationLink: string;
         };
         member?: undefined;
-    } | {
-        success: boolean;
-        mode: string;
-        member: {
-            id: string;
-            uid: string;
-            email: string;
-            firstName: string;
-            lastName: string;
-            fullName: string;
-            phone: string | undefined;
-            position: string | undefined;
-            showContactToResidents: boolean;
-            role: "ManagementCompany" | "Accountant";
-            accountType: "Resident" | "PlatformAdmin" | "ManagementCompany" | "Landlord";
-            companyId: string;
-            permissions: import("./company-payload.service").CompanyMemberPermissions;
-            memberType: string;
-        };
-        invitation?: undefined;
     }>;
     removeMember(request: Request, user: RequestUser, companyId: string, memberId: string): Promise<{
         success: boolean;
@@ -152,7 +132,7 @@ export declare class CompanyService {
             position: string | undefined;
             showContactToResidents: boolean;
             role: string;
-            accountType: "Resident" | "PlatformAdmin" | "ManagementCompany" | "Landlord";
+            accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
             companyId: string;
             permissions: import("./company-payload.service").CompanyMemberPermissions;
             memberType: string;
