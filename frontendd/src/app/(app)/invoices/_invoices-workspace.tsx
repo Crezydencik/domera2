@@ -1,8 +1,9 @@
 "use client";
 
 import { useLocale } from "next-intl";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { FiAlertCircle, FiCheckCircle, FiEye, FiFileText, FiFolder, FiRefreshCw, FiTrash2, FiUploadCloud, FiX } from "react-icons/fi";
+import { FiAlertCircle, FiCheckCircle, FiChevronDown, FiEye, FiFileText, FiRefreshCw, FiTrash2, FiUploadCloud, FiX } from "react-icons/fi";
 import { DataTable } from "@/components/data-table";
 import { InvoiceDeleteButton } from "@/components/invoice-delete-button";
 import { InvoiceMobileRow } from "@/components/invoice-mobile-row";
@@ -16,7 +17,9 @@ import {
   cancelPendingInvoiceApprovalsAction,
   uploadInvoiceAction,
 } from "@/shared/actions/billing";
+import { getPendingInvoiceApprovals } from "@/shared/api/billing";
 import { useNotifications } from "@/shared/hooks/use-notifications";
+import { API_PENDING_APPROVALS_CHANGED_EVENT } from "@/shared/hooks/use-app-notifications";
 import { isApprovedBuilding } from "@/shared/lib/buildings";
 import type { Building, Invoice } from "@/shared/lib/data";
 import type { DashboardRole } from "@/shared/role-ui";
@@ -32,6 +35,11 @@ type InvoiceFolder = {
   items: TypedInvoice[];
   primary: TypedInvoice;
   kind: InvoiceKind;
+};
+type PendingApprovalGroup = {
+  id: string;
+  items: RawRecord[];
+  primary: RawRecord;
 };
 
 type InvoiceQueueItem = {
@@ -108,6 +116,8 @@ const COPY = {
     approvalModalTitle: "API invoices for approval",
     approvalModalDescription: "Approve invoices before they are attached to apartments.",
     approvalEmpty: "No API invoices waiting for approval.",
+    notifyRecipientsOnApproval: "Notify recipients about the attached invoice",
+    notifyAllRecipients: "Notify all recipients",
     approvalApprove: "Approve",
     approvalApproving: "Approving...",
     approvalApproved: "Invoice approved.",
@@ -321,6 +331,8 @@ const COPY = {
     approvalModalTitle: "API счета на одобрение",
     approvalModalDescription: "Одобрите счета перед прикреплением к квартирам.",
     approvalEmpty: "Нет API счетов на одобрение.",
+    notifyRecipientsOnApproval: "Уведомить получателей о прикреплённом счёте",
+    notifyAllRecipients: "Уведомить всех получателей",
     approvalApprove: "Одобрить",
     approvalApproving: "Одобряем...",
     approvalApproved: "Счет одобрен.",
@@ -388,6 +400,8 @@ const COPY = {
     approvalModalTitle: "API rekini apstiprinasanai",
     approvalModalDescription: "Apstipriniet rekinus pirms piesaistes dzivokliem.",
     approvalEmpty: "Nav API rekinu apstiprinasanai.",
+    notifyRecipientsOnApproval: "Paziņot saņēmējiem par pievienoto rēķinu",
+    notifyAllRecipients: "Paziņot visiem saņēmējiem",
     approvalApprove: "Apstiprinat",
     approvalApproving: "Apstiprina...",
     approvalApproved: "Rekins apstiprinats.",
@@ -497,6 +511,10 @@ function firstString(...values: unknown[]): string {
   return "";
 }
 
+function currencySymbol(currency: string) {
+  return ({ EUR: "€", USD: "$", GBP: "£", PLN: "zł", SEK: "kr" } as Record<string, string>)[currency.trim().toUpperCase()] ?? currency;
+}
+
 function asRecord(value: unknown): RawRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as RawRecord) : {};
 }
@@ -590,8 +608,15 @@ function formatHistoryDate(value: unknown) {
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw;
 
-  const pad = (part: number) => String(part).padStart(2, "0");
-  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Riga",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date).replace(",", "");
 }
 
 function pendingApprovalPdfHref(id: string) {
@@ -643,8 +668,30 @@ function recipientTypeLabel(recipientType: string | undefined, copy: Copy) {
   }
 }
 
+function formatFolderAmounts(items: TypedInvoice[]) {
+  const currency = firstString(...items.map(({ item }) => item.currency), "EUR");
+  const amounts = [...new Set(items.map(({ item }) => item.amount
+    .replace(/^(?:EUR|USD|GBP|PLN|SEK|€|\$|£|zł|kr)\s*/i, "")
+    .trim()).filter(Boolean))];
+
+  return amounts.length ? `${currencySymbol(currency)} ${amounts.join(" / ")}` : "-";
+}
+
 function invoiceFolderKey(entry: TypedInvoice) {
   const item = entry.item;
+  if (item.batchId) return `batch:${item.batchId}`;
+
+  // Older API invoices were saved before batchId was retained after approval.
+  // Keep those owner/tenant pairs together by apartment and billing period.
+  if (item.source?.toLowerCase() === "api") {
+    return [
+      "legacy-api",
+      entry.kind,
+      firstString(item.apartmentId, item.apartment, item.apartmentNumber),
+      firstString(item.period, item.invoiceDate, item.dueDate),
+    ].join("|").toLowerCase();
+  }
+
   return [
     entry.kind,
     firstString(item.apartmentId, item.apartment, item.apartmentNumber),
@@ -744,11 +791,17 @@ export function InvoicesWorkspace({
   pendingApprovalsError?: string;
 }) {
   const locale = useLocale();
+  const router = useRouter();
   const copy = getCopy(locale);
   const notifications = useNotifications();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queueRef = useRef<InvoiceQueueItem[]>([]);
   const canImport = role === "managementCompany";
+
+  function refreshPendingApprovals() {
+    window.dispatchEvent(new Event(API_PENDING_APPROVALS_CHANGED_EVENT));
+    router.refresh();
+  }
 
   const buildingOptions = useMemo(
     () => buildings
@@ -781,6 +834,10 @@ export function InvoicesWorkspace({
         .filter((item): item is ApartmentOption => Boolean(item)),
     [apartments],
   );
+  const apartmentLabelById = useMemo(
+    () => new Map(apartmentOptions.map((apartment) => [apartment.id, apartment.label])),
+    [apartmentOptions],
+  );
 
   const [selectedBuildingId, setSelectedBuildingId] = useState(buildingOptions[0]?.id ?? "");
   const [selectedApartmentId, setSelectedApartmentId] = useState("");
@@ -799,14 +856,40 @@ export function InvoicesWorkspace({
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [livePendingApprovals, setLivePendingApprovals] = useState<RawRecord[]>(pendingApprovals);
+  const [livePendingApprovalsError, setLivePendingApprovalsError] = useState(pendingApprovalsError);
+  const [loadingPendingApprovals, setLoadingPendingApprovals] = useState(false);
+  const [approvalConfirmationIds, setApprovalConfirmationIds] = useState<string[] | null>(null);
+  const [selectedNotificationApprovalIds, setSelectedNotificationApprovalIds] = useState<Set<string>>(() => new Set());
+  const [openNotificationApartmentIds, setOpenNotificationApartmentIds] = useState<Set<string>>(() => new Set());
+  const [openApprovalGroupId, setOpenApprovalGroupId] = useState<string | null>(null);
   const [approvingApprovalId, setApprovingApprovalId] = useState<string | null>(null);
   const [cancellingApprovalId, setCancellingApprovalId] = useState<string | null>(null);
   const [approvingAllApprovals, setApprovingAllApprovals] = useState(false);
   const [cancellingAllApprovals, setCancellingAllApprovals] = useState(false);
-  const [openInvoiceFolderIds, setOpenInvoiceFolderIds] = useState<Set<string>>(() => new Set());
   useEffect(() => {
     queueRef.current = queue;
   }, [queue]);
+
+  useEffect(() => {
+    setLivePendingApprovals(pendingApprovals);
+    setLivePendingApprovalsError(pendingApprovalsError);
+  }, [pendingApprovals, pendingApprovalsError]);
+
+  async function openPendingApprovals() {
+    setApprovalModalOpen(true);
+    setLoadingPendingApprovals(true);
+    setLivePendingApprovalsError(undefined);
+
+    try {
+      const response = await getPendingInvoiceApprovals({ companyId, limit: 100 });
+      setLivePendingApprovals(Array.isArray(response.items) ? response.items : []);
+    } catch (error) {
+      setLivePendingApprovalsError(error instanceof Error ? error.message : "");
+    } finally {
+      setLoadingPendingApprovals(false);
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -1072,12 +1155,13 @@ export function InvoicesWorkspace({
   async function handleApprovePendingApproval(approvalId: string) {
     setApprovingApprovalId(approvalId);
     try {
-      const response = await approvePendingInvoiceApprovalAction(approvalId);
+      const response = await approvePendingInvoiceApprovalAction(approvalId, true);
       if (!response.success) {
         throw new Error(response.message || copy.approvalFailed);
       }
 
       notifications.success(copy.approvalApproved);
+      refreshPendingApprovals();
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : copy.approvalFailed);
     } finally {
@@ -1094,8 +1178,33 @@ export function InvoicesWorkspace({
       }
 
       notifications.success(copy.approvalCancelled);
+      refreshPendingApprovals();
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : copy.approvalCancelFailed);
+    } finally {
+      setCancellingApprovalId(null);
+    }
+  }
+
+  async function handleCancelPendingApprovalGroup(group: PendingApprovalGroup) {
+    const approvalIds = group.items
+      .map((item) => firstString(item.id, item.approvalId))
+      .filter(Boolean);
+    if (approvalIds.length === 0) return;
+
+    if (approvalIds.length === 1) {
+      await handleCancelPendingApproval(approvalIds[0]);
+      return;
+    }
+
+    setCancellingApprovalId(group.id);
+    try {
+      const response = await cancelPendingInvoiceApprovalsAction(approvalIds);
+      if (!response.success) throw new Error(response.message || copy.approvalCancelAllFailed);
+      notifications.success(copy.approvalCancelledAll);
+      refreshPendingApprovals();
+    } catch (error) {
+      notifications.error(error instanceof Error ? error.message : copy.approvalCancelAllFailed);
     } finally {
       setCancellingApprovalId(null);
     }
@@ -1107,18 +1216,20 @@ export function InvoicesWorkspace({
       .filter(Boolean);
   }
 
-  async function handleApproveAllPendingApprovals() {
-    const approvalIds = visibleApprovalIds();
+  async function handleApproveAllPendingApprovals(notifyApprovalIds?: string[], approvalIdsOverride?: string[]) {
+    const approvalIds = approvalIdsOverride ?? visibleApprovalIds();
     if (approvalIds.length === 0) return;
 
     setApprovingAllApprovals(true);
     try {
-      const response = await approvePendingInvoiceApprovalsAction(approvalIds);
+      const shouldNotify = notifyApprovalIds ? notifyApprovalIds.length > 0 : true;
+      const response = await approvePendingInvoiceApprovalsAction(approvalIds, shouldNotify, notifyApprovalIds ?? []);
       if (!response.success) {
         throw new Error(response.message || `${copy.approvalApproveAllFailed} ${response.processed ?? 0}/${response.total ?? approvalIds.length}`);
       }
 
       notifications.success(copy.approvalApprovedAll);
+      refreshPendingApprovals();
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : copy.approvalApproveAllFailed);
     } finally {
@@ -1138,6 +1249,7 @@ export function InvoicesWorkspace({
       }
 
       notifications.success(copy.approvalCancelledAll);
+      refreshPendingApprovals();
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : copy.approvalCancelAllFailed);
     } finally {
@@ -1180,7 +1292,28 @@ export function InvoicesWorkspace({
     const metadata = asRecord(item.metadata);
     return matchesSelectedBuilding(item.buildingId, metadata.buildingId);
   });
-  const filteredPendingApprovals = pendingApprovals.filter((item) => matchesSelectedBuilding(item.buildingId));
+  const filteredPendingApprovals = livePendingApprovals.filter((item) => matchesSelectedBuilding(item.buildingId));
+  const approvalNotificationGroups = Array.from(
+    filteredPendingApprovals.reduce((groups, item) => {
+      const apartmentId = firstString(item.apartmentNumber, item.apartmentId, "-");
+      const group = groups.get(apartmentId) ?? { apartmentId, items: [] as RawRecord[] };
+      group.items.push(item);
+      groups.set(apartmentId, group);
+      return groups;
+    }, new Map<string, { apartmentId: string; items: RawRecord[] }>()).values(),
+  );
+  const pendingApprovalGroups = Array.from(
+    filteredPendingApprovals.reduce((groups, item) => {
+      const groupId = firstString(item.batchId, item.uploadHistoryId, item.id, item.approvalId);
+      const current = groups.get(groupId);
+      if (current) {
+        current.items.push(item);
+      } else {
+        groups.set(groupId, { id: groupId, items: [item], primary: item });
+      }
+      return groups;
+    }, new Map<string, PendingApprovalGroup>()).values(),
+  );
   const hasVisibleApprovals = filteredPendingApprovals.length > 0;
   const typedInvoices: TypedInvoice[] = filteredInvoices.map((item) => ({
     item,
@@ -1237,47 +1370,32 @@ export function InvoicesWorkspace({
       const item = folder.primary.item;
       return renderInvoiceActions(item, item.displayNumber || item.externalId || item.id);
     }
-    const isOpen = openInvoiceFolderIds.has(folder.id);
-
-    return (
-      <div className="min-w-56 rounded-md border border-slate-200 bg-slate-50 p-2">
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 rounded px-1 py-1 text-left text-xs font-medium text-slate-600 hover:bg-white"
-          aria-expanded={isOpen}
-          onClick={() => {
-            setOpenInvoiceFolderIds((current) => {
-              const next = new Set(current);
-              if (next.has(folder.id)) {
-                next.delete(folder.id);
-              } else {
-                next.add(folder.id);
-              }
-              return next;
-            });
-          }}
-        >
-          <FiFolder aria-hidden className="h-4 w-4" />
-          <span>{folder.items.length}</span>
-        </button>
-        {isOpen ? (
-          <div className="mt-2 space-y-2">
-            {folder.items.map(({ item }) => {
-              const invoiceLabel = item.displayNumber || item.externalId || item.id;
-              return (
-                <div key={item.id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1">
-                  <span className="min-w-20 text-xs font-medium text-slate-700">
-                    {recipientTypeLabel(item.recipientType, copy)}
-                  </span>
-                  {renderInvoiceActions(item, invoiceLabel)}
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
-      </div>
-    );
+    return null;
   };
+
+  const buildInvoiceRowDetails = (folders: InvoiceFolder[]) => folders.map((folder) => {
+    if (folder.items.length < 2) return null;
+    return {
+      label: String(folder.items.length),
+      content: (
+        <div className="space-y-3">
+          {folder.items.map(({ item }) => {
+            const invoiceLabel = item.displayNumber || item.externalId || item.id;
+            return (
+              <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <FiFileText className="h-5 w-5 shrink-0 text-slate-400" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate font-medium text-slate-700">{item.fileName || invoiceLabel}</span>
+                <span className="hidden text-slate-500 sm:inline">{recipientTypeLabel(item.recipientType, copy)}</span>
+                <span className="hidden font-medium text-slate-700 sm:inline">{item.amount}</span>
+                {canImport ? <StatusBadge status={item.status} copy={copy} /> : null}
+                {renderInvoiceActions(item, invoiceLabel)}
+              </div>
+            );
+          })}
+        </div>
+      ),
+    };
+  });
 
   const buildInvoiceRows = (items: InvoiceFolder[]) => items.map((folder) => {
     const { item, kind } = folder.primary;
@@ -1302,7 +1420,7 @@ export function InvoicesWorkspace({
         : recipientTypeLabel(item.recipientType, copy),
       item.apartment,
       item.resident,
-      item.amount,
+      formatFolderAmounts(folder.items),
       item.period ?? item.invoiceDate ?? item.dueDate,
     ];
 
@@ -1349,12 +1467,14 @@ export function InvoicesWorkspace({
       key: "electricity",
       title: copy.invoicesElectricityGroup,
       rows: buildInvoiceRows(electricityInvoiceFolders),
+      details: buildInvoiceRowDetails(electricityInvoiceFolders),
       mobileRows: buildInvoiceMobileRows(electricityInvoiceItems),
     },
     {
       key: "utility",
       title: copy.invoicesUtilityGroup,
       rows: buildInvoiceRows(utilityInvoiceFolders),
+      details: buildInvoiceRowDetails(utilityInvoiceFolders),
       mobileRows: buildInvoiceMobileRows(utilityInvoiceItems),
     },
   ].filter((section) => section.rows.length > 0);
@@ -1429,64 +1549,72 @@ export function InvoicesWorkspace({
       ),
     ];
   });
+  const historyRowDetails = filteredUploadHistory.map((item) => {
+    const metadata = asRecord(item.metadata);
+    const results = Array.isArray(metadata.results) ? metadata.results.map(asRecord) : [];
+    const targets = results
+      .map((result) => {
+        const apartmentId = firstString(result.apartment_id, result.apartmentId, item.apartmentId, metadata.apartmentId);
+        const recipient = firstString(result.recipientType, result.recipient_type);
+        const fileName = firstString(result.fileName, result.file_name);
+        return {
+          id: firstString(result.approval_id, result.invoice_id, result.index, fileName, apartmentId),
+          apartment: firstString(apartmentLabelById.get(apartmentId), apartmentId, "-"),
+          recipient: recipient ? recipientTypeLabel(recipient, copy) : "",
+          fileName,
+        };
+      })
+      .filter((target) => target.apartment !== "-");
 
-  const approvalRows = filteredPendingApprovals.map((item, index) => {
-    const approvalId = firstString(item.id, item.approvalId);
-    const invoiceLabel = firstString(
-      item.accountId,
-      item.clientNumber,
-      item.contractNumber,
-      item.apartmentNumber,
-      item.externalId,
-      approvalId,
-    );
-    const amount = firstString(item.amount);
-    const currency = firstString(item.currency, "EUR");
-    const recipientType = firstString(item.recipientType, item.recipient_type);
+    const fallbackApartmentId = firstString(item.apartmentId, metadata.apartmentId);
+    const fallbackApartment = firstString(apartmentLabelById.get(fallbackApartmentId), fallbackApartmentId, "-");
+    const fallbackRecipient = (() => {
+      const recipient = firstString(item.recipientType, item.recipient_type, metadata.recipientType, metadata.recipient_type);
+      return recipient ? recipientTypeLabel(recipient, copy) : "";
+    })();
+    const batchFileNames = Array.isArray(metadata.files)
+      ? metadata.files.map((fileName) => firstString(fileName)).filter(Boolean)
+      : [];
 
-    return [
-      <div key={`${approvalId || index}-approval-invoice`} className="min-w-44">
-        <p className="font-medium text-slate-900">{invoiceLabel || "-"}</p>
-        {firstString(item.externalId) && firstString(item.externalId) !== invoiceLabel ? (
-          <p className="mt-0.5 text-xs text-slate-500">{firstString(item.externalId)}</p>
-        ) : null}
-      </div>,
-      firstString(item.apartmentNumber, item.apartmentId) || "-",
-      recipientTypeLabel(recipientType, copy),
-      amount ? `${currency} ${amount}` : "-",
-      firstString(item.period, item.invoiceDate, item.createdAt) || "-",
-      <div key={`${approvalId || index}-approval-actions`} className="flex items-center justify-end gap-2">
-        {approvalId ? (
-          <InvoicePdfViewerButton
-            href={pendingApprovalPdfHref(approvalId)}
-            label={copy.pdf}
-            title={`${copy.colInvoice} ${invoiceLabel || approvalId}`}
-            closeLabel={copy.close}
-            loadingLabel={copy.openingPdf}
-            errorLabel={copy.openPdfFailed}
-          />
-        ) : null}
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => void handleApprovePendingApproval(approvalId)}
-          disabled={!approvalId || approvingAllApprovals || cancellingAllApprovals || approvingApprovalId === approvalId || cancellingApprovalId === approvalId}
-        >
-          <FiCheckCircle className="h-4 w-4" aria-hidden="true" />
-          {approvingApprovalId === approvalId ? copy.approvalApproving : copy.approvalApprove}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={() => void handleCancelPendingApproval(approvalId)}
-          disabled={!approvalId || approvingAllApprovals || cancellingAllApprovals || approvingApprovalId === approvalId || cancellingApprovalId === approvalId}
-        >
-          <FiX className="h-4 w-4" aria-hidden="true" />
-          {cancellingApprovalId === approvalId ? copy.approvalCancelling : copy.approvalCancel}
-        </Button>
-      </div>,
-    ];
+    if (fallbackApartment !== "-") {
+      batchFileNames.forEach((fileName, index) => {
+        if (targets.some((target) => target.fileName === fileName)) return;
+        targets.push({
+          id: `${firstString(item.id, item.invoiceId, item.approvalId, fallbackApartmentId)}-${index}`,
+          apartment: fallbackApartment,
+          recipient: fallbackRecipient,
+          fileName,
+        });
+      });
+    }
+
+    if (targets.length === 0) {
+      if (fallbackApartment !== "-") {
+        targets.push({
+          id: firstString(item.id, item.invoiceId, item.approvalId, fallbackApartmentId),
+          apartment: fallbackApartment,
+          recipient: fallbackRecipient,
+          fileName: firstString(item.fileName, metadata.fileName),
+        });
+      }
+    }
+
+    if (targets.length === 0) return null;
+    return {
+      label: String(targets.length),
+      content: (
+        <div className="space-y-2">
+          {targets.map((target, index) => (
+            <div key={`${target.id}-${index}`} className="flex min-w-0 items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-2.5">
+              <p className="min-w-0 truncate text-sm font-medium text-slate-800">
+                {target.apartment}{target.fileName ? <span className="font-normal text-slate-500"> · {target.fileName}</span> : null}
+              </p>
+              {target.recipient ? <span className="shrink-0 text-sm text-slate-600">{target.recipient}</span> : null}
+            </div>
+          ))}
+        </div>
+      ),
+    };
   });
 
   return (
@@ -1523,6 +1651,70 @@ export function InvoicesWorkspace({
         </div>
       ) : null}
 
+      {canImport && approvalConfirmationIds ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 p-4" onClick={() => setApprovalConfirmationIds(null)}>
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <h2 className="text-lg font-semibold text-slate-950">{copy.approvalApproveAll}</h2>
+            <p className="mt-2 text-sm text-slate-500">{copy.notifyRecipientsOnApproval}</p>
+            <label className="mt-4 flex cursor-pointer items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700">
+              <span>{copy.notifyAllRecipients}</span>
+              <input type="checkbox" checked={approvalConfirmationIds.every((id) => selectedNotificationApprovalIds.has(id))} onChange={(event) => setSelectedNotificationApprovalIds(event.target.checked ? new Set(approvalConfirmationIds) : new Set())} className="h-4 w-4 rounded border-slate-300 text-blue-600" />
+            </label>
+            <div className="mt-2 space-y-2">
+              {approvalNotificationGroups.filter((group) => group.items.some((item) => approvalConfirmationIds.includes(firstString(item.id, item.approvalId)))).map((group) => {
+                const ids = group.items.map((item) => firstString(item.id, item.approvalId)).filter((id) => approvalConfirmationIds.includes(id));
+                const recipients = group.items.map((item) => recipientTypeLabel(firstString(item.recipientType, item.recipient_type), copy)).join(", ");
+                const isOpen = openNotificationApartmentIds.has(group.apartmentId);
+                return (
+                  <div key={group.apartmentId} className="overflow-hidden rounded-xl border border-slate-200 text-sm text-slate-700">
+                    <div className="flex items-center gap-3 px-3 py-2.5">
+                      <button type="button" onClick={() => setOpenNotificationApartmentIds((current) => {
+                        const next = new Set(current);
+                        if (next.has(group.apartmentId)) next.delete(group.apartmentId); else next.add(group.apartmentId);
+                        return next;
+                      })} className="flex min-w-0 flex-1 items-center justify-between text-left font-medium">
+                        <span className="truncate">{group.apartmentId} · {recipients}</span>
+                        <FiChevronDown className={`ml-2 h-4 w-4 shrink-0 text-slate-400 transition ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+                      </button>
+                      <input type="checkbox" checked={ids.every((id) => selectedNotificationApprovalIds.has(id))} onChange={() => setSelectedNotificationApprovalIds((current) => {
+                        const next = new Set(current);
+                        if (ids.every((id) => next.has(id))) ids.forEach((id) => next.delete(id)); else ids.forEach((id) => next.add(id));
+                        return next;
+                      })} className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600" />
+                    </div>
+                    {isOpen ? <div className="space-y-1 border-t border-slate-100 bg-slate-50 p-2">
+                      {group.items.map((item) => {
+                        const id = firstString(item.id, item.approvalId);
+                        if (!approvalConfirmationIds.includes(id)) return null;
+                        return <label key={id} className="flex cursor-pointer items-center justify-between rounded-lg px-2 py-2 hover:bg-white">
+                          <span>{recipientTypeLabel(firstString(item.recipientType, item.recipient_type), copy)}</span>
+                          <input type="checkbox" checked={selectedNotificationApprovalIds.has(id)} onChange={() => setSelectedNotificationApprovalIds((current) => {
+                            const next = new Set(current);
+                            if (next.has(id)) next.delete(id); else next.add(id);
+                            return next;
+                          })} className="h-4 w-4 rounded border-slate-300 text-blue-600" />
+                        </label>;
+                      })}
+                    </div> : null}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <Button type="button" variant="secondary" onClick={() => setApprovalConfirmationIds(null)}>{copy.close}</Button>
+              <Button type="button" onClick={() => {
+                const notifyIds = Array.from(selectedNotificationApprovalIds);
+                setApprovalConfirmationIds(null);
+                void handleApproveAllPendingApprovals(notifyIds, approvalConfirmationIds);
+              }}>
+                <FiCheckCircle className="h-4 w-4" aria-hidden="true" />
+                {copy.approvalApproveAll}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {canImport && approvalModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onClick={() => setApprovalModalOpen(false)}>
           <div
@@ -1541,7 +1733,11 @@ export function InvoicesWorkspace({
                 <Button
                   type="button"
                   size="sm"
-                  onClick={() => void handleApproveAllPendingApprovals()}
+                  onClick={() => {
+                    const ids = visibleApprovalIds();
+                    setSelectedNotificationApprovalIds(new Set(ids));
+                    setApprovalConfirmationIds(ids);
+                  }}
                   disabled={!hasVisibleApprovals || approvingAllApprovals || cancellingAllApprovals}
                 >
                   <FiCheckCircle className="h-4 w-4" aria-hidden="true" />
@@ -1568,16 +1764,94 @@ export function InvoicesWorkspace({
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              {pendingApprovalsError ? (
+              {loadingPendingApprovals ? (
+                <div className="rounded-xl bg-slate-50 px-4 py-5 text-sm text-slate-500">{copy.uploading}</div>
+              ) : livePendingApprovalsError ? (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-5 text-sm text-rose-700">
-                  {copy.loadFailed}{pendingApprovalsError}
+                  {copy.loadFailed}{livePendingApprovalsError}
                 </div>
-              ) : approvalRows.length ? (
-                <DataTable
-                  columns={[copy.colInvoice, copy.colApartment, copy.recipient, copy.colAmount, copy.colPeriod, copy.colFile]}
-                  rows={approvalRows}
-                  pageSize={25}
-                />
+              ) : pendingApprovalGroups.length ? (
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                  <div className="hidden grid-cols-[minmax(130px,1.2fr)_80px_120px_110px_90px_minmax(290px,1fr)] gap-4 border-b border-slate-200 bg-slate-50 px-5 py-3 text-sm font-medium text-slate-500 lg:grid">
+                    <span>{copy.colInvoice}</span>
+                    <span>{copy.colApartment}</span>
+                    <span>{copy.recipient}</span>
+                    <span>{copy.colAmount}</span>
+                    <span>{copy.colPeriod}</span>
+                    <span className="text-right">{copy.colFile}</span>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {pendingApprovalGroups.map((group) => {
+                      const item = group.primary;
+                      const approvalId = firstString(item.id, item.approvalId);
+                      const invoiceLabel = firstString(item.accountId, item.clientNumber, item.contractNumber, item.apartmentNumber, item.externalId, approvalId) || "-";
+                      const recipientLabels = [...new Set(group.items.map((entry) => recipientTypeLabel(firstString(entry.recipientType, entry.recipient_type), copy)))];
+                      const groupCurrency = firstString(item.currency, "EUR");
+                      const amountLabels = [...new Set(group.items.map((entry) => firstString(entry.amount)).filter(Boolean))];
+                      const isOpen = openApprovalGroupId === group.id;
+                      const isProcessing = approvingApprovalId === group.id || cancellingApprovalId === group.id;
+
+                      return (
+                        <div key={group.id}>
+                          <div className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(130px,1.2fr)_80px_120px_110px_90px_minmax(290px,1fr)] lg:items-center lg:gap-4 lg:px-5">
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-slate-900">{invoiceLabel}</p>
+                              {firstString(item.externalId) && firstString(item.externalId) !== invoiceLabel ? <p className="mt-0.5 truncate text-xs text-slate-500">{firstString(item.externalId)}</p> : null}
+                            </div>
+                            <div className="text-sm text-slate-700"><span className="mr-1 text-xs text-slate-400 lg:hidden">{copy.colApartment}:</span>{firstString(item.apartmentNumber, item.apartmentId) || "-"}</div>
+                            <div className="text-sm text-slate-700"><span className="mr-1 text-xs text-slate-400 lg:hidden">{copy.recipient}:</span>{recipientLabels.join(", ")}</div>
+                            <div className="text-sm font-semibold text-slate-800"><span className="mr-1 text-xs font-normal text-slate-400 lg:hidden">{copy.colAmount}:</span>{amountLabels.length ? `${currencySymbol(groupCurrency)} ${amountLabels.join(" / ")}` : "-"}</div>
+                            <div className="text-sm text-slate-700"><span className="mr-1 text-xs text-slate-400 lg:hidden">{copy.colPeriod}:</span>{firstString(item.period, item.invoiceDate, item.createdAt) || "-"}</div>
+                            <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setOpenApprovalGroupId((current) => current === group.id ? null : group.id)}
+                                className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                                aria-expanded={isOpen}
+                              >
+                                <FiFileText className="h-4 w-4 text-blue-600" aria-hidden="true" />
+                                {group.items.length}
+                                <FiChevronDown className={`h-4 w-4 transition ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+                              </button>
+                              <Button type="button" size="sm" onClick={() => {
+                                const ids = group.items.map((entry) => firstString(entry.id, entry.approvalId)).filter(Boolean);
+                                setSelectedNotificationApprovalIds(new Set(ids));
+                                setApprovalConfirmationIds(ids);
+                              }} disabled={!approvalId || approvingAllApprovals || cancellingAllApprovals || isProcessing}>
+                                <FiCheckCircle className="h-4 w-4" aria-hidden="true" />
+                                {approvingApprovalId === group.id ? copy.approvalApproving : copy.approvalApprove}
+                              </Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => void handleCancelPendingApprovalGroup(group)} disabled={!approvalId || approvingAllApprovals || cancellingAllApprovals || isProcessing}>
+                                <FiX className="h-4 w-4" aria-hidden="true" />
+                                {cancellingApprovalId === group.id ? copy.approvalCancelling : copy.approvalCancel}
+                              </Button>
+                            </div>
+                          </div>
+                          {isOpen ? (
+                            <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-3 lg:px-5">
+                              <div className="space-y-2">
+                                {group.items.map((entry, fileIndex) => {
+                                  const entryApprovalId = firstString(entry.id, entry.approvalId);
+                                  const fileName = firstString(entry.originalFileName, entry.fileName, entry.externalId, entryApprovalId) || "-";
+                                  const entryAmount = firstString(entry.amount);
+                                  return (
+                                    <div key={entryApprovalId || fileIndex} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                                      <FiFileText className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700" title={fileName}>{fileName}</span>
+                                      <span className="hidden text-sm text-slate-500 sm:inline">{recipientTypeLabel(firstString(entry.recipientType, entry.recipient_type), copy)}</span>
+                                      <span className="hidden text-sm text-slate-700 sm:inline">{entryAmount ? `${firstString(entry.currency, "EUR")} ${entryAmount}` : "-"}</span>
+                                      {entryApprovalId ? <InvoicePdfViewerButton href={pendingApprovalPdfHref(entryApprovalId)} label={copy.pdf} title={`${copy.colInvoice} ${fileName}`} closeLabel={copy.close} loadingLabel={copy.openingPdf} errorLabel={copy.openPdfFailed} /> : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               ) : (
                 <div className="rounded-xl bg-slate-50 px-4 py-5 text-sm text-slate-500">{copy.approvalEmpty}</div>
               )}
@@ -1622,7 +1896,7 @@ export function InvoicesWorkspace({
               />
             </label>
             <div className="flex flex-wrap items-end justify-start gap-3 lg:justify-end">
-              <Button type="button" variant="secondary" className="h-14 rounded-2xl px-5" onClick={() => setApprovalModalOpen(true)}>
+              <Button type="button" variant="secondary" className="h-14 rounded-2xl px-5" onClick={() => void openPendingApprovals()}>
                 <FiFileText className="h-4 w-4" aria-hidden="true" />
                 {copy.approvalButton}
                 {filteredPendingApprovals.length ? (
@@ -1863,7 +2137,7 @@ export function InvoicesWorkspace({
                 </div>
                 <div className="grid gap-2 md:hidden">{section.mobileRows}</div>
                 <div className="hidden md:block">
-                  <DataTable columns={invoiceColumns} rows={section.rows} />
+                  <DataTable columns={invoiceColumns} rows={section.rows} desktopRowDetails={section.details} />
                 </div>
               </section>
             ))}
@@ -1885,7 +2159,12 @@ export function InvoicesWorkspace({
             </div>
           ) : historyRows.length ? (
             <div>
-              <DataTable columns={[copy.colInvoice, copy.colFile, copy.colSource, copy.colDate, copy.colStatus]} rows={historyRows} pageSize={25} />
+              <DataTable
+                columns={[copy.colInvoice, copy.colFile, copy.colSource, copy.colDate, copy.colStatus]}
+                rows={historyRows}
+                desktopRowDetails={historyRowDetails}
+                pageSize={25}
+              />
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-5 py-8 text-sm text-slate-500">{copy.emptyHistory}</div>

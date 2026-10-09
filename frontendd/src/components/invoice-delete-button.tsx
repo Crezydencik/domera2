@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { FiLoader, FiTrash2 } from "react-icons/fi";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { deleteInvoiceAction } from "@/shared/actions/billing";
@@ -32,8 +32,12 @@ export function InvoiceDeleteButton({
   const confirm = useConfirm();
   const notifications = useNotifications();
   const [deleting, setDeleting] = useState(false);
+  const deleteInFlightRef = useRef(false);
 
   async function handleDelete() {
+    if (deleteInFlightRef.current) return;
+    deleteInFlightRef.current = true;
+
     const confirmed = await confirm({
       title,
       message,
@@ -42,7 +46,10 @@ export function InvoiceDeleteButton({
       variant: "danger",
     });
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      deleteInFlightRef.current = false;
+      return;
+    }
 
     try {
       setDeleting(true);
@@ -52,6 +59,7 @@ export function InvoiceDeleteButton({
       notifications.error(error instanceof Error && error.message ? error.message : errorLabel);
     } finally {
       setDeleting(false);
+      deleteInFlightRef.current = false;
     }
   }
 

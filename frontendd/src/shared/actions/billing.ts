@@ -33,19 +33,19 @@ export async function uploadInvoiceAction(formData: FormData) {
   return response;
 }
 
-export async function approvePendingInvoiceApprovalAction(approvalId: string) {
+export async function approvePendingInvoiceApprovalAction(approvalId: string, notifyRecipients = true) {
   const response = await apiFetch<{ success?: boolean; invoice_id?: string; message?: string }>(
     `/invoices/pending-approvals/${encodeURIComponent(approvalId)}/approve`,
-    { method: "POST" },
+    { method: "POST", body: JSON.stringify({ notifyRecipients }) },
   );
   revalidateBillingViews();
   return response;
 }
 
-export async function approvePendingInvoiceApprovalsAction(approvalIds: string[]) {
+export async function approvePendingInvoiceApprovalsAction(approvalIds: string[], notifyRecipients = true, notifyApprovalIds: string[] = []) {
   const response = await apiFetch<BatchMutationResponse>("/invoices/pending-approvals/approve-all", {
     method: "POST",
-    body: JSON.stringify({ approvalIds }),
+    body: JSON.stringify({ approvalIds, notifyRecipients, notifyApprovalIds }),
   });
   revalidateBillingViews();
   return response;

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { getBuildings } from "@/shared/api/buildings";
+import { getPendingInvoiceApprovals } from "@/shared/api/billing";
 import { apiFetch, DomeraApiError } from "@/shared/api/client";
 import { getNotificationSettings, getNotifications, markNotificationRead, removeNotification, type NotificationSettings } from "@/shared/api/notifications";
 import { SUPPORT_CHANGED_EVENT } from "@/shared/api/support";
@@ -16,6 +17,7 @@ type UnknownRecord = Record<string, unknown>;
 
 const METER_READINGS_CHANGED_EVENT = "domera:meter-readings-changed";
 const OWNER_METER_READING_STATUS_EVENT = "domera:owner-meter-reading-status";
+export const API_PENDING_APPROVALS_CHANGED_EVENT = "domera:api-pending-approvals-changed";
 const defaultNotificationSettings: NotificationSettings = {
   general: true,
   meterReminder: true,
@@ -213,6 +215,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   const dashboardRole = normalizeDashboardRole(firstString(profile?.role, profile?.accountType));
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [electricitySetupItems, setElectricitySetupItems] = useState<NotificationItem[]>([]);
+  const [pendingApiApprovalCount, setPendingApiApprovalCount] = useState(0);
   const [profileCompanyId, setProfileCompanyId] = useState<string | undefined>(undefined);
   const [settings, setSettings] = useState<NotificationSettings>(defaultNotificationSettings);
   const [ownerMissingReadings, setOwnerMissingReadings] = useState(0);
@@ -322,6 +325,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
       setError(null);
       setOwnerMissingReadings(0);
       setOwnerMissingApartmentLabels([]);
+      setPendingApiApprovalCount(0);
       setOwnerStatusLoaded(true);
       setHasLoaded(true);
       setIsLoading(false);
@@ -332,9 +336,12 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
     setError(null);
 
     try {
-      const [settingsResponse, response] = await Promise.all([
+      const [settingsResponse, response, pendingApprovalsResponse] = await Promise.all([
         getNotificationSettings().catch(() => ({ settings: defaultNotificationSettings })),
         getNotifications(userId),
+        dashboardRole === "managementCompany"
+          ? getPendingInvoiceApprovals().catch(() => ({ items: [] as UnknownRecord[] }))
+          : Promise.resolve({ items: [] as UnknownRecord[] }),
       ]);
       const nextSettings = settingsResponse.settings;
       setSettings(nextSettings);
@@ -347,6 +354,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
 
       setDuplicateNotificationIdsById(idsByVisibleId);
       setItems(visibleItems);
+      setPendingApiApprovalCount(Array.isArray(pendingApprovalsResponse.items) ? pendingApprovalsResponse.items.length : 0);
       void loadElectricitySetupNotifications();
       if (canLoadOwnerStatus(nextSettings)) {
         setOwnerStatusLoaded(false);
@@ -364,7 +372,7 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
       setHasLoaded(true);
       setIsLoading(false);
     }
-  }, [canLoadOwnerStatus, loadElectricitySetupNotifications, t, userId]);
+  }, [canLoadOwnerStatus, dashboardRole, loadElectricitySetupNotifications, t, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -427,11 +435,13 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
 
     window.addEventListener("focus", refreshNotifications);
     window.addEventListener(SUPPORT_CHANGED_EVENT, refreshNotifications);
+    window.addEventListener(API_PENDING_APPROVALS_CHANGED_EVENT, refreshNotifications);
 
     return () => {
       window.clearInterval(intervalId);
       window.removeEventListener("focus", refreshNotifications);
       window.removeEventListener(SUPPORT_CHANGED_EVENT, refreshNotifications);
+      window.removeEventListener(API_PENDING_APPROVALS_CHANGED_EVENT, refreshNotifications);
     };
   }, [refresh, userId]);
 
@@ -512,16 +522,31 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
     };
   }, [dashboardRole, dismissedLocalNotificationIds, ownerMissingApartmentLabels, ownerMissingReadings, settings.general, settings.meterReminder, t]);
 
+  const computedPendingApiApprovalsNotification = useMemo<NotificationItem | null>(() => {
+    if (dashboardRole !== "managementCompany" || pendingApiApprovalCount <= 0) return null;
+
+    return {
+      id: "api-pending-approvals-local",
+      title: t("pendingApiApprovalsTitle"),
+      description: t("pendingApiApprovalsDescription", { count: pendingApiApprovalCount }),
+      channel: t("pendingApiApprovalsChannel"),
+      actionHref: ROUTES.invoices,
+      actionLabel: t("reviewApiApprovals"),
+      type: "api-pending-approvals",
+    };
+  }, [dashboardRole, pendingApiApprovalCount, t]);
+
   const allItems = useMemo(
     () => {
       const visibleElectricityItems = electricitySetupItems.filter((item) => !dismissedLocalNotificationIds.has(item.id));
       return [
         ...visibleElectricityItems,
+        ...(computedPendingApiApprovalsNotification ? [computedPendingApiApprovalsNotification] : []),
         ...(computedOwnerNotification ? [computedOwnerNotification] : []),
         ...items,
       ];
     },
-    [computedOwnerNotification, dismissedLocalNotificationIds, electricitySetupItems, items],
+    [computedOwnerNotification, computedPendingApiApprovalsNotification, dismissedLocalNotificationIds, electricitySetupItems, items],
   );
   const previewItems = useMemo(() => allItems.slice(0, previewLimit), [allItems, previewLimit]);
 

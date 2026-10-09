@@ -33,7 +33,7 @@ export declare class InvoicesController {
             pdfUrl: string;
             companyId: string;
             buildingId: string | null;
-            recipientType: "tenant" | "owner" | "general";
+            recipientType: "owner" | "tenant" | "general";
             createdAt: Date;
             createdByUid: string;
         };
@@ -105,7 +105,7 @@ export declare class InvoicesController {
         items: Record<string, unknown>[];
     }>;
     pendingApprovalPdf(user: RequestUser, approvalId: string, response: Response): Promise<void>;
-    approvePendingApproval(request: Request, user: RequestUser, approvalId: string): Promise<{
+    approvePendingApproval(request: Request, user: RequestUser, approvalId: string, body: Record<string, unknown>): Promise<{
         success: boolean;
         invoice_id: string;
         message: string;

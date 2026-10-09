@@ -23,7 +23,6 @@ const meter_reading_history_1 = require("../../common/utils/meter-reading-histor
 const email_service_1 = require("../emails/services/email.service");
 const MAX_INVOICE_PDF_BYTES = 25 * 1024 * 1024;
 const MAX_INVOICE_BATCH_FILES = 50;
-const INVOICE_APPROVAL_BATCH_CONCURRENCY = 4;
 const INVOICE_BATCH_UPLOAD_CONCURRENCY = 4;
 const INVOICE_TRASH_RETENTION_DAYS = 30;
 const MAX_INVOICE_ZIP_BYTES = 500 * 1024 * 1024;
@@ -611,7 +610,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         if (!access)
             return false;
         const recipientType = this.normalizeRecipientType(invoice.recipientType ?? invoice.recipient_type);
-        if (recipientType === 'tenant' && access.type === 'resident')
+        if (recipientType === 'tenant' && access.type !== 'tenant')
             return false;
         if (recipientType === 'owner' && access.type !== 'owner')
             return false;
@@ -1015,12 +1014,21 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         const fileName = this.resolveInvoicePdfFileName(invoice, invoiceId);
         const storagePath = this.firstString(invoice.storagePath);
         const pdfUrl = this.firstString(invoice.pdfUrl);
-        if (storagePath) {
+        const approvedFromApprovalId = this.firstString(invoice.approvedFromApprovalId);
+        const restoredPendingApprovalPath = approvedFromApprovalId
+            ? this.buildPendingApprovalStoragePath({
+                companyId: this.firstString(invoice.companyId),
+                buildingId: this.firstString(invoice.buildingId),
+                approvalId: approvedFromApprovalId,
+            })
+            : '';
+        const storagePaths = Array.from(new Set([storagePath, restoredPendingApprovalPath].filter(Boolean)));
+        for (const candidateStoragePath of storagePaths) {
             const storageBucket = this.firstString(invoice.storageBucket);
             const bucket = storageBucket
                 ? this.firebaseAdminService.storage.bucket(storageBucket)
                 : this.firebaseAdminService.storageBucket;
-            const file = bucket.file(storagePath);
+            const file = bucket.file(candidateStoragePath);
             try {
                 const [metadata] = await file.getMetadata();
                 const size = Number(metadata.size ?? 0);
@@ -1040,10 +1048,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
                 if (error instanceof common_1.BadRequestException) {
                     throw error;
                 }
-                if (!pdfUrl) {
-                    throw new common_1.NotFoundException('Invoice PDF not found');
-                }
-                this.logger.warn(`invoice.pdf.storage_download_failed invoiceId=${invoiceId} reason=${this.errorMessage(error)}`);
+                this.logger.warn(`invoice.pdf.storage_download_failed invoiceId=${invoiceId} path=${candidateStoragePath} reason=${this.errorMessage(error)}`);
             }
         }
         if (!pdfUrl) {
@@ -1557,7 +1562,6 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
     async updateUploadHistoryForApproval(params) {
         const buildingId = this.firstString(params.buildingId);
         const apartmentId = this.firstString(params.apartmentId);
-        const companyId = this.firstString(params.companyId);
         const historyId = this.firstString(params.historyId);
         const candidateBuildingIds = new Set();
         const candidateApartmentIds = new Set();
@@ -1571,14 +1575,6 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             candidateBuildingIds.add(historyBuildingId);
         if (buildingId)
             candidateBuildingIds.add(buildingId);
-        if (companyId) {
-            for (const apartment of await this.getCompanyApartmentContexts(companyId, buildingId).catch(() => [])) {
-                candidateApartmentIds.add(apartment.id);
-            }
-            for (const id of await this.getCompanyBuildingIds(companyId).catch(() => [])) {
-                candidateBuildingIds.add(id);
-            }
-        }
         if (candidateApartmentIds.size === 0 && candidateBuildingIds.size === 0)
             return;
         try {
@@ -2220,7 +2216,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
                 : 'application/pdf',
         };
     }
-    async approvePendingApproval(request, user, approvalId) {
+    async approvePendingApproval(request, user, approvalId, options = {}) {
         this.assertAuthenticated(user);
         if (!this.isStaff(user)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
@@ -2278,6 +2274,8 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             externalId,
             externalIdKey: externalKey,
             source: this.firstString(data.source, 'api'),
+            batchId: this.firstString(data.batchId) || null,
+            batchIndex: typeof data.batchIndex === 'number' ? data.batchIndex : null,
             pdfUrl: this.firstString(data.pdfUrl),
             storagePath: this.firstString(data.storagePath) || null,
             storageBucket: this.firstString(data.storageBucket) || null,
@@ -2357,18 +2355,26 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             invoiceId,
             status: 'approved',
         });
-        void this.sendApprovedInvoiceEmail({
-            request,
-            invoiceId,
-            invoiceData,
-            apartment,
-            apartmentId,
-            companyId,
-            buildingId,
-            invoicePath,
-        }).catch((error) => {
-            this.logger.warn(`invoice.email.send_failed invoiceId=${invoiceId} reason=${this.errorMessage(error)}`);
-        });
+        const requestedNotificationIds = Array.isArray(options.notifyApprovalIds)
+            ? options.notifyApprovalIds.map((value) => this.firstString(value)).filter(Boolean)
+            : [];
+        const notifyRecipients = options.notifyRecipients !== false
+            && options.notifyRecipients !== 'false'
+            && (requestedNotificationIds.length === 0 || requestedNotificationIds.includes(approvalId));
+        if (notifyRecipients) {
+            void this.sendApprovedInvoiceEmail({
+                request,
+                invoiceId,
+                invoiceData,
+                apartment,
+                apartmentId,
+                companyId,
+                buildingId,
+                invoicePath,
+            }).catch((error) => {
+                this.logger.warn(`invoice.email.send_failed invoiceId=${invoiceId} reason=${this.errorMessage(error)}`);
+            });
+        }
         return {
             success: true,
             invoice_id: invoiceId,
@@ -2463,7 +2469,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
                 results[index] = await worker(approvalId);
             }
         };
-        await Promise.all(Array.from({ length: Math.min(INVOICE_APPROVAL_BATCH_CONCURRENCY, approvalIds.length) }, () => runWorker()));
+        await runWorker();
         return results;
     }
     async approvePendingApprovals(request, user, payload) {
@@ -2473,7 +2479,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         }
         const results = await this.processApprovalIds(approvalIds, async (approvalId) => {
             try {
-                const result = await this.approvePendingApproval(request, user, approvalId);
+                const result = await this.approvePendingApproval(request, user, approvalId, payload);
                 return {
                     approval_id: approvalId,
                     success: true,
@@ -3462,10 +3468,12 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         if (!this.isStaff(user)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
-        const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'invoice:delete', invoiceId), 20, 60_000);
+        const [rl, invoice] = await Promise.all([
+            this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'invoice:delete', invoiceId), 20, 60_000),
+            this.findInvoiceDocument(invoiceId, user),
+        ]);
         if (!rl.allowed)
             throw new common_1.BadRequestException('Too many requests');
-        const invoice = await this.findInvoiceDocument(invoiceId, user);
         const ref = invoice.ref;
         const current = invoice.data;
         const targetCompanyId = typeof current.companyId === 'string' ? current.companyId : undefined;

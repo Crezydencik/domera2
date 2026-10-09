@@ -166,8 +166,8 @@ let InvoicesController = class InvoicesController {
         response.setHeader('X-Content-Type-Options', 'nosniff');
         response.end(pdf.buffer);
     }
-    approvePendingApproval(request, user, approvalId) {
-        return this.invoicesService.approvePendingApproval(request, user, approvalId);
+    approvePendingApproval(request, user, approvalId, body) {
+        return this.invoicesService.approvePendingApproval(request, user, approvalId, body);
     }
     approvePendingApprovals(request, user, body) {
         return this.invoicesService.approvePendingApprovals(request, user, body);
@@ -393,8 +393,9 @@ __decorate([
     __param(0, (0, common_1.Req)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __param(2, (0, common_1.Param)('approvalId')),
+    __param(3, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:paramtypes", [Object, Object, String, Object]),
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "approvePendingApproval", null);
 __decorate([

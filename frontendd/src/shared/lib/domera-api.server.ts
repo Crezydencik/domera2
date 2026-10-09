@@ -408,6 +408,8 @@ export function toInvoice(item: UnknownRecord): Invoice {
     invoiceDate: item.invoiceDate ? formatDate(item.invoiceDate) : undefined,
     fileName: firstDisplayString(item.fileName, item.file_name, item.originalFileName, item.original_file_name) || undefined,
     currency,
+    source: firstDisplayString(item.source) || undefined,
+    batchId: firstDisplayString(item.batchId, item.batch_id) || undefined,
     comment: typeof item.comment === "string" ? item.comment : undefined,
     pdfUrl: buildInvoicePdfHref(id, item),
   };

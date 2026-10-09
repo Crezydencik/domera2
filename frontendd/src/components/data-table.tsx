@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { ExpandToggleButton } from "@/components/expand-toggle-button";
 
 interface DataTableProps {
   columns: string[];
@@ -21,6 +22,8 @@ interface DataTableProps {
   mobileCollapsibleColumns?: number[];
   mobileCollapsibleIconOnly?: boolean;
   mobileCollapsibleLabel?: string;
+  desktopRowDetails?: Array<{ label: string; content: ReactNode } | null>;
+  desktopFixedLayout?: boolean;
 }
 
 export function DataTable({
@@ -36,10 +39,13 @@ export function DataTable({
   mobileCollapsibleColumns = [],
   mobileCollapsibleIconOnly = false,
   mobileCollapsibleLabel = "Details",
+  desktopRowDetails = [],
+  desktopFixedLayout = false,
 }: DataTableProps) {
   const batchSize = Math.max(1, pageSize);
   const [visibleCount, setVisibleCount] = useState(batchSize);
   const [openMobileRow, setOpenMobileRow] = useState<number | null>(null);
+  const [openDesktopRow, setOpenDesktopRow] = useState<number | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const visibleRows = rows.slice(0, visibleCount);
   const hasMoreRows = visibleCount < rows.length;
@@ -63,6 +69,7 @@ export function DataTable({
   useEffect(() => {
     setVisibleCount(Math.min(batchSize, rows.length));
     setOpenMobileRow(null);
+    setOpenDesktopRow(null);
   }, [batchSize, rows.length]);
 
   useEffect(() => {
@@ -325,27 +332,49 @@ export function DataTable({
           );
         })}
       </div>
-      <div className="hidden overflow-x-auto md:block">
-        <table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
+      <div className={`hidden md:block ${desktopFixedLayout ? "overflow-hidden" : "overflow-x-auto"}`}>
+        <table className={`${desktopFixedLayout ? "w-full table-fixed" : "min-w-full"} divide-y divide-slate-200 text-left text-sm text-slate-700`}>
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               {columns.map((column, columnIndex) => desktopHiddenColumnSet.has(columnIndex) ? null : (
-                <th key={column} className="px-4 py-3 font-medium">
+                <th key={column} className={`${desktopFixedLayout ? "px-3" : "px-4"} py-3 font-medium`}>
                   {column}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
-            {visibleRows.map((row, rowIndex) => (
-              <tr key={rowIndex} className="hover:bg-slate-50">
-                {row.map((cell, cellIndex) => desktopHiddenColumnSet.has(cellIndex) ? null : (
-                  <td key={cellIndex} className="px-4 py-3 align-top">
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {visibleRows.map((row, rowIndex) => {
+              const detail = desktopRowDetails[rowIndex];
+              const isOpen = openDesktopRow === rowIndex;
+              const visibleColumnCount = row.filter((_, index) => !desktopHiddenColumnSet.has(index)).length;
+
+              return (
+                <Fragment key={rowIndex}>
+                  <tr className="hover:bg-slate-50">
+                    {row.map((cell, cellIndex) => desktopHiddenColumnSet.has(cellIndex) ? null : (
+                      <td key={cellIndex} className={`${desktopFixedLayout ? "px-3" : "px-4"} py-3 align-top`}>
+                        {detail && cellIndex === row.length - 1 ? (
+                          <div className="flex items-center gap-2">
+                            <ExpandToggleButton
+                              count={detail.label}
+                              open={isOpen}
+                              onClick={() => setOpenDesktopRow((current) => current === rowIndex ? null : rowIndex)}
+                            />
+                            {cell}
+                          </div>
+                        ) : cell}
+                      </td>
+                    ))}
+                  </tr>
+                  {detail && isOpen ? (
+                    <tr className="bg-slate-50/70">
+                      <td colSpan={visibleColumnCount} className="px-4 py-4">{detail.content}</td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

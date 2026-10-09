@@ -109,6 +109,8 @@ export interface Invoice {
   invoiceDate?: string;
   fileName?: string;
   currency?: string;
+  source?: string;
+  batchId?: string;
   comment?: string;
   pdfUrl?: string;
 }

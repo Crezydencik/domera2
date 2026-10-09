@@ -1,6 +1,6 @@
 import { getLocale, getTranslations } from "next-intl/server";
 import Link from "next/link";
-import { FiChevronDown, FiExternalLink, FiFileText, FiFolder } from "react-icons/fi";
+import { FiChevronDown, FiExternalLink, FiFileText } from "react-icons/fi";
 import { DataTable } from "@/components/data-table";
 import { InvoiceDeleteButton } from "@/components/invoice-delete-button";
 import { InvoiceMobileRow } from "@/components/invoice-mobile-row";
@@ -51,6 +51,19 @@ function optionalText(...values: unknown[]) {
   }
 
   return "";
+}
+
+function currencySymbol(currency: string) {
+  return ({ EUR: "€", USD: "$", GBP: "£", PLN: "zł", SEK: "kr" } as Record<string, string>)[currency.trim().toUpperCase()] ?? currency;
+}
+
+function formatInvoiceGroupAmounts(invoices: Array<{ amount: string; currency?: string }>) {
+  const currency = invoices.find((invoice) => invoice.currency?.trim())?.currency?.trim() ?? "EUR";
+  const amounts = [...new Set(invoices.map((invoice) => invoice.amount
+    .replace(/^(?:EUR|USD|GBP|PLN|SEK|€|\$|£|zł|kr)\s*/i, "")
+    .trim()).filter(Boolean))];
+
+  return amounts.length ? `${currencySymbol(currency)} ${amounts.join(" / ")}` : "-";
 }
 
 function toRecord(value: unknown): UnknownRecord | null {
@@ -483,11 +496,19 @@ export default async function ApartmentDetailsPage({
   const groupedApartmentInvoices = canDeleteInvoices
     ? Array.from(
         apartmentInvoices.reduce((groups, inv) => {
-          const key = [
-            toText(inv.apartmentId, toText(inv.apartment, "")),
-            toText(inv.period, toText(inv.invoiceDate, toText(inv.dueDate, ""))),
-            toText(inv.amount, ""),
-          ].join("|").toLowerCase();
+          const key = inv.batchId
+            ? `batch:${inv.batchId}`
+            : inv.source?.toLowerCase() === "api"
+              ? [
+                  "legacy-api",
+                  toText(inv.apartmentId, toText(inv.apartment, "")),
+                  toText(inv.period, toText(inv.invoiceDate, toText(inv.dueDate, ""))),
+                ].join("|").toLowerCase()
+              : [
+                  toText(inv.apartmentId, toText(inv.apartment, "")),
+                  toText(inv.period, toText(inv.invoiceDate, toText(inv.dueDate, ""))),
+                  toText(inv.amount, ""),
+                ].join("|").toLowerCase();
           const group = groups.get(key) ?? [];
           group.push(inv);
           groups.set(key, group);
@@ -500,7 +521,6 @@ export default async function ApartmentDetailsPage({
     t("details.invoiceColumns.recipient"),
     t("details.invoiceColumns.amount"),
     t("details.invoiceColumns.dueDate"),
-    t("details.invoiceColumns.status"),
     t("details.invoiceColumns.file"),
   ];
   const renderInvoiceActions = (inv: typeof apartmentInvoices[number]) => {
@@ -547,27 +567,33 @@ export default async function ApartmentDetailsPage({
     );
   };
   const renderInvoiceFolder = (group: typeof apartmentInvoices) => {
-    if (group.length === 1) return renderInvoiceActions(group[0]);
-
-    return (
-      <details className="min-w-56 rounded-md border border-slate-200 bg-slate-50 p-2">
-        <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-1 py-1 text-xs font-medium text-slate-600 hover:bg-white">
-          <FiFolder aria-hidden className="h-4 w-4" />
-          <span>{group.length}</span>
-        </summary>
-        <div className="mt-2 space-y-2">
+    return null;
+  };
+  const invoiceRowDetails = groupedApartmentInvoices.map((group) => {
+    return {
+      label: String(group.length),
+      content: (
+        <div className="space-y-3">
           {group.map((inv) => (
-            <div key={inv.id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1">
-              <span className="min-w-20 text-xs font-medium text-slate-700">
-                {invoiceRecipientLabel(inv.recipientType, locale)}
-              </span>
+            <div key={inv.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <FiFileText aria-hidden className="h-5 w-5 shrink-0 text-slate-400" />
+              <span className="min-w-0 flex-1 truncate font-medium text-slate-700">{inv.fileName || inv.externalId || inv.id}</span>
+              <span className="hidden text-slate-500 sm:inline">{invoiceRecipientLabel(inv.recipientType, locale)}</span>
+              <span className="hidden font-medium text-slate-700 sm:inline">{inv.amount}</span>
+              <span className={
+                inv.status.toLowerCase() === "paid"
+                  ? "text-emerald-700"
+                  : inv.status.toLowerCase() === "overdue"
+                    ? "text-red-600"
+                    : "text-amber-600"
+              }>{inv.status}</span>
               {renderInvoiceActions(inv)}
             </div>
           ))}
         </div>
-      </details>
-    );
-  };
+      ),
+    };
+  });
   const invoiceRows = groupedApartmentInvoices.map((group) => {
     const inv = group[0];
     const invoiceLabel = inv.displayNumber || inv.externalId || inv.id;
@@ -575,20 +601,8 @@ export default async function ApartmentDetailsPage({
     return [
       invoiceLabel,
       group.map((item) => invoiceRecipientLabel(item.recipientType, locale)).join(" / "),
-      inv.amount,
+      formatInvoiceGroupAmounts(group),
       inv.dueDate,
-      <span
-        key={`${inv.id}-status`}
-        className={
-          inv.status.toLowerCase() === "paid"
-            ? "text-emerald-700"
-            : inv.status.toLowerCase() === "overdue"
-              ? "text-red-600"
-              : "text-amber-600"
-        }
-      >
-        {inv.status}
-      </span>,
       <div key={`${invoiceLabel}-actions`} className="flex items-center gap-2">
         {renderInvoiceFolder(group)}
       </div>,
@@ -631,6 +645,8 @@ export default async function ApartmentDetailsPage({
         <DataTable
           columns={invoiceColumns}
           rows={invoiceRows}
+          desktopRowDetails={invoiceRowDetails}
+          desktopFixedLayout
         />
       </div>
     </>

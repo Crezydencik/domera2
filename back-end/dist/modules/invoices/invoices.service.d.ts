@@ -143,7 +143,7 @@ export declare class InvoicesService {
         items: Record<string, unknown>[];
     }>;
     pendingApprovalPdf(user: RequestUser, approvalId: string): Promise<InvoicePdfPayload>;
-    approvePendingApproval(request: Request, user: RequestUser, approvalId: string): Promise<{
+    approvePendingApproval(request: Request, user: RequestUser, approvalId: string, options?: Record<string, unknown>): Promise<{
         success: boolean;
         invoice_id: string;
         message: string;

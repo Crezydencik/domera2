@@ -367,8 +367,9 @@ export class InvoicesController {
     @Req() request: Request,
     @CurrentUser() user: RequestUser,
     @Param('approvalId') approvalId: string,
+    @Body() body: Record<string, unknown>,
   ) {
-    return this.invoicesService.approvePendingApproval(request, user, approvalId);
+    return this.invoicesService.approvePendingApproval(request, user, approvalId, body);
   }
 
   @Post('pending-approvals/approve-all')
