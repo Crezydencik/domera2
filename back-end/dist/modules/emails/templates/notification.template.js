@@ -37,7 +37,6 @@ exports.notificationTemplates = {
             children: `
         <div style="${email_layout_template_1.emailStyles.paragraph}">${params.messageHtml || escapeHtml(params.message).replace(/\n/g, '<br />')}</div>
         ${action(params)}
-        ${(0, email_layout_template_1.note)(escapeHtml(params.footer || 'This is an automated notification from Domera.'))}
       `,
         }),
     }),
@@ -53,7 +52,6 @@ exports.notificationTemplates = {
             children: `
         <div style="${email_layout_template_1.emailStyles.paragraph}">${params.messageHtml || escapeHtml(params.message).replace(/\n/g, '<br />')}</div>
         ${action(params)}
-        ${(0, email_layout_template_1.note)(escapeHtml(params.footer || 'Это автоматическое уведомление от Domera.'))}
       `,
         }),
     }),
@@ -69,7 +67,6 @@ exports.notificationTemplates = {
             children: `
         <div style="${email_layout_template_1.emailStyles.paragraph}">${params.messageHtml || escapeHtml(params.message).replace(/\n/g, '<br />')}</div>
         ${action(params)}
-        ${(0, email_layout_template_1.note)(escapeHtml(params.footer || 'Šis ir automātisks paziņojums no Domera.'))}
       `,
         }),
     }),

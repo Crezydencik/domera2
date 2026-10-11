@@ -80,7 +80,8 @@ let DocumentUploadService = DocumentUploadService_1 = class DocumentUploadServic
                 companyId = this.metadataService.resolveCompanyId(building, companyId);
                 buildingName = this.helperService.firstString(building.name, building.address, buildingId);
                 const apartments = await this.accessService.resolveMemberApartments(user);
-                const canShareWithManagement = apartments.some((apartment) => this.helperService.firstString(apartment.data.buildingId) === buildingId);
+                const canShareWithManagement = apartments.some((apartment) => this.helperService.firstString(apartment.data.buildingId) === buildingId &&
+                    this.accessService.isApartmentMember(apartment.data, user));
                 if (!canShareWithManagement)
                     throw new common_1.ForbiddenException('Access denied for building');
             }

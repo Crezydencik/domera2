@@ -2218,25 +2218,14 @@ export class ApartmentsService {
     if (fromDate) tenantRecord.fromDate = fromDate;
     if (until) tenantRecord.until = until;
 
-    if (authUserId) {
-      await db.collection('users').doc(authUserId).set(
-        {
-          uid: authUserId,
-          email,
-          apartmentId,
-          apartmentIds: FieldValue.arrayUnion(apartmentId),
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true },
-      );
-    }
-
     const nextTenants = [
       ...tenants.filter((tenant) => {
         const tenantUserId = typeof tenant.userId === 'string' ? tenant.userId.trim() : '';
         const tenantEmail = typeof tenant.email === 'string' ? tenant.email.trim().toLowerCase() : '';
+        const tenantStatus = typeof tenant.status === 'string' ? tenant.status.trim().toLowerCase() : '';
         const sameExistingUser = Boolean(authUserId && tenantUserId === authUserId);
-        return !sameExistingUser && tenantEmail !== email;
+        const isHistorical = ['removed', 'deleted', 'revoked', 'inactive'].includes(tenantStatus);
+        return isHistorical || (!sameExistingUser && tenantEmail !== email);
       }),
       tenantRecord,
     ];
@@ -2263,6 +2252,14 @@ export class ApartmentsService {
       });
       invitationLink = result.invitationLink;
       invitationId = result.invitationId;
+      // Pending invitees must not gain apartment access. Keep the token only on
+      // the pending tenant record so removal can revoke exactly this invitation.
+      await apartmentRef.set({
+        tenants: nextTenants.map((tenant) =>
+          tenant === tenantRecord ? { ...tenant, invitationId } : tenant,
+        ),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
 
       await this.apartmentInvitationService.createTenantInvitationNotification({
         tenantId: authUserId,
@@ -2324,7 +2321,7 @@ export class ApartmentsService {
 
     const removedTenantUserId = typeof removedTenant.userId === 'string' ? removedTenant.userId.trim() : '';
     const removedTenantEmail = typeof removedTenant.email === 'string' ? removedTenant.email.trim().toLowerCase() : '';
-    const next = tenants.filter((tenant) => {
+    const remainingTenants = tenants.filter((tenant) => {
       const tenantUserId = typeof tenant.userId === 'string' ? tenant.userId.trim() : '';
       const tenantEmail = typeof tenant.email === 'string' ? tenant.email.trim().toLowerCase() : '';
       return (
@@ -2335,15 +2332,36 @@ export class ApartmentsService {
       );
     });
 
+    // Preserve a dated tenancy record for the resident's archive, but revoke all
+    // live capabilities.  Every access service treats removed records as inactive.
+    const removedAt = new Date().toISOString();
+    const archivedTenant: Record<string, unknown> = {
+      ...removedTenant,
+      status: 'Removed',
+      activated: false,
+      removedAt,
+      until: typeof removedTenant.until === 'string' && removedTenant.until.trim()
+        ? removedTenant.until
+        : removedAt,
+    };
+
     // Prepare update data
     const updateData: Record<string, unknown> = {
-      tenants: next,
+      tenants: [...remainingTenants, archivedTenant],
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    // If no tenants left, clear residentId and other resident-related fields
-    if (next.length === 0) {
+    const residentId = typeof apartment.residentId === 'string' ? apartment.residentId.trim() : '';
+    const residentEmail = typeof apartment.residentEmail === 'string' ? apartment.residentEmail.trim().toLowerCase() : '';
+    // A primary resident pointer is a current-access shortcut. It must never
+    // survive removal, even when other tenants remain.
+    if (residentId === removedTenantUserId || (residentEmail && residentEmail === removedTenantEmail)) {
       updateData.residentId = null;
+      updateData.residentEmail = null;
+      updateData.residentName = null;
+      updateData.residentFirstName = null;
+      updateData.residentLastName = null;
+      updateData.residentPhone = null;
     }
 
     // Check if the removed user is the owner and clear owner data.
@@ -2379,7 +2397,8 @@ export class ApartmentsService {
       Array.from(userIdsToDetach).map((targetUserId) =>
         db.collection('users').doc(targetUserId).set(
           {
-            apartmentIds: FieldValue.arrayRemove(apartmentId),
+            // Keep the apartment in the historical index so archive documents can
+            // be resolved; active access is determined from the tenant record.
             apartmentId: null,
             updatedAt: new Date().toISOString(),
           },
@@ -2389,6 +2408,23 @@ export class ApartmentsService {
         }),
       ),
     );
+
+    // Revoke all still-pending tokens for this apartment and tenant. This is
+    // deliberately server-side; an old emailed token must not restore access.
+    const pendingInvitations = await db.collection('invitations')
+      .where('apartmentId', '==', apartmentId)
+      .where('status', '==', 'pending')
+      .get();
+    const invitationBatch = db.batch();
+    let revoked = 0;
+    for (const invitation of pendingInvitations.docs) {
+      const data = invitation.data() as Record<string, unknown>;
+      const invitationEmail = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
+      if (invitationEmail !== removedTenantEmail) continue;
+      invitationBatch.set(invitation.ref, { status: 'revoked', revokedAt: FieldValue.serverTimestamp() }, { merge: true });
+      revoked += 1;
+    }
+    if (revoked > 0) await invitationBatch.commit();
 
     return { success: true };
   }

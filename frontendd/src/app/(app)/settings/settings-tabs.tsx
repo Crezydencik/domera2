@@ -978,7 +978,7 @@ function previewCopy(language: EmailTemplateLanguage, type: EmailTemplateType, c
     lv: {
       brand: companyName,
       button: "Atvērt Domera",
-      note: "Šis ir automātiski sagatavots e-pasts, lūdzam uz to neatbildēt.",
+      note: "Šis ir automātiski sagatavots e-pasta sūtījums, lūdzam uz to neatbildēt.",
       building: "Brivibas 10",
       apartment: "24",
     },

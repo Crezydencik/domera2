@@ -178,8 +178,17 @@ export class InvoiceUploadAuthGuard implements CanActivate {
       ? data.scopes.filter((scope): scope is string => typeof scope === 'string')
       : [];
 
-    if (scopes.length > 0 && !scopes.some((scope) => INVOICE_UPLOAD_SCOPES.has(scope))) {
+    if (!scopes.some((scope) => INVOICE_UPLOAD_SCOPES.has(scope))) {
       throw new ForbiddenException('API key is not allowed to upload invoices');
+    }
+
+    const allowedBuildingIds = Array.isArray(data.allowedBuildingIds)
+      ? data.allowedBuildingIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : typeof data.buildingId === 'string' && data.buildingId.trim()
+        ? [data.buildingId.trim()]
+        : [];
+    if (allowedBuildingIds.length === 0) {
+      throw new UnauthorizedException('API key is not bound to a building');
     }
 
     return {
@@ -187,56 +196,28 @@ export class InvoiceUploadAuthGuard implements CanActivate {
       companyId,
       label: typeof data.label === 'string' ? data.label : undefined,
       buildingId: typeof data.buildingId === 'string' ? data.buildingId : undefined,
-      allowedBuildingIds: Array.isArray(data.allowedBuildingIds)
-        ? data.allowedBuildingIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-        : typeof data.buildingId === 'string'
-          ? [data.buildingId]
-          : undefined,
+      allowedBuildingIds,
       source,
     };
   }
 
   private async resolveFirestoreApiKey(keyHash: string): Promise<ApiKeyCredential | null> {
     const db = this.firebaseAdminService.firestore;
-    const buildingsSnap = await db.collection('buildings').get();
-    const refs = buildingsSnap.docs.map((doc) => doc.ref.collection('api_keys').doc(keyHash));
-    const directSnaps = refs.length ? await db.getAll(...refs) : [];
-    const directSnap = directSnaps.find((snap) => snap.exists);
+    // A collection-group lookup is indexed by the key hash.  Never enumerate every
+    // building (or every key) for an unauthenticated, invalid credential.
+    const snap = await db.collectionGroup('api_keys').where('keyHash', '==', keyHash).limit(1).get();
+    if (snap.empty) return null;
 
-    if (directSnap?.exists) {
-      const data = directSnap.data() as Record<string, unknown>;
-      const parentBuildingId = directSnap.ref.parent.parent?.id;
-      return this.validateApiKeyData(
-        directSnap.id,
-        {
-          ...data,
-          buildingId: typeof data.buildingId === 'string' ? data.buildingId : parentBuildingId,
-        },
-        'firestore',
-      );
-    }
-
-    for (const buildingDoc of buildingsSnap.docs) {
-      const apiKeysSnap = await buildingDoc.ref.collection('api_keys').get();
-      const match = apiKeysSnap.docs.find((doc) => {
-        const data = doc.data() as Record<string, unknown>;
-        return typeof data.keyHash === 'string' && data.keyHash === keyHash;
-      });
-
-      if (match) {
-        const data = match.data() as Record<string, unknown>;
-        return this.validateApiKeyData(
-          match.id,
-          {
-            ...data,
-            buildingId: typeof data.buildingId === 'string' ? data.buildingId : buildingDoc.id,
-          },
-          'firestore',
-        );
-      }
-    }
-
-    return null;
+    const match = snap.docs[0];
+    const data = match.data() as Record<string, unknown>;
+    return this.validateApiKeyData(
+      match.id,
+      {
+        ...data,
+        buildingId: typeof data.buildingId === 'string' ? data.buildingId : match.ref.parent.parent?.id,
+      },
+      'firestore',
+    );
   }
 
   private async resolveApiKey(apiKey: string): Promise<ApiKeyCredential | null> {

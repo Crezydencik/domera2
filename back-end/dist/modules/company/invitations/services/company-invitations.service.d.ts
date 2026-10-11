@@ -3,11 +3,13 @@ import { FirebaseAdminService } from '../../../../common/infrastructure/firebase
 import { RequestUser } from '../../../../common/auth/request-user.type';
 import { AuditLogService } from '../../../../common/services/audit-log.service';
 import { RateLimitService } from '../../../../common/services/rate-limit.service';
+import { CompanyAccessService } from '../../services/company-access.service';
 export declare class CompanyInvitationsService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
     private readonly auditLogService;
-    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService);
+    private readonly companyAccessService;
+    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, companyAccessService: CompanyAccessService);
     private assertManagerOrAccountant;
     private effectiveCompanyId;
     private assertCompanyScope;

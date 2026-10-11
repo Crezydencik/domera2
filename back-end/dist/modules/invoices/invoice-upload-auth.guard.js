@@ -137,51 +137,37 @@ let InvoiceUploadAuthGuard = class InvoiceUploadAuthGuard {
         const scopes = Array.isArray(data.scopes)
             ? data.scopes.filter((scope) => typeof scope === 'string')
             : [];
-        if (scopes.length > 0 && !scopes.some((scope) => INVOICE_UPLOAD_SCOPES.has(scope))) {
+        if (!scopes.some((scope) => INVOICE_UPLOAD_SCOPES.has(scope))) {
             throw new common_1.ForbiddenException('API key is not allowed to upload invoices');
+        }
+        const allowedBuildingIds = Array.isArray(data.allowedBuildingIds)
+            ? data.allowedBuildingIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : typeof data.buildingId === 'string' && data.buildingId.trim()
+                ? [data.buildingId.trim()]
+                : [];
+        if (allowedBuildingIds.length === 0) {
+            throw new common_1.UnauthorizedException('API key is not bound to a building');
         }
         return {
             id,
             companyId,
             label: typeof data.label === 'string' ? data.label : undefined,
             buildingId: typeof data.buildingId === 'string' ? data.buildingId : undefined,
-            allowedBuildingIds: Array.isArray(data.allowedBuildingIds)
-                ? data.allowedBuildingIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
-                : typeof data.buildingId === 'string'
-                    ? [data.buildingId]
-                    : undefined,
+            allowedBuildingIds,
             source,
         };
     }
     async resolveFirestoreApiKey(keyHash) {
         const db = this.firebaseAdminService.firestore;
-        const buildingsSnap = await db.collection('buildings').get();
-        const refs = buildingsSnap.docs.map((doc) => doc.ref.collection('api_keys').doc(keyHash));
-        const directSnaps = refs.length ? await db.getAll(...refs) : [];
-        const directSnap = directSnaps.find((snap) => snap.exists);
-        if (directSnap?.exists) {
-            const data = directSnap.data();
-            const parentBuildingId = directSnap.ref.parent.parent?.id;
-            return this.validateApiKeyData(directSnap.id, {
-                ...data,
-                buildingId: typeof data.buildingId === 'string' ? data.buildingId : parentBuildingId,
-            }, 'firestore');
-        }
-        for (const buildingDoc of buildingsSnap.docs) {
-            const apiKeysSnap = await buildingDoc.ref.collection('api_keys').get();
-            const match = apiKeysSnap.docs.find((doc) => {
-                const data = doc.data();
-                return typeof data.keyHash === 'string' && data.keyHash === keyHash;
-            });
-            if (match) {
-                const data = match.data();
-                return this.validateApiKeyData(match.id, {
-                    ...data,
-                    buildingId: typeof data.buildingId === 'string' ? data.buildingId : buildingDoc.id,
-                }, 'firestore');
-            }
-        }
-        return null;
+        const snap = await db.collectionGroup('api_keys').where('keyHash', '==', keyHash).limit(1).get();
+        if (snap.empty)
+            return null;
+        const match = snap.docs[0];
+        const data = match.data();
+        return this.validateApiKeyData(match.id, {
+            ...data,
+            buildingId: typeof data.buildingId === 'string' ? data.buildingId : match.ref.parent.parent?.id,
+        }, 'firestore');
     }
     async resolveApiKey(apiKey) {
         const trimmed = apiKey.trim();

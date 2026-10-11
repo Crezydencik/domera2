@@ -75,7 +75,13 @@ export class DocumentUploadService {
         buildingName = this.helperService.firstString(building.name, building.address, buildingId);
 
         const apartments = await this.accessService.resolveMemberApartments(user);
-        const canShareWithManagement = apartments.some((apartment) => this.helperService.firstString(apartment.data.buildingId) === buildingId);
+        // Historical membership grants a read-only archive, never the ability to
+        // publish new documents to the current building management archive.
+        const canShareWithManagement = apartments.some(
+          (apartment) =>
+            this.helperService.firstString(apartment.data.buildingId) === buildingId &&
+            this.accessService.isApartmentMember(apartment.data, user),
+        );
         if (!canShareWithManagement) throw new ForbiddenException('Access denied for building');
       }
     }

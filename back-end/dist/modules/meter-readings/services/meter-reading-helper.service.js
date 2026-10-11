@@ -124,6 +124,8 @@ let MeterReadingHelperService = class MeterReadingHelperService {
                 const historyVisible = !user || !submittedAtDate
                     ? true
                     : !((tenantFromDate && submittedAtDate < tenantFromDate) || (tenantUntilDate && submittedAtDate > tenantUntilDate));
+                if (!historyVisible)
+                    continue;
                 entries.push({
                     ...item,
                     ...(entryIndex === 0 ? { previousValue: null, consumption: 0 } : {}),

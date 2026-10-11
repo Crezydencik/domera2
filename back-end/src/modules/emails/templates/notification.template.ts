@@ -1,5 +1,5 @@
 import { EmailTemplate, EmailLanguage } from '../email.types';
-import { button, emailStyles, note, renderEmailLayout } from './email-layout.template';
+import { button, emailStyles, renderEmailLayout } from './email-layout.template';
 
 function escapeHtml(value: string | undefined) {
   return (value ?? '').replace(/[&<>"']/g, (character) => ({
@@ -52,7 +52,6 @@ export const notificationTemplates: Record<
       children: `
         <div style="${emailStyles.paragraph}">${params.messageHtml || escapeHtml(params.message).replace(/\n/g, '<br />')}</div>
         ${action(params)}
-        ${note(escapeHtml(params.footer || 'This is an automated notification from Domera.'))}
       `,
     }),
   }),
@@ -69,7 +68,6 @@ export const notificationTemplates: Record<
       children: `
         <div style="${emailStyles.paragraph}">${params.messageHtml || escapeHtml(params.message).replace(/\n/g, '<br />')}</div>
         ${action(params)}
-        ${note(escapeHtml(params.footer || 'Это автоматическое уведомление от Domera.'))}
       `,
     }),
   }),
@@ -86,7 +84,6 @@ export const notificationTemplates: Record<
       children: `
         <div style="${emailStyles.paragraph}">${params.messageHtml || escapeHtml(params.message).replace(/\n/g, '<br />')}</div>
         ${action(params)}
-        ${note(escapeHtml(params.footer || 'Šis ir automātisks paziņojums no Domera.'))}
       `,
     }),
   }),

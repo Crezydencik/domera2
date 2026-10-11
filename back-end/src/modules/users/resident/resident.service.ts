@@ -273,9 +273,6 @@ export class ResidentService {
     }
 
     const hasConfirmedAccess = (apartment: Record<string, unknown>) => {
-      const isPrimaryResident = this.toOptionalString(apartment.residentId) === user.uid;
-      const residentEmail = normalizeEmail(this.toOptionalString(apartment.residentEmail) ?? '');
-      const isResidentByEmail = Boolean(normalizedEmail && residentEmail === normalizedEmail);
       const ownerId = this.toOptionalString(apartment.ownerId);
       const ownerEmail = normalizeEmail(this.toOptionalString(apartment.ownerEmail) ?? '');
       const isActivatedOwner =
@@ -286,7 +283,9 @@ export class ResidentService {
         if (!tenant || typeof tenant !== 'object') return false;
         const t = tenant as Record<string, unknown>;
         const status = this.toOptionalString(t.status)?.toLowerCase() ?? '';
-        if (['removed', 'deleted', 'revoked', 'inactive'].includes(status)) return false;
+        if (['removed', 'deleted', 'revoked', 'inactive', 'pending'].includes(status)) return false;
+        const confirmed = t.activated === true || Boolean(t.acceptedAt) || Boolean(t.activatedAt) || ['active', 'accepted'].includes(status);
+        if (!confirmed) return false;
 
         const tenantUserId = this.toOptionalString(t.userId);
         const tenantEmail = normalizeEmail(this.toOptionalString(t.email) ?? '');
@@ -303,7 +302,7 @@ export class ResidentService {
         return true;
       });
 
-      return isPrimaryResident || isResidentByEmail || isActivatedOwner || isTenant;
+      return isActivatedOwner || isTenant;
     };
 
     const apartments = Array.from(mergedApartments.values())

@@ -145,6 +145,8 @@ export interface NotificationItem {
   title: string;
   description: string;
   channel: string;
+  createdAt?: string;
+  companyId?: string;
   actionHref?: string;
   actionLabel?: string;
   type?: string;

@@ -19,5 +19,5 @@ export default async function MailingsPage({ searchParams }: { searchParams?: Pr
     ? await apiFetch<Record<string, unknown>>(`/company/${encodeURIComponent(data.companyId)}`).catch(() => null)
     : null;
 
-  return <MailingsWorkspace buildings={data.buildings} apartments={data.apartments} residents={data.residents} company={company} />;
+  return <MailingsWorkspace buildings={data.buildings} apartments={data.apartments} company={company} />;
 }

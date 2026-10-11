@@ -379,6 +379,7 @@
   "appShell": {
     "header": {
       "currentWorkspace": "Pašreizējā darba vide: {role}",
+      "mailboxSubtitle": "Jūsu pasts",
       "pageTitles": {
         "dashboard": "Panelis",
         "buildings": "Ēkas",
@@ -395,6 +396,7 @@
         "mailingTemplatesNav": "Veidnes",
         "sentMailings": "Nosūtītie",
         "notificationsPage": "Paziņojumi",
+        "mailbox": "Pasts",
         "settings": "Iestatījumi"
       },
       "roles": {
@@ -1459,7 +1461,7 @@
     "messageHint": "Ievadiet vēstules tekstu. Rindkopas un rindu pārtraukumi tiks saglabāti.", "messagePlaceholder": "Cienījamie iedzīvotāji!\n\nVēlamies sniegt svarīgu informāciju…", "signature": "Ar cieņu,",
     "notificationHint": "Pēc nosūtīšanas vēstule un poga “Atvērt paziņojumus” būs pieejama katram atlasītajam īpašniekam vai iedzīvotājam.", "buildings": "Ēkas", "allBuildings": "— neatlasiet neko visām ēkām",
     "preview": "Priekšskatījums", "previewTitle": "Vēstules priekšskatījums", "send": "Nosūtīt {count} vēstules", "sending": "Nosūta…", "close": "Aizvērt",
-    "needContent": "Pievienojiet tematu un vēstules tekstu.", "sent": "Sūtījums nosūtīts {count} saņēmējiem.", "failed": "Sūtījumu neizdevās nosūtīt.", "templateSaved": "Veidne ir saglabāta.", "templateSaveFailed": "Veidni neizdevās saglabāt.",
+    "needContent": "Pievienojiet tematu un vēstules tekstu.", "sent": "E-pasts nosūtīts.", "failed": "Sūtījumu neizdevās nosūtīt.", "templateSaved": "Veidne ir saglabāta.", "templateSaveFailed": "Veidni neizdevās saglabāt.",
     "emailSubject": "Jūsu ziņojuma temats", "previewText": "Šeit būs redzams ziņojuma teksts. Izmantojiet īsu sveicienu, aprakstiet izmaiņas un norādiet nepieciešamo rīcību.", "openNotifications": "Atvērt paziņojumus", "buttonHint": "Poga ved uz saņēmēja paziņojumu sadaļu", "automated": "Šis ir automātiski sagatavots e-pasta sūtījums, lūdzam uz to neatbildēt."
   },
   "auth": {

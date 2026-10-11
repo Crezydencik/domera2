@@ -165,7 +165,7 @@ export class EmailService {
     };
     const language = dto.language ?? (invoiceSettings.language === 'lv' || invoiceSettings.language === 'en' || invoiceSettings.language === 'ru'
       ? invoiceSettings.language
-      : 'ru');
+      : 'lv');
     const actionCopy = language === 'lv'
       ? { label: 'Atvērt paziņojumus', footer: 'Šis ir automātiski sagatavots e-pasta sūtījums, lūdzam uz to neatbildēt.' }
       : language === 'en'
@@ -175,6 +175,9 @@ export class EmailService {
     const audience = dto.audience ?? 'all';
     const buildingIds = new Set((dto.buildingIds ?? []).map((id) => id.trim()).filter(Boolean));
     const apartmentIds = new Set((dto.apartmentIds ?? []).map((id) => id.trim()).filter(Boolean));
+    const specificRecipientMode = dto.specificRecipientMode ?? 'select';
+    if (audience === 'specific' && specificRecipientMode === 'select' && apartmentIds.size === 0) throw new Error('Select at least one apartment');
+    const apartmentRecipientModes = dto.apartmentRecipientModes ?? {};
     const apartments = await this.firebaseAdminService.firestore
       .collection('apartments')
       .where('companyId', '==', companyId)
@@ -184,9 +187,11 @@ export class EmailService {
 
     for (const apartmentDoc of apartments.docs) {
       const apartment = apartmentDoc.data() as Record<string, unknown>;
-      if (apartmentIds.size && !apartmentIds.has(apartmentDoc.id)) continue;
+      if (audience === 'specific' && specificRecipientMode === 'select' && !apartmentIds.has(apartmentDoc.id)) continue;
       const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : undefined;
       if (buildingIds.size && (!buildingId || !buildingIds.has(buildingId))) continue;
+      const requestedMode = audience === 'specific' ? (specificRecipientMode === 'select' ? apartmentRecipientModes[apartmentDoc.id] : specificRecipientMode) : 'all';
+      const recipientMode = requestedMode === 'owners' || requestedMode === 'residents' ? requestedMode : 'all';
       const addRecipient = (email: unknown) => {
         if (typeof email !== 'string' || !email.trim()) return;
         const normalized = email.trim().toLowerCase();
@@ -194,11 +199,21 @@ export class EmailService {
           recipients.set(normalized, { buildingId, apartmentId: apartmentDoc.id });
         }
       };
-      if (audience === 'all' || audience === 'owners') addRecipient(apartment.ownerEmail);
-      if (audience === 'all' || audience === 'residents') {
-        addRecipient(apartment.residentEmail);
+      if (recipientMode !== 'residents' && apartment.ownerActivated === true) {
+        addRecipient(apartment.ownerEmail);
+      }
+      if (recipientMode !== 'owners') {
+        if (typeof apartment.residentId === 'string' && apartment.residentId.trim()) {
+          addRecipient(apartment.residentEmail);
+        }
         if (Array.isArray(apartment.tenants)) {
-          apartment.tenants.forEach((tenant) => addRecipient(tenant && typeof tenant === 'object' ? (tenant as Record<string, unknown>).email : undefined));
+          apartment.tenants.forEach((tenant) => {
+            if (!tenant || typeof tenant !== 'object') return;
+            const record = tenant as Record<string, unknown>;
+            const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
+            const isActive = record.activated === true || Boolean(record.acceptedAt) || Boolean(record.activatedAt) || status === 'active' || status === 'accepted';
+            if (isActive && !['removed', 'deleted', 'revoked', 'inactive'].includes(status)) addRecipient(record.email);
+          });
         }
       }
     }
@@ -264,7 +279,7 @@ export class EmailService {
       if (closing) return `</${name}>`;
       if (name === 'a') {
         const href = /href\s*=\s*["']([^"']+)["']/i.exec(attributes)?.[1] ?? '';
-        return /^https?:\/\//i.test(href) ? `<a href="${href.replace(/"/g, '&quot;')}">` : '<a>';
+        return /^https?:\/\//i.test(href) ? `<a href="${href.replace(/"/g, '&quot;')}" style="color:#2563eb;text-decoration:underline;text-underline-offset:2px;">` : '<a>';
       }
       const align = /text-align\s*:\s*(left|center|right|justify)/i.exec(attributes)?.[1];
       return align && (name === 'p' || name === 'div') ? `<${name} style="text-align:${align.toLowerCase()}">` : `<${name}>`;
@@ -292,6 +307,7 @@ export class EmailService {
           channel: 'Information',
           type: 'information-mailing',
           read: false,
+          companyName: branding.companyName || 'Domera',
           companyId: dto.companyId,
           buildingId: dto.buildingId,
           apartmentId: dto.apartmentId,

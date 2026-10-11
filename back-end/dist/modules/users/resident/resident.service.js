@@ -240,9 +240,6 @@ let ResidentService = ResidentService_1 = class ResidentService {
             }
         }
         const hasConfirmedAccess = (apartment) => {
-            const isPrimaryResident = this.toOptionalString(apartment.residentId) === user.uid;
-            const residentEmail = (0, invitation_token_1.normalizeEmail)(this.toOptionalString(apartment.residentEmail) ?? '');
-            const isResidentByEmail = Boolean(normalizedEmail && residentEmail === normalizedEmail);
             const ownerId = this.toOptionalString(apartment.ownerId);
             const ownerEmail = (0, invitation_token_1.normalizeEmail)(this.toOptionalString(apartment.ownerEmail) ?? '');
             const isActivatedOwner = apartment.ownerActivated === true &&
@@ -253,7 +250,10 @@ let ResidentService = ResidentService_1 = class ResidentService {
                     return false;
                 const t = tenant;
                 const status = this.toOptionalString(t.status)?.toLowerCase() ?? '';
-                if (['removed', 'deleted', 'revoked', 'inactive'].includes(status))
+                if (['removed', 'deleted', 'revoked', 'inactive', 'pending'].includes(status))
+                    return false;
+                const confirmed = t.activated === true || Boolean(t.acceptedAt) || Boolean(t.activatedAt) || ['active', 'accepted'].includes(status);
+                if (!confirmed)
                     return false;
                 const tenantUserId = this.toOptionalString(t.userId);
                 const tenantEmail = (0, invitation_token_1.normalizeEmail)(this.toOptionalString(t.email) ?? '');
@@ -270,7 +270,7 @@ let ResidentService = ResidentService_1 = class ResidentService {
                     return false;
                 return true;
             });
-            return isPrimaryResident || isResidentByEmail || isActivatedOwner || isTenant;
+            return isActivatedOwner || isTenant;
         };
         const apartments = Array.from(mergedApartments.values())
             .filter(hasConfirmedAccess)

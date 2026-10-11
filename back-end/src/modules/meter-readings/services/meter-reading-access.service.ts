@@ -70,9 +70,12 @@ export class MeterReadingAccessService {
       normalizedUserEmail === ownerEmail &&
       apartment.ownerActivated === true,
     );
-    const isPrimaryResident = typeof apartment.residentId === 'string' && apartment.residentId === user.uid;
+    // residentId is legacy denormalized data and must not bypass tenancy checks.
+    const isPrimaryResident = false;
 
     const isTenantActive = (tenant: Record<string, unknown>): boolean => {
+      const status = typeof tenant.status === 'string' ? tenant.status.trim().toLowerCase() : '';
+      if (!tenant.activated || !['active', 'accepted'].includes(status)) return false;
       const fromDate = typeof tenant.fromDate === 'string' ? new Date(tenant.fromDate) : null;
       const until = typeof tenant.until === 'string' ? new Date(tenant.until) : null;
       const now = new Date();

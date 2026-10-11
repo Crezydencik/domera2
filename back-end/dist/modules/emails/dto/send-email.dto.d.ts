@@ -110,7 +110,9 @@ export declare class SendInformationMailingDto {
     actionLink?: string;
     buildingIds?: string[];
     apartmentIds?: string[];
-    audience?: 'all' | 'owners' | 'residents';
+    audience?: 'all' | 'specific';
+    apartmentRecipientModes?: Record<string, 'all' | 'owners' | 'residents'>;
+    specificRecipientMode?: 'owners' | 'residents' | 'select';
     language?: EmailLanguage;
 }
 export declare class SaveInformationMailingTemplateDto {

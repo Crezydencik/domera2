@@ -236,6 +236,22 @@ function formatDate(value: unknown): string {
   return "—";
 }
 
+function formatDateTime(value: unknown): string | undefined {
+  if (value && typeof value === "object") {
+    const record = value as { toDate?: () => Date; seconds?: number; _seconds?: number };
+    if (typeof record.toDate === "function") return record.toDate().toISOString();
+    const seconds = typeof record.seconds === "number" ? record.seconds : record._seconds;
+    if (typeof seconds === "number") return new Date(seconds * 1000).toISOString();
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+  }
+
+  return undefined;
+}
+
 export function toBuilding(item: UnknownRecord): Building {
   const apartmentIds = Array.isArray(item.apartmentIds)
     ? item.apartmentIds.filter((entry): entry is string => typeof entry === "string")
@@ -451,6 +467,9 @@ export function toNotification(item: UnknownRecord): NotificationItem {
     title: firstString(item.title, item.subject, "Update"),
     description: firstString(item.description, item.message, item.body, "No details available."),
     channel: firstString(item.channel, item.type, "General"),
+    createdAt: formatDateTime(item.createdAt ?? item.sentAt),
+    companyId: firstString(item.companyId, item.managementCompanyId) || undefined,
+    companyName: firstString(item.companyName, item.senderName) || undefined,
   };
 }
 

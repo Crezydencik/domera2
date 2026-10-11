@@ -60,6 +60,8 @@ export class DocumentAccessService {
     const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
 
     const isTenantActive = (tenant: UnknownRecord): boolean => {
+      const status = this.helperService.firstString(tenant.status).toLowerCase();
+      if (tenant.activated !== true || !['active', 'accepted'].includes(status)) return false;
       const fromDate = typeof tenant.fromDate === 'string' ? new Date(tenant.fromDate) : null;
       const until = typeof tenant.until === 'string' ? new Date(tenant.until) : null;
       const now = new Date();
@@ -69,8 +71,9 @@ export class DocumentAccessService {
     };
 
     return (
-      this.helperService.firstString(apartment.residentId) === user.uid ||
-      this.helperService.firstString(apartment.ownerId) === user.uid ||
+      // Denormalized residentId/ownerId values are never sufficient proof of
+      // membership: they can outlive removal or an unaccepted invitation.
+      (apartment.ownerActivated === true && this.helperService.firstString(apartment.ownerId) === user.uid) ||
       Boolean(userEmail && ownerEmail && ownerEmail === userEmail && apartment.ownerActivated === true) ||
       tenants.some((tenant) => {
         if (!tenant || typeof tenant !== 'object') return false;
@@ -86,12 +89,11 @@ export class DocumentAccessService {
   private memberAccessForApartment(
     apartment: UnknownRecord,
     user: RequestUser,
-  ): { type: 'resident' | 'owner' | 'tenant' | 'formerOwner'; fromDate?: Date | null; until?: Date | null; canViewDocuments?: boolean } | null {
+  ): { type: 'owner' | 'tenant' | 'formerOwner'; fromDate?: Date | null; until?: Date | null; canViewDocuments?: boolean; active?: boolean } | null {
     const ownerEmail = this.helperService.firstString(apartment.ownerEmail).toLowerCase();
     const userEmail = this.helperService.firstString(user.email).toLowerCase();
 
-    if (this.helperService.firstString(apartment.residentId) === user.uid) return { type: 'resident' };
-    if (this.helperService.firstString(apartment.ownerId) === user.uid) return { type: 'owner' };
+    if (apartment.ownerActivated === true && this.helperService.firstString(apartment.ownerId) === user.uid) return { type: 'owner' };
     if (userEmail && ownerEmail && ownerEmail === userEmail && apartment.ownerActivated === true) return { type: 'owner' };
     const formerOwnerAccess = this.formerOwnerAccessForApartment(apartment, user);
     if (formerOwnerAccess) return formerOwnerAccess;
@@ -103,10 +105,20 @@ export class DocumentAccessService {
       const tenantEmail = this.helperService.firstString(record.email).toLowerCase();
       const matches = this.helperService.firstString(record.userId) === user.uid || Boolean(userEmail && tenantEmail === userEmail);
       if (!matches) continue;
+      const status = this.helperService.firstString(record.status).toLowerCase();
+      const fromDate = this.helperService.parseOptionalDate(record.fromDate ?? record.acceptedAt ?? record.invitedAt) ?? new Date(0);
+      const until = this.helperService.parseOptionalDate(record.until ?? record.removedAt);
+      const now = new Date();
+      const active =
+        record.activated === true &&
+        ['active', 'accepted'].includes(status) &&
+        now >= fromDate &&
+        (!until || now <= until);
       return {
         type: 'tenant',
-        fromDate: this.helperService.parseOptionalDate(record.fromDate),
-        until: this.helperService.parseOptionalDate(record.until),
+        fromDate,
+        until,
+        active,
         canViewDocuments: Array.isArray(record.permissions) &&
           record.permissions.some((permission) => ['viewDocuments', 'documents'].includes(this.helperService.firstString(permission))),
       };
@@ -135,7 +147,19 @@ export class DocumentAccessService {
       );
     }
     if (access.type !== 'tenant') return true;
-    return access.canViewDocuments === true;
+    if (access.canViewDocuments !== true) return false;
+
+    // An expired or removed tenant can view only their dated archive, never
+    // current/future material belonging to later occupants.
+    if (access.active) return true;
+    const documentDate = this.helperService.parseOptionalDate(document.createdAt ?? document.uploadedAt ?? document.updatedAt);
+    return Boolean(
+      documentDate &&
+      access.fromDate &&
+      access.until &&
+      documentDate >= access.fromDate &&
+      documentDate <= access.until,
+    );
   }
 
   async resolveMemberApartments(user: RequestUser): Promise<MemberApartment[]> {

@@ -56,7 +56,7 @@ let UsersService = class UsersService {
     ensureCompanyAccess(currentUser, companyId) {
         if (this.isPlatformAdmin(currentUser))
             return;
-        if (this.isStaff(currentUser) && (!currentUser.companyId || currentUser.companyId === companyId)) {
+        if (this.isStaff(currentUser) && currentUser.companyId === companyId) {
             return;
         }
         throw new common_1.ForbiddenException('Access denied for company');

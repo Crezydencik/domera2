@@ -102,9 +102,6 @@ let InvitationsService = class InvitationsService {
     }
     isActiveApartmentMember(user, apartment) {
         const userEmail = (0, invitation_token_1.normalizeEmail)(user.email ?? '');
-        const residentId = typeof apartment.residentId === 'string' ? apartment.residentId.trim() : '';
-        if (residentId && residentId === user.uid)
-            return true;
         const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId.trim() : '';
         const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
         if (apartment.ownerActivated === true &&
@@ -118,7 +115,10 @@ let InvitationsService = class InvitationsService {
                 return false;
             const record = tenant;
             const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
-            if (['removed', 'deleted', 'revoked', 'inactive'].includes(status))
+            if (['removed', 'deleted', 'revoked', 'inactive', 'pending'].includes(status))
+                return false;
+            const confirmed = record.activated === true || Boolean(record.acceptedAt) || Boolean(record.activatedAt) || ['active', 'accepted'].includes(status);
+            if (!confirmed)
                 return false;
             const tenantUserId = typeof record.userId === 'string' ? record.userId.trim() : '';
             const tenantEmail = typeof record.email === 'string' ? (0, invitation_token_1.normalizeEmail)(record.email) : '';
@@ -455,12 +455,21 @@ let InvitationsService = class InvitationsService {
                     ? apartment.tenants
                     : [];
                 let matchedTenant = false;
+                let removedTenantMatch = false;
                 const nextTenants = tenants.map((tenant) => {
                     const tenantEmail = typeof tenant.email === 'string' ? tenant.email.trim().toLowerCase() : '';
                     const tenantUserId = typeof tenant.userId === 'string' ? tenant.userId.trim() : '';
-                    const matches = tenantUserId === uid || Boolean(tenantEmail && tenantEmail === invitationEmail);
+                    const tenantInvitationId = typeof tenant.invitationId === 'string' ? tenant.invitationId.trim() : '';
+                    const matches = tenantInvitationId
+                        ? tenantInvitationId === docId
+                        : tenantUserId === uid || Boolean(tenantEmail && tenantEmail === invitationEmail);
                     if (!matches)
                         return tenant;
+                    const tenantStatus = typeof tenant.status === 'string' ? tenant.status.trim().toLowerCase() : '';
+                    if (['removed', 'deleted', 'revoked', 'inactive'].includes(tenantStatus)) {
+                        removedTenantMatch = true;
+                        return tenant;
+                    }
                     matchedTenant = true;
                     return {
                         ...tenant,
@@ -475,22 +484,13 @@ let InvitationsService = class InvitationsService {
                         acceptedAt: new Date(),
                     };
                 });
-                const resolvedTenants = matchedTenant
-                    ? nextTenants
-                    : [
-                        ...nextTenants,
-                        {
-                            userId: uid,
-                            email: email ?? invitationEmail,
-                            ...(firstName ? { firstName } : {}),
-                            ...(lastName ? { lastName } : {}),
-                            ...(fullName ? { name: fullName, fullName } : {}),
-                            ...(phone ? { phone } : {}),
-                            status: 'Active',
-                            activated: true,
-                            acceptedAt: new Date(),
-                        },
-                    ];
+                if (removedTenantMatch) {
+                    throw new common_1.ForbiddenException('Tenant access has been revoked');
+                }
+                if (!matchedTenant) {
+                    throw new common_1.ForbiddenException('Tenant invitation is no longer valid');
+                }
+                const resolvedTenants = nextTenants;
                 await apartmentRef.set({
                     residentId: uid,
                     residentEmail: email ?? invitationEmail,

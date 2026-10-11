@@ -135,13 +135,10 @@ export class ApartmentAccessService {
       .filter((snap) => snap.exists)
       .filter((snap) => {
         const apartment = snap.data() as Record<string, unknown>;
-        const residentId = typeof apartment.residentId === 'string' ? apartment.residentId : '';
-        const residentEmail = typeof apartment.residentEmail === 'string' ? normalizeEmail(apartment.residentEmail) : '';
         const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
         const ownerEmail = typeof apartment.ownerEmail === 'string' ? normalizeEmail(apartment.ownerEmail) : '';
-        const isResident =
-          residentId === user.uid ||
-          Boolean(normalizedUserEmail && residentEmail === normalizedUserEmail);
+        // residentId is legacy denormalized data, not an authorization grant.
+        const isResident = false;
         const isOwner =
           apartment.ownerActivated === true &&
           ((ownerId && ownerId === user.uid) || Boolean(normalizedUserEmail && ownerEmail === normalizedUserEmail));
@@ -150,7 +147,13 @@ export class ApartmentAccessService {
           if (!tenant || typeof tenant !== 'object') return false;
           const record = tenant as Record<string, unknown>;
           const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
-          if (['removed', 'deleted', 'revoked', 'inactive'].includes(status)) return false;
+          if (['removed', 'deleted', 'revoked', 'inactive', 'pending'].includes(status)) return false;
+          if (record.activated !== true && !record.acceptedAt && !record.activatedAt && !['active', 'accepted'].includes(status)) return false;
+          const now = new Date();
+          const fromDate = typeof record.fromDate === 'string' ? new Date(record.fromDate) : null;
+          const until = typeof record.until === 'string' ? new Date(record.until) : null;
+          if (fromDate && now < fromDate) return false;
+          if (until && now > until) return false;
 
           const tenantUserId = typeof record.userId === 'string' ? record.userId.trim() : '';
           const tenantEmail = typeof record.email === 'string' ? normalizeEmail(record.email) : '';

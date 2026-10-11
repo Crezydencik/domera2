@@ -157,10 +157,7 @@ export declare class InvoicesController {
         }[];
         query: Record<string, string | undefined>;
     }>;
-    byId(user: RequestUser, invoiceId: string): Promise<{
-        apartmentId: string | undefined;
-        id: string;
-    }>;
+    byId(user: RequestUser, invoiceId: string): Promise<Record<string, unknown>>;
     update(request: Request, user: RequestUser, invoiceId: string, body: UpdateInvoiceDto): Promise<{
         success: boolean;
     }>;

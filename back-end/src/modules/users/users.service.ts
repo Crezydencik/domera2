@@ -80,7 +80,7 @@ export class UsersService {
 
   private ensureCompanyAccess(currentUser: RequestUser, companyId: string) {
     if (this.isPlatformAdmin(currentUser)) return;
-    if (this.isStaff(currentUser) && (!currentUser.companyId || currentUser.companyId === companyId)) {
+    if (this.isStaff(currentUser) && currentUser.companyId === companyId) {
       return;
     }
     throw new ForbiddenException('Access denied for company');

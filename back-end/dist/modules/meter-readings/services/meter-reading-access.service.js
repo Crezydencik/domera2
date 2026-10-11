@@ -69,8 +69,11 @@ let MeterReadingAccessService = class MeterReadingAccessService {
             ownerEmail &&
             normalizedUserEmail === ownerEmail &&
             apartment.ownerActivated === true);
-        const isPrimaryResident = typeof apartment.residentId === 'string' && apartment.residentId === user.uid;
+        const isPrimaryResident = false;
         const isTenantActive = (tenant) => {
+            const status = typeof tenant.status === 'string' ? tenant.status.trim().toLowerCase() : '';
+            if (!tenant.activated || !['active', 'accepted'].includes(status))
+                return false;
             const fromDate = typeof tenant.fromDate === 'string' ? new Date(tenant.fromDate) : null;
             const until = typeof tenant.until === 'string' ? new Date(tenant.until) : null;
             const now = new Date();

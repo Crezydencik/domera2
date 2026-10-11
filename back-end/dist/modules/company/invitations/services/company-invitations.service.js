@@ -16,11 +16,13 @@ const audit_log_service_1 = require("../../../../common/services/audit-log.servi
 const rate_limit_service_1 = require("../../../../common/services/rate-limit.service");
 const invitation_token_1 = require("../../../../common/utils/invitation-token");
 const role_constants_1 = require("../../../../common/auth/role.constants");
+const company_access_service_1 = require("../../services/company-access.service");
 let CompanyInvitationsService = class CompanyInvitationsService {
-    constructor(firebaseAdminService, rateLimitService, auditLogService) {
+    constructor(firebaseAdminService, rateLimitService, auditLogService, companyAccessService) {
         this.firebaseAdminService = firebaseAdminService;
         this.rateLimitService = rateLimitService;
         this.auditLogService = auditLogService;
+        this.companyAccessService = companyAccessService;
     }
     assertManagerOrAccountant(user) {
         if (!user?.uid || !user.role)
@@ -100,6 +102,10 @@ let CompanyInvitationsService = class CompanyInvitationsService {
             throw new common_1.BadRequestException('Too many requests');
         this.assertCompanyScope(user, companyId);
         const db = this.firebaseAdminService.firestore;
+        const companySnap = await db.collection('companies').doc(companyId).get();
+        if (!companySnap.exists)
+            throw new common_1.NotFoundException('Company not found');
+        this.companyAccessService.assertCanManageMembers(user, companyId, companySnap.data());
         const buildingSnap = await db.collection('buildings').doc(buildingId).get();
         if (!buildingSnap.exists)
             throw new common_1.NotFoundException('Building not found');
@@ -243,5 +249,6 @@ exports.CompanyInvitationsService = CompanyInvitationsService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService,
         rate_limit_service_1.RateLimitService,
-        audit_log_service_1.AuditLogService])
+        audit_log_service_1.AuditLogService,
+        company_access_service_1.CompanyAccessService])
 ], CompanyInvitationsService);

@@ -121,17 +121,21 @@ const COPY = {
     notifySelectedRecipients: "Send notifications",
     notifyNoRecipients: "Approve without notifications",
     notifyChooseRecipients: "Choose recipients",
+    selectedApartments: "apartments selected",
     approvalApprove: "Approve",
     approvalApproving: "Approving...",
     approvalApproved: "Invoice approved.",
     approvalFailed: "Could not approve the invoice.",
     approvalCancel: "Cancel",
+    approvalCancelConfirm: "Cancel this pending invoice?",
+    approvalCancelAllConfirm: "Cancel all pending invoices?",
     approvalCancelling: "Cancelling...",
     approvalCancelled: "Invoice approval cancelled.",
     approvalCancelFailed: "Could not cancel the invoice approval.",
     approvalApproveAll: "Approve all",
     approvalApprovingAll: "Approving all...",
     approvalApprovedAll: "All API invoices approved.",
+    approvalEmailSent: "Email sent.",
     approvalApproveAllFailed: "Could not approve all API invoices.",
     approvalCancelAll: "Cancel all",
     approvalCancellingAll: "Cancelling all...",
@@ -341,17 +345,21 @@ const COPY = {
     notifySelectedRecipients: "Отправить уведомления",
     notifyNoRecipients: "Подтвердить без уведомлений",
     notifyChooseRecipients: "Выбрать получателей",
+    selectedApartments: "квартир выбрано",
     approvalApprove: "Одобрить",
     approvalApproving: "Одобряем...",
     approvalApproved: "Счет одобрен.",
     approvalFailed: "Не удалось одобрить счет.",
     approvalCancel: "Отменить",
+    approvalCancelConfirm: "Отменить этот ожидающий счёт?",
+    approvalCancelAllConfirm: "Отменить все ожидающие счета?",
     approvalCancelling: "Отменяем...",
     approvalCancelled: "API счет отменен.",
     approvalCancelFailed: "Не удалось отменить API счет.",
     approvalApproveAll: "Одобрить всё",
     approvalApprovingAll: "Одобряем всё...",
     approvalApprovedAll: "Все API счета одобрены.",
+    approvalEmailSent: "Письмо отправлено.",
     approvalApproveAllFailed: "Не удалось одобрить все API счета.",
     approvalCancelAll: "Отменить всё",
     approvalCancellingAll: "Отменяем всё...",
@@ -413,17 +421,21 @@ const COPY = {
     notifySelectedRecipients: "Sūtīt paziņojumus",
     notifyNoRecipients: "Apstiprināt bez paziņojumiem",
     notifyChooseRecipients: "Izvēlēties saņēmējus",
+    selectedApartments: "dzīvokļi izvēlēti",
     approvalApprove: "Apstiprinat",
     approvalApproving: "Apstiprina...",
     approvalApproved: "Rekins apstiprinats.",
     approvalFailed: "Neizdevas apstiprinat rekinu.",
     approvalCancel: "Atcelt",
+    approvalCancelConfirm: "Vai atcelt šo gaidošo rēķinu?",
+    approvalCancelAllConfirm: "Vai atcelt visus gaidošos rēķinus?",
     approvalCancelling: "Atcel...",
     approvalCancelled: "API rekina apstiprinasana atcelta.",
     approvalCancelFailed: "Neizdevas atcelt API rekinu.",
     approvalApproveAll: "Apstiprinat visus",
     approvalApprovingAll: "Apstiprina visus...",
     approvalApprovedAll: "Visi API rekini apstiprinati.",
+    approvalEmailSent: "E-pasts nosūtīts.",
     approvalApproveAllFailed: "Neizdevas apstiprinat visus API rekinus.",
     approvalCancelAll: "Atcelt visus",
     approvalCancellingAll: "Atcel visus...",
@@ -891,6 +903,7 @@ export function InvoicesWorkspace({
   const [livePendingApprovalsError, setLivePendingApprovalsError] = useState(pendingApprovalsError);
   const [loadingPendingApprovals, setLoadingPendingApprovals] = useState(false);
   const [approvalConfirmationIds, setApprovalConfirmationIds] = useState<string[] | null>(null);
+  const [cancellationConfirmationTarget, setCancellationConfirmationTarget] = useState<PendingApprovalGroup | "all" | null>(null);
   const [notificationMode, setNotificationMode] = useState<"notify" | "none">("notify");
   const [notificationRecipientMode, setNotificationRecipientMode] = useState<"all" | "select">("all");
   const [selectedNotificationApprovalIds, setSelectedNotificationApprovalIds] = useState<Set<string>>(() => new Set());
@@ -1261,7 +1274,7 @@ export function InvoicesWorkspace({
         throw new Error(response.message || `${copy.approvalApproveAllFailed} ${response.processed ?? 0}/${response.total ?? approvalIds.length}`);
       }
 
-      notifications.success(copy.approvalApprovedAll);
+      notifications.success(shouldNotify ? copy.approvalEmailSent : copy.approvalApprovedAll);
       refreshPendingApprovals();
     } catch (error) {
       notifications.error(error instanceof Error ? error.message : copy.approvalApproveAllFailed);
@@ -1345,6 +1358,14 @@ export function InvoicesWorkspace({
       .map((item) => firstString(item.id, item.approvalId))
       .filter((id) => approvalConfirmationIds.includes(id))
     : [];
+  const selectedNotificationApartmentCount = approvalConfirmationIds
+    ? notificationApprovalGroups.filter((group) => group.items.some((item) => {
+      const id = firstString(item.id, item.approvalId);
+      return approvalConfirmationIds.includes(id)
+        && selectedNotificationApprovalIds.has(id)
+        && Boolean(invoiceRecipientLabel(firstString(item.recipientType, item.recipient_type), copy));
+    })).length
+    : 0;
   const pendingApprovalGroups = Array.from(
     filteredPendingApprovals.reduce((groups, item) => {
       // A batch is allowed to contain invoices for many apartments. Approval
@@ -1702,9 +1723,30 @@ export function InvoicesWorkspace({
         </div>
       ) : null}
 
+      {canImport && cancellationConfirmationTarget ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-4" onClick={() => setCancellationConfirmationTarget(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <h2 className="text-lg font-semibold text-slate-950">{cancellationConfirmationTarget === "all" ? copy.approvalCancelAll : copy.approvalCancel}</h2>
+            <p className="mt-2 text-sm text-slate-600">{cancellationConfirmationTarget === "all" ? copy.approvalCancelAllConfirm : copy.approvalCancelConfirm}</p>
+            <div className="mt-5 flex justify-end gap-3">
+              <Button type="button" variant="secondary" onClick={() => setCancellationConfirmationTarget(null)}>{copy.close}</Button>
+              <Button type="button" variant="danger" onClick={() => {
+                const target = cancellationConfirmationTarget;
+                setCancellationConfirmationTarget(null);
+                if (target === "all") void handleCancelAllPendingApprovals();
+                else void handleCancelPendingApprovalGroup(target);
+              }}>
+                <FiX className="h-4 w-4" aria-hidden="true" />
+                {cancellationConfirmationTarget === "all" ? copy.approvalCancelAll : copy.approvalCancel}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {canImport && approvalConfirmationIds ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 p-4" onClick={() => setApprovalConfirmationIds(null)}>
-          <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+          <div className="flex max-h-[min(44rem,calc(100dvh-6rem))] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
             <h2 className="text-lg font-semibold text-slate-950">{copy.approvalApproveAll}</h2>
             <div className="mt-2 min-h-0 flex-1 overflow-y-auto pr-1">
             {notificationApprovalIds.length ? <>
@@ -1722,11 +1764,16 @@ export function InvoicesWorkspace({
                     {copy.notifyAllRecipients}
                   </label>
                   <label className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${notificationRecipientMode === "select" ? "bg-blue-50 text-blue-900" : "bg-slate-50 text-slate-700 hover:bg-slate-100"}`}>
-                    <input type="radio" name="invoice-recipient-mode" checked={notificationRecipientMode === "select"} onChange={() => setNotificationRecipientMode("select")} className="h-4 w-4 border-slate-300 text-blue-600" />
-                    {copy.notifyChooseRecipients}
+                    <input type="radio" name="invoice-recipient-mode" checked={notificationRecipientMode === "select"} onChange={() => {
+                      setNotificationRecipientMode("select");
+                      setSelectedNotificationApprovalIds(new Set());
+                    }} className="h-4 w-4 border-slate-300 text-blue-600" />
+                    {selectedNotificationApartmentCount
+                      ? `${copy.notifyChooseRecipients} · ${selectedNotificationApartmentCount} ${copy.selectedApartments}`
+                      : copy.notifyChooseRecipients}
                   </label>
                 </div>
-              {notificationRecipientMode === "select" ? <div className="mt-2 space-y-2">
+              {notificationRecipientMode === "select" ? <div className="mt-2 max-h-[min(18rem,30dvh)] space-y-2 overflow-y-auto overscroll-contain pr-1">
                 {notificationApprovalGroups.filter((group) => group.items.some((item) => approvalConfirmationIds.includes(firstString(item.id, item.approvalId)))).map((group) => {
                   const recipientItems = group.items.filter((item) => {
                     const id = firstString(item.id, item.approvalId);
@@ -1734,6 +1781,7 @@ export function InvoicesWorkspace({
                       && Boolean(invoiceRecipientLabel(firstString(item.recipientType, item.recipient_type), copy));
                   });
                   const recipientIds = recipientItems.map((item) => firstString(item.id, item.approvalId));
+                  const selectedRecipientCount = recipientIds.filter((id) => selectedNotificationApprovalIds.has(id)).length;
                   const recipients = [...new Set(recipientItems
                     .map((item) => invoiceRecipientLabel(firstString(item.recipientType, item.recipient_type), copy)))].join(", ");
                   const hasMultipleRecipients = recipientItems.length > 1;
@@ -1752,11 +1800,13 @@ export function InvoicesWorkspace({
                             <FiChevronDown className={`ml-2 h-4 w-4 shrink-0 text-slate-400 transition ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
                           </button>
                         ) : <span className="min-w-0 flex-1 truncate font-medium">{label}</span>}
-                        {recipientIds.length ? <input type="checkbox" checked={recipientIds.every((id) => selectedNotificationApprovalIds.has(id))} onChange={() => setSelectedNotificationApprovalIds((current) => {
+                        {recipientIds.length ? <input type="checkbox" checked={selectedRecipientCount === recipientIds.length} ref={(element) => {
+                          if (element) element.indeterminate = selectedRecipientCount > 0 && selectedRecipientCount < recipientIds.length;
+                        }} aria-checked={selectedRecipientCount > 0 && selectedRecipientCount < recipientIds.length ? "mixed" : selectedRecipientCount === recipientIds.length} onChange={() => setSelectedNotificationApprovalIds((current) => {
                           const next = new Set(current);
                           if (recipientIds.every((id) => next.has(id))) recipientIds.forEach((id) => next.delete(id)); else recipientIds.forEach((id) => next.add(id));
                           return next;
-                        })} className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600" /> : <span className="h-4 w-4 shrink-0" />}
+                        })} className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600" /> : <input type="checkbox" checked={false} disabled aria-label={`${copy.apartmentShort} ${group.apartmentId}`} className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 disabled:cursor-not-allowed disabled:opacity-40" />}
                       </div>
                       {hasMultipleRecipients && isOpen ? <div className="space-y-1 border-t border-slate-100 bg-slate-50 p-2">
                         {recipientItems.map((item) => {
@@ -1804,26 +1854,27 @@ export function InvoicesWorkspace({
       {canImport && approvalModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onClick={() => setApprovalModalOpen(false)}>
           <div
-            className="flex max-h-[calc(100dvh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            className="flex max-h-[min(52rem,calc(100dvh-4rem))] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="invoice-approval-title"
           >
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-              <div>
+            <div className="relative flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div className="pr-10 sm:pr-0">
                 <h2 id="invoice-approval-title" className="text-lg font-semibold text-slate-950">{copy.approvalModalTitle}</h2>
                 <p className="mt-1 text-sm text-slate-500">{copy.approvalModalDescription}</p>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                 <Button
                   type="button"
                   size="sm"
+                  className="w-full sm:w-auto"
                   onClick={() => {
                     const ids = visibleApprovalIds();
                     setNotificationMode("notify");
                     setNotificationRecipientMode("all");
-                    setSelectedNotificationApprovalIds(new Set(ids));
+                    setSelectedNotificationApprovalIds(new Set());
                     setApprovalConfirmationIds(ids);
                   }}
                   disabled={!hasVisibleApprovals || approvingAllApprovals || cancellingAllApprovals}
@@ -1835,7 +1886,8 @@ export function InvoicesWorkspace({
                   type="button"
                   size="sm"
                   variant="secondary"
-                  onClick={() => void handleCancelAllPendingApprovals()}
+                  className="w-full sm:w-auto"
+                  onClick={() => setCancellationConfirmationTarget("all")}
                   disabled={!hasVisibleApprovals || approvingAllApprovals || cancellingAllApprovals}
                 >
                   <FiX className="h-4 w-4" aria-hidden="true" />
@@ -1844,7 +1896,7 @@ export function InvoicesWorkspace({
                 <button
                   type="button"
                   onClick={() => setApprovalModalOpen(false)}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+                  className="absolute right-3 top-3 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 sm:static"
                   aria-label={copy.close}
                 >
                   <FiX className="h-4 w-4" aria-hidden="true" />
@@ -1860,7 +1912,7 @@ export function InvoicesWorkspace({
                 </div>
               ) : pendingApprovalGroups.length ? (
                 <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                  <div className="hidden grid-cols-[minmax(130px,1.2fr)_80px_120px_110px_90px_minmax(290px,1fr)] gap-4 border-b border-slate-200 bg-slate-50 px-5 py-3 text-sm font-medium text-slate-500 lg:grid">
+                  <div className="hidden grid-cols-[minmax(120px,1.2fr)_60px_100px_100px_75px_minmax(410px,1fr)] gap-4 border-b border-slate-200 bg-slate-50 px-5 py-3 text-sm font-medium text-slate-500 lg:grid">
                     <span>{copy.colInvoice}</span>
                     <span>{copy.colApartment}</span>
                     <span>{copy.recipient}</span>
@@ -1883,7 +1935,7 @@ export function InvoicesWorkspace({
 
                       return (
                         <div key={group.id}>
-                          <div className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(130px,1.2fr)_80px_120px_110px_90px_minmax(290px,1fr)] lg:items-center lg:gap-4 lg:px-5">
+                          <div className="relative grid gap-3 px-4 py-4 pr-32 sm:grid-cols-2 sm:items-center lg:grid-cols-[minmax(120px,1.2fr)_60px_100px_100px_75px_minmax(410px,1fr)] lg:gap-4 lg:px-5">
                             <div className="min-w-0">
                               <p className="truncate font-semibold text-slate-900">{invoiceLabel}</p>
                               {firstString(item.externalId) && firstString(item.externalId) !== invoiceLabel ? <p className="mt-0.5 truncate text-xs text-slate-500">{firstString(item.externalId)}</p> : null}
@@ -1892,30 +1944,32 @@ export function InvoicesWorkspace({
                             <div className="text-sm text-slate-700"><span className="mr-1 text-xs text-slate-400 lg:hidden">{copy.recipient}:</span>{recipientLabels.join(", ")}</div>
                             <div className="text-sm font-semibold text-slate-800"><span className="mr-1 text-xs font-normal text-slate-400 lg:hidden">{copy.colAmount}:</span>{amountLabels.length ? `${currencySymbol(groupCurrency)} ${amountLabels.join(" / ")}` : "-"}</div>
                             <div className="text-sm text-slate-700"><span className="mr-1 text-xs text-slate-400 lg:hidden">{copy.colPeriod}:</span>{firstString(item.period, item.invoiceDate, item.createdAt) || "-"}</div>
-                            <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+                            <div className="absolute right-4 top-4 flex flex-nowrap items-center justify-end gap-1.5 lg:static lg:col-auto lg:justify-end lg:gap-2">
                               <button
                                 type="button"
                                 onClick={() => setOpenApprovalGroupId((current) => current === group.id ? null : group.id)}
-                                className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 px-0 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 lg:w-auto lg:gap-2 lg:px-2"
                                 aria-expanded={isOpen}
+                                aria-label={copy.colFile}
+                                title={copy.colFile}
                               >
                                 <FiFileText className="h-4 w-4 text-blue-600" aria-hidden="true" />
-                                {group.items.length}
-                                <FiChevronDown className={`h-4 w-4 transition ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+                                <span className="hidden lg:inline">{group.items.length}</span>
+                                <FiChevronDown className={`hidden h-4 w-4 transition lg:inline ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
                               </button>
-                              <Button type="button" size="sm" onClick={() => {
+                              <Button type="button" size="sm" className="h-9 w-9 shrink-0 px-0 lg:w-auto lg:px-2" title={copy.approvalApprove} aria-label={copy.approvalApprove} onClick={() => {
                                 const ids = group.items.map((entry) => firstString(entry.id, entry.approvalId)).filter(Boolean);
                                 setNotificationMode("notify");
                                 setNotificationRecipientMode("all");
-                                setSelectedNotificationApprovalIds(new Set(ids));
+                                setSelectedNotificationApprovalIds(new Set());
                                 setApprovalConfirmationIds(ids);
                               }} disabled={!approvalId || approvingAllApprovals || cancellingAllApprovals || isProcessing}>
                                 <FiCheckCircle className="h-4 w-4" aria-hidden="true" />
-                                {approvingApprovalId === group.id ? copy.approvalApproving : copy.approvalApprove}
+                                <span className="hidden lg:inline">{approvingApprovalId === group.id ? copy.approvalApproving : copy.approvalApprove}</span>
                               </Button>
-                              <Button type="button" size="sm" variant="secondary" onClick={() => void handleCancelPendingApprovalGroup(group)} disabled={!approvalId || approvingAllApprovals || cancellingAllApprovals || isProcessing}>
+                              <Button type="button" size="sm" variant="secondary" className="h-9 w-9 shrink-0 px-0 lg:w-auto lg:px-2" title={copy.approvalCancel} aria-label={copy.approvalCancel} onClick={() => setCancellationConfirmationTarget(group)} disabled={!approvalId || approvingAllApprovals || cancellingAllApprovals || isProcessing}>
                                 <FiX className="h-4 w-4" aria-hidden="true" />
-                                {cancellingApprovalId === group.id ? copy.approvalCancelling : copy.approvalCancel}
+                                <span className="hidden lg:inline">{cancellingApprovalId === group.id ? copy.approvalCancelling : copy.approvalCancel}</span>
                               </Button>
                             </div>
                           </div>

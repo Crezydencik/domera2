@@ -804,10 +804,9 @@ export class InvoicesService {
   private memberAccessForApartment(
     user: RequestUser,
     apartment: Record<string, unknown>,
-  ): { type: 'resident' | 'owner' | 'tenant'; fromDate?: Date | null; until?: Date | null } | null {
+  ): { type: 'owner' | 'tenant'; fromDate?: Date | null; until?: Date | null } | null {
     const normalizedUserEmail = normalizeEmail(user.email ?? '');
     const ownerEmail = typeof apartment.ownerEmail === 'string' ? normalizeEmail(apartment.ownerEmail) : '';
-    const residentId = typeof apartment.residentId === 'string' ? apartment.residentId : '';
     const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
 
     if (
@@ -833,8 +832,6 @@ export class InvoicesService {
       };
     }
 
-    if (residentId === user.uid) return { type: 'resident' };
-
     return null;
   }
 
@@ -849,7 +846,6 @@ export class InvoicesService {
     const recipientType = this.normalizeRecipientType(invoice.recipientType ?? invoice.recipient_type);
     if (recipientType === 'tenant' && access.type !== 'tenant') return false;
     if (recipientType === 'owner' && access.type !== 'owner') return false;
-    if (recipientType !== 'general' && access.type === 'resident') return false;
     if (access.type !== 'tenant') return true;
 
     const range = this.invoiceDateRange(invoice);
@@ -879,13 +875,18 @@ export class InvoicesService {
     apartmentData?: Record<string, unknown>,
   ): Record<string, unknown> {
     const data = doc.data() as Record<string, unknown>;
+    // Firebase download URLs carry a bearer token. The authenticated PDF endpoint
+    // is the only supported delivery path; callers receive storage metadata only.
+    const safeData = { ...data };
+    delete safeData.pdfUrl;
     const apartmentId = this.resolveInvoiceApartmentId(doc.ref, data, fallbackApartmentId);
     const companyId = this.firstString(data.companyId, this.invoiceApartmentCompanyId(apartmentData));
     const buildingId = this.firstString(data.buildingId, apartmentData?.buildingId, apartmentData?.houseId);
 
     return {
       id: doc.id,
-      ...data,
+      ...safeData,
+      pdfAvailable: Boolean(this.firstString(data.storagePath, data.pdfUrl)),
       apartmentId,
       companyId: companyId || undefined,
       buildingId: buildingId || undefined,
@@ -1038,11 +1039,14 @@ export class InvoicesService {
     fallbackBuildingId?: string,
   ): Record<string, unknown> {
     const data = doc.data() as Record<string, unknown>;
+    const safeData = { ...data };
+    delete safeData.pdfUrl;
     const buildingId = this.firstString(data.buildingId, fallbackBuildingId, doc.ref.parent.parent?.id);
 
     return {
       id: doc.id,
-      ...data,
+      ...safeData,
+      pdfAvailable: Boolean(this.firstString(data.storagePath, data.pdfUrl)),
       buildingId: buildingId || undefined,
       createdAt: this.firestoreDateToIso(data.createdAt),
       updatedAt: this.firestoreDateToIso(data.updatedAt),
@@ -1762,7 +1766,7 @@ export class InvoicesService {
       content = Buffer.from(compressed);
     } else if (params.compressionMethod === 8) {
       try {
-        content = inflateRawSync(compressed);
+        content = inflateRawSync(compressed, { maxOutputLength: MAX_INVOICE_PDF_BYTES + 1 });
       } catch {
         throw new BadRequestException(`Could not extract ZIP entry: ${params.entryName}`);
       }
@@ -1772,6 +1776,9 @@ export class InvoicesService {
 
     if (params.uncompressedSize > 0 && content.length !== params.uncompressedSize) {
       throw new BadRequestException(`Invalid ZIP entry size: ${params.entryName}`);
+    }
+    if (content.length > MAX_INVOICE_PDF_BYTES) {
+      throw new BadRequestException(`ZIP entry is too large: ${params.entryName}`);
     }
 
     return content;
@@ -3898,10 +3905,10 @@ export class InvoicesService {
       .filter((snap) => snap.exists)
       .filter((snap) => {
         const apartment = snap.data() as Record<string, unknown>;
-        const residentId = typeof apartment.residentId === 'string' ? apartment.residentId : '';
         const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
         const ownerEmail = typeof apartment.ownerEmail === 'string' ? normalizeEmail(apartment.ownerEmail) : '';
-        const isResident = residentId === user.uid;
+        // A stale primary-resident pointer cannot authorize invoice access.
+        const isResident = false;
         const isOwner =
           apartment.ownerActivated === true &&
           ((ownerId && ownerId === user.uid) || Boolean(normalizedUserEmail && ownerEmail === normalizedUserEmail));
@@ -4074,7 +4081,7 @@ export class InvoicesService {
     return { items, query };
   }
 
-  async byId(user: RequestUser, invoiceId: string) {
+  async byId(user: RequestUser, invoiceId: string, includePdfUrl = false) {
     this.assertAuthenticated(user);
     const invoice = await this.findInvoiceDocument(invoiceId, user);
     const data = invoice.data;
@@ -4102,11 +4109,15 @@ export class InvoicesService {
       }
     }
 
-    return { id: invoice.ref.id, ...data, apartmentId };
+    const response = { id: invoice.ref.id, ...data, apartmentId } as Record<string, unknown>;
+    // Download tokens must remain server-only. `pdf()` opts in after completing
+    // the same authorization checks above.
+    if (!includePdfUrl) delete response.pdfUrl;
+    return response;
   }
 
   async pdf(user: RequestUser, invoiceId: string): Promise<InvoicePdfPayload> {
-    const invoice = await this.byId(user, invoiceId) as Record<string, unknown>;
+    const invoice = await this.byId(user, invoiceId, true) as Record<string, unknown>;
     return this.resolveInvoicePdfPayload(invoice, invoiceId);
   }
 

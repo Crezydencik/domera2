@@ -106,11 +106,16 @@ export function GET(request: Request) {
   const storageBucket = envValue("FIREBASE_STORAGE_BUCKET");
   const messagingSenderId = envValue("FIREBASE_MESSAGING_SENDER_ID") ?? inferMessagingSenderId(appId);
 
-  if (!apiKey || !projectId || !appId || !authDomain) {
+  // Firebase Authentication only needs the API key, project ID, and auth
+  // domain. `appId` is useful for services such as Analytics or Messaging,
+  // but it is not required to initialise Firebase Auth. Requiring it here
+  // incorrectly disables Google sign-in in deployments that do not use those
+  // services.
+  if (!apiKey || !projectId || !authDomain) {
     return NextResponse.json(
       {
         message:
-          "Google sign-in is not configured. Set FIREBASE_WEB_API_KEY, FIREBASE_PROJECT_ID, FIREBASE_WEB_APP_ID, and FIREBASE_AUTH_DOMAIN or PUBLIC_FIREBASE_AUTH_DOMAIN.",
+          "Google sign-in is not configured. Set FIREBASE_WEB_API_KEY, FIREBASE_PROJECT_ID, and FIREBASE_AUTH_DOMAIN or PUBLIC_FIREBASE_AUTH_DOMAIN.",
       },
       { status: 500 },
     );

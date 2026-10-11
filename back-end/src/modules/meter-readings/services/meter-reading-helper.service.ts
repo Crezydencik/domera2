@@ -129,6 +129,10 @@ export class MeterReadingHelperService {
           ? true
           : !((tenantFromDate && submittedAtDate < tenantFromDate) || (tenantUntilDate && submittedAtDate > tenantUntilDate));
 
+        // Do not merely annotate readings outside a tenant's term: the response
+        // itself must not contain values the caller is not entitled to read.
+        if (!historyVisible) continue;
+
         entries.push({
           ...item,
           ...(entryIndex === 0 ? { previousValue: null, consumption: 0 } : {}),

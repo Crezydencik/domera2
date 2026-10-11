@@ -12,6 +12,7 @@ import { AuditLogService } from '../../../../common/services/audit-log.service';
 import { RateLimitService } from '../../../../common/services/rate-limit.service';
 import { normalizeEmail } from '../../../../common/utils/invitation-token';
 import { resolveAccountType } from '../../../../common/auth/role.constants';
+import { CompanyAccessService } from '../../services/company-access.service';
 
 @Injectable()
 export class CompanyInvitationsService {
@@ -19,6 +20,7 @@ export class CompanyInvitationsService {
     private readonly firebaseAdminService: FirebaseAdminService,
     private readonly rateLimitService: RateLimitService,
     private readonly auditLogService: AuditLogService,
+    private readonly companyAccessService: CompanyAccessService,
   ) {}
 
   private assertManagerOrAccountant(user: RequestUser | undefined): asserts user is RequestUser {
@@ -121,6 +123,9 @@ export class CompanyInvitationsService {
     this.assertCompanyScope(user, companyId);
 
     const db = this.firebaseAdminService.firestore;
+    const companySnap = await db.collection('companies').doc(companyId).get();
+    if (!companySnap.exists) throw new NotFoundException('Company not found');
+    this.companyAccessService.assertCanManageMembers(user, companyId, companySnap.data() as Record<string, unknown>);
     const buildingSnap = await db.collection('buildings').doc(buildingId).get();
     if (!buildingSnap.exists) throw new NotFoundException('Building not found');
 

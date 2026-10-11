@@ -1,7 +1,7 @@
 import { EmailLanguage } from '../email.types';
 
 export const emailStyles = {
-  paragraph: 'margin:0 auto 22px;max-width:560px;line-height:1.65;font-size:16px;color:#334155;text-align:center;',
+  paragraph: 'margin:0 auto 22px;max-width:560px;line-height:1.65;font-size:16px;color:#334155;text-align:left;',
   button:
     'display:inline-block;margin:2px 0 28px;padding:13px 24px;border:1px solid #155DFC;background:#155DFC;color:#ffffff;text-decoration:none;border-radius:7px;font-size:15px;font-weight:700;box-shadow:0 8px 18px rgba(21,93,252,0.18);',
   note: 'margin:0 auto;max-width:560px;font-size:14px;line-height:1.6;color:#64748b;text-align:center;',
@@ -24,7 +24,7 @@ export const emailStyles = {
 const footerByLanguage: Record<EmailLanguage, string> = {
   en: 'This is an automatically generated email, please do not reply.',
   ru: 'Это автоматическое письмо, пожалуйста, не отвечайте на него.',
-  lv: 'Šis ir automātiski sagatavots e-pasts, lūdzam uz to neatbildēt.',
+  lv: 'Šis ir automātiski sagatavots e-pasta sūtījums, lūdzam uz to neatbildēt.',
 };
 
 export function renderEmailLayout(params: {

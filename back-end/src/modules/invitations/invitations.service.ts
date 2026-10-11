@@ -120,9 +120,6 @@ export class InvitationsService {
 
   private isActiveApartmentMember(user: RequestUser, apartment: Record<string, unknown>): boolean {
     const userEmail = normalizeEmail(user.email ?? '');
-    const residentId = typeof apartment.residentId === 'string' ? apartment.residentId.trim() : '';
-    if (residentId && residentId === user.uid) return true;
-
     const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId.trim() : '';
     const ownerEmail = typeof apartment.ownerEmail === 'string' ? normalizeEmail(apartment.ownerEmail) : '';
     if (
@@ -139,7 +136,9 @@ export class InvitationsService {
 
       const record = tenant as Record<string, unknown>;
       const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
-      if (['removed', 'deleted', 'revoked', 'inactive'].includes(status)) return false;
+      if (['removed', 'deleted', 'revoked', 'inactive', 'pending'].includes(status)) return false;
+      const confirmed = record.activated === true || Boolean(record.acceptedAt) || Boolean(record.activatedAt) || ['active', 'accepted'].includes(status);
+      if (!confirmed) return false;
 
       const tenantUserId = typeof record.userId === 'string' ? record.userId.trim() : '';
       const tenantEmail = typeof record.email === 'string' ? normalizeEmail(record.email) : '';
@@ -548,12 +547,23 @@ export class InvitationsService {
           ? (apartment.tenants as Record<string, unknown>[])
           : [];
         let matchedTenant = false;
+        let removedTenantMatch = false;
         const nextTenants = tenants.map((tenant) => {
           const tenantEmail = typeof tenant.email === 'string' ? tenant.email.trim().toLowerCase() : '';
           const tenantUserId = typeof tenant.userId === 'string' ? tenant.userId.trim() : '';
-          const matches = tenantUserId === uid || Boolean(tenantEmail && tenantEmail === invitationEmail);
+          const tenantInvitationId = typeof tenant.invitationId === 'string' ? tenant.invitationId.trim() : '';
+          // New records bind acceptance to one token. Email matching is retained
+          // only for legacy records that predate invitationId.
+          const matches = tenantInvitationId
+            ? tenantInvitationId === docId
+            : tenantUserId === uid || Boolean(tenantEmail && tenantEmail === invitationEmail);
 
           if (!matches) return tenant;
+          const tenantStatus = typeof tenant.status === 'string' ? tenant.status.trim().toLowerCase() : '';
+          if (['removed', 'deleted', 'revoked', 'inactive'].includes(tenantStatus)) {
+            removedTenantMatch = true;
+            return tenant;
+          }
           matchedTenant = true;
 
           return {
@@ -569,22 +579,15 @@ export class InvitationsService {
             acceptedAt: new Date(),
           };
         });
-        const resolvedTenants = matchedTenant
-          ? nextTenants
-          : [
-              ...nextTenants,
-              {
-                userId: uid,
-                email: email ?? invitationEmail,
-                ...(firstName ? { firstName } : {}),
-                ...(lastName ? { lastName } : {}),
-                ...(fullName ? { name: fullName, fullName } : {}),
-                ...(phone ? { phone } : {}),
-                status: 'Active',
-                activated: true,
-                acceptedAt: new Date(),
-              },
-            ];
+        if (removedTenantMatch) {
+          throw new ForbiddenException('Tenant access has been revoked');
+        }
+        // Acceptance is valid only for the exact, still-pending tenant record
+        // created with this invitation.  Never recreate a removed tenant.
+        if (!matchedTenant) {
+          throw new ForbiddenException('Tenant invitation is no longer valid');
+        }
+        const resolvedTenants = nextTenants;
 
         await apartmentRef.set(
           {

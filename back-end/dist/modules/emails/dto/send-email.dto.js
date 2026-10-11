@@ -429,9 +429,19 @@ __decorate([
 ], SendInformationMailingDto.prototype, "apartmentIds", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsIn)(['all', 'owners', 'residents']),
+    (0, class_validator_1.IsIn)(['all', 'specific']),
     __metadata("design:type", String)
 ], SendInformationMailingDto.prototype, "audience", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsObject)(),
+    __metadata("design:type", Object)
+], SendInformationMailingDto.prototype, "apartmentRecipientModes", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['owners', 'residents', 'select']),
+    __metadata("design:type", String)
+], SendInformationMailingDto.prototype, "specificRecipientMode", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsEnum)(['en', 'ru', 'lv']),

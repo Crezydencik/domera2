@@ -123,12 +123,9 @@ let ApartmentAccessService = class ApartmentAccessService {
             .filter((snap) => snap.exists)
             .filter((snap) => {
             const apartment = snap.data();
-            const residentId = typeof apartment.residentId === 'string' ? apartment.residentId : '';
-            const residentEmail = typeof apartment.residentEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.residentEmail) : '';
             const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
             const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
-            const isResident = residentId === user.uid ||
-                Boolean(normalizedUserEmail && residentEmail === normalizedUserEmail);
+            const isResident = false;
             const isOwner = apartment.ownerActivated === true &&
                 ((ownerId && ownerId === user.uid) || Boolean(normalizedUserEmail && ownerEmail === normalizedUserEmail));
             const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
@@ -137,7 +134,16 @@ let ApartmentAccessService = class ApartmentAccessService {
                     return false;
                 const record = tenant;
                 const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
-                if (['removed', 'deleted', 'revoked', 'inactive'].includes(status))
+                if (['removed', 'deleted', 'revoked', 'inactive', 'pending'].includes(status))
+                    return false;
+                if (record.activated !== true && !record.acceptedAt && !record.activatedAt && !['active', 'accepted'].includes(status))
+                    return false;
+                const now = new Date();
+                const fromDate = typeof record.fromDate === 'string' ? new Date(record.fromDate) : null;
+                const until = typeof record.until === 'string' ? new Date(record.until) : null;
+                if (fromDate && now < fromDate)
+                    return false;
+                if (until && now > until)
                     return false;
                 const tenantUserId = typeof record.userId === 'string' ? record.userId.trim() : '';
                 const tenantEmail = typeof record.email === 'string' ? (0, invitation_token_1.normalizeEmail)(record.email) : '';

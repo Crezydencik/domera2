@@ -241,10 +241,7 @@ export declare class InvoicesService {
         items: Record<string, unknown>[];
         query: Record<string, string | undefined>;
     }>;
-    byId(user: RequestUser, invoiceId: string): Promise<{
-        apartmentId: string | undefined;
-        id: string;
-    }>;
+    byId(user: RequestUser, invoiceId: string, includePdfUrl?: boolean): Promise<Record<string, unknown>>;
     pdf(user: RequestUser, invoiceId: string): Promise<InvoicePdfPayload>;
     publicPdf(token: string): Promise<InvoicePdfPayload>;
     resendEmail(request: Request, user: RequestUser, invoiceId: string): Promise<{

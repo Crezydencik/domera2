@@ -1843,21 +1843,14 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             tenantRecord.fromDate = fromDate;
         if (until)
             tenantRecord.until = until;
-        if (authUserId) {
-            await db.collection('users').doc(authUserId).set({
-                uid: authUserId,
-                email,
-                apartmentId,
-                apartmentIds: firestore_1.FieldValue.arrayUnion(apartmentId),
-                updatedAt: new Date().toISOString(),
-            }, { merge: true });
-        }
         const nextTenants = [
             ...tenants.filter((tenant) => {
                 const tenantUserId = typeof tenant.userId === 'string' ? tenant.userId.trim() : '';
                 const tenantEmail = typeof tenant.email === 'string' ? tenant.email.trim().toLowerCase() : '';
+                const tenantStatus = typeof tenant.status === 'string' ? tenant.status.trim().toLowerCase() : '';
                 const sameExistingUser = Boolean(authUserId && tenantUserId === authUserId);
-                return !sameExistingUser && tenantEmail !== email;
+                const isHistorical = ['removed', 'deleted', 'revoked', 'inactive'].includes(tenantStatus);
+                return isHistorical || (!sameExistingUser && tenantEmail !== email);
             }),
             tenantRecord,
         ];
@@ -1880,6 +1873,10 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             });
             invitationLink = result.invitationLink;
             invitationId = result.invitationId;
+            await apartmentRef.set({
+                tenants: nextTenants.map((tenant) => tenant === tenantRecord ? { ...tenant, invitationId } : tenant),
+                updatedAt: firestore_1.FieldValue.serverTimestamp(),
+            }, { merge: true });
             await this.apartmentInvitationService.createTenantInvitationNotification({
                 tenantId: authUserId,
                 invitationLink,
@@ -1931,7 +1928,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         }
         const removedTenantUserId = typeof removedTenant.userId === 'string' ? removedTenant.userId.trim() : '';
         const removedTenantEmail = typeof removedTenant.email === 'string' ? removedTenant.email.trim().toLowerCase() : '';
-        const next = tenants.filter((tenant) => {
+        const remainingTenants = tenants.filter((tenant) => {
             const tenantUserId = typeof tenant.userId === 'string' ? tenant.userId.trim() : '';
             const tenantEmail = typeof tenant.email === 'string' ? tenant.email.trim().toLowerCase() : '';
             return (tenantUserId !== userId &&
@@ -1939,12 +1936,29 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                 (!tenantEmail || tenantEmail !== normalizedRemovedUser) &&
                 (!removedTenantEmail || tenantEmail !== removedTenantEmail));
         });
+        const removedAt = new Date().toISOString();
+        const archivedTenant = {
+            ...removedTenant,
+            status: 'Removed',
+            activated: false,
+            removedAt,
+            until: typeof removedTenant.until === 'string' && removedTenant.until.trim()
+                ? removedTenant.until
+                : removedAt,
+        };
         const updateData = {
-            tenants: next,
+            tenants: [...remainingTenants, archivedTenant],
             updatedAt: firestore_1.FieldValue.serverTimestamp(),
         };
-        if (next.length === 0) {
+        const residentId = typeof apartment.residentId === 'string' ? apartment.residentId.trim() : '';
+        const residentEmail = typeof apartment.residentEmail === 'string' ? apartment.residentEmail.trim().toLowerCase() : '';
+        if (residentId === removedTenantUserId || (residentEmail && residentEmail === removedTenantEmail)) {
             updateData.residentId = null;
+            updateData.residentEmail = null;
+            updateData.residentName = null;
+            updateData.residentFirstName = null;
+            updateData.residentLastName = null;
+            updateData.residentPhone = null;
         }
         const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : undefined;
         const ownerEmail = typeof apartment.ownerEmail === 'string' ? apartment.ownerEmail.trim().toLowerCase() : undefined;
@@ -1972,12 +1986,27 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             userIdsToDetach.add(ownerId);
         }
         await Promise.all(Array.from(userIdsToDetach).map((targetUserId) => db.collection('users').doc(targetUserId).set({
-            apartmentIds: firestore_1.FieldValue.arrayRemove(apartmentId),
             apartmentId: null,
             updatedAt: new Date().toISOString(),
         }, { merge: true }).catch((error) => {
             this.logger.error(`Failed to detach apartment from user ${targetUserId}`, error instanceof Error ? error.stack : String(error));
         })));
+        const pendingInvitations = await db.collection('invitations')
+            .where('apartmentId', '==', apartmentId)
+            .where('status', '==', 'pending')
+            .get();
+        const invitationBatch = db.batch();
+        let revoked = 0;
+        for (const invitation of pendingInvitations.docs) {
+            const data = invitation.data();
+            const invitationEmail = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
+            if (invitationEmail !== removedTenantEmail)
+                continue;
+            invitationBatch.set(invitation.ref, { status: 'revoked', revokedAt: firestore_1.FieldValue.serverTimestamp() }, { merge: true });
+            revoked += 1;
+        }
+        if (revoked > 0)
+            await invitationBatch.commit();
         return { success: true };
     }
     async updateTenant(request, user, apartmentId, userId, tenantData) {

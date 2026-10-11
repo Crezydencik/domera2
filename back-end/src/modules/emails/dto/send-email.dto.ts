@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsOptional, IsEnum, IsIn, IsNumber, IsArray, ArrayMaxSize } from 'class-validator';
+import { IsEmail, IsString, IsOptional, IsEnum, IsIn, IsNumber, IsArray, ArrayMaxSize, IsObject } from 'class-validator';
 import { EmailLanguage, EmailType } from '../email.types';
 
 export type EmailAttachmentDto = {
@@ -330,8 +330,16 @@ export class SendInformationMailingDto {
   apartmentIds?: string[];
 
   @IsOptional()
-  @IsIn(['all', 'owners', 'residents'])
-  audience?: 'all' | 'owners' | 'residents';
+  @IsIn(['all', 'specific'])
+  audience?: 'all' | 'specific';
+
+  @IsOptional()
+  @IsObject()
+  apartmentRecipientModes?: Record<string, 'all' | 'owners' | 'residents'>;
+
+  @IsOptional()
+  @IsIn(['owners', 'residents', 'select'])
+  specificRecipientMode?: 'owners' | 'residents' | 'select';
 
   @IsOptional()
   @IsEnum(['en', 'ru', 'lv'])

@@ -295,6 +295,7 @@
   "appShell": {
     "header": {
       "currentWorkspace": "Current workspace: {role}",
+      "mailboxSubtitle": "Your mailbox",
       "pageTitles": {
         "dashboard": "Dashboard",
         "platformUsers": "Platform users",
@@ -312,6 +313,7 @@
         "mailingTemplatesNav": "Templates",
         "sentMailings": "Sent",
         "notificationsPage": "Notifications",
+        "mailbox": "Mail",
         "settings": "Settings"
       },
       "roles": {
@@ -1466,7 +1468,7 @@
     "messageHint": "Enter the email text. Paragraphs and line breaks will be preserved.", "messagePlaceholder": "Dear residents!\n\nWe would like to share important information…", "signature": "Best regards,",
     "notificationHint": "After sending, the email and the “Open notifications” button will appear for every selected owner or resident.", "buildings": "Buildings", "allBuildings": "— leave empty for all buildings",
     "preview": "Preview", "previewTitle": "Email preview", "send": "Send {count} emails", "sending": "Sending…", "close": "Close",
-    "needContent": "Add a subject and message text.", "sent": "Mailing sent to {count} recipients.", "failed": "Unable to send the mailing.", "templateSaved": "Template saved.", "templateSaveFailed": "Unable to save the template.",
+    "needContent": "Add a subject and message text.", "sent": "Email sent.", "failed": "Unable to send the mailing.", "templateSaved": "Template saved.", "templateSaveFailed": "Unable to save the template.",
     "emailSubject": "Your message subject", "previewText": "Your message text will appear here. Use a short greeting, describe the change, and explain what recipients need to do.", "openNotifications": "Open notifications", "buttonHint": "The button opens the recipient’s notifications section", "automated": "This is an automated information message from {company}; please do not reply."
   },
   "auth": {
