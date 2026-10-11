@@ -176,14 +176,11 @@ async function createGoogleProvider() {
 }
 
 function shouldUseGoogleRedirect() {
-  if (typeof window === "undefined") return false;
-
-  const userAgent = window.navigator.userAgent;
-  const isTouchLikeDevice =
-    window.matchMedia?.("(hover: none), (pointer: coarse)")?.matches ?? false;
-  const isMobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
-
-  return isTouchLikeDevice || isMobileUserAgent;
+  // Popup-based OAuth is frequently blocked or closed by browser privacy
+  // controls on the deployed domain. The redirect handler is proxied through
+  // /__/auth for every supported host, so use the same reliable flow on both
+  // desktop and mobile browsers.
+  return typeof window !== "undefined";
 }
 
 function isPopupBlockedError(error: unknown) {
