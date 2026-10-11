@@ -59,6 +59,12 @@ const securityHeaders = [
     : []),
 ];
 
+const firebaseAuthHeaders = securityHeaders.map((header) =>
+  header.key === "X-Frame-Options"
+    ? { ...header, value: "SAMEORIGIN" }
+    : header,
+);
+
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
@@ -82,11 +88,18 @@ const nextConfig: NextConfig = {
         destination: `${backendApiBaseUrl}/:path*`,
       },
     ];
+
   },
   async headers() {
     return [
       {
-        source: "/:path*",
+        // Firebase Auth uses a hidden, same-origin iframe at /__/auth/iframe
+        // to deliver redirect credentials. The regular DENY policy blocks it.
+        source: "/__/auth/:path*",
+        headers: firebaseAuthHeaders,
+      },
+      {
+        source: "/((?!__/auth/).*)",
         headers: securityHeaders,
       },
     ];
