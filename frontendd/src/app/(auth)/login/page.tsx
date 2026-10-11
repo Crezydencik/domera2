@@ -18,6 +18,9 @@ import {
 } from "@/shared/lib/auth-client";
 import { ROUTES } from "@/shared/lib/routes";
 
+// Keep email/password access available while Google OAuth is being repaired.
+const GOOGLE_SIGN_IN_ENABLED = false;
+
 export default function LoginPage() {
   const t = useTranslations("auth");
   const s = useTranslations("system");
@@ -203,23 +206,27 @@ export default function LoginPage() {
             {!loading && <FiArrowRight className="h-4 w-4" aria-hidden />}
           </Button>
 
-          <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-            <span className="h-px flex-1 bg-slate-200" />
-            <span>{t("or")}</span>
-            <span className="h-px flex-1 bg-slate-200" />
-          </div>
+          {GOOGLE_SIGN_IN_ENABLED ? (
+            <>
+              <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <span className="h-px flex-1 bg-slate-200" />
+                <span>{t("or")}</span>
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
 
-          <Button
-            type="button"
-            variant="outlineDark"
-            size="lg"
-            className="min-h-12 w-full rounded-xl border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
-            disabled={isAuthenticating}
-            onClick={handleGoogleSignIn}
-          >
-            <FcGoogle className="h-5 w-5" aria-hidden />
-            {googleLoading ? t("googleSigningIn") : t("continueWithGoogle")}
-          </Button>
+              <Button
+                type="button"
+                variant="outlineDark"
+                size="lg"
+                className="min-h-12 w-full rounded-xl border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
+                disabled={isAuthenticating}
+                onClick={handleGoogleSignIn}
+              >
+                <FcGoogle className="h-5 w-5" aria-hidden />
+                {googleLoading ? t("googleSigningIn") : t("continueWithGoogle")}
+              </Button>
+            </>
+          ) : null}
         </form>
 
         {isAuthenticating ? (
