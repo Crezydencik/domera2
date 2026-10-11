@@ -84,6 +84,7 @@ export declare class InvoicesService {
     private pendingApprovalItemFromDoc;
     private getPendingApprovalBuildingIds;
     private findPendingApprovalDocument;
+    private assertNoPendingApprovalsForApiUpload;
     private getStaffInvoiceApartmentContexts;
     private findInvoiceDocument;
     private resolveTargetCompanyId;
@@ -116,6 +117,8 @@ export declare class InvoicesService {
     private parseBatchItems;
     private parseFileIndex;
     private resolveBatchFile;
+    private hasApartmentLookup;
+    private mergeBatchItemPayload;
     private writeUploadHistory;
     private uploadHistoryStatusFromResults;
     private updateUploadHistoryForApproval;

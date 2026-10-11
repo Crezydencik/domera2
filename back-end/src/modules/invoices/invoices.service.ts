@@ -1122,6 +1122,21 @@ export class InvoicesService {
     };
   }
 
+  private async assertNoPendingApprovalsForApiUpload(buildingId: string): Promise<void> {
+    const pending = await this.firebaseAdminService.firestore
+      .collection('buildings')
+      .doc(buildingId)
+      .collection('invoice_approvals')
+      .limit(1)
+      .get();
+
+    if (!pending.empty) {
+      throw new ConflictException(
+        'API invoice upload is blocked while invoices are waiting for approval. Approve or cancel the current batch first.',
+      );
+    }
+  }
+
   private async getStaffInvoiceApartmentContexts(params: {
     user: RequestUser;
     companyId?: string;
@@ -2023,6 +2038,64 @@ export class InvoicesService {
     return file;
   }
 
+  private hasApartmentLookup(item: Record<string, unknown>): boolean {
+    return Boolean(this.firstString(
+      item.apartmentId,
+      item.apartment_id,
+      item.accountId,
+      item.account_id,
+      item.personalAccountId,
+      item.personal_account_id,
+      item.residentAccountId,
+      item.resident_account_id,
+      item.billingAccountId,
+      item.billing_account_id,
+      item.contractNumber,
+      item.contract_number,
+      item.agreementNumber,
+      item.agreement_number,
+      item.apartmentNumber,
+      item.apartment_number,
+      item.flatNumber,
+      item.flat_number,
+      item.unitNumber,
+      item.unit_number,
+      item.number,
+    ));
+  }
+
+  private mergeBatchItemPayload(
+    commonPayload: Record<string, unknown>,
+    item: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!this.hasApartmentLookup(item)) {
+      return { ...commonPayload, ...item };
+    }
+
+    // An item that names its apartment must never inherit an apartment lookup
+    // field from the multipart request. `resolveApartment` deliberately gives
+    // apartmentId precedence over apartmentNumber; without this isolation a
+    // form-level apartmentId routes every batch item into one apartment.
+    const payload = { ...commonPayload };
+    for (const field of [
+      'apartmentId', 'apartment_id',
+      'accountId', 'account_id',
+      'personalAccountId', 'personal_account_id',
+      'residentAccountId', 'resident_account_id',
+      'billingAccountId', 'billing_account_id',
+      'contractNumber', 'contract_number',
+      'agreementNumber', 'agreement_number',
+      'apartmentNumber', 'apartment_number',
+      'flatNumber', 'flat_number',
+      'unitNumber', 'unit_number',
+      'number',
+    ]) {
+      delete payload[field];
+    }
+
+    return { ...payload, ...item };
+  }
+
   private async writeUploadHistory(input: UploadHistoryInput): Promise<void> {
     try {
       const apartmentId = input.apartmentId?.trim();
@@ -2430,6 +2503,9 @@ export class InvoicesService {
       const apartment = await this.resolveApartment(payload, request);
       const buildingId = this.resolveBuildingId(payload, apartment.data);
       this.assertApiKeyCanAccessBuilding(request, buildingId);
+      if (this.shouldQueueInvoiceApproval(request, payload) && !batchId) {
+        await this.assertNoPendingApprovalsForApiUpload(buildingId);
+      }
       const buildingCompanyId = await this.getBuildingCompanyId(buildingId);
       const companyId = this.resolveTargetCompanyId({
         user,
@@ -2442,7 +2518,9 @@ export class InvoicesService {
       const amount = this.parseAmount(payload.amount);
       const currency = this.normalizeCurrency(payload.currency);
       const status = this.normalizeStatus(payload.status);
-      const requestedRecipientType = this.normalizeRecipientType(payload.recipientType ?? payload.recipient_type ?? payload.target);
+      const requestedRecipientType = this.normalizeRecipientType(
+        payload.recipientType ?? payload.recipient_type ?? payload.recepientType ?? payload.recepient_type ?? payload.target,
+      );
       const recipientType = this.resolveEffectiveRecipientType(apartment.data, requestedRecipientType);
       this.assertRecipientTypeAllowed(apartment.data, recipientType);
       const comment = this.firstString(payload.comment);
@@ -3275,16 +3353,27 @@ export class InvoicesService {
     delete commonPayload.metadata;
     const source = this.normalizeSource(commonPayload.source ?? commonPayload.uploadSource);
     const apiBuildingIds = this.getApiKeyBuildingIds(request);
+
+    if (this.shouldQueueInvoiceApproval(request, commonPayload)) {
+      const buildingIds = new Set<string>();
+      for (const item of items) {
+        const itemPayload = this.mergeBatchItemPayload(commonPayload, item);
+        const apartment = await this.resolveApartment(itemPayload, request);
+        const buildingId = this.resolveBuildingId(itemPayload, apartment.data);
+        this.assertApiKeyCanAccessBuilding(request, buildingId);
+        buildingIds.add(buildingId);
+      }
+
+      await Promise.all(Array.from(buildingIds, (buildingId) => this.assertNoPendingApprovalsForApiUpload(buildingId)));
+    }
+
     let historyCompanyId = this.firstString(commonPayload.companyId, commonPayload.company_id, user.companyId);
     let historyBuildingId = this.firstString(commonPayload.buildingId, commonPayload.building_id, apiBuildingIds[0]);
     let historyApartmentId = this.firstString(commonPayload.apartmentId, commonPayload.apartment_id);
 
     if (!historyApartmentId || !historyBuildingId || !historyCompanyId) {
       try {
-        const scopePayload = {
-          ...commonPayload,
-          ...(items[0] ?? {}),
-        };
+        const scopePayload = this.mergeBatchItemPayload(commonPayload, items[0] ?? {});
         const apartment = await this.resolveApartment(scopePayload, request);
         const buildingId = this.resolveBuildingId(scopePayload, apartment.data);
         this.assertApiKeyCanAccessBuilding(request, buildingId);
@@ -3389,7 +3478,13 @@ export class InvoicesService {
         const duplicateExternalIdInBatch =
           baseExternalId && (externalIdCounts.get(baseExternalId.trim().toLowerCase()) ?? 0) > 1;
         const batchItemExternalId = baseExternalId;
-        const itemRecipientType = this.firstString(item.recipientType, item.recipient_type, item.target);
+        const itemRecipientType = this.firstString(
+          item.recipientType,
+          item.recipient_type,
+          item.recepientType,
+          item.recepient_type,
+          item.target,
+        );
         let duplicateExternalIdOccurrence = 0;
         if (duplicateExternalIdInBatch && baseExternalId) {
           const key = baseExternalId.trim().toLowerCase();
@@ -3413,8 +3508,7 @@ export class InvoicesService {
           file,
           fileName,
           payload: {
-            ...commonPayload,
-            ...item,
+            ...this.mergeBatchItemPayload(commonPayload, item),
             ...(batchItemExternalId ? { externalId: batchItemExternalId, external_id: batchItemExternalId } : {}),
             ...(batchItemRecipientType ? { recipientType: batchItemRecipientType, recipient_type: batchItemRecipientType } : {}),
             source: item.source ?? item.uploadSource ?? commonPayload.source ?? commonPayload.uploadSource ?? 'api',
@@ -3474,9 +3568,9 @@ export class InvoicesService {
             results.push({
               index: job.index,
               fileName: job.fileName,
-              success: true,
+              success: false,
               approval_id: waitingApprovalId,
-              message: 'Invoice is waiting for approval',
+              error: `Invoice is already waiting for approval: ${waitingApprovalId}`,
             });
             continue;
           }
