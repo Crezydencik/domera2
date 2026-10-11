@@ -17,6 +17,14 @@ export class SendEmailDto {
   @IsString()
   html!: string;
 
+  /**
+   * Display name used with the shared verified sender address.
+   * For example: `Example Management <no-reply@domera.lv>`.
+   */
+  @IsOptional()
+  @IsString()
+  fromName?: string;
+
   @IsOptional()
   attachments?: EmailAttachmentDto[];
 }

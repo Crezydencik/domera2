@@ -80,12 +80,12 @@ export class EmailService {
   async sendOwnerInvitation(dto: SendOwnerInvitationEmailDto): Promise<{ id: string }> {
     const template = this.templateService.ownerInvitation(dto);
     this.logger.log(`Sending owner invitation to ${dto.to}`);
-    return this.sendTracked('ownerInvitation', { to: dto.to, subject: template.subject, html: template.html });
+    return this.sendTracked('ownerInvitation', { to: dto.to, subject: template.subject, html: template.html, fromName: dto.companyName });
   }
 
   async sendTenantInvitation(dto: SendTenantInvitationEmailDto): Promise<{ id: string }> {
     const template = this.templateService.tenantInvitation(dto);
-    return this.sendTracked('tenantInvitation', { to: dto.to, subject: template.subject, html: template.html });
+    return this.sendTracked('tenantInvitation', { to: dto.to, subject: template.subject, html: template.html, fromName: dto.companyName });
   }
 
   async sendTenantInvitedByOwner(dto: SendTenantInvitedByOwnerEmailDto): Promise<{ id: string }> {
@@ -95,12 +95,14 @@ export class EmailService {
 
   async sendInvoiceGenerated(dto: SendInvoiceGeneratedEmailDto): Promise<{ id: string }> {
     const template = this.templateService.invoiceGenerated(dto);
+    const fromName = await this.resolveCompanySenderName(dto.brandName, dto.companyId);
     return this.sendTracked(
       'invoiceGenerated',
       {
         to: dto.to,
         subject: template.subject,
         html: template.html,
+        fromName,
         attachments: dto.attachments,
       },
       {
@@ -114,9 +116,10 @@ export class EmailService {
 
   async sendMeterReadingReminder(dto: SendMeterReadingReminderEmailDto): Promise<{ id: string }> {
     const template = this.templateService.meterReadingReminder(dto);
+    const fromName = await this.resolveCompanySenderName(dto.brandName, dto.companyId);
     return this.sendTracked(
       'meterReadingReminder',
-      { to: dto.to, subject: template.subject, html: template.html },
+      { to: dto.to, subject: template.subject, html: template.html, fromName },
       {
         companyId: dto.companyId,
         buildingId: dto.buildingId,
@@ -132,9 +135,10 @@ export class EmailService {
     branding?: { accentColor?: string; logoDataUrl?: string; companyName?: string },
   ): Promise<{ id: string }> {
     const template = this.templateService.notification(dto, branding);
+    const fromName = await this.resolveCompanySenderName(branding?.companyName ?? dto.brandName, dto.companyId);
     return this.sendTracked(
       'notification',
-      { to: dto.to, subject: template.subject, html: template.html },
+      { to: dto.to, subject: template.subject, html: template.html, fromName },
       {
         companyId: dto.companyId,
         buildingId: dto.buildingId,
@@ -284,6 +288,23 @@ export class EmailService {
       const align = /text-align\s*:\s*(left|center|right|justify)/i.exec(attributes)?.[1];
       return align && (name === 'p' || name === 'div') ? `<${name} style="text-align:${align.toLowerCase()}">` : `<${name}>`;
     });
+  }
+
+  private async resolveCompanySenderName(preferredName?: string, companyId?: string): Promise<string | undefined> {
+    if (preferredName?.trim()) return preferredName.trim();
+    if (!companyId?.trim()) return undefined;
+
+    try {
+      const snapshot = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
+      const company = snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined;
+      const companyName = company?.companyName;
+      if (typeof companyName === 'string' && companyName.trim()) return companyName.trim();
+      const name = company?.name;
+      return typeof name === 'string' && name.trim() ? name.trim() : undefined;
+    } catch (error) {
+      this.logger.warn(`Could not resolve sender name for company ${companyId}: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
+    }
   }
 
   private async sendInformationRecipient(

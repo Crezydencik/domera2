@@ -42,8 +42,11 @@ const securityHeaders = [
     value: "strict-origin-when-cross-origin",
   },
   {
-    key: "X-Frame-Options",
-    value: "DENY",
+    // Firebase Auth uses www.domera.lv in a hidden frame while the user may
+    // start on domera.lv. CSP supports this trusted pair; X-Frame-Options
+    // cannot express it and blocks the OAuth callback.
+    key: "Content-Security-Policy",
+    value: "frame-ancestors 'self' https://domera.lv https://www.domera.lv",
   },
   {
     key: "Permissions-Policy",
@@ -58,12 +61,6 @@ const securityHeaders = [
       ]
     : []),
 ];
-
-const firebaseAuthHeaders = securityHeaders.map((header) =>
-  header.key === "X-Frame-Options"
-    ? { ...header, value: "SAMEORIGIN" }
-    : header,
-);
 
 const nextConfig: NextConfig = {
   images: {
@@ -93,13 +90,7 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // Firebase Auth uses a hidden, same-origin iframe at /__/auth/iframe
-        // to deliver redirect credentials. The regular DENY policy blocks it.
-        source: "/__/auth/:path*",
-        headers: firebaseAuthHeaders,
-      },
-      {
-        source: "/((?!__/auth/).*)",
+        source: "/:path*",
         headers: securityHeaders,
       },
     ];

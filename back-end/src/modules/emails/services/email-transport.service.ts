@@ -26,7 +26,7 @@ export class EmailTransportService {
 
     try {
       const response = await this.resend.emails.send({
-        from: this.from,
+        from: this.getSender(payload.fromName),
         to: payload.to,
         subject: payload.subject,
         html: payload.html,
@@ -47,5 +47,17 @@ export class EmailTransportService {
       this.logger.error(`Failed to send email to ${payload.to}: ${message}`);
       throw error;
     }
+  }
+
+  private getSender(fromName?: string): string {
+    const displayName = fromName?.replace(/[\r\n<>]/g, '').trim();
+    if (!displayName) return this.from;
+
+    // Keep the Resend-verified address from RESEND_FROM and replace only its
+    // human-readable name. This works whether the environment value has a
+    // display name already or consists solely of an email address.
+    const email = /<([^<>]+)>/.exec(this.from)?.[1]?.trim() || this.from.trim();
+    const escapedName = displayName.replace(/"/g, '\\"');
+    return `"${escapedName}" <${email}>`;
   }
 }
