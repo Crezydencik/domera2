@@ -390,6 +390,10 @@
         "buildingMainMeter": "Galvenais mājas skaitītājs",
         "debts": "Parādi",
         "documents": "Dokumenti",
+        "mailings": "Informatīvie sūtījumi",
+        "mailingTemplates": "Izveidot veidni",
+        "mailingTemplatesNav": "Veidnes",
+        "sentMailings": "Nosūtītie",
         "notificationsPage": "Paziņojumi",
         "settings": "Iestatījumi"
       },
@@ -1448,6 +1452,15 @@
     "close": "Aizvērt",
     "startFree": "Sākt bez maksas →",
     "haveAccount": "Man jau ir konts →"
+  },
+  "mailings": {
+    "newEmail": "Jauna vēstule", "from": "No:", "to": "Kam:", "subject": "Temats:", "noSubject": "(bez temata)",
+    "all": "Visi iedzīvotāji un īpašnieki", "residents": "Tikai iedzīvotāji", "owners": "Tikai īpašnieki",
+    "messageHint": "Ievadiet vēstules tekstu. Rindkopas un rindu pārtraukumi tiks saglabāti.", "messagePlaceholder": "Cienījamie iedzīvotāji!\n\nVēlamies sniegt svarīgu informāciju…", "signature": "Ar cieņu,",
+    "notificationHint": "Pēc nosūtīšanas vēstule un poga “Atvērt paziņojumus” būs pieejama katram atlasītajam īpašniekam vai iedzīvotājam.", "buildings": "Ēkas", "allBuildings": "— neatlasiet neko visām ēkām",
+    "preview": "Priekšskatījums", "previewTitle": "Vēstules priekšskatījums", "send": "Nosūtīt {count} vēstules", "sending": "Nosūta…", "close": "Aizvērt",
+    "needContent": "Pievienojiet tematu un vēstules tekstu.", "sent": "Sūtījums nosūtīts {count} saņēmējiem.", "failed": "Sūtījumu neizdevās nosūtīt.", "templateSaved": "Veidne ir saglabāta.", "templateSaveFailed": "Veidni neizdevās saglabāt.",
+    "emailSubject": "Jūsu ziņojuma temats", "previewText": "Šeit būs redzams ziņojuma teksts. Izmantojiet īsu sveicienu, aprakstiet izmaiņas un norādiet nepieciešamo rīcību.", "openNotifications": "Atvērt paziņojumus", "buttonHint": "Poga ved uz saņēmēja paziņojumu sadaļu", "automated": "Šis ir automātiski sagatavots e-pasta sūtījums, lūdzam uz to neatbildēt."
   },
   "auth": {
     "loginTitle": "Laipni lūdzam Domera",

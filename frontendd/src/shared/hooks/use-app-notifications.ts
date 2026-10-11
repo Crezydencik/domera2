@@ -430,24 +430,24 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   useEffect(() => {
     if (!userId) return;
 
-    const refreshNotifications = () => void refresh();
-    const intervalId = window.setInterval(refreshNotifications, 30000);
+    const refreshNotifications = () => {
+      if (isOpen) void refresh();
+    };
+    const intervalId = isOpen ? window.setInterval(refreshNotifications, 60_000) : undefined;
 
     window.addEventListener("focus", refreshNotifications);
     window.addEventListener(SUPPORT_CHANGED_EVENT, refreshNotifications);
     window.addEventListener(API_PENDING_APPROVALS_CHANGED_EVENT, refreshNotifications);
 
     return () => {
-      window.clearInterval(intervalId);
+      if (intervalId) window.clearInterval(intervalId);
       window.removeEventListener("focus", refreshNotifications);
       window.removeEventListener(SUPPORT_CHANGED_EVENT, refreshNotifications);
       window.removeEventListener(API_PENDING_APPROVALS_CHANGED_EVENT, refreshNotifications);
     };
-  }, [refresh, userId]);
+  }, [isOpen, refresh, userId]);
 
   useEffect(() => {
-    void loadElectricitySetupNotifications();
-
     const handleBuildingsChanged = (event: Event) => {
       const detail = event instanceof CustomEvent ? event.detail as { electricitySetupItems?: unknown } : {};
       if (Array.isArray(detail.electricitySetupItems)) {
@@ -550,7 +550,10 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
   );
   const previewItems = useMemo(() => allItems.slice(0, previewLimit), [allItems, previewLimit]);
 
-  const open = useCallback(() => setIsOpen(true), []);
+  const open = useCallback(() => {
+    setIsOpen(true);
+    void refresh();
+  }, [refresh]);
   const close = useCallback(() => setIsOpen(false), []);
   const toggle = useCallback(() => setIsOpen((value) => !value), []);
   const dismiss = useCallback(async (notificationId: string) => {

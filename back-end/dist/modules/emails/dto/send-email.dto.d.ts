@@ -91,6 +91,7 @@ export declare class SendNotificationEmailDto {
     to: string;
     title: string;
     message: string;
+    messageHtml?: string;
     actionLabel?: string;
     actionLink?: string;
     brandName?: string;
@@ -100,4 +101,21 @@ export declare class SendNotificationEmailDto {
     buildingId?: string;
     apartmentId?: string;
     deliveryKey?: string;
+}
+export declare class SendInformationMailingDto {
+    title: string;
+    message: string;
+    messageHtml?: string;
+    actionLabel?: string;
+    actionLink?: string;
+    buildingIds?: string[];
+    apartmentIds?: string[];
+    audience?: 'all' | 'owners' | 'residents';
+    language?: EmailLanguage;
+}
+export declare class SaveInformationMailingTemplateDto {
+    name: string;
+    title: string;
+    message: string;
+    messageHtml?: string;
 }

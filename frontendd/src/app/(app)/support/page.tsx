@@ -6,7 +6,7 @@ import { SupportFeedbackForm } from "./support-feedback-form";
 import { SupportInbox } from "./support-inbox";
 
 export default async function SupportPage() {
-  const context = await getAuthenticatedContext(undefined, { requireFreshProfile: true });
+  const context = await getAuthenticatedContext();
 
   if (context.role === "platformAdmin") {
     return (

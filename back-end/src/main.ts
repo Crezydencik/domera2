@@ -6,6 +6,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import { parse as parseCookie } from 'cookie';
 import { FirebaseAdminService } from './common/infrastructure/firebase/firebase-admin.service';
+import { PerformanceMetricsInterceptor } from './common/interceptors/performance-metrics.interceptor';
 import { isPlatformAdminRole, resolveAccountType, resolveUserRole } from './common/auth/role.constants';
 import { AppModule } from './app.module';
 
@@ -188,6 +189,7 @@ export async function createApp() {
       transform: true,
     }),
   );
+  app.useGlobalInterceptors(new PerformanceMetricsInterceptor());
 
   const swaggerEnabled =
     process.env.SWAGGER_ENABLED === 'true' ||

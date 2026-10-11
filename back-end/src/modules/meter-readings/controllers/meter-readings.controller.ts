@@ -50,6 +50,8 @@ export class MeterReadingsController {
   @ApiOperation({ summary: 'List meter readings for an apartment or company' })
   @ApiQuery({ name: 'apartmentId', required: false, type: String })
   @ApiQuery({ name: 'companyId', required: false, type: String })
+  @ApiQuery({ name: 'month', required: false, type: Number, minimum: 1, maximum: 12 })
+  @ApiQuery({ name: 'year', required: false, type: Number, minimum: 2000, maximum: 2100 })
   @ApiOkResponse({
     description: 'Meter readings returned.',
     type: MeterReadingListResponseDto,
@@ -58,8 +60,10 @@ export class MeterReadingsController {
     @CurrentUser() user: RequestUser,
     @Query('apartmentId') apartmentId?: string,
     @Query('companyId') companyId?: string,
+    @Query('month') month?: string,
+    @Query('year') year?: string,
   ) {
-    return this.meterReadingsService.list(user, apartmentId, companyId);
+    return this.meterReadingsService.list(user, apartmentId, companyId, { month, year });
   }
 
   @Get('electricity-payments')

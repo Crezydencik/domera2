@@ -22,8 +22,8 @@ let MeterReadingsService = class MeterReadingsService {
         this.electricityPaymentService = electricityPaymentService;
         this.reminderService = reminderService;
     }
-    list(user, apartmentId, companyId) {
-        return this.queryService.list(user, apartmentId, companyId);
+    list(user, apartmentId, companyId, period) {
+        return this.queryService.list(user, apartmentId, companyId, period);
     }
     listElectricityPayments(user, query) {
         return this.electricityPaymentService.list(user, query);

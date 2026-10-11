@@ -19,6 +19,8 @@ export declare function renderEmailLayout(params: {
     badge?: string;
     brandName?: string;
     footer?: string;
+    accentColor?: string;
+    logoDataUrl?: string;
 }): string;
 export declare function paragraph(content: string): string;
 export declare function note(content: string): string;

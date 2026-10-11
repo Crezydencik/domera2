@@ -19,4 +19,17 @@ export declare class ApartmentAdminController {
             message: string;
         }>;
     }>;
+    canonicalScopeMigration(request: Request, user: RequestUser, cursor?: string, limit?: string, apply?: string): Promise<{
+        mode: string;
+        scanned: number;
+        eligible: number;
+        updated: number;
+        alreadyCanonical: number;
+        skipped: {
+            apartmentId: string;
+            reason: string;
+        }[];
+        hasMore: boolean;
+        nextCursor: string | undefined;
+    }>;
 }

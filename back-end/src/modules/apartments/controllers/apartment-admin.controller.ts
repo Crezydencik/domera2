@@ -42,4 +42,23 @@ export class ApartmentAdminController {
     }
     return this.apartmentsService.migrateApartmentReadableIds();
   }
+
+  @Post('migrate/canonical-scope')
+  @ApiOperation({ summary: 'Preview or apply a bounded canonical apartment scope migration (platform admin only)' })
+  @Roles('PlatformAdmin')
+  canonicalScopeMigration(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+    @Query('apply') apply?: string,
+  ) {
+    return this.apartmentsService.migrateCanonicalScope({
+      request,
+      user,
+      cursor,
+      limit: limit ? Number(limit) : undefined,
+      apply: apply === 'true',
+    });
+  }
 }

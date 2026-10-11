@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertCircle,
@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   FileText,
+  Mail,
   Gauge,
   Home,
   LayoutDashboard,
@@ -57,6 +58,7 @@ type NavItem = {
   label: string;
   icon: string | LucideIcon;
   showIndicator?: boolean;
+  childOf?: string;
 };
 
 const navIconByHref: Partial<Record<string, LucideIcon>> = {
@@ -72,6 +74,7 @@ const navIconByHref: Partial<Record<string, LucideIcon>> = {
   [ROUTES.electricity]: Zap,
   [ROUTES.invoices]: ReceiptText,
   [ROUTES.documents]: FileText,
+  [ROUTES.mailings]: Mail,
   [ROUTES.support]: LifeBuoy,
   [ROUTES.settings]: Settings,
 };
@@ -178,6 +181,9 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
       { href: ROUTES.invoices, label: tm("invoices"), icon: "€" },
       // { href: ROUTES.debts, label: "Debts", icon: "!" },
       { href: ROUTES.documents, label: tm("documents"), icon: "▤" },
+      { href: ROUTES.mailings, label: tm("mailings"), icon: "✉" },
+      { href: ROUTES.mailingTemplates, label: tm("mailingTemplatesNav"), icon: "◦", childOf: ROUTES.mailings },
+      { href: ROUTES.sentMailings, label: tm("sentMailings"), icon: "◦", childOf: ROUTES.mailings },
       // { href: ROUTES.notifications, label: tm("notifications"), icon: "◉" },
       { href: ROUTES.settings, label: tm("settings"), icon: "⚙" },
     ],
@@ -201,6 +207,7 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
   const t = useTranslations("appShell.header");
   const router = useRouter();
   const rawPathname = usePathname();
+  const searchParams = useSearchParams();
   const pathname = rawPathname ?? ROUTES.dashboard;
   const role = normalizeDashboardRole(defaultRole);
   const [hasPendingBuildingRequests, setHasPendingBuildingRequests] = useState(false);
@@ -279,6 +286,9 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
     return labels.join(" / ");
   }, [profileSummary, role, roleLabel, t]);
   const pageTitle = useMemo(() => {
+    if (pathname === ROUTES.mailings && searchParams.get("mode") === "templates") {
+      return t("pageTitles.mailingTemplates");
+    }
     const routeTitleMap: Array<{ href: string; key: string; exact?: boolean }> = [
       { href: ROUTES.dashboard, key: "dashboard", exact: true },
       { href: ROUTES.platformUsers, key: "platformUsers" },
@@ -293,6 +303,9 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
       { href: ROUTES.meterReadings, key: "meterReadings" },
       { href: ROUTES.debts, key: "debts" },
       { href: ROUTES.documents, key: "documents" },
+      { href: ROUTES.mailings, key: "mailings" },
+      { href: ROUTES.mailingTemplates, key: "mailingTemplates" },
+      { href: ROUTES.sentMailings, key: "sentMailings" },
       { href: ROUTES.notifications, key: "notificationsPage" },
       { href: ROUTES.support, key: "support" },
       { href: ROUTES.settings, key: "settings" },
@@ -323,11 +336,14 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
     }
 
     return matchedRoute ? t(`pageTitles.${matchedRoute.key}`) : title;
-  }, [pathname, t, title]);
+  }, [pathname, searchParams, t, title]);
   const isBuildingMeterPage = pathname === ROUTES.meterReadingsBuilding;
   const displayedPageTitle = isBuildingMeterPage ? t("pageTitles.buildingMainMeter") : pageTitle;
 
   function isActive(href: string) {
+    if (href === ROUTES.mailings) {
+      return pathname === href;
+    }
     if (href === ROUTES.dashboard) {
       return pathname === href;
     }
@@ -669,7 +685,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
           {/* Nav */}
           <div className={`min-h-0 flex-1 overflow-y-auto px-3 py-4 ${sidebarCollapsed ? "lg:px-2" : ""}`}>
             <nav className="space-y-1">
-              {navItems.map((item) => {
+              {navItems.filter((item) => !item.childOf || pathname === item.childOf || pathname.startsWith(`${item.childOf}/`)).map((item) => {
                 const NavIcon = navIconByHref[item.href] ?? LayoutDashboard;
 
                 return (
@@ -680,14 +696,14 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
                   onClick={() => setMobileMenuOpen(false)}
                   onFocus={() => prefetchRoute(item.href)}
                   onMouseEnter={() => prefetchRoute(item.href)}
-                  className={`relative flex min-h-10 items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${sidebarCollapsed ? "lg:justify-center lg:px-0" : ""} ${
+                  className={`relative flex items-center justify-between gap-3 rounded-lg px-3 text-sm font-medium transition ${item.childOf ? "min-h-8 py-1.5 pl-10 text-[13px]" : "min-h-10 py-2.5"} ${sidebarCollapsed ? "lg:justify-center lg:px-0" : ""} ${
                     isActive(item.href)
                       ? "border border-sky-100 bg-sky-100/70 text-sky-700 shadow-sm shadow-sky-950/[0.03]"
                       : "border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950"
                   }`}
                 >
                   <span className={`flex min-w-0 items-center gap-3 ${sidebarCollapsed ? "lg:justify-center" : ""}`}>
-                    <NavIcon className="h-4 w-4 shrink-0 opacity-80" aria-hidden="true" />
+                    <NavIcon className={`${item.childOf ? "h-3 w-3" : "h-4 w-4"} shrink-0 opacity-80`} aria-hidden="true" />
                     <span className={`truncate ${sidebarCollapsed ? "lg:hidden" : ""}`}>{item.label}</span>
                   </span>
                   {item.showIndicator ? (

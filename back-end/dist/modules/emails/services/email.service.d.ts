@@ -1,13 +1,15 @@
-import { SendEmailDto, SendInvoiceGeneratedEmailDto, SendMeterReadingReminderEmailDto, SendNotificationEmailDto, SendOwnerInvitationEmailDto, SendPasswordResetEmailDto, SendRegistrationCodeEmailDto, SendTenantInvitationEmailDto, SendTenantInvitedByOwnerEmailDto } from '../dto/send-email.dto';
+import { SendEmailDto, SendInvoiceGeneratedEmailDto, SendMeterReadingReminderEmailDto, SendNotificationEmailDto, SendInformationMailingDto, SaveInformationMailingTemplateDto, SendOwnerInvitationEmailDto, SendPasswordResetEmailDto, SendRegistrationCodeEmailDto, SendTenantInvitationEmailDto, SendTenantInvitedByOwnerEmailDto } from '../dto/send-email.dto';
 import { EmailLogService } from './email-log.service';
 import { EmailTemplateService } from './email-template.service';
 import { EmailTransportService } from './email-transport.service';
+import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 export declare class EmailService {
     private readonly transportService;
     private readonly templateService;
     private readonly emailLogService;
+    private readonly firebaseAdminService;
     private readonly logger;
-    constructor(transportService: EmailTransportService, templateService: EmailTemplateService, emailLogService: EmailLogService);
+    constructor(transportService: EmailTransportService, templateService: EmailTemplateService, emailLogService: EmailLogService, firebaseAdminService: FirebaseAdminService);
     send(payload: SendEmailDto): Promise<{
         id: string;
     }>;
@@ -33,7 +35,40 @@ export declare class EmailService {
     sendMeterReadingReminder(dto: SendMeterReadingReminderEmailDto): Promise<{
         id: string;
     }>;
-    sendNotification(dto: SendNotificationEmailDto): Promise<{
+    sendNotification(dto: SendNotificationEmailDto, branding?: {
+        accentColor?: string;
+        logoDataUrl?: string;
+        companyName?: string;
+    }): Promise<{
         id: string;
     }>;
+    sendInformationMailing(companyId: string, dto: SendInformationMailingDto): Promise<{
+        recipients: number;
+        sent: number;
+        failed: number;
+    }>;
+    getInformationMailingTemplates(companyId: string): Promise<{
+        items: {
+            id: string;
+        }[];
+    }>;
+    saveInformationMailingTemplate(companyId: string, dto: SaveInformationMailingTemplateDto): Promise<{
+        name: string;
+        title: string;
+        message: string;
+        messageHtml: string | undefined;
+        createdAt: Date;
+        id: string;
+    }>;
+    getInformationMailingHistory(companyId: string): Promise<{
+        items: {
+            id: string;
+        }[];
+    }>;
+    deleteInformationMailingTemplate(companyId: string, templateId: string): Promise<{
+        id: string;
+        deleted: boolean;
+    }>;
+    private sanitizeMailingHtml;
+    private sendInformationRecipient;
 }

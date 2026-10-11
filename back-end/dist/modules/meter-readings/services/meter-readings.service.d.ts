@@ -10,7 +10,10 @@ export declare class MeterReadingsService {
     private readonly electricityPaymentService;
     private readonly reminderService;
     constructor(queryService: MeterReadingQueryService, crudService: MeterReadingCrudService, electricityPaymentService: ElectricityPaymentService, reminderService: MeterReadingReminderService);
-    list(user: RequestUser, apartmentId?: string, companyId?: string): Promise<{
+    list(user: RequestUser, apartmentId?: string, companyId?: string, period?: {
+        month?: string;
+        year?: string;
+    }): Promise<{
         items: Record<string, unknown>[];
     }>;
     listElectricityPayments(user: RequestUser, query: {

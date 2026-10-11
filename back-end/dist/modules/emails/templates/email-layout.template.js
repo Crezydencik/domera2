@@ -29,13 +29,16 @@ const footerByLanguage = {
     lv: 'Šis ir automātiski sagatavots e-pasts, lūdzam uz to neatbildēt.',
 };
 function renderEmailLayout(params) {
-    const brandName = params.brandName?.trim() || 'DOMERA';
+    const accentColor = /^#[0-9a-f]{6}$/i.test(params.accentColor ?? '') ? params.accentColor : '#155DFC';
+    const logoDataUrl = /^data:image\/(?:png|jpe?g|webp);base64,/i.test(params.logoDataUrl ?? '') ? params.logoDataUrl : '';
+    const badge = params.badge?.trim();
     return `
     <div style="margin:0;padding:32px 16px;background:#f1f5f9;font-family:Arial,sans-serif;color:#0f172a;">
       <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;text-align:center;box-shadow:0 16px 36px rgba(15,23,42,0.08);">
-        <div style="height:5px;background:#155DFC;font-size:0;line-height:0;">&nbsp;</div>
+        <div style="height:5px;background:${accentColor};font-size:0;line-height:0;">&nbsp;</div>
         <div style="padding:30px 32px 28px;border-bottom:1px solid #e2e8f0;background:#ffffff;text-align:center;">
-          <div style="margin:0 0 18px;font-size:24px;font-weight:900;letter-spacing:1.8px;color:#0f172a;">${brandName}</div>
+          ${logoDataUrl ? `<img src="${logoDataUrl}" alt="" style="display:block;max-width:240px;max-height:72px;margin:0 auto 18px;object-fit:contain;" />` : ''}
+          ${badge ? `<div style="margin:0 0 12px;font-size:12px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:#64748b;">${badge}</div>` : ''}
           <h2 style="margin:0;font-size:26px;font-weight:800;color:#0f172a;line-height:1.3;">${params.title}</h2>
         </div>
         <div style="padding:32px 34px 38px;text-align:center;">

@@ -110,7 +110,10 @@ export const getCurrentProfile = cache(async () => {
   return apiFetch<UnknownRecord>("/users/me");
 });
 
-export async function getAuthenticatedContext(roleHint?: string, options?: { requireFreshProfile?: boolean }) {
+const getAuthenticatedContextForRequest = cache(async (
+  roleHint?: string,
+  requireFreshProfile = false,
+) => {
   const store = await cookies();
   const sessionCookie = store.get("__session")?.value?.trim();
   const headerProfile = buildHeaderProfile(await headers(), roleHint);
@@ -119,7 +122,7 @@ export async function getAuthenticatedContext(roleHint?: string, options?: { req
     redirectToExpiredLogin();
   }
 
-  if (!options?.requireFreshProfile) {
+  if (!requireFreshProfile) {
     if (headerProfile) {
       const needsFreshAccountantCompany =
         isRawAccountantRole(headerProfile.role) && !firstOptionalString(headerProfile.companyId);
@@ -163,6 +166,10 @@ export async function getAuthenticatedContext(roleHint?: string, options?: { req
 
     throw error;
   }
+});
+
+export function getAuthenticatedContext(roleHint?: string, options?: { requireFreshProfile?: boolean }) {
+  return getAuthenticatedContextForRequest(roleHint, options?.requireFreshProfile === true);
 }
 
 export type AuthenticatedContext = Awaited<ReturnType<typeof getAuthenticatedContext>>;

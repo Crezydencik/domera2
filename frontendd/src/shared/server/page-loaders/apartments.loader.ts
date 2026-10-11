@@ -11,6 +11,7 @@ export async function getApartmentsPageData(roleHint?: string): Promise<RoleData
     return getManagementRegistryData(context, {
       includeBuildings: true,
       includeApartments: true,
+      includeApartmentOwnerMetadata: false,
       includeResidents: true,
     });
   }

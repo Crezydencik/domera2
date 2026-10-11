@@ -33,6 +33,7 @@ export declare class ApartmentsService {
     private timestampMillis;
     private withOwnerInvitationDates;
     private withResolvedOwnerAccess;
+    private enrichApartmentListOwnerMetadata;
     private getBuildingStorageFolders;
     private getApartmentStorageFolders;
     private getApartmentStorageFolderPath;
@@ -203,4 +204,26 @@ export declare class ApartmentsService {
             message: string;
         }>;
     }>;
+    migrateCanonicalScope(params: {
+        request: Request;
+        user: RequestUser;
+        cursor?: string;
+        limit?: number;
+        apply: boolean;
+    }): Promise<{
+        mode: string;
+        scanned: number;
+        eligible: number;
+        updated: number;
+        alreadyCanonical: number;
+        skipped: {
+            apartmentId: string;
+            reason: string;
+        }[];
+        hasMore: boolean;
+        nextCursor: string | undefined;
+    }>;
+    private buildCanonicalScopePatch;
+    private encodeMigrationCursor;
+    private decodeMigrationCursor;
 }

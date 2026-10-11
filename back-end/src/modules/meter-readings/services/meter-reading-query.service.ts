@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { isPropertyMemberRole, isStaffRole } from '../../../common/auth/role.constants';
 import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
@@ -15,9 +15,15 @@ export class MeterReadingQueryService {
     private readonly helperService: MeterReadingHelperService,
   ) {}
 
-  async list(user: RequestUser, apartmentId?: string, companyId?: string) {
+  async list(
+    user: RequestUser,
+    apartmentId?: string,
+    companyId?: string,
+    period?: { month?: string; year?: string },
+  ) {
     this.accessService.assertAuthenticated(user);
     const db = this.firebaseAdminService.firestore;
+    const periodFilter = this.parsePeriodFilter(period);
 
     if (apartmentId) {
       const snap = await db.collection('apartments').doc(apartmentId).get();
@@ -33,12 +39,12 @@ export class MeterReadingQueryService {
       }
 
       return {
-        items: this.helperService.extractApartmentReadings(
+        items: this.filterByPeriod(this.helperService.extractApartmentReadings(
           apartmentId,
           apartment,
           await this.buildingService.loadBuildingInfo(apartment),
           user,
-        ),
+        ), periodFilter),
       };
     }
 
@@ -64,7 +70,7 @@ export class MeterReadingQueryService {
         return this.helperService.extractApartmentReadings(snap.id, apartment, buildingMap.get(buildingId), user);
       });
 
-      return { items };
+      return { items: this.filterByPeriod(items, periodFilter) };
     }
 
     const staffCompanyId = this.accessService.requireStaffCompanyId(user);
@@ -88,6 +94,27 @@ export class MeterReadingQueryService {
       return this.helperService.extractApartmentReadings(doc.id, data, buildingMap.get(bId), isPropertyMemberRole(user.role) ? user : undefined);
     });
 
-    return { items };
+    return { items: this.filterByPeriod(items, periodFilter) };
+  }
+
+  private parsePeriodFilter(period?: { month?: string; year?: string }) {
+    const monthRaw = period?.month?.trim() ?? '';
+    const yearRaw = period?.year?.trim() ?? '';
+
+    if (!monthRaw && !yearRaw) return undefined;
+
+    const month = Number(monthRaw);
+    const year = Number(yearRaw);
+    if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < 2000 || year > 2100) {
+      throw new BadRequestException('month and year must define a valid period');
+    }
+
+    return { month, year };
+  }
+
+  private filterByPeriod(items: Record<string, unknown>[], period?: { month: number; year: number }) {
+    if (!period) return items;
+
+    return items.filter((item) => Number(item.month) === period.month && Number(item.year) === period.year);
   }
 }

@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsOptional, IsEnum, IsIn, IsNumber } from 'class-validator';
+import { IsEmail, IsString, IsOptional, IsEnum, IsIn, IsNumber, IsArray, ArrayMaxSize } from 'class-validator';
 import { EmailLanguage, EmailType } from '../email.types';
 
 export type EmailAttachmentDto = {
@@ -261,6 +261,10 @@ export class SendNotificationEmailDto {
 
   @IsOptional()
   @IsString()
+  messageHtml?: string;
+
+  @IsOptional()
+  @IsString()
   actionLabel?: string;
 
   @IsOptional()
@@ -294,4 +298,57 @@ export class SendNotificationEmailDto {
   @IsOptional()
   @IsString()
   deliveryKey?: string;
+}
+
+export class SendInformationMailingDto {
+  @IsString()
+  title!: string;
+
+  @IsString()
+  message!: string;
+
+  @IsOptional()
+  @IsString()
+  messageHtml?: string;
+
+  @IsOptional()
+  @IsString()
+  actionLabel?: string;
+
+  @IsOptional()
+  @IsString()
+  actionLink?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  buildingIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  apartmentIds?: string[];
+
+  @IsOptional()
+  @IsIn(['all', 'owners', 'residents'])
+  audience?: 'all' | 'owners' | 'residents';
+
+  @IsOptional()
+  @IsEnum(['en', 'ru', 'lv'])
+  language?: EmailLanguage;
+}
+
+export class SaveInformationMailingTemplateDto {
+  @IsString()
+  name!: string;
+
+  @IsString()
+  title!: string;
+
+  @IsString()
+  message!: string;
+
+  @IsOptional()
+  @IsString()
+  messageHtml?: string;
 }

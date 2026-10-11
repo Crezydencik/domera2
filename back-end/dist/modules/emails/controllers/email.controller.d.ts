@@ -2,7 +2,7 @@ import { RequestUser } from '../../../common/auth/request-user.type';
 import { EmailLogService, EmailLogType } from '../services/email-log.service';
 import { EmailService } from '../services/email.service';
 import { EmailTemplateService } from '../services/email-template.service';
-import { SendRegistrationCodeEmailDto, SendPasswordResetEmailDto, SendOwnerInvitationEmailDto, SendTenantInvitationEmailDto, SendTenantInvitedByOwnerEmailDto, SendInvoiceGeneratedEmailDto, SendMeterReadingReminderEmailDto, SendNotificationEmailDto } from '../dto/send-email.dto';
+import { SendRegistrationCodeEmailDto, SendPasswordResetEmailDto, SendOwnerInvitationEmailDto, SendTenantInvitationEmailDto, SendTenantInvitedByOwnerEmailDto, SendInvoiceGeneratedEmailDto, SendMeterReadingReminderEmailDto, SendNotificationEmailDto, SendInformationMailingDto, SaveInformationMailingTemplateDto } from '../dto/send-email.dto';
 import { EmailLanguage } from '../email.types';
 type EmailTemplatePreviewType = 'registrationCode' | 'passwordReset' | 'ownerInvitation' | 'tenantInvitation' | 'tenantInvitedByOwner' | 'invoiceGenerated' | 'meterReadingReminder' | 'meterReadingClosingReminder' | 'notification';
 export declare class EmailController {
@@ -56,6 +56,33 @@ export declare class EmailController {
     }>;
     sendNotification(dto: SendNotificationEmailDto): Promise<{
         id: string;
+    }>;
+    sendInformationMailing(user: RequestUser, dto: SendInformationMailingDto): Promise<{
+        recipients: number;
+        sent: number;
+        failed: number;
+    }>;
+    informationMailingTemplates(user: RequestUser): Promise<{
+        items: {
+            id: string;
+        }[];
+    }>;
+    saveInformationMailingTemplate(user: RequestUser, dto: SaveInformationMailingTemplateDto): Promise<{
+        name: string;
+        title: string;
+        message: string;
+        messageHtml: string | undefined;
+        createdAt: Date;
+        id: string;
+    }>;
+    deleteInformationMailingTemplate(user: RequestUser, templateId: string): Promise<{
+        id: string;
+        deleted: boolean;
+    }>;
+    informationMailingHistory(user: RequestUser): Promise<{
+        items: {
+            id: string;
+        }[];
     }>;
     private normalizePreviewType;
     private normalizeStatsType;

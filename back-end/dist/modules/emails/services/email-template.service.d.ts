@@ -8,6 +8,10 @@ export declare class EmailTemplateService {
     tenantInvitedByOwner(dto: SendTenantInvitedByOwnerEmailDto): EmailTemplate;
     invoiceGenerated(dto: SendInvoiceGeneratedEmailDto): EmailTemplate;
     meterReadingReminder(dto: SendMeterReadingReminderEmailDto): EmailTemplate;
-    notification(dto: SendNotificationEmailDto): EmailTemplate;
+    notification(dto: SendNotificationEmailDto, branding?: {
+        accentColor?: string;
+        logoDataUrl?: string;
+        companyName?: string;
+    }): EmailTemplate;
     private normalizeLanguage;
 }

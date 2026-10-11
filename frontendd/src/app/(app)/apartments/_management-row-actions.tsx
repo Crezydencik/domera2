@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { ActionButtonGroup } from "@/components/ui/action-button-group";
 import { Button } from "@/components/ui/button";
-import { deleteApartment, getApartmentStorageSummary } from "@/shared/api/apartments";
+import { deleteApartment, getApartmentById, getApartmentStorageSummary } from "@/shared/api/apartments";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { ROUTES } from "@/shared/lib/routes";
 import { TenantAccessManager } from "./[apartmentId]/tenant-access-manager";
@@ -123,14 +123,16 @@ export function ApartmentsManagementRowActions({
   const [storageSummary, setStorageSummary] = useState<ApartmentStorageSummary | null>(null);
   const [isLoadingStorageSummary, setIsLoadingStorageSummary] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const ownerEmail = toText(apartmentRecord.ownerEmail, "—");
+  const [hydratedApartmentRecord, setHydratedApartmentRecord] = useState<ApartmentRecord | null>(null);
+  const effectiveApartmentRecord = hydratedApartmentRecord ?? apartmentRecord;
+  const ownerEmail = toText(effectiveApartmentRecord.ownerEmail, "—");
   const ownerData = {
     email: ownerEmail,
-    userId: toText(apartmentRecord.ownerId) || undefined,
-    activated: apartmentRecord.ownerActivated === true || apartmentRecord.ownerActivated === "true" || Boolean(apartmentRecord.ownerAcceptedAt),
-    invitedAt: formatPossibleDate(apartmentRecord.ownerInvitedAt),
+    userId: toText(effectiveApartmentRecord.ownerId) || undefined,
+    activated: effectiveApartmentRecord.ownerActivated === true || effectiveApartmentRecord.ownerActivated === "true" || Boolean(effectiveApartmentRecord.ownerAcceptedAt),
+    invitedAt: formatPossibleDate(effectiveApartmentRecord.ownerInvitedAt),
   };
-  const tenants = Array.isArray(apartmentRecord.tenants) ? apartmentRecord.tenants : [];
+  const tenants = Array.isArray(effectiveApartmentRecord.tenants) ? effectiveApartmentRecord.tenants : [];
   const deleteBlockedByOccupant = isOccupied || Boolean(currentResidentId);
 
   async function handleDeleteApartment() {
@@ -173,6 +175,17 @@ export function ApartmentsManagementRowActions({
     }
   }
 
+  async function openAccessManager() {
+    setAccessManagementOpen(true);
+
+    try {
+      setHydratedApartmentRecord(await getApartmentById(apartmentId));
+    } catch {
+      // The list payload is sufficient for access management; owner metadata is optional.
+      setHydratedApartmentRecord(null);
+    }
+  }
+
   return (
     <>
       <ActionButtonGroup
@@ -191,7 +204,7 @@ export function ApartmentsManagementRowActions({
             icon: "user",
             tone: "warning",
             disabled: readOnly || isDeleting,
-            onClick: () => setAccessManagementOpen(true),
+            onClick: () => void openAccessManager(),
           } as const] : []),
           ...(canManageAccess ? [{
             key: `${apartmentId}-delete`,

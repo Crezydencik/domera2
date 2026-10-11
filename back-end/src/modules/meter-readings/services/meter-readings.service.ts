@@ -15,8 +15,13 @@ export class MeterReadingsService {
     private readonly reminderService: MeterReadingReminderService,
   ) {}
 
-  list(user: RequestUser, apartmentId?: string, companyId?: string) {
-    return this.queryService.list(user, apartmentId, companyId);
+  list(
+    user: RequestUser,
+    apartmentId?: string,
+    companyId?: string,
+    period?: { month?: string; year?: string },
+  ) {
+    return this.queryService.list(user, apartmentId, companyId, period);
   }
 
   listElectricityPayments(user: RequestUser, query: { buildingId?: string; apartmentId?: string }) {

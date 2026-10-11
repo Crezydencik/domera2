@@ -8,6 +8,7 @@ const core_1 = require("@nestjs/core");
 const swagger_1 = require("@nestjs/swagger");
 const cookie_1 = require("cookie");
 const firebase_admin_service_1 = require("./common/infrastructure/firebase/firebase-admin.service");
+const performance_metrics_interceptor_1 = require("./common/interceptors/performance-metrics.interceptor");
 const role_constants_1 = require("./common/auth/role.constants");
 const app_module_1 = require("./app.module");
 const SESSION_COOKIE_NAME = '__session';
@@ -166,6 +167,7 @@ async function createApp() {
         forbidNonWhitelisted: true,
         transform: true,
     }));
+    app.useGlobalInterceptors(new performance_metrics_interceptor_1.PerformanceMetricsInterceptor());
     const swaggerEnabled = process.env.SWAGGER_ENABLED === 'true' ||
         (process.env.NODE_ENV !== 'production' && process.env.SWAGGER_ENABLED !== 'false');
     if (swaggerEnabled) {

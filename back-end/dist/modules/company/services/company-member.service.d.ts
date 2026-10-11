@@ -60,7 +60,7 @@ export declare class CompanyMemberService {
             position: string | undefined;
             showContactToResidents: boolean;
             role: string;
-            accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord";
+            accountType: "ManagementCompany" | "PlatformAdmin" | "Resident" | "Landlord";
             companyId: string;
             permissions: CompanyMemberPermissions;
             memberType: string;

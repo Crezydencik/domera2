@@ -97,6 +97,24 @@ let EmailController = class EmailController {
     async sendNotification(dto) {
         return this.emailService.sendNotification(dto);
     }
+    async sendInformationMailing(user, dto) {
+        const companyId = this.cleanString(user.companyId) || user.uid;
+        if (!companyId)
+            throw new common_1.BadRequestException('Company ID not found for this user');
+        return this.emailService.sendInformationMailing(companyId, dto);
+    }
+    async informationMailingTemplates(user) {
+        return this.emailService.getInformationMailingTemplates(this.cleanString(user.companyId) || user.uid);
+    }
+    async saveInformationMailingTemplate(user, dto) {
+        return this.emailService.saveInformationMailingTemplate(this.cleanString(user.companyId) || user.uid, dto);
+    }
+    async deleteInformationMailingTemplate(user, templateId) {
+        return this.emailService.deleteInformationMailingTemplate(this.cleanString(user.companyId) || user.uid, templateId);
+    }
+    async informationMailingHistory(user) {
+        return this.emailService.getInformationMailingHistory(this.cleanString(user.companyId) || user.uid);
+    }
     normalizePreviewType(type) {
         const allowed = [
             'registrationCode',
@@ -356,6 +374,51 @@ __decorate([
     __metadata("design:paramtypes", [send_email_dto_1.SendNotificationEmailDto]),
     __metadata("design:returntype", Promise)
 ], EmailController.prototype, "sendNotification", null);
+__decorate([
+    (0, common_1.Post)('information-mailing'),
+    (0, roles_decorator_1.Roles)('ManagementCompany'),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({ summary: 'Send an informational mailing to company residents' }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, send_email_dto_1.SendInformationMailingDto]),
+    __metadata("design:returntype", Promise)
+], EmailController.prototype, "sendInformationMailing", null);
+__decorate([
+    (0, common_1.Get)('information-mailing/templates'),
+    (0, roles_decorator_1.Roles)('ManagementCompany'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], EmailController.prototype, "informationMailingTemplates", null);
+__decorate([
+    (0, common_1.Post)('information-mailing/templates'),
+    (0, roles_decorator_1.Roles)('ManagementCompany'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, send_email_dto_1.SaveInformationMailingTemplateDto]),
+    __metadata("design:returntype", Promise)
+], EmailController.prototype, "saveInformationMailingTemplate", null);
+__decorate([
+    (0, common_1.Delete)('information-mailing/templates/:templateId'),
+    (0, roles_decorator_1.Roles)('ManagementCompany'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('templateId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], EmailController.prototype, "deleteInformationMailingTemplate", null);
+__decorate([
+    (0, common_1.Get)('information-mailing/history'),
+    (0, roles_decorator_1.Roles)('ManagementCompany'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], EmailController.prototype, "informationMailingHistory", null);
 exports.EmailController = EmailController = __decorate([
     (0, swagger_1.ApiTags)('emails'),
     (0, common_1.Controller)('emails'),

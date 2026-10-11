@@ -146,8 +146,13 @@ export default function PlatformBillingPage() {
 
   useEffect(() => {
     void loadInvoices();
-    void loadDocumentBuildings();
-  }, [loadDocumentBuildings, loadInvoices]);
+  }, [loadInvoices]);
+
+  useEffect(() => {
+    if (activeTab === "documents" && documentBuildings.length === 0) {
+      void loadDocumentBuildings();
+    }
+  }, [activeTab, documentBuildings.length, loadDocumentBuildings]);
 
   const filteredItems = useMemo(
     () => items.filter((invoice) => matchesQuery(invoice, query)),

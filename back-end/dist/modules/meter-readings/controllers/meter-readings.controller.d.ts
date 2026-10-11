@@ -6,7 +6,7 @@ import { UpdateMeterReadingDto } from '../dto/update-meter-reading.dto';
 export declare class MeterReadingsController {
     private readonly meterReadingsService;
     constructor(meterReadingsService: MeterReadingsService);
-    list(user: RequestUser, apartmentId?: string, companyId?: string): Promise<{
+    list(user: RequestUser, apartmentId?: string, companyId?: string, month?: string, year?: string): Promise<{
         items: Record<string, unknown>[];
     }>;
     listElectricityPayments(user: RequestUser, buildingId?: string, apartmentId?: string): Promise<{

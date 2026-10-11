@@ -80,15 +80,19 @@ let EmailTemplateService = class EmailTemplateService {
             daysUntilDeadline: dto.daysUntilDeadline,
         });
     }
-    notification(dto) {
+    notification(dto, branding) {
         const language = this.normalizeLanguage(dto.language);
         return templates.notificationTemplates[language]({
             title: dto.title,
             message: dto.message,
+            messageHtml: dto.messageHtml,
             actionLabel: dto.actionLabel,
             actionLink: dto.actionLink,
-            brandName: dto.brandName,
+            brandName: branding?.companyName ?? dto.brandName,
             footer: dto.footer,
+            accentColor: branding?.accentColor,
+            logoDataUrl: branding?.logoDataUrl,
+            badge: branding?.companyName,
         });
     }
     normalizeLanguage(language) {

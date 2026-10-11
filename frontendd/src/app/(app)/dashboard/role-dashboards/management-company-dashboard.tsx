@@ -3,7 +3,6 @@ import { getLocale, getTranslations } from "next-intl/server";
 import { FiCheckCircle, FiExternalLink, FiPlus } from "react-icons/fi";
 import { BuildingReadingsSelector } from "./building-readings-selector";
 import type { RoleDataBundle } from "@/shared/server/auth-context";
-import { apiFetch } from "@/shared/server/api-client";
 import { isApprovedBuilding } from "@/shared/lib/buildings";
 import { ROUTES } from "@/shared/lib/routes";
 
@@ -154,17 +153,11 @@ export async function ManagementCompanyDashboard({ data, selectedBuildingId }: {
   const approvedBuildings = data.buildings.filter(isApprovedBuilding);
   const profile = asRecord(data.profile);
   const companyId = text(data.companyId, profile.companyId, data.userId);
-  const company = companyId
-    ? await apiFetch<UnknownRecord>(`/company/${encodeURIComponent(companyId)}`).catch(() => null)
-    : null;
-  const companyRecord = asRecord(company);
   const fallbackBuilding = asRecord(approvedBuildings[0]);
   const managedBy = asRecord(fallbackBuilding.managedBy);
   const companyName = text(
-    companyRecord.companyName,
-    companyRecord.name,
-    companyRecord.title,
     profile.companyName,
+    profile.name,
     managedBy.companyName,
     managedBy.name,
     fallbackBuilding.companyName,
@@ -172,9 +165,6 @@ export async function ManagementCompanyDashboard({ data, selectedBuildingId }: {
     t("companyFallback"),
   );
   const companyEmail = text(
-    companyRecord.companyEmail,
-    companyRecord.email,
-    companyRecord.contactEmail,
     profile.companyEmail,
     profile.email,
     managedBy.companyEmail,

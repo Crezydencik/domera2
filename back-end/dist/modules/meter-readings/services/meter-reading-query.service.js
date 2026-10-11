@@ -23,9 +23,10 @@ let MeterReadingQueryService = class MeterReadingQueryService {
         this.buildingService = buildingService;
         this.helperService = helperService;
     }
-    async list(user, apartmentId, companyId) {
+    async list(user, apartmentId, companyId, period) {
         this.accessService.assertAuthenticated(user);
         const db = this.firebaseAdminService.firestore;
+        const periodFilter = this.parsePeriodFilter(period);
         if (apartmentId) {
             const snap = await db.collection('apartments').doc(apartmentId).get();
             if (!snap.exists)
@@ -40,7 +41,7 @@ let MeterReadingQueryService = class MeterReadingQueryService {
                 this.accessService.assertStaffApartmentCompanyAccess(user, apartment);
             }
             return {
-                items: this.helperService.extractApartmentReadings(apartmentId, apartment, await this.buildingService.loadBuildingInfo(apartment), user),
+                items: this.filterByPeriod(this.helperService.extractApartmentReadings(apartmentId, apartment, await this.buildingService.loadBuildingInfo(apartment), user), periodFilter),
             };
         }
         if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
@@ -60,7 +61,7 @@ let MeterReadingQueryService = class MeterReadingQueryService {
                 const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : '';
                 return this.helperService.extractApartmentReadings(snap.id, apartment, buildingMap.get(buildingId), user);
             });
-            return { items };
+            return { items: this.filterByPeriod(items, periodFilter) };
         }
         const staffCompanyId = this.accessService.requireStaffCompanyId(user);
         const effectiveCompanyId = companyId || staffCompanyId;
@@ -77,7 +78,24 @@ let MeterReadingQueryService = class MeterReadingQueryService {
             const bId = typeof data.buildingId === 'string' ? data.buildingId : '';
             return this.helperService.extractApartmentReadings(doc.id, data, buildingMap.get(bId), (0, role_constants_1.isPropertyMemberRole)(user.role) ? user : undefined);
         });
-        return { items };
+        return { items: this.filterByPeriod(items, periodFilter) };
+    }
+    parsePeriodFilter(period) {
+        const monthRaw = period?.month?.trim() ?? '';
+        const yearRaw = period?.year?.trim() ?? '';
+        if (!monthRaw && !yearRaw)
+            return undefined;
+        const month = Number(monthRaw);
+        const year = Number(yearRaw);
+        if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < 2000 || year > 2100) {
+            throw new common_1.BadRequestException('month and year must define a valid period');
+        }
+        return { month, year };
+    }
+    filterByPeriod(items, period) {
+        if (!period)
+            return items;
+        return items.filter((item) => Number(item.month) === period.month && Number(item.year) === period.year);
     }
 };
 exports.MeterReadingQueryService = MeterReadingQueryService;

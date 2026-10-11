@@ -9,7 +9,12 @@ export declare class MeterReadingQueryService {
     private readonly buildingService;
     private readonly helperService;
     constructor(firebaseAdminService: FirebaseAdminService, accessService: MeterReadingAccessService, buildingService: MeterReadingBuildingService, helperService: MeterReadingHelperService);
-    list(user: RequestUser, apartmentId?: string, companyId?: string): Promise<{
+    list(user: RequestUser, apartmentId?: string, companyId?: string, period?: {
+        month?: string;
+        year?: string;
+    }): Promise<{
         items: Record<string, unknown>[];
     }>;
+    private parsePeriodFilter;
+    private filterByPeriod;
 }

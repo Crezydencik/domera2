@@ -223,6 +223,12 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         });
         return nextItems;
     }
+    async enrichApartmentListOwnerMetadata(items, includeOwnerMetadata) {
+        if (!includeOwnerMetadata)
+            return items;
+        const withOwnerAccess = await this.withResolvedOwnerAccess(items);
+        return this.withOwnerInvitationDates(withOwnerAccess);
+    }
     getBuildingStorageFolders(companyId, buildingId) {
         return this.apartmentStorageService.getBuildingStorageFolders(companyId, buildingId);
     }
@@ -1203,6 +1209,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         const companyId = typeof query.companyId === 'string' ? query.companyId.trim() : '';
         const buildingId = typeof query.buildingId === 'string' ? query.buildingId.trim() : '';
         const residentId = typeof query.residentId === 'string' ? query.residentId.trim() : '';
+        const includeOwnerMetadata = query.includeOwnerMetadata !== 'false';
         if (residentId && !this.isStaff(user) && residentId !== user.uid) {
             throw new common_1.ForbiddenException('Access denied');
         }
@@ -1228,8 +1235,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                 merged.set(doc.id, doc.data());
             }
             const items = this.sortApartmentItems(Array.from(merged.entries()).map(([id, data]) => this.mapApartmentDoc(id, data)));
-            const withOwnerAccess = await this.withResolvedOwnerAccess(items);
-            return { items: await this.withOwnerInvitationDates(withOwnerAccess) };
+            return { items: await this.enrichApartmentListOwnerMetadata(items, includeOwnerMetadata) };
         }
         else {
             const userRole = user.role;
@@ -1246,8 +1252,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                 merged.set(doc.id, doc.data());
             }
             const items = this.sortApartmentItems(Array.from(merged.entries()).map(([id, data]) => this.mapApartmentDoc(id, data)));
-            const withOwnerAccess = await this.withResolvedOwnerAccess(items);
-            return { items: await this.withOwnerInvitationDates(withOwnerAccess) };
+            return { items: await this.enrichApartmentListOwnerMetadata(items, includeOwnerMetadata) };
         }
         const rawItems = snapshot.docs.map((doc) => this.mapApartmentDoc(doc.id, doc.data()));
         let accessibleItems = rawItems;
@@ -1262,8 +1267,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
         const items = this.sortApartmentItems(accessibleItems);
-        const withOwnerAccess = await this.withResolvedOwnerAccess(items);
-        return { items: await this.withOwnerInvitationDates(withOwnerAccess) };
+        return { items: await this.enrichApartmentListOwnerMetadata(items, includeOwnerMetadata) };
     }
     async byId(request, user, apartmentId) {
         this.assertAuthenticated(user);
@@ -2290,6 +2294,96 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         }
         await this.apartmentsRepository.commitInChunks(writeOperations);
         return { updated, total: snapshot.size, skipped, errors };
+    }
+    async migrateCanonicalScope(params) {
+        if ((0, role_constants_1.normalizeUserRole)(params.user.role) !== 'PlatformAdmin') {
+            throw new common_1.ForbiddenException('Only platform administrators can run the canonical apartment scope migration');
+        }
+        await this.enforceRateLimit(params.request, 'apartments:migrate-canonical-scope', params.user.uid, 5);
+        const limit = Number.isFinite(params.limit) ? Math.min(300, Math.max(1, Math.floor(params.limit))) : 100;
+        const cursorId = this.decodeMigrationCursor(params.cursor);
+        let query = this.firebaseAdminService.firestore
+            .collection('apartments')
+            .orderBy(firestore_1.FieldPath.documentId())
+            .limit(limit + 1);
+        if (cursorId) {
+            query = query.startAfter(cursorId);
+        }
+        const snapshot = await query.get();
+        const page = snapshot.docs.slice(0, limit);
+        const hasMore = snapshot.docs.length > limit;
+        const batch = params.apply ? this.firebaseAdminService.firestore.batch() : null;
+        const skipped = [];
+        let eligible = 0;
+        let alreadyCanonical = 0;
+        for (const doc of page) {
+            const patch = this.buildCanonicalScopePatch(doc.data());
+            if (!patch) {
+                skipped.push({ apartmentId: doc.id, reason: 'companyId or buildingId cannot be resolved safely' });
+                continue;
+            }
+            if (Object.keys(patch).length === 0) {
+                alreadyCanonical += 1;
+                continue;
+            }
+            eligible += 1;
+            if (batch) {
+                batch.set(doc.ref, { ...patch, updatedAt: firestore_1.FieldValue.serverTimestamp() }, { merge: true });
+            }
+        }
+        if (batch && eligible > 0) {
+            await batch.commit();
+        }
+        const lastDocId = page.at(-1)?.id;
+        return {
+            mode: params.apply ? 'applied' : 'dry-run',
+            scanned: page.length,
+            eligible,
+            updated: params.apply ? eligible : 0,
+            alreadyCanonical,
+            skipped,
+            hasMore,
+            nextCursor: hasMore && lastDocId ? this.encodeMigrationCursor(lastDocId) : undefined,
+        };
+    }
+    buildCanonicalScopePatch(apartment) {
+        const directCompanyId = this.firstString(apartment.companyId);
+        const companyIds = Array.isArray(apartment.companyIds)
+            ? apartment.companyIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const canonicalCompanyId = directCompanyId || companyIds[0] || '';
+        const canonicalBuildingId = this.firstString(apartment.buildingId, apartment.houseId);
+        if (!canonicalCompanyId || !canonicalBuildingId)
+            return null;
+        const patch = {};
+        if (!directCompanyId)
+            patch.companyId = canonicalCompanyId;
+        if (!Array.isArray(apartment.companyIds) || !companyIds.includes(canonicalCompanyId)) {
+            patch.companyIds = Array.from(new Set([...companyIds, canonicalCompanyId]));
+        }
+        if (!this.firstString(apartment.buildingId))
+            patch.buildingId = canonicalBuildingId;
+        const number = this.firstString(apartment.number, apartment.apartmentNumber);
+        if (number && !this.firstString(apartment.normalizedNumber)) {
+            patch.normalizedNumber = this.normalizeApartmentNumber(number);
+        }
+        if (apartment.apartmentScopeVersion !== 2)
+            patch.apartmentScopeVersion = 2;
+        return patch;
+    }
+    encodeMigrationCursor(id) {
+        return Buffer.from(id, 'utf8').toString('base64url');
+    }
+    decodeMigrationCursor(cursor) {
+        if (!cursor || cursor.length > 512)
+            return undefined;
+        try {
+            const id = Buffer.from(cursor, 'base64url').toString('utf8').trim();
+            return /^[A-Za-z0-9_-]{1,256}$/.test(id) ? id : undefined;
+        }
+        catch {
+            return undefined;
+        }
     }
 };
 exports.ApartmentsService = ApartmentsService;

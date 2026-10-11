@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SendNotificationEmailDto = exports.SendMeterReadingReminderEmailDto = exports.SendInvoiceGeneratedEmailDto = exports.SendTenantInvitedByOwnerEmailDto = exports.SendTenantInvitationEmailDto = exports.SendOwnerInvitationEmailDto = exports.SendPasswordResetEmailDto = exports.SendRegistrationCodeEmailDto = exports.SendEmailDto = void 0;
+exports.SaveInformationMailingTemplateDto = exports.SendInformationMailingDto = exports.SendNotificationEmailDto = exports.SendMeterReadingReminderEmailDto = exports.SendInvoiceGeneratedEmailDto = exports.SendTenantInvitedByOwnerEmailDto = exports.SendTenantInvitationEmailDto = exports.SendOwnerInvitationEmailDto = exports.SendPasswordResetEmailDto = exports.SendRegistrationCodeEmailDto = exports.SendEmailDto = void 0;
 const class_validator_1 = require("class-validator");
 class SendEmailDto {
 }
@@ -343,6 +343,11 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
+], SendNotificationEmailDto.prototype, "messageHtml", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
 ], SendNotificationEmailDto.prototype, "actionLabel", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
@@ -384,3 +389,71 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], SendNotificationEmailDto.prototype, "deliveryKey", void 0);
+class SendInformationMailingDto {
+}
+exports.SendInformationMailingDto = SendInformationMailingDto;
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendInformationMailingDto.prototype, "title", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendInformationMailingDto.prototype, "message", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendInformationMailingDto.prototype, "messageHtml", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendInformationMailingDto.prototype, "actionLabel", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendInformationMailingDto.prototype, "actionLink", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(100),
+    __metadata("design:type", Array)
+], SendInformationMailingDto.prototype, "buildingIds", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(1000),
+    __metadata("design:type", Array)
+], SendInformationMailingDto.prototype, "apartmentIds", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['all', 'owners', 'residents']),
+    __metadata("design:type", String)
+], SendInformationMailingDto.prototype, "audience", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(['en', 'ru', 'lv']),
+    __metadata("design:type", String)
+], SendInformationMailingDto.prototype, "language", void 0);
+class SaveInformationMailingTemplateDto {
+}
+exports.SaveInformationMailingTemplateDto = SaveInformationMailingTemplateDto;
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SaveInformationMailingTemplateDto.prototype, "name", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SaveInformationMailingTemplateDto.prototype, "title", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SaveInformationMailingTemplateDto.prototype, "message", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SaveInformationMailingTemplateDto.prototype, "messageHtml", void 0);

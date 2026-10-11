@@ -29,8 +29,8 @@ let MeterReadingsController = class MeterReadingsController {
     constructor(meterReadingsService) {
         this.meterReadingsService = meterReadingsService;
     }
-    list(user, apartmentId, companyId) {
-        return this.meterReadingsService.list(user, apartmentId, companyId);
+    list(user, apartmentId, companyId, month, year) {
+        return this.meterReadingsService.list(user, apartmentId, companyId, { month, year });
     }
     listElectricityPayments(user, buildingId, apartmentId) {
         return this.meterReadingsService.listElectricityPayments(user, { buildingId, apartmentId });
@@ -73,6 +73,8 @@ __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'List meter readings for an apartment or company' }),
     (0, swagger_1.ApiQuery)({ name: 'apartmentId', required: false, type: String }),
     (0, swagger_1.ApiQuery)({ name: 'companyId', required: false, type: String }),
+    (0, swagger_1.ApiQuery)({ name: 'month', required: false, type: Number, minimum: 1, maximum: 12 }),
+    (0, swagger_1.ApiQuery)({ name: 'year', required: false, type: Number, minimum: 2000, maximum: 2100 }),
     (0, swagger_1.ApiOkResponse)({
         description: 'Meter readings returned.',
         type: meter_reading_response_dto_1.MeterReadingListResponseDto,
@@ -80,8 +82,10 @@ __decorate([
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Query)('apartmentId')),
     __param(2, (0, common_1.Query)('companyId')),
+    __param(3, (0, common_1.Query)('month')),
+    __param(4, (0, common_1.Query)('year')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:paramtypes", [Object, String, String, String, String]),
     __metadata("design:returntype", void 0)
 ], MeterReadingsController.prototype, "list", null);
 __decorate([

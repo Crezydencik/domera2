@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Post, Body, HttpCode, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Delete, Get, Post, Body, HttpCode, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/auth/current-user.decorator';
 import { FirebaseAuthGuard } from '../../../common/auth/firebase-auth.guard';
@@ -18,6 +18,8 @@ import {
   SendInvoiceGeneratedEmailDto,
   SendMeterReadingReminderEmailDto,
   SendNotificationEmailDto,
+  SendInformationMailingDto,
+  SaveInformationMailingTemplateDto,
 } from '../dto/send-email.dto';
 import { EmailLanguage } from '../email.types';
 
@@ -193,6 +195,40 @@ export class EmailController {
   @ApiResponse({ status: 200, description: 'Email sent successfully' })
   async sendNotification(@Body() dto: SendNotificationEmailDto) {
     return this.emailService.sendNotification(dto);
+  }
+
+  @Post('information-mailing')
+  @Roles('ManagementCompany')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Send an informational mailing to company residents' })
+  async sendInformationMailing(@CurrentUser() user: RequestUser, @Body() dto: SendInformationMailingDto) {
+    const companyId = this.cleanString(user.companyId) || user.uid;
+    if (!companyId) throw new BadRequestException('Company ID not found for this user');
+    return this.emailService.sendInformationMailing(companyId, dto);
+  }
+
+  @Get('information-mailing/templates')
+  @Roles('ManagementCompany')
+  async informationMailingTemplates(@CurrentUser() user: RequestUser) {
+    return this.emailService.getInformationMailingTemplates(this.cleanString(user.companyId) || user.uid);
+  }
+
+  @Post('information-mailing/templates')
+  @Roles('ManagementCompany')
+  async saveInformationMailingTemplate(@CurrentUser() user: RequestUser, @Body() dto: SaveInformationMailingTemplateDto) {
+    return this.emailService.saveInformationMailingTemplate(this.cleanString(user.companyId) || user.uid, dto);
+  }
+
+  @Delete('information-mailing/templates/:templateId')
+  @Roles('ManagementCompany')
+  async deleteInformationMailingTemplate(@CurrentUser() user: RequestUser, @Param('templateId') templateId: string) {
+    return this.emailService.deleteInformationMailingTemplate(this.cleanString(user.companyId) || user.uid, templateId);
+  }
+
+  @Get('information-mailing/history')
+  @Roles('ManagementCompany')
+  async informationMailingHistory(@CurrentUser() user: RequestUser) {
+    return this.emailService.getInformationMailingHistory(this.cleanString(user.companyId) || user.uid);
   }
 
   private normalizePreviewType(type?: string): EmailTemplatePreviewType {

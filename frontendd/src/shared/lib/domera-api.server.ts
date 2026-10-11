@@ -620,7 +620,9 @@ export async function getManagementRegistryData(
     includeDocuments?: boolean;
     includeInvoices?: boolean;
     includeMeterReadings?: boolean;
+    meterReadingPeriod?: { month: number; year: number };
     includeNotifications?: boolean;
+    includeApartmentOwnerMetadata?: boolean;
   },
 ): Promise<RoleDataBundle> {
   const bundle = emptyRoleDataBundle(context);
@@ -638,11 +640,21 @@ export async function getManagementRegistryData(
   const companyId = encodeURIComponent(context.companyId);
   const [buildingsResponse, apartmentsResponse, residentsResponse, documentsResponse, invoicesResponse, meterReadingsResponse, notificationsResponse] = await Promise.all([
     needsBuildingsForFiltering ? apiFetchSafe<ApiListResponse>(`/buildings?companyId=${companyId}`) : Promise.resolve(null),
-    options.includeApartments ? apiFetchSafe<ApiListResponse>(`/apartments?companyId=${companyId}`) : Promise.resolve(null),
+    options.includeApartments
+      ? apiFetchSafe<ApiListResponse>(
+          `/apartments?companyId=${companyId}&includeOwnerMetadata=${options.includeApartmentOwnerMetadata !== false}`,
+        )
+      : Promise.resolve(null),
     options.includeResidents ? apiFetchSafe<ApiListResponse>(`/users?companyId=${companyId}`) : Promise.resolve(null),
     options.includeDocuments ? apiFetchSafe<ApiListResponse>(`/news?companyId=${companyId}`) : Promise.resolve(null),
     options.includeInvoices ? apiFetchSafe<ApiListResponse>(`/invoices?companyId=${companyId}`) : Promise.resolve(null),
-    options.includeMeterReadings ? apiFetchSafe<ApiListResponse>(`/meter-readings?companyId=${companyId}`) : Promise.resolve(null),
+    options.includeMeterReadings
+      ? apiFetchSafe<ApiListResponse>(
+          `/meter-readings?companyId=${companyId}${options.meterReadingPeriod
+            ? `&month=${options.meterReadingPeriod.month}&year=${options.meterReadingPeriod.year}`
+            : ''}`,
+        )
+      : Promise.resolve(null),
     options.includeNotifications && context.userId
       ? apiFetchSafe<ApiListResponse>(`/notifications?userId=${encodeURIComponent(context.userId)}`)
       : Promise.resolve(null),

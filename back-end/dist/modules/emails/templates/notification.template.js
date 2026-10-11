@@ -2,23 +2,42 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.notificationTemplates = void 0;
 const email_layout_template_1 = require("./email-layout.template");
-function action(params) {
-    if (!params.actionLabel || !params.actionLink)
+function escapeHtml(value) {
+    return (value ?? '').replace(/[&<>"']/g, (character) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[character] ?? character);
+}
+function safeUrl(value) {
+    if (!value)
         return '';
-    return (0, email_layout_template_1.button)(params.actionLabel, params.actionLink);
+    try {
+        const url = new URL(value);
+        return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : '';
+    }
+    catch {
+        return '';
+    }
+}
+function action(params) {
+    const href = safeUrl(params.actionLink);
+    if (!params.actionLabel || !href)
+        return '';
+    return (0, email_layout_template_1.button)(escapeHtml(params.actionLabel), escapeHtml(href));
 }
 exports.notificationTemplates = {
     en: (params) => ({
         subject: params.title,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'en',
-            title: params.title,
-            badge: 'Notification',
+            title: escapeHtml(params.title),
+            badge: params.badge || 'Notification',
             brandName: params.brandName,
+            accentColor: params.accentColor,
+            logoDataUrl: params.logoDataUrl,
             children: `
-        <div style="${email_layout_template_1.emailStyles.paragraph}">${params.message}</div>
+        <div style="${email_layout_template_1.emailStyles.paragraph}">${params.messageHtml || escapeHtml(params.message).replace(/\n/g, '<br />')}</div>
         ${action(params)}
-        ${(0, email_layout_template_1.note)(params.footer || 'This is an automated notification from Domera.')}
+        ${(0, email_layout_template_1.note)(escapeHtml(params.footer || 'This is an automated notification from Domera.'))}
       `,
         }),
     }),
@@ -26,13 +45,15 @@ exports.notificationTemplates = {
         subject: params.title,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'ru',
-            title: params.title,
-            badge: 'Уведомление',
+            title: escapeHtml(params.title),
+            badge: params.badge || 'Уведомление',
             brandName: params.brandName,
+            accentColor: params.accentColor,
+            logoDataUrl: params.logoDataUrl,
             children: `
-        <div style="${email_layout_template_1.emailStyles.paragraph}">${params.message}</div>
+        <div style="${email_layout_template_1.emailStyles.paragraph}">${params.messageHtml || escapeHtml(params.message).replace(/\n/g, '<br />')}</div>
         ${action(params)}
-        ${(0, email_layout_template_1.note)(params.footer || 'Это автоматическое уведомление от Domera.')}
+        ${(0, email_layout_template_1.note)(escapeHtml(params.footer || 'Это автоматическое уведомление от Domera.'))}
       `,
         }),
     }),
@@ -40,13 +61,15 @@ exports.notificationTemplates = {
         subject: params.title,
         html: (0, email_layout_template_1.renderEmailLayout)({
             language: 'lv',
-            title: params.title,
-            badge: 'Paziņojums',
+            title: escapeHtml(params.title),
+            badge: params.badge || 'Paziņojums',
             brandName: params.brandName,
+            accentColor: params.accentColor,
+            logoDataUrl: params.logoDataUrl,
             children: `
-        <div style="${email_layout_template_1.emailStyles.paragraph}">${params.message}</div>
+        <div style="${email_layout_template_1.emailStyles.paragraph}">${params.messageHtml || escapeHtml(params.message).replace(/\n/g, '<br />')}</div>
         ${action(params)}
-        ${(0, email_layout_template_1.note)(params.footer || 'Šis ir automātisks paziņojums no Domera.')}
+        ${(0, email_layout_template_1.note)(escapeHtml(params.footer || 'Šis ir automātisks paziņojums no Domera.'))}
       `,
         }),
     }),
