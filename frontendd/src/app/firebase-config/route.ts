@@ -26,11 +26,6 @@ function inferMessagingSenderId(appId?: string) {
 }
 
 function resolveAuthDomain(request: Request, projectId?: string) {
-  const configured = envValue("FIREBASE_AUTH_DOMAIN", "PUBLIC_FIREBASE_AUTH_DOMAIN");
-  if (configured && !configured.endsWith(".firebasestorage.app")) {
-    return configured;
-  }
-
   const requestHost =
     hostFromUrl(request.headers.get("origin")) ??
     hostFromUrl(request.headers.get("referer")) ??
@@ -42,6 +37,11 @@ function resolveAuthDomain(request: Request, projectId?: string) {
 
   if (requestHost === "domerafront.vercel.app") {
     return "domerafront.vercel.app";
+  }
+
+  const configured = envValue("FIREBASE_AUTH_DOMAIN", "PUBLIC_FIREBASE_AUTH_DOMAIN");
+  if (configured && !configured.endsWith(".firebasestorage.app")) {
+    return configured;
   }
 
   return projectId ? `${projectId}.firebaseapp.com` : undefined;

@@ -215,6 +215,18 @@ function clearGoogleRedirectState() {
   window.sessionStorage.removeItem(GOOGLE_REDIRECT_REMEMBER_ME_KEY);
 }
 
+function canonicalizeGoogleRedirectHost() {
+  if (typeof window === "undefined" || window.location.hostname !== "domera.lv") {
+    return false;
+  }
+
+  const nextUrl = new URL(window.location.href);
+  nextUrl.protocol = "https:";
+  nextUrl.hostname = "www.domera.lv";
+  window.location.assign(nextUrl.toString());
+  return true;
+}
+
 function waitForRedirectUser(auth: Auth) {
   return new Promise<User | null>((resolve) => {
     let settled = false;
@@ -268,6 +280,12 @@ async function createGoogleBackendSession(user: User, rememberMe?: boolean): Pro
 }
 
 async function startGoogleRedirectSignIn(rememberMe?: boolean): Promise<FirebaseAuthResult> {
+  // Firebase stores the redirect result under authDomain. Keep the initiating
+  // page on the same canonical host so the result is available after return.
+  if (canonicalizeGoogleRedirectHost()) {
+    return new Promise(() => undefined);
+  }
+
   storeGoogleRedirectRememberMe(rememberMe);
   const { signInWithRedirect } = await getFirebaseAuthModule();
   await signInWithRedirect(await getFirebaseAuthClient(), await createGoogleProvider());
