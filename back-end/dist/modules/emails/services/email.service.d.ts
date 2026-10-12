@@ -70,5 +70,6 @@ export declare class EmailService {
         deleted: boolean;
     }>;
     private sanitizeMailingHtml;
+    private resolveCompanySenderName;
     private sendInformationRecipient;
 }

@@ -28,6 +28,11 @@ __decorate([
 ], SendEmailDto.prototype, "html", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SendEmailDto.prototype, "fromName", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Array)
 ], SendEmailDto.prototype, "attachments", void 0);
 class SendRegistrationCodeEmailDto {

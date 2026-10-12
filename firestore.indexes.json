@@ -2,6 +2,16 @@
   "indexes": [],
   "fieldOverrides": [
     {
+      "collectionGroup": "api_keys",
+      "fieldPath": "keyHash",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
       "collectionGroup": "documents",
       "fieldPath": "createdAt",
       "indexes": [

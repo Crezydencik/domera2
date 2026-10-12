@@ -422,7 +422,10 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             : credential.buildingId
                 ? [credential.buildingId]
                 : [];
-        if (allowedBuildingIds.length > 0 && !allowedBuildingIds.includes(buildingId)) {
+        if (allowedBuildingIds.length === 0) {
+            throw new common_1.ForbiddenException('API key is not bound to a building');
+        }
+        if (!allowedBuildingIds.includes(buildingId)) {
             throw new common_1.ForbiddenException('API key is not allowed for this building');
         }
     }

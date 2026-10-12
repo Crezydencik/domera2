@@ -30,7 +30,7 @@ let EmailTransportService = EmailTransportService_1 = class EmailTransportServic
         }
         try {
             const response = await this.resend.emails.send({
-                from: this.from,
+                from: this.getSender(payload.fromName),
                 to: payload.to,
                 subject: payload.subject,
                 html: payload.html,
@@ -50,6 +50,14 @@ let EmailTransportService = EmailTransportService_1 = class EmailTransportServic
             this.logger.error(`Failed to send email to ${payload.to}: ${message}`);
             throw error;
         }
+    }
+    getSender(fromName) {
+        const displayName = fromName?.replace(/[\r\n<>]/g, '').trim();
+        if (!displayName)
+            return this.from;
+        const email = /<([^<>]+)>/.exec(this.from)?.[1]?.trim() || this.from.trim();
+        const escapedName = displayName.replace(/"/g, '\\"');
+        return `"${escapedName}" <${email}>`;
     }
 };
 exports.EmailTransportService = EmailTransportService;

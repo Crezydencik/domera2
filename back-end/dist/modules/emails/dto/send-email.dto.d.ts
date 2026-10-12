@@ -8,6 +8,7 @@ export declare class SendEmailDto {
     to: string;
     subject: string;
     html: string;
+    fromName?: string;
     attachments?: EmailAttachmentDto[];
 }
 export declare class SendRegistrationCodeEmailDto {

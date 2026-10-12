@@ -10,4 +10,5 @@ export declare class EmailTransportService {
     send(payload: SendEmailDto): Promise<{
         id: string;
     }>;
+    private getSender;
 }

@@ -616,7 +616,11 @@ export class InvoicesService {
         ? [credential.buildingId]
         : [];
 
-    if (allowedBuildingIds.length > 0 && !allowedBuildingIds.includes(buildingId)) {
+    if (allowedBuildingIds.length === 0) {
+      throw new ForbiddenException('API key is not bound to a building');
+    }
+
+    if (!allowedBuildingIds.includes(buildingId)) {
       throw new ForbiddenException('API key is not allowed for this building');
     }
   }
