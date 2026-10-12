@@ -145,7 +145,7 @@ export function MailingsWorkspace({ buildings, apartments, company }: Props) {
       return;
     }
     editorRef.current?.focus();
-    restoreSelection();
+    restoreSelection();  
     document.execCommand("createLink", false, url);
     const selection = window.getSelection();  
     const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
