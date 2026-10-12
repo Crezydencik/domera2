@@ -147,7 +147,7 @@ export function MailingsWorkspace({ buildings, apartments, company }: Props) {
     editorRef.current?.focus();
     restoreSelection();
     document.execCommand("createLink", false, url);
-    const selection = window.getSelection();
+    const selection = window.getSelection();  
     const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
     let link = (selection?.anchorNode?.nodeType === Node.ELEMENT_NODE ? selection.anchorNode as Element : selection?.anchorNode?.parentElement)?.closest("a") as HTMLAnchorElement | null;
     if (!link && range && !range.collapsed) {
