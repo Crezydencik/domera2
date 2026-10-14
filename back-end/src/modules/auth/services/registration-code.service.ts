@@ -205,7 +205,14 @@ export class RegistrationCodeService {
   }
 
   private hashCode(email: string, code: string): string {
-    const secret = this.configService.getOrThrow<string>('REGISTRATION_CODE_SECRET');
+    // A separate secret is preferred, but existing deployments already have the
+    // Firebase service-account key required by FirebaseAdminService.  Using it
+    // as a fallback keeps registration functional when the optional dedicated
+    // setting has not yet been provisioned, without putting a secret in the
+    // client or database.
+    const secret =
+      this.configService.get<string>('REGISTRATION_CODE_SECRET')?.trim() ||
+      this.configService.getOrThrow<string>('FIREBASE_PRIVATE_KEY');
     return createHmac('sha256', secret).update(`${email}:${code}`).digest('hex');
   }
 
