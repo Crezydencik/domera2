@@ -57,8 +57,14 @@ export type PlatformBillingInvoice = {
   createdAt?: unknown;
 };
 
-export function getBuildings(companyId?: string, options?: { redirectOnAuthError?: boolean }) {
-  const query = companyId ? `?companyId=${encodeURIComponent(companyId)}` : "";
+export function getBuildings(
+  companyId?: string,
+  options?: { redirectOnAuthError?: boolean; includeOccupancy?: boolean },
+) {
+  const params = new URLSearchParams();
+  if (companyId) params.set("companyId", companyId);
+  if (options?.includeOccupancy === false) params.set("includeOccupancy", "false");
+  const query = params.size ? `?${params.toString()}` : "";
   return apiFetch<{ items?: Record<string, unknown>[] }>(`/buildings${query}`, {
     redirectOnAuthError: options?.redirectOnAuthError,
   });

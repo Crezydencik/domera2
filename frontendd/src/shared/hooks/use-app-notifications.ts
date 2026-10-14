@@ -262,7 +262,12 @@ export function useAppNotifications(options: UseAppNotificationsOptions = {}) {
       return;
     }
 
-    const response = await getBuildings(targetCompanyId, { redirectOnAuthError: false }).catch(() => ({ items: [] as UnknownRecord[] }));
+    // Setup notifications inspect only building configuration; occupancy is
+    // expensive to calculate and is not used here.
+    const response = await getBuildings(targetCompanyId, {
+      redirectOnAuthError: false,
+      includeOccupancy: false,
+    }).catch(() => ({ items: [] as UnknownRecord[] }));
     const nextItems = (response.items ?? [])
       .filter((building) => isElectricityEnabledBuilding(building))
       .map((building): NotificationItem | null => {

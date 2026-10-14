@@ -71,5 +71,6 @@ export declare class EmailService {
     }>;
     private sanitizeMailingHtml;
     private resolveCompanySenderName;
+    private resolveCompanyName;
     private sendInformationRecipient;
 }

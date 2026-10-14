@@ -94,10 +94,10 @@ export class EmailService {
   }
 
   async sendInvoiceGenerated(dto: SendInvoiceGeneratedEmailDto): Promise<{ id: string }> {
-    const fromName = await this.resolveCompanySenderName(dto.brandName, dto.companyId);
+    const companyName = await this.resolveCompanyName(dto.brandName, dto.companyId);
     const template = this.templateService.invoiceGenerated({
       ...dto,
-      brandName: fromName ?? dto.brandName,
+      brandName: companyName,
     });
     return this.sendTracked(
       'invoiceGenerated',
@@ -105,7 +105,9 @@ export class EmailService {
         to: dto.to,
         subject: template.subject,
         html: template.html,
-        fromName,
+        // An invoice must clearly identify the management company both in the
+        // mailbox and inside the message.
+        fromName: companyName,
         attachments: dto.attachments,
       },
       {
@@ -309,6 +311,23 @@ export class EmailService {
     } catch (error) {
       this.logger.warn(`Could not resolve sender name for company ${companyId}: ${error instanceof Error ? error.message : String(error)}`);
       return preferredName?.trim() || undefined;
+    }
+  }
+
+  private async resolveCompanyName(preferredName?: string, companyId?: string): Promise<string | undefined> {
+    if (preferredName?.trim()) return preferredName.trim();
+    if (!companyId?.trim()) return undefined;
+
+    try {
+      const snapshot = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
+      const company = snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined;
+      const companyName = company?.companyName;
+      if (typeof companyName === 'string' && companyName.trim()) return companyName.trim();
+      const name = company?.name;
+      return typeof name === 'string' && name.trim() ? name.trim() : undefined;
+    } catch (error) {
+      this.logger.warn(`Could not resolve company name for email ${companyId}: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
     }
   }
 

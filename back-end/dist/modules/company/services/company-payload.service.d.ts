@@ -28,6 +28,6 @@ export declare class CompanyPayloadService {
     normalizeStaffContacts(value: unknown): Array<Record<string, unknown>>;
     normalizeInvoiceSettings(value: unknown, existing?: unknown): Record<string, unknown> | undefined;
     normalizeCompanyPayload(payload: Record<string, unknown>, existing?: Record<string, unknown>): {
-        [k: string]: string | Record<string, unknown> | string[] | Record<string, CompanyMemberPermissions> | FieldValue | undefined;
+        [k: string]: string | Record<string, unknown> | string[] | FieldValue | Record<string, CompanyMemberPermissions> | undefined;
     };
 }

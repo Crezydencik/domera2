@@ -16,8 +16,8 @@ exports.emailStyles = {
     button: 'display:inline-block;margin:2px 0 28px;padding:13px 24px;border:1px solid #155DFC;background:#155DFC;color:#ffffff;text-decoration:none;border-radius:7px;font-size:15px;font-weight:700;box-shadow:0 8px 18px rgba(21,93,252,0.18);',
     note: 'margin:0 auto;max-width:560px;font-size:14px;line-height:1.6;color:#64748b;text-align:center;',
     details: 'width:100%;margin:0 0 30px;border-collapse:separate;border-spacing:0;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;',
-    detailLabel: 'display:block;width:auto;padding:14px 18px 4px;text-align:left;font-size:12px;line-height:1.4;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;white-space:normal;word-break:normal;overflow-wrap:normal;',
-    detailValue: 'display:block;width:auto;padding:0 18px 14px;text-align:left;font-size:18px;line-height:1.4;font-weight:700;color:#0f172a;border-bottom:1px solid #e2e8f0;word-break:break-word;overflow-wrap:anywhere;',
+    detailLabel: 'display:table-cell;width:45%;padding:14px 18px;text-align:left;vertical-align:middle;font-size:12px;line-height:1.4;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;white-space:normal;word-break:normal;overflow-wrap:normal;border-bottom:1px solid #e2e8f0;',
+    detailValue: 'display:table-cell;width:55%;padding:14px 18px;text-align:right;vertical-align:middle;font-size:16px;line-height:1.4;font-weight:700;color:#0f172a;border-bottom:1px solid #e2e8f0;word-break:break-word;overflow-wrap:anywhere;',
     infoBox: 'margin:0 0 28px;padding:18px 20px;background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #155DFC;border-radius:8px;text-align:left;color:#1e293b;',
     infoTitle: 'margin:0 0 10px;font-size:15px;font-weight:800;color:#0f172a;',
     list: 'margin:0;padding-left:20px;font-size:15px;line-height:1.7;color:#334155;',
@@ -48,15 +48,10 @@ function renderEmailLayout(params) {
         .domera-email-location { font-size:13px !important; }
         .domera-email-content { padding:24px 16px 28px !important; }
         .domera-email-content p { font-size:15px !important; }
-        .domera-email-detail-label { padding:13px 12px 4px !important; }
-        .domera-email-detail-value { padding:0 12px 13px !important; }
+        .domera-email-detail-label { display:block !important; width:auto !important; padding:13px 12px 4px !important; border-bottom:0 !important; }
+        .domera-email-detail-value { display:block !important; width:auto !important; padding:0 12px 13px !important; text-align:left !important; font-size:15px !important; }
         .domera-email-detail-label { font-size:10px !important; letter-spacing:0.2px !important; }
-        .domera-email-detail-value { font-size:15px !important; }
         .domera-email-button { display:block !important; margin:2px auto 24px !important; }
-      }
-      @media only screen and (min-width:601px) {
-        .domera-email-detail-label { display:table-cell !important; width:45% !important; padding:14px 18px !important; vertical-align:middle !important; border-bottom:1px solid #e2e8f0 !important; }
-        .domera-email-detail-value { display:table-cell !important; width:55% !important; padding:14px 18px !important; text-align:right !important; vertical-align:middle !important; font-size:16px !important; border-bottom:1px solid #e2e8f0 !important; }
       }
     </style>
     <div class="domera-email-shell" style="width:100%;box-sizing:border-box;margin:0;padding:32px 16px;background:#f1f5f9;font-family:Arial,sans-serif;color:#0f172a;">

@@ -39,7 +39,10 @@ let AuthExceptionMapperService = AuthExceptionMapperService_1 = class AuthExcept
             throw new common_1.HttpException({ statusCode: 410, message }, common_1.HttpStatus.GONE);
         if (statusCode === 400)
             throw new common_1.BadRequestException(message);
-        throw new common_1.HttpException({ statusCode: 500, message }, common_1.HttpStatus.INTERNAL_SERVER_ERROR);
+        throw new common_1.HttpException({
+            statusCode: 500,
+            message: 'Authentication service is temporarily unavailable. Please try again later.',
+        }, common_1.HttpStatus.INTERNAL_SERVER_ERROR);
     }
 };
 exports.AuthExceptionMapperService = AuthExceptionMapperService;

@@ -37,8 +37,8 @@ export declare class UsersService {
         id: string;
         uid: string;
         email: string | undefined;
-        role: "Accountant" | "ManagementCompany" | "PlatformAdmin" | "Resident" | "Landlord" | undefined;
-        accountType: "ManagementCompany" | "PlatformAdmin" | "Resident" | "Landlord" | undefined;
+        role: "PlatformAdmin" | "ManagementCompany" | "Accountant" | "Resident" | "Landlord" | undefined;
+        accountType: "PlatformAdmin" | "ManagementCompany" | "Resident" | "Landlord" | undefined;
         companyId: string | undefined;
         apartmentId: string | undefined;
     } | {

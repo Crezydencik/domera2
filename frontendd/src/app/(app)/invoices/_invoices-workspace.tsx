@@ -1276,6 +1276,35 @@ export function InvoicesWorkspace({
     }
   }
 
+  async function handleApprovePendingApprovalGroup(group: PendingApprovalGroup) {
+    const approvalIds = group.items
+      .map((item) => firstString(item.id, item.approvalId))
+      .filter(Boolean);
+    if (approvalIds.length === 0) return;
+
+    if (approvalIds.length === 1) {
+      await handleApprovePendingApproval(approvalIds[0]);
+      return;
+    }
+
+    setApprovingApprovalId(group.id);
+    try {
+      // A row represents one apartment. Notify only the recipients whose
+      // invoices belong to this apartment, never recipients from other rows.
+      const response = await approvePendingInvoiceApprovalsAction(approvalIds, true, approvalIds);
+      if (!response.success) {
+        throw new Error(response.message || copy.approvalFailed);
+      }
+
+      notifications.success(copy.approvalEmailSent);
+      refreshPendingApprovals();
+    } catch (error) {
+      notifications.error(error instanceof Error ? error.message : copy.approvalFailed);
+    } finally {
+      setApprovingApprovalId(null);
+    }
+  }
+
   async function handleCancelPendingApproval(approvalId: string) {
     setCancellingApprovalId(approvalId);
     try {
@@ -1992,7 +2021,9 @@ export function InvoicesWorkspace({
                       const groupCurrency = firstString(item.currency, "EUR");
                       const amountLabels = [...new Set(group.items.map((entry) => firstString(entry.amount)).filter(Boolean))];
                       const isOpen = openApprovalGroupId === group.id;
-                      const isProcessing = approvingApprovalId === group.id || cancellingApprovalId === group.id;
+                      const isApprovingGroup = approvingApprovalId === group.id
+                        || group.items.some((entry) => firstString(entry.id, entry.approvalId) === approvingApprovalId);
+                      const isProcessing = isApprovingGroup || cancellingApprovalId === group.id;
 
                       return (
                         <div key={group.id}>
@@ -2018,15 +2049,9 @@ export function InvoicesWorkspace({
                                 <span className="hidden lg:inline">{group.items.length}</span>
                                 <FiChevronDown className={`hidden h-4 w-4 transition lg:inline ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
                               </button>
-                              <Button type="button" size="sm" className="h-9 w-9 shrink-0 px-0 lg:w-auto lg:px-2" title={copy.approvalApprove} aria-label={copy.approvalApprove} onClick={() => {
-                                const ids = group.items.map((entry) => firstString(entry.id, entry.approvalId)).filter(Boolean);
-                                setNotificationMode("notify");
-                                setNotificationRecipientMode("all");
-                                setSelectedNotificationApprovalIds(new Set());
-                                setApprovalConfirmationIds(ids);
-                              }} disabled={!approvalId || approvingAllApprovals || cancellingAllApprovals || isProcessing}>
+                              <Button type="button" size="sm" className="h-9 w-9 shrink-0 px-0 lg:w-auto lg:px-2" title={copy.approvalApprove} aria-label={copy.approvalApprove} onClick={() => void handleApprovePendingApprovalGroup(group)} disabled={!approvalId || approvingAllApprovals || cancellingAllApprovals || isProcessing}>
                                 <FiCheckCircle className="h-4 w-4" aria-hidden="true" />
-                                <span className="hidden lg:inline">{approvingApprovalId === group.id ? copy.approvalApproving : copy.approvalApprove}</span>
+                                <span className="hidden lg:inline">{isApprovingGroup ? copy.approvalApproving : copy.approvalApprove}</span>
                               </Button>
                               <Button type="button" size="sm" variant="secondary" className="h-9 w-9 shrink-0 px-0 lg:w-auto lg:px-2" title={copy.approvalCancel} aria-label={copy.approvalCancel} onClick={() => setCancellationConfirmationTarget(group)} disabled={!approvalId || approvingAllApprovals || cancellingAllApprovals || isProcessing}>
                                 <FiX className="h-4 w-4" aria-hidden="true" />

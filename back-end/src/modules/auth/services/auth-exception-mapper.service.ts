@@ -36,6 +36,15 @@ export class AuthExceptionMapperService {
     if (statusCode === 410) throw new HttpException({ statusCode: 410, message }, HttpStatus.GONE);
     if (statusCode === 400) throw new BadRequestException(message);
 
-    throw new HttpException({ statusCode: 500, message }, HttpStatus.INTERNAL_SERVER_ERROR);
+    // Keep implementation and configuration details in server logs.  Returning
+    // the original exception here exposed messages such as missing environment
+    // variable names directly on public registration screens.
+    throw new HttpException(
+      {
+        statusCode: 500,
+        message: 'Authentication service is temporarily unavailable. Please try again later.',
+      },
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
   }
 }

@@ -515,7 +515,10 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
     let active = true;
 
     const refreshElectricityNavigation = () => {
-      getBuildings(navigationCompanyId, { redirectOnAuthError: false })
+      // The sidebar only needs the electricity flag. Avoid scanning every
+      // apartment to calculate occupancy whenever a user changes page or
+      // returns focus to the tab.
+      getBuildings(navigationCompanyId, { redirectOnAuthError: false, includeOccupancy: false })
         .then((response) => {
           if (!active) return;
           const buildings = response.items ?? [];

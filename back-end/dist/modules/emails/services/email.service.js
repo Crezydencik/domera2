@@ -74,13 +74,16 @@ let EmailService = EmailService_1 = class EmailService {
         return this.sendTracked('tenantInvitedByOwner', { to: dto.to, subject: template.subject, html: template.html });
     }
     async sendInvoiceGenerated(dto) {
-        const template = this.templateService.invoiceGenerated(dto);
-        const fromName = await this.resolveCompanySenderName(dto.brandName, dto.companyId);
+        const companyName = await this.resolveCompanyName(dto.brandName, dto.companyId);
+        const template = this.templateService.invoiceGenerated({
+            ...dto,
+            brandName: companyName,
+        });
         return this.sendTracked('invoiceGenerated', {
             to: dto.to,
             subject: template.subject,
             html: template.html,
-            fromName,
+            fromName: companyName,
             attachments: dto.attachments,
         }, {
             companyId: dto.companyId,
@@ -271,6 +274,25 @@ let EmailService = EmailService_1 = class EmailService {
         catch (error) {
             this.logger.warn(`Could not resolve sender name for company ${companyId}: ${error instanceof Error ? error.message : String(error)}`);
             return preferredName?.trim() || undefined;
+        }
+    }
+    async resolveCompanyName(preferredName, companyId) {
+        if (preferredName?.trim())
+            return preferredName.trim();
+        if (!companyId?.trim())
+            return undefined;
+        try {
+            const snapshot = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
+            const company = snapshot.exists ? snapshot.data() : undefined;
+            const companyName = company?.companyName;
+            if (typeof companyName === 'string' && companyName.trim())
+                return companyName.trim();
+            const name = company?.name;
+            return typeof name === 'string' && name.trim() ? name.trim() : undefined;
+        }
+        catch (error) {
+            this.logger.warn(`Could not resolve company name for email ${companyId}: ${error instanceof Error ? error.message : String(error)}`);
+            return undefined;
         }
     }
     async sendInformationRecipient(dto, branding) {

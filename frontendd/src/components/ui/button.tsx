@@ -30,7 +30,7 @@ interface ButtonLinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    "border-transparent bg-slate-950 text-white shadow-sm hover:bg-slate-800 active:bg-slate-900",
+    "border-transparent bg-blue-600 text-white shadow-sm hover:bg-blue-700 active:bg-blue-800",
   secondary:
     "border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 active:bg-slate-100",
   danger:
