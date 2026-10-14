@@ -111,10 +111,16 @@ export default function RegisterPage() {
   const [errors, setErrors] = useState<FormErrors>({});
   const availableAccountTypes = DEFAULT_ACCOUNT_TYPES;
   const [hasAcceptedLegal, setHasAcceptedLegal] = useState(false);
+  const [useCompanyEmail, setUseCompanyEmail] = useState(false);
 
   function update<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: undefined }));
+  }
+
+  function updateCompanyEmail(value: string) {
+    update("companyEmail", value);
+    if (useCompanyEmail) update("email", value);
   }
 
   const steps: string[] =
@@ -200,6 +206,8 @@ export default function RegisterPage() {
   }
 
   const isLastStep = step === steps.length - 1;
+  const hasPasswordConfirmation = Boolean(form.password && form.confirmPassword);
+  const passwordsMatch = hasPasswordConfirmation && form.password === form.confirmPassword;
 
   return (
     <div>
@@ -268,7 +276,7 @@ export default function RegisterPage() {
                 type="email"
                 placeholder={s("placeholder.companyEmail")}
                 value={form.companyEmail}
-                onChange={(e) => update("companyEmail", e.target.value)}
+                onChange={(e) => updateCompanyEmail(e.target.value)}
                 error={errors.companyEmail}
                 hint={t("registerCompanyEmailHint")}
                 autoComplete="email"
@@ -311,11 +319,29 @@ export default function RegisterPage() {
                 type="email"
                 placeholder={s("placeholder.email")}
                 value={form.email}
-                onChange={(e) => update("email", e.target.value)}
+                onChange={(e) => {
+                  setUseCompanyEmail(false);
+                  update("email", e.target.value);
+                }}
                 error={errors.email}
                 autoComplete="email"
                 leftIcon={<FiMail className="h-4 w-4" aria-hidden />}
               />
+              {form.accountType === "ManagementCompany" && (
+                <label className="-mt-2 flex cursor-pointer items-center gap-3 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={useCompanyEmail}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setUseCompanyEmail(checked);
+                      if (checked) update("email", form.companyEmail);
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{t("useCompanyEmail")}</span>
+                </label>
+              )}
               <PhoneInput
                 label={s("form.phone")}
                 placeholder={s("placeholder.phone")}
@@ -347,6 +373,11 @@ export default function RegisterPage() {
                 autoComplete="new-password"
                 leftIcon={<FiLock className="h-4 w-4" aria-hidden />}
               />
+              {hasPasswordConfirmation && (
+                <p className={cx("-mt-3 text-sm", passwordsMatch ? "text-emerald-600" : "text-red-500")}>
+                  {passwordsMatch ? t("passwordsMatch") : t("passwordsDoNotMatch")}
+                </p>
+              )}
             </div>
           )}
 

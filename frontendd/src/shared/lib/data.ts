@@ -48,6 +48,10 @@ export interface Building {
   id: string;
   name: string;
   address: string;
+  country?: string;
+  city?: string;
+  postalCode?: string;
+  houseNumber?: string;
   comment?: string;
   apartments: number;
   apartmentsCount?: number;

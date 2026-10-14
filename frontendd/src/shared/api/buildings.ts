@@ -81,6 +81,10 @@ export type BuildingMutationInput = {
   companyId: string;
   name: string;
   address: string;
+  country?: string;
+  city?: string;
+  postalCode?: string;
+  houseNumber?: string;
   comment?: string;
   status?: string;
   apartmentsCount?: number;

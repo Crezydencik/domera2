@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { DataTable } from "@/components/data-table";
@@ -19,6 +19,10 @@ type EditableBuilding = Building & {
 type FormState = {
   name: string;
   address: string;
+  country: string;
+  city: string;
+  postalCode: string;
+  houseNumber: string;
   apartmentsCount: string;
   subscriptionTermPreset: "1" | "2" | "5" | "custom";
   subscriptionTermYears: string;
@@ -31,6 +35,10 @@ type FormTab = "general" | "readings";
 const EMPTY_FORM: FormState = {
   name: "",
   address: "",
+  country: "",
+  city: "",
+  postalCode: "",
+  houseNumber: "",
   apartmentsCount: "0",
   subscriptionTermPreset: "1",
   subscriptionTermYears: "1",
@@ -48,6 +56,24 @@ const EMPTY_FORM: FormState = {
     electricityPricePerKwh: 0,
   },
 };
+
+function buildingDraftStorageKey(companyId: string) {
+  return `domera:building-create-draft:${companyId}`;
+}
+
+function formFromDraft(value: unknown): FormState {
+  if (!value || typeof value !== "object") return EMPTY_FORM;
+
+  const draft = value as Partial<FormState>;
+  return {
+    ...EMPTY_FORM,
+    ...draft,
+    readingConfig: {
+      ...EMPTY_FORM.readingConfig,
+      ...(draft.readingConfig ?? {}),
+    },
+  };
+}
 
 function EditIcon() {
   return (
@@ -215,6 +241,10 @@ function buildPayloadFromBuilding(building: EditableBuilding): Omit<BuildingMuta
   return {
     name: building.name,
     address: building.address,
+    country: building.country ?? "",
+    city: building.city ?? "",
+    postalCode: building.postalCode ?? "",
+    houseNumber: building.houseNumber ?? "",
     apartmentsCount: building.apartments,
     subscriptionTermYears,
     subscriptionTermMonths: subscriptionTermYears * 12,
@@ -446,6 +476,16 @@ export function BuildingsManagement({
 
   const rows = useMemo(() => buildings.map(normalizeBuilding), [buildings]);
 
+  useEffect(() => {
+    if (!createOpen || !companyId) return;
+
+    try {
+      window.localStorage.setItem(buildingDraftStorageKey(companyId), JSON.stringify(form));
+    } catch {
+      // The form remains usable if browser storage is unavailable.
+    }
+  }, [companyId, createOpen, form]);
+
   function updateForm<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
@@ -498,7 +538,14 @@ export function BuildingsManagement({
       return;
     }
 
-    resetForm();
+    try {
+      const savedDraft = window.localStorage.getItem(buildingDraftStorageKey(companyId));
+      setForm(savedDraft ? formFromDraft(JSON.parse(savedDraft)) : EMPTY_FORM);
+    } catch {
+      setForm(EMPTY_FORM);
+    }
+    setEditingBuildingId(null);
+    setActiveTab("general");
     setCreateOpen(true);
   }
 
@@ -514,6 +561,10 @@ export function BuildingsManagement({
     setForm({
       name: building.name,
       address: building.address,
+      country: building.country ?? "",
+      city: building.city ?? "",
+      postalCode: building.postalCode ?? "",
+      houseNumber: building.houseNumber ?? "",
       apartmentsCount: String(building.apartments),
       subscriptionTermPreset: getSubscriptionTermPreset(subscriptionTermYears),
       subscriptionTermYears: String(subscriptionTermYears),
@@ -590,6 +641,10 @@ export function BuildingsManagement({
     return {
       name: form.name.trim(),
       address: form.address.trim(),
+      country: form.country.trim(),
+      city: form.city.trim(),
+      postalCode: form.postalCode.trim(),
+      houseNumber: form.houseNumber.trim(),
       apartmentsCount,
       subscriptionTermYears: Math.floor(subscriptionTermYears),
       subscriptionTermMonths: Math.floor(subscriptionTermYears) * 12,
@@ -628,6 +683,7 @@ export function BuildingsManagement({
       const payload = buildPayload();
       const response = await requestBuildingCreationAccess(companyId, payload);
       notifications.success(response.alreadyPending ? t("gating.requestAlreadyPending") : t("gating.requestSent"));
+      window.localStorage.removeItem(buildingDraftStorageKey(companyId));
       setCreateOpen(false);
       resetForm();
       notifyBuildingsChanged({ electricityEnabled: payload.readingConfig?.electricityEnabled });
@@ -889,6 +945,10 @@ export function BuildingsManagement({
             <div className="sm:col-span-2">
               <Input label={s("form.address")} value={form.address} onChange={(event) => updateForm("address", event.target.value)} />
             </div>
+            <Input label={t("fields.country")} value={form.country} onChange={(event) => updateForm("country", event.target.value)} />
+            <Input label={t("fields.city")} value={form.city} onChange={(event) => updateForm("city", event.target.value)} />
+            <Input label={t("fields.postalCode")} value={form.postalCode} onChange={(event) => updateForm("postalCode", event.target.value)} />
+            <Input label={t("fields.houseNumber")} value={form.houseNumber} onChange={(event) => updateForm("houseNumber", event.target.value)} />
             <Input label={t("fields.apartmentsCount")} type="number" min="0" value={form.apartmentsCount} onChange={(event) => updateForm("apartmentsCount", event.target.value)} />
             <SelectField
               label={t("fields.subscriptionTerm")}
@@ -992,6 +1052,10 @@ export function BuildingsManagement({
             <div className="sm:col-span-2">
               <Input label={s("form.address")} value={form.address} onChange={(event) => updateForm("address", event.target.value)} />
             </div>
+            <Input label={t("fields.country")} value={form.country} onChange={(event) => updateForm("country", event.target.value)} />
+            <Input label={t("fields.city")} value={form.city} onChange={(event) => updateForm("city", event.target.value)} />
+            <Input label={t("fields.postalCode")} value={form.postalCode} onChange={(event) => updateForm("postalCode", event.target.value)} />
+            <Input label={t("fields.houseNumber")} value={form.houseNumber} onChange={(event) => updateForm("houseNumber", event.target.value)} />
             <Input label={t("fields.apartmentsCount")} type="number" min="0" value={form.apartmentsCount} onChange={(event) => updateForm("apartmentsCount", event.target.value)} />
             <SelectField
               label={t("fields.subscriptionTerm")}

@@ -220,6 +220,7 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
   const role = normalizeDashboardRole(defaultRole);
   const [hasPendingBuildingRequests, setHasPendingBuildingRequests] = useState(false);
   const [hasElectricityNavigation, setHasElectricityNavigation] = useState(false);
+  const [hasBuildings, setHasBuildings] = useState(false);
   const optimisticElectricityUntilRef = useRef(0);
   const initialIsAccountant = isAccountantRole(initialProfile?.role) || isAccountantRole(initialProfile?.accountType);
   const baseNavItems = role === "platformAdmin"
@@ -240,6 +241,14 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
     }
 
     if (role === "managementCompany" && !hasElectricityNavigation && item.href === ROUTES.electricity) {
+      return false;
+    }
+
+    if (
+      role === "managementCompany"
+      && !hasBuildings
+      && [ROUTES.invoices, ROUTES.documents, ROUTES.mailings, ROUTES.mailingTemplates, ROUTES.sentMailings].includes(item.href as typeof ROUTES.invoices)
+    ) {
       return false;
     }
 
@@ -509,6 +518,7 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
   useEffect(() => {
     if (role !== "managementCompany" || !navigationCompanyId) {
       setHasElectricityNavigation(false);
+      setHasBuildings(false);
       return;
     }
 
@@ -522,13 +532,18 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
         .then((response) => {
           if (!active) return;
           const buildings = response.items ?? [];
+          const hasActiveBuilding = buildings.some((building) => !["pending", "rejected", "cancelled", "canceled"].includes(
+            String(building.status ?? "").trim().toLowerCase(),
+          ));
           const hasEnabled = buildings.some((building) => isElectricityEnabledBuilding(building));
           const optimisticActive = Date.now() < optimisticElectricityUntilRef.current;
+          setHasBuildings(hasActiveBuilding);
           setHasElectricityNavigation(hasEnabled || optimisticActive || readStoredElectricityNavigation());
         })
         .catch(() => {
           if (active) {
             setHasElectricityNavigation(false);
+            setHasBuildings(false);
           }
         });
     };
