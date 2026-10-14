@@ -228,6 +228,9 @@ async function SettingsPageContent({
   if (section && (data.role !== "managementCompany" || isAccountant)) {
     redirect(ROUTES.dashboard);
   }
+  if ((section === "emailTemplates" || section === "apiKey") && !data.buildings.some(isApprovedBuilding)) {
+    redirect(ROUTES.dashboard);
+  }
   const canViewCompany =
     data.role === "managementCompany" &&
     (normalizedAccountType === "" || normalizedAccountType === "managementcompany" || normalizedAccountType === "accountant");

@@ -256,6 +256,7 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
         ROUTES.mailings,
         ROUTES.mailingTemplates,
         ROUTES.sentMailings,
+        ROUTES.settingsApiKeys,
         ROUTES.settingsMail,
       ].includes(item.href as typeof ROUTES.invoices)
     ) {

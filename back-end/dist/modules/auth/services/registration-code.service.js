@@ -163,7 +163,8 @@ let RegistrationCodeService = class RegistrationCodeService {
         return (0, node_crypto_1.createHash)('sha256').update(email).digest('hex');
     }
     hashCode(email, code) {
-        const secret = this.configService.getOrThrow('REGISTRATION_CODE_SECRET');
+        const secret = this.configService.get('REGISTRATION_CODE_SECRET')?.trim() ||
+            this.configService.getOrThrow('FIREBASE_PRIVATE_KEY');
         return (0, node_crypto_1.createHmac)('sha256', secret).update(`${email}:${code}`).digest('hex');
     }
     hashToken(token) {

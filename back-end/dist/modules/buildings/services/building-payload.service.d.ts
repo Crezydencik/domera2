@@ -13,6 +13,10 @@ export declare class BuildingPayloadService {
         name: string;
         title: string;
         address: string;
+        country: string;
+        city: string;
+        postalCode: string;
+        houseNumber: string;
         comment: string;
         street: string;
         location: string;

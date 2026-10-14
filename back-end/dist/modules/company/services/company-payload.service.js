@@ -239,6 +239,10 @@ let CompanyPayloadService = class CompanyPayloadService {
             : typeof existing?.registrationNumber === 'string'
                 ? existing.registrationNumber
                 : undefined;
+        const normalizedCountry = this.firstString(payload.country, existing?.country);
+        const normalizedCity = this.firstString(payload.city, existing?.city);
+        const normalizedPostalCode = this.firstString(payload.postalCode, payload.zipCode, existing?.postalCode, existing?.zipCode);
+        const normalizedHouseNumber = this.firstString(payload.houseNumber, existing?.houseNumber);
         const normalizedBankName = typeof payload.bankName === 'string'
             ? payload.bankName.trim()
             : typeof existing?.bankName === 'string'
@@ -302,6 +306,10 @@ let CompanyPayloadService = class CompanyPayloadService {
             companyEmail: normalizedEmail,
             companyPhone: normalizedPhone,
             address: normalizedAddress,
+            country: normalizedCountry || undefined,
+            city: normalizedCity || undefined,
+            postalCode: normalizedPostalCode || undefined,
+            houseNumber: normalizedHouseNumber || undefined,
             registrationNumber: normalizedRegistrationNumber,
             bankName: normalizedBankName,
             bankAccountIban: normalizedBankAccountIban,

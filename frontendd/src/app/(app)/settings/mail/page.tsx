@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { ROUTES } from "@/shared/lib/routes";
+import { isApprovedBuilding } from "@/shared/lib/buildings";
 import { apiFetch } from "@/shared/server/api-client";
 import { getSettingsPageData } from "@/shared/server/page-loaders/settings.loader";
 import { MailTemplatesPanel } from "./email-templates-panel";
@@ -24,6 +25,10 @@ export default async function SettingsMailPage({ searchParams }: SettingsMailPag
   const accountType = firstString(data.profile?.accountType, data.profile?.role, data.rawRole).replace(/[^a-z]/gi, "").toLowerCase();
 
   if (data.role !== "managementCompany" || accountType === "accountant") {
+    redirect(ROUTES.dashboard);
+  }
+
+  if (!data.buildings.some(isApprovedBuilding)) {
     redirect(ROUTES.dashboard);
   }
 
