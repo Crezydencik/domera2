@@ -1,4 +1,4 @@
-import { SettingsPageContent } from "../page";
+import { redirect } from "next/navigation";
 
 type SettingsCompanyPageProps = {
   searchParams?: Promise<{ role?: string }>;
@@ -6,5 +6,6 @@ type SettingsCompanyPageProps = {
 
 export default async function SettingsCompanyPage({ searchParams }: SettingsCompanyPageProps) {
   const params = (await searchParams) ?? {};
-  return <SettingsPageContent roleHint={params.role} section="company" />;
+  const roleQuery = params.role ? `&role=${encodeURIComponent(params.role)}` : "";
+  redirect(`/settings?section=company${roleQuery}`);
 }

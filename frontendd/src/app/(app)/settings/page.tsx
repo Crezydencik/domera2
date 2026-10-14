@@ -8,7 +8,7 @@ import { getSettingsPageData } from "@/shared/server/page-loaders/settings.loade
 import { SettingsTabs } from "./settings-tabs";
 
 type SettingsPageProps = {
-  searchParams?: Promise<{ role?: string }>;
+  searchParams?: Promise<{ role?: string; section?: string }>;
 };
 
 type SettingsSection = "company" | "apiKey" | "emailTemplates" | "emailBranding";
@@ -203,7 +203,7 @@ function resolveCompanyMemberType(memberId: string, companyId: string, managerId
   return "employee";
 }
 
-export async function SettingsPageContent({
+async function SettingsPageContent({
   roleHint,
   section,
 }: {
@@ -362,5 +362,13 @@ export async function SettingsPageContent({
 
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
   const params = (await searchParams) ?? {};
-  return <SettingsPageContent roleHint={params.role} />;
+  const section: SettingsSection | undefined =
+    params.section === "company" ||
+    params.section === "apiKey" ||
+    params.section === "emailTemplates" ||
+    params.section === "emailBranding"
+      ? params.section
+      : undefined;
+
+  return <SettingsPageContent roleHint={params.role} section={section} />;
 }

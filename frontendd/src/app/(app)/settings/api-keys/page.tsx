@@ -1,4 +1,4 @@
-import { SettingsPageContent } from "../page";
+import { redirect } from "next/navigation";
 
 type SettingsApiKeysPageProps = {
   searchParams?: Promise<{ role?: string }>;
@@ -6,5 +6,6 @@ type SettingsApiKeysPageProps = {
 
 export default async function SettingsApiKeysPage({ searchParams }: SettingsApiKeysPageProps) {
   const params = (await searchParams) ?? {};
-  return <SettingsPageContent roleHint={params.role} section="apiKey" />;
+  const roleQuery = params.role ? `&role=${encodeURIComponent(params.role)}` : "";
+  redirect(`/settings?section=apiKey${roleQuery}`);
 }

@@ -1,4 +1,4 @@
-import { SettingsPageContent } from "@/app/(app)/settings/page";
+import { redirect } from "next/navigation";
 
 type MailingStylePageProps = {
   searchParams?: Promise<{ role?: string }>;
@@ -6,5 +6,6 @@ type MailingStylePageProps = {
 
 export default async function MailingStylePage({ searchParams }: MailingStylePageProps) {
   const params = (await searchParams) ?? {};
-  return <SettingsPageContent roleHint={params.role} section="emailBranding" />;
+  const roleQuery = params.role ? `&role=${encodeURIComponent(params.role)}` : "";
+  redirect(`/settings?section=emailBranding${roleQuery}`);
 }
