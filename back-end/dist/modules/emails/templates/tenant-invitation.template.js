@@ -9,7 +9,7 @@ exports.tenantInvitationTemplates = {
             language: 'en',
             brandName: params.brandName || params.companyName,
             title: 'You are invited as a tenant',
-            badge: 'Tenant access',
+            badge: (0, email_layout_template_1.headerIdentity)(params.companyName),
             children: `
         ${(0, email_layout_template_1.paragraph)(`The management company has invited you to apartment${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} as a tenant. After accepting the invitation, you will get access to apartment information and tenant services in one place.`)}
         ${(0, email_layout_template_1.detailRows)([
@@ -35,7 +35,7 @@ exports.tenantInvitationTemplates = {
             language: 'ru',
             brandName: params.brandName || params.companyName,
             title: 'Вас пригласили как арендатора',
-            badge: 'Доступ арендатора',
+            badge: (0, email_layout_template_1.headerIdentity)(params.companyName),
             children: `
         ${(0, email_layout_template_1.paragraph)(`Управляющая компания пригласила вас к квартире${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} как арендатора. После принятия приглашения вы получите доступ к информации по квартире и сервисам для арендатора.`)}
         ${(0, email_layout_template_1.detailRows)([
@@ -61,7 +61,7 @@ exports.tenantInvitationTemplates = {
             language: 'lv',
             brandName: params.brandName || params.companyName,
             title: 'Jūs esat uzaicināts kā īrnieks',
-            badge: 'Īrnieka piekļuve',
+            badge: (0, email_layout_template_1.headerIdentity)(params.companyName),
             children: `
         ${(0, email_layout_template_1.paragraph)(`Pārvaldības uzņēmums uzaicināja jūs dzīvoklim${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} kā īrnieku. Pēc uzaicinājuma pieņemšanas jums būs piekļuve dzīvokļa informācijai un īrnieka pakalpojumiem vienuviet.`)}
         ${(0, email_layout_template_1.detailRows)([

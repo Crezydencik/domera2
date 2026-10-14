@@ -1,5 +1,5 @@
 import { EmailTemplate, EmailLanguage } from '../email.types';
-import { bulletList, button, detailRows, infoBox, note, paragraph, renderEmailLayout } from './email-layout.template';
+import { bulletList, button, detailRows, headerIdentity, infoBox, note, paragraph, renderEmailLayout } from './email-layout.template';
 
 export interface TenantInvitationParams {
   companyName: string;
@@ -20,7 +20,7 @@ export const tenantInvitationTemplates: Record<
       language: 'en',
       brandName: params.brandName || params.companyName,
       title: 'You are invited as a tenant',
-      badge: 'Tenant access',
+      badge: headerIdentity(params.companyName),
       children: `
         ${paragraph(`The management company has invited you to apartment${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} as a tenant. After accepting the invitation, you will get access to apartment information and tenant services in one place.`)}
         ${detailRows([
@@ -47,7 +47,7 @@ export const tenantInvitationTemplates: Record<
       language: 'ru',
       brandName: params.brandName || params.companyName,
       title: 'Вас пригласили как арендатора',
-      badge: 'Доступ арендатора',
+      badge: headerIdentity(params.companyName),
       children: `
         ${paragraph(`Управляющая компания пригласила вас к квартире${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} как арендатора. После принятия приглашения вы получите доступ к информации по квартире и сервисам для арендатора.`)}
         ${detailRows([
@@ -74,7 +74,7 @@ export const tenantInvitationTemplates: Record<
       language: 'lv',
       brandName: params.brandName || params.companyName,
       title: 'Jūs esat uzaicināts kā īrnieks',
-      badge: 'Īrnieka piekļuve',
+      badge: headerIdentity(params.companyName),
       children: `
         ${paragraph(`Pārvaldības uzņēmums uzaicināja jūs dzīvoklim${params.apartmentNumber ? ` ${params.apartmentNumber}` : ''} kā īrnieku. Pēc uzaicinājuma pieņemšanas jums būs piekļuve dzīvokļa informācijai un īrnieka pakalpojumiem vienuviet.`)}
         ${detailRows([

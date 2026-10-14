@@ -33,7 +33,7 @@ export class BuildingCrudService {
     private readonly companyPayloadService: CompanyPayloadService,
   ) {}
 
-  async list(request: Request, user: RequestUser, companyId: string) {
+  async list(request: Request, user: RequestUser, companyId: string, includeOccupancy = true) {
     this.assertManagement(user);
     const normalizedCompanyId = companyId?.trim();
     if (!normalizedCompanyId) throw new BadRequestException('companyId is required');
@@ -45,7 +45,9 @@ export class BuildingCrudService {
     const [legacySnap, managedBySnap, occupancyStats] = await Promise.all([
       db.collection('buildings').where('companyId', '==', normalizedCompanyId).get(),
       db.collection('buildings').where('managedBy.companyId', '==', normalizedCompanyId).get(),
-      this.buildingStatsService.getBuildingOccupancyStats(normalizedCompanyId),
+      includeOccupancy
+        ? this.buildingStatsService.getBuildingOccupancyStats(normalizedCompanyId)
+        : Promise.resolve(undefined),
     ]);
 
     const merged = new Map<string, Record<string, unknown>>();
@@ -55,7 +57,9 @@ export class BuildingCrudService {
 
     return {
       items: Array.from(merged.entries()).map(([id, data]) =>
-        this.buildingStatsService.applyOccupancyStats(id, data, occupancyStats.get(id)),
+        includeOccupancy
+          ? this.buildingStatsService.applyOccupancyStats(id, data, occupancyStats?.get(id))
+          : { id, ...data },
       ),
     };
   }

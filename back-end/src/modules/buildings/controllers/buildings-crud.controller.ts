@@ -27,12 +27,19 @@ export class BuildingsCrudController {
   @Get()
   @ApiOperation({ summary: 'List buildings by company' })
   @ApiQuery({ name: 'companyId', required: true, type: String })
+  @ApiQuery({
+    name: 'includeOccupancy',
+    required: false,
+    type: Boolean,
+    description: 'Set to false when the caller already has the apartment list and can derive occupancy locally.',
+  })
   list(
     @Req() request: Request,
     @CurrentUser() user: RequestUser,
     @Query('companyId') companyId: string,
+    @Query('includeOccupancy') includeOccupancy?: string,
   ) {
-    return this.buildingCrudService.list(request, user, companyId);
+    return this.buildingCrudService.list(request, user, companyId, includeOccupancy !== 'false');
   }
 
   @Get(':buildingId')

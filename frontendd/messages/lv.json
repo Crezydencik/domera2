@@ -391,12 +391,16 @@
         "buildingMainMeter": "Galvenais mājas skaitītājs",
         "debts": "Parādi",
         "documents": "Dokumenti",
-        "mailings": "Informatīvie sūtījumi",
+        "mailings": "Pasts",
         "mailingTemplates": "Izveidot veidni",
         "mailingTemplatesNav": "Veidnes",
         "sentMailings": "Nosūtītie",
         "notificationsPage": "Paziņojumi",
         "mailbox": "Pasts",
+        "company": "Uzņēmums",
+        "apiKey": "API atslēga",
+        "emailBranding": "E-pastu iestatījumi",
+        "emailTemplates": "E-pasta veidnes",
         "settings": "Iestatījumi"
       },
       "roles": {
@@ -1839,6 +1843,7 @@
       "fields": {
         "name": "Uzņēmuma nosaukums",
         "registrationNumber": "Reģistrācijas numurs",
+        "address": "Uzņēmuma adrese",
         "email": "Uzņēmuma e-pasts",
         "phone": "Uzņēmuma tālrunis",
         "bankName": "Bankas nosaukums",
@@ -1995,6 +2000,14 @@
       "loading": "Ielādē veidni...",
       "emptyPreview": "Izvēlieties veidni, lai redzētu priekšskatījumu.",
       "loadFailed": "Neizdevās ielādēt e-pasta veidni.",
+      "invoiceRows": {
+        "title": "Rēķina rindas",
+        "amount": "Summa",
+        "number": "Rēķina numurs",
+        "dueDate": "Apmaksas termiņš",
+        "apartment": "Dzīvoklis",
+        "address": "Adrese"
+      },
       "types": {
         "registrationCode": "Reģistrācijas kods",
         "passwordReset": "Paroles atiestatīšana",
@@ -2006,6 +2019,23 @@
         "meterReadingClosingReminder": "Atgādinājums par iesniegšanas beigām",
         "notification": "Vispārīgs paziņojums"
       }
+    },
+    "emailBranding": {
+      "title": "E-pastu iestatījumi",
+      "description": "Iestatiet uzņēmuma nosaukumu, nosūtītāja vārdu un e-pasta krāsas.",
+      "companyName": "Uzņēmuma nosaukums",
+      "senderName": "Nosūtītāja vārds",
+      "senderNameHint": "Tiek izmantots tikai kā nosūtītāja vārds saņēmēja pastkastē.",
+      "lineColor": "Līnijas krāsa",
+      "buttonColor": "Pogas krāsa",
+      "headingColor": "H1 krāsa",
+      "heading2Color": "H2 krāsa",
+      "heading3Color": "H3 krāsa",
+      "textColor": "Pamatteksta krāsa",
+      "save": "Saglabāt",
+      "saving": "Saglabā…",
+      "saved": "E-pastu noformējums ir saglabāts.",
+      "saveFailed": "Neizdevās saglabāt e-pastu noformējumu."
     },
     "apiKeys": {
       "title": "API atslēgas",

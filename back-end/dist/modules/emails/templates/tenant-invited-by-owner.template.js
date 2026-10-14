@@ -9,7 +9,7 @@ exports.tenantInvitedByOwnerTemplates = {
             language: 'en',
             brandName: params.brandName,
             title: 'You are invited as a tenant',
-            badge: 'Tenant access',
+            badge: (0, email_layout_template_1.headerIdentity)(params.brandName),
             children: `
         ${(0, email_layout_template_1.paragraph)(`Hello${params.tenantName ? ` ${params.tenantName}` : ''}, ${params.ownerName} has invited you to Domera as a tenant. Accept the invitation to access the apartment details and tenant services connected to this property.`)}
         ${(0, email_layout_template_1.detailRows)([
@@ -35,7 +35,7 @@ exports.tenantInvitedByOwnerTemplates = {
             language: 'ru',
             brandName: params.brandName,
             title: 'Вас пригласили как арендатора',
-            badge: 'Доступ арендатора',
+            badge: (0, email_layout_template_1.headerIdentity)(params.brandName),
             children: `
         ${(0, email_layout_template_1.paragraph)(`Здравствуйте${params.tenantName ? `, ${params.tenantName}` : ''}. ${params.ownerName} приглашает вас в Domera в качестве арендатора. Примите приглашение, чтобы получить доступ к данным квартиры и сервисам арендатора.`)}
         ${(0, email_layout_template_1.detailRows)([
@@ -61,7 +61,7 @@ exports.tenantInvitedByOwnerTemplates = {
             language: 'lv',
             brandName: params.brandName,
             title: 'Jūs esat uzaicināts kā īrnieks',
-            badge: 'Īrnieka piekļuve',
+            badge: (0, email_layout_template_1.headerIdentity)(params.brandName),
             children: `
         ${(0, email_layout_template_1.paragraph)(`Sveiki${params.tenantName ? `, ${params.tenantName}` : ''}. ${params.ownerName} aicina jūs pievienoties Domera kā īrnieku. Pieņemiet uzaicinājumu, lai piekļūtu dzīvokļa informācijai un ar šo īpašumu saistītajiem īrnieka pakalpojumiem.`)}
         ${(0, email_layout_template_1.detailRows)([

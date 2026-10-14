@@ -291,19 +291,21 @@ export class EmailService {
   }
 
   private async resolveCompanySenderName(preferredName?: string, companyId?: string): Promise<string | undefined> {
-    if (preferredName?.trim()) return preferredName.trim();
     if (!companyId?.trim()) return undefined;
 
     try {
       const snapshot = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
       const company = snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined;
+      const emailBrandName = company?.emailBrandName;
+      if (typeof emailBrandName === 'string' && emailBrandName.trim()) return emailBrandName.trim();
+      if (preferredName?.trim()) return preferredName.trim();
       const companyName = company?.companyName;
       if (typeof companyName === 'string' && companyName.trim()) return companyName.trim();
       const name = company?.name;
       return typeof name === 'string' && name.trim() ? name.trim() : undefined;
     } catch (error) {
       this.logger.warn(`Could not resolve sender name for company ${companyId}: ${error instanceof Error ? error.message : String(error)}`);
-      return undefined;
+      return preferredName?.trim() || undefined;
     }
   }
 

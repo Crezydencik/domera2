@@ -17,13 +17,15 @@ export declare function renderEmailLayout(params: {
     title: string;
     children: string;
     badge?: string;
+    location?: string;
     brandName?: string;
     footer?: string;
     accentColor?: string;
     logoDataUrl?: string;
 }): string;
-export declare function paragraph(content: string): string;
+export declare function paragraph(content: string, align?: 'left' | 'center'): string;
 export declare function note(content: string): string;
+export declare function headerIdentity(companyName?: string): string | undefined;
 export declare function button(label: string, href: string): string;
 export declare function detailRows(rows: Array<{
     label: string;

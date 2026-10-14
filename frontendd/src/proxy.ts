@@ -242,6 +242,7 @@ export const config = {
     "/meter-readings/:path*",
     "/debts/:path*",
     "/documents/:path*",
+    "/mailings/:path*",
     "/notifications/:path*",
     "/settings/:path*",
   ],

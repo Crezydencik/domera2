@@ -129,6 +129,42 @@ function filterApartmentsByBuildings(items: UnknownRecord[], buildings: Building
   });
 }
 
+function isOccupiedApartment(item: UnknownRecord): boolean {
+  if (typeof item.residentId === "string" && item.residentId.trim()) return true;
+  if (item.ownerActivated === true || item.ownerActivated === "true") return true;
+  return Array.isArray(item.tenants) && item.tenants.some((tenant) => tenant && typeof tenant === "object");
+}
+
+// Registry pages already receive the complete apartment list. Deriving these
+// three values here avoids a second pair of Firestore apartment scans in the
+// /buildings request while preserving the building DTO used by the UI.
+function hydrateBuildingOccupancy(buildings: Building[], apartments: UnknownRecord[]): Building[] {
+  const statsByBuildingId = new Map<string, { linked: number; occupied: number }>();
+
+  for (const apartment of apartments) {
+    const buildingId = getApartmentBuildingId(apartment);
+    if (!buildingId) continue;
+
+    const stats = statsByBuildingId.get(buildingId) ?? { linked: 0, occupied: 0 };
+    stats.linked += 1;
+    if (isOccupiedApartment(apartment)) stats.occupied += 1;
+    statsByBuildingId.set(buildingId, stats);
+  }
+
+  return buildings.map((building) => {
+    const stats = statsByBuildingId.get(building.id) ?? { linked: 0, occupied: 0 };
+    const apartmentLimit = building.apartmentLimit ?? building.apartments;
+
+    return {
+      ...building,
+      linkedApartmentsCount: stats.linked,
+      actualApartmentsCount: stats.linked,
+      occupiedApartments: stats.occupied,
+      occupancy: apartmentLimit > 0 ? `${Math.max(0, stats.occupied)} / ${apartmentLimit}` : "—",
+    };
+  });
+}
+
 function filterInvoicesByActiveObjects(items: Invoice[], buildings: Building[], apartments: UnknownRecord[]): Invoice[] {
   const activeBuildingIds = new Set(buildings.map((building) => building.id).filter(Boolean));
   const activeApartmentIds = new Set(apartments.map(getApartmentId).filter(Boolean));
@@ -657,8 +693,11 @@ export async function getManagementRegistryData(
     options.includeMeterReadings,
   );
   const companyId = encodeURIComponent(context.companyId);
+  const buildingsPath = `/buildings?companyId=${companyId}${options.includeApartments ? "&includeOccupancy=false" : ""}`;
   const [buildingsResponse, apartmentsResponse, residentsResponse, documentsResponse, invoicesResponse, meterReadingsResponse, notificationsResponse] = await Promise.all([
-    needsBuildingsForFiltering ? apiFetchSafe<ApiListResponse>(`/buildings?companyId=${companyId}`) : Promise.resolve(null),
+    needsBuildingsForFiltering
+      ? apiFetchSafe<ApiListResponse>(buildingsPath)
+      : Promise.resolve(null),
     options.includeApartments
       ? apiFetchSafe<ApiListResponse>(
           `/apartments?companyId=${companyId}&includeOwnerMetadata=${options.includeApartmentOwnerMetadata !== false}`,
@@ -679,14 +718,17 @@ export async function getManagementRegistryData(
       : Promise.resolve(null),
   ]);
 
-  const liveBuildings = Array.isArray(buildingsResponse?.items) ? buildingsResponse.items.map(toBuilding) : [];
-  const approvedLiveBuildings = liveBuildings.filter(isApprovedBuilding);
+  const baseBuildings = Array.isArray(buildingsResponse?.items) ? buildingsResponse.items.map(toBuilding) : [];
+  const approvedLiveBuildings = baseBuildings.filter(isApprovedBuilding);
   const liveApartments = sortApartmentsByNumber(
     filterApartmentsByBuildings(
       Array.isArray(apartmentsResponse?.items) ? apartmentsResponse.items : [],
       approvedLiveBuildings,
     ),
   );
+  const liveBuildings = options.includeApartments
+    ? hydrateBuildingOccupancy(baseBuildings, liveApartments)
+    : baseBuildings;
   const liveResidents = Array.isArray(residentsResponse?.items)
     ? residentsResponse.items.map((item) => toResident(item))
     : [];

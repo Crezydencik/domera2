@@ -16,8 +16,8 @@ export declare class BuildingCrudService {
     private readonly platformNotificationService;
     private readonly companyPayloadService;
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, buildingPayloadService: BuildingPayloadService, buildingStorageService: BuildingStorageService, buildingStatsService: BuildingStatsService, platformNotificationService: BuildingPlatformNotificationService, companyPayloadService: CompanyPayloadService);
-    list(request: Request, user: RequestUser, companyId: string): Promise<{
-        items: {
+    list(request: Request, user: RequestUser, companyId: string, includeOccupancy?: boolean): Promise<{
+        items: ({
             apartmentLimit: number;
             approvedApartmentsCount: number;
             apartmentsCount: number;
@@ -26,7 +26,9 @@ export declare class BuildingCrudService {
             actualApartmentsCount: number;
             occupiedApartments: number;
             id: string;
-        }[];
+        } | {
+            id: string;
+        })[];
     }>;
     byId(request: Request, user: RequestUser, buildingId: string): Promise<{
         apartmentLimit: number;

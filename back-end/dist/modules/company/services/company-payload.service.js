@@ -125,6 +125,12 @@ let CompanyPayloadService = class CompanyPayloadService {
             'currency',
             'logoDataUrl',
             'accentColor',
+            'emailLineColor',
+            'emailButtonColor',
+            'emailHeadingColor',
+            'emailHeading2Color',
+            'emailHeading3Color',
+            'emailTextColor',
             'providerAddress',
             'overrideBankName',
             'overrideBankAccountIban',
@@ -157,6 +163,7 @@ let CompanyPayloadService = class CompanyPayloadService {
         const invoiceNumberPartOptions = new Set(['companyCode', 'apartmentNumber', 'month', 'year', 'date', 'sequence']);
         const invoiceLineItemOptions = new Set(['electricityAdvance', 'electricityPayment', 'other']);
         const invoiceTableColumnOptions = new Set(['period', 'price', 'amount', 'unit', 'vat', 'sum', 'recalculation', 'net']);
+        const emailInvoiceRowOptions = new Set(['amount', 'number', 'dueDate', 'apartment', 'address']);
         if (Array.isArray(source.invoiceNumberParts)) {
             normalized.invoiceNumberParts = source.invoiceNumberParts.filter((value) => typeof value === 'string' && invoiceNumberPartOptions.has(value));
         }
@@ -172,6 +179,9 @@ let CompanyPayloadService = class CompanyPayloadService {
         if (Array.isArray(source.invoiceTableColumns)) {
             normalized.invoiceTableColumns = source.invoiceTableColumns.filter((value) => typeof value === 'string' && invoiceTableColumnOptions.has(value));
         }
+        if (Array.isArray(source.emailInvoiceVisibleRows)) {
+            normalized.emailInvoiceVisibleRows = source.emailInvoiceVisibleRows.filter((value) => typeof value === 'string' && emailInvoiceRowOptions.has(value));
+        }
         return normalized;
     }
     normalizeCompanyPayload(payload, existing) {
@@ -184,6 +194,11 @@ let CompanyPayloadService = class CompanyPayloadService {
                     : typeof existing?.name === 'string'
                         ? existing.name
                         : '';
+        const normalizedEmailBrandName = typeof payload.emailBrandName === 'string'
+            ? payload.emailBrandName.trim()
+            : typeof existing?.emailBrandName === 'string'
+                ? existing.emailBrandName.trim()
+                : undefined;
         const normalizedEmail = typeof payload.companyEmail === 'string'
             ? payload.companyEmail.trim().toLowerCase()
             : typeof payload.email === 'string'
@@ -283,6 +298,7 @@ let CompanyPayloadService = class CompanyPayloadService {
         ]));
         return Object.fromEntries(Object.entries({
             companyName: normalizedName || undefined,
+            emailBrandName: normalizedEmailBrandName || undefined,
             companyEmail: normalizedEmail,
             companyPhone: normalizedPhone,
             address: normalizedAddress,

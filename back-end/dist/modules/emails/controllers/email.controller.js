@@ -224,6 +224,7 @@ let EmailController = class EmailController {
                     periodLabel: '01.08.2026 - 31.08.2026',
                     deadline: '31.08.2026',
                     reminderStage: 'start',
+                    daysUntilDeadline: 30,
                     language,
                 });
             case 'meterReadingClosingReminder':

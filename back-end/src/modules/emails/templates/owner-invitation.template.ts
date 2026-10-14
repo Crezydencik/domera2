@@ -1,5 +1,5 @@
 import { EmailTemplate, EmailLanguage } from '../email.types';
-import { button, detailRows, note, paragraph, renderEmailLayout } from './email-layout.template';
+import { button, detailRows, headerIdentity, note, paragraph, renderEmailLayout } from './email-layout.template';
 
 export interface OwnerInvitationParams {
   companyName: string;
@@ -17,7 +17,7 @@ function locationLine(params: OwnerInvitationParams, language: EmailLanguage): s
 
   if (language === 'ru') {
     return [
-      'Приглашаем вас присоединиться к жилью в Domera',
+      'Приглашаем вас присоединиться к жилью',
       building ? `по адресу ${building}` : '',
       apartment ? `квартира ${apartment}` : '',
     ].filter(Boolean).join(', ') + '.';
@@ -25,14 +25,14 @@ function locationLine(params: OwnerInvitationParams, language: EmailLanguage): s
 
   if (language === 'lv') {
     return [
-      'Jūs esat aicināts pievienoties Domera',
+      'Jūs esat aicināts pievienoties',
       building ? `ēkai pēc adreses ${building}` : '',
       apartment ? `dzīvoklim ${apartment}` : '',
     ].filter(Boolean).join(' ') + '.';
   }
 
   return [
-    'You are invited to join Domera',
+    'You are invited to join the property',
     building ? `for the building at ${building}` : '',
     apartment ? `apartment ${apartment}` : '',
   ].filter(Boolean).join(', ') + '.';
@@ -48,7 +48,7 @@ export const ownerInvitationTemplates: Record<
       language: 'en',
       brandName: params.brandName || params.companyName,
       title: 'Property owner invitation',
-      badge: params.companyName,
+      badge: headerIdentity(params.companyName),
       children: `
         ${paragraph(locationLine(params, 'en'))}
         ${detailRows([
@@ -69,7 +69,7 @@ export const ownerInvitationTemplates: Record<
       language: 'ru',
       brandName: params.brandName || params.companyName,
       title: 'Приглашение собственника',
-      badge: params.companyName,
+      badge: headerIdentity(params.companyName),
       children: `
         ${paragraph(locationLine(params, 'ru'))}
         ${detailRows([
@@ -90,7 +90,7 @@ export const ownerInvitationTemplates: Record<
       language: 'lv',
       brandName: params.brandName || params.companyName,
       title: 'Īpašnieka uzaicinājums',
-      badge: params.companyName,
+      badge: headerIdentity(params.companyName),
       children: `
         ${paragraph(locationLine(params, 'lv'))}
         ${detailRows([

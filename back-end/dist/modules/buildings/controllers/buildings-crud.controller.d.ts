@@ -4,8 +4,8 @@ import { BuildingCrudService } from '../services/building-crud.service';
 export declare class BuildingsCrudController {
     private readonly buildingCrudService;
     constructor(buildingCrudService: BuildingCrudService);
-    list(request: Request, user: RequestUser, companyId: string): Promise<{
-        items: {
+    list(request: Request, user: RequestUser, companyId: string, includeOccupancy?: string): Promise<{
+        items: ({
             apartmentLimit: number;
             approvedApartmentsCount: number;
             apartmentsCount: number;
@@ -14,7 +14,9 @@ export declare class BuildingsCrudController {
             actualApartmentsCount: number;
             occupiedApartments: number;
             id: string;
-        }[];
+        } | {
+            id: string;
+        })[];
     }>;
     byId(request: Request, user: RequestUser, buildingId: string): Promise<{
         apartmentLimit: number;

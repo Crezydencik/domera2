@@ -33,11 +33,15 @@ export const ROUTES = {
   debts: "/debts",
   documents: "/documents",
   mailings: "/mailings",
+  mailingStyle: "/mailings/style",
   mailingTemplates: "/mailings/templates",
   sentMailings: "/mailings/sent",
   notifications: "/notifications",
   support: "/support",
   settings: "/settings",
+  settingsCompany: "/settings/company",
+  settingsApiKeys: "/settings/api-keys",
+  settingsMail: "/settings/mail",
 } as const;
 
 export type AppRoute = (typeof ROUTES)[keyof typeof ROUTES];

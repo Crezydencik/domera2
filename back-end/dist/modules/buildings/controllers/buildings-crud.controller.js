@@ -24,8 +24,8 @@ let BuildingsCrudController = class BuildingsCrudController {
     constructor(buildingCrudService) {
         this.buildingCrudService = buildingCrudService;
     }
-    list(request, user, companyId) {
-        return this.buildingCrudService.list(request, user, companyId);
+    list(request, user, companyId, includeOccupancy) {
+        return this.buildingCrudService.list(request, user, companyId, includeOccupancy !== 'false');
     }
     byId(request, user, buildingId) {
         return this.buildingCrudService.byId(request, user, buildingId);
@@ -45,11 +45,18 @@ __decorate([
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: 'List buildings by company' }),
     (0, swagger_1.ApiQuery)({ name: 'companyId', required: true, type: String }),
+    (0, swagger_1.ApiQuery)({
+        name: 'includeOccupancy',
+        required: false,
+        type: Boolean,
+        description: 'Set to false when the caller already has the apartment list and can derive occupancy locally.',
+    }),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __param(2, (0, common_1.Query)('companyId')),
+    __param(3, (0, common_1.Query)('includeOccupancy')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object, String]),
+    __metadata("design:paramtypes", [Object, Object, String, String]),
     __metadata("design:returntype", void 0)
 ], BuildingsCrudController.prototype, "list", null);
 __decorate([

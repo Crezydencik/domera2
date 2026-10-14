@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, type ReactNode, useEffect, useState } from "react";
+import { type ChangeEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { FaEye, FaInfoCircle, FaRegUser } from "react-icons/fa";
 import {
@@ -29,150 +29,33 @@ import {
   updateCompanyMemberPermissions,
 } from "@/shared/api/company";
 import { type NotificationSettings, updateNotificationSettings } from "@/shared/api/notifications";
+import { apiFetch } from "@/shared/api/client";
 import { useNotifications } from "@/shared/hooks/use-notifications";
 import { isStrongPassword } from "@/shared/lib/password-validation";
-
-type SettingsTab =
-  | "user"
-  | "company"
-  | "apiKey"
-  | "invoiceGeneration"
-  | "emailTemplates"
-  | "notifications"
-  | "contacts"
-  | "billing"
-  | "additionalUsers"
-  | "dataManagement";
-
-type UserSettings = {
-  userId: string;
-  userName: string;
-  email: string;
-  username: string;
-  phone: string;
-  personalCode: string;
-};
-
-type CompanySettings = {
-  canManage: boolean;
-  companyId: string;
-  name: string;
-  registrationNumber: string;
-  address: string;
-  email: string;
-  phone: string;
-  bankName: string;
-  bankAccountIban: string;
-  bankSwift: string;
-  bankBeneficiary: string;
-  invoiceSettings: InvoiceGenerationSettings;
-  hasElectricityEnabled: boolean;
-  apiKeys: CompanyApiKeyItem[];
-  buildings: CompanyAccessBuilding[];
-  members: CompanyMember[];
-  permissions: CompanyMemberPermissionFlags;
-};
-
-type CompanyMemberPermissionFlags = CompanyMemberPermissions & {
-  isMainManager: boolean;
-};
-
-type InvoiceGenerationSettings = {
-  numberPrefix: string;
-  numberPattern: string;
-  invoiceNumberParts: InvoiceNumberPart[];
-  invoiceNumberSeparator: string;
-  invoiceNumberSeparators: Partial<Record<InvoiceNumberPart, string>>;
-  language: "ru" | "lv" | "en";
-  currency: string;
-  logoDataUrl: string;
-  logoHidden: boolean;
-  accentColor: string;
-  providerAddress: string;
-  overrideBankName: string;
-  overrideBankAccountIban: string;
-  overrideBankSwift: string;
-  overrideBankBeneficiary: string;
-  providerSignerName: string;
-  providerSignerTitle: string;
-  paymentTermDays: number;
-  defaultServiceName: string;
-  defaultVatRate: number;
-  invoiceLineItems: InvoiceLineItem[];
-  invoiceTableColumns: InvoiceTableColumn[];
-  showAmountWords: boolean;
-  amountWordsPrefix: string;
-  showSignature: boolean;
-  footerNote: string;
-};
-
-type CompanyAccessBuilding = {
-  id: string;
-  name: string;
-  address: string;
-};
-
-type CompanyMember = {
-  id: string;
-  email: string;
-  name: string;
-  firstName?: string;
-  lastName?: string;
-  phone?: string;
-  position?: string;
-  comment?: string;
-  showContactToResidents?: boolean;
-  createAccount?: boolean;
-  role: string;
-  memberType?: "manager" | "employee" | "contact";
-  permissions?: CompanyMemberPermissions;
-};
-
-type SettingsTabsProps = {
-  user: UserSettings;
-  notificationSettings: NotificationSettings;
-  company?: CompanySettings;
-  isAccountant?: boolean;
-};
-
-type EditableField = "email" | "name" | "phone" | "password" | null;
-type EditableCompanyField = "name" | "registrationNumber" | "address" | "email" | "phone" | null;
-type BankDetailsField = "bankName" | "bankAccountIban" | "bankSwift" | "bankBeneficiary";
-type InvoiceGenerationAccordionKey = "branding" | "numbering" | "bankDetails" | "provider" | "amounts" | "footer";
-type InvoiceNumberPart = "companyCode" | "apartmentNumber" | "month" | "year" | "date" | "sequence";
-type InvoiceLineItem = "electricityAdvance" | "electricityPayment" | "other";
-type InvoiceTableColumn = "period" | "price" | "amount" | "unit" | "vat" | "sum" | "recalculation" | "net";
-type PreviewInvoiceRow =
-  | { type: "group"; service: string }
-  | { service: string; period: string; price: number; amount: number; unit: string };
-type CompanyMemberPermissionKey = keyof CompanyMemberPermissions;
-
-type NameDraft = {
-  firstName: string;
-  lastName: string;
-};
-
-type PasswordDraft = {
-  current: string;
-  next: string;
-  repeat: string;
-};
-
-type VisiblePasswordField = keyof PasswordDraft;
-type CompanyDraft = Pick<
+import type {
+  BankDetailsField,
+  CompanyAccessBuilding,
+  CompanyDraft,
+  CompanyMember,
+  CompanyMemberPermissionFlags,
+  CompanyMemberPermissionKey,
+  CompanyMemberRole,
   CompanySettings,
-  | "companyId"
-  | "name"
-  | "registrationNumber"
-  | "address"
-  | "email"
-  | "phone"
-  | "bankName"
-  | "bankAccountIban"
-  | "bankSwift"
-  | "bankBeneficiary"
->;
-type CompanyMemberRole = "ManagementCompany" | "Accountant";
+  EditableCompanyField,
+  EditableField,
+  InvoiceGenerationAccordionKey,
+  InvoiceGenerationSettings,
+  InvoiceLineItem,
+  InvoiceNumberPart,
+  InvoiceTableColumn,
+  NameDraft,
+  PasswordDraft,
+  PreviewInvoiceRow,
+  SettingsTab,
+  SettingsTabsProps,
+  UserSettings,
+  VisiblePasswordField,
+} from "./lib";
 
 const baseTabs: SettingsTab[] = ["user", "notifications"];
 const defaultCompanyMemberPermissions: CompanyMemberPermissions = {
@@ -207,6 +90,13 @@ const defaultInvoiceGenerationSettings: InvoiceGenerationSettings = {
   logoDataUrl: "",
   logoHidden: false,
   accentColor: DEFAULT_INVOICE_ACCENT_COLOR,
+  emailLineColor: "#155DFC",
+  emailButtonColor: "#155DFC",
+  emailHeadingColor: "#0F172A",
+  emailHeading2Color: "#0F172A",
+  emailHeading3Color: "#64748B",
+  emailTextColor: "#334155",
+  emailInvoiceVisibleRows: ["amount", "number", "dueDate", "apartment", "address"],
   providerAddress: "",
   overrideBankName: "",
   overrideBankAccountIban: "",
@@ -245,6 +135,15 @@ function normalizeInvoiceGenerationSettings(value: Partial<InvoiceGenerationSett
     logoDataUrl: isAllowedInvoiceLogoDataUrl(value?.logoDataUrl) ? value.logoDataUrl : defaultInvoiceGenerationSettings.logoDataUrl,
     logoHidden: value?.logoHidden === true,
     accentColor: normalizeInvoiceAccentColor(value?.accentColor) || defaultInvoiceGenerationSettings.accentColor,
+    emailLineColor: normalizeInvoiceAccentColor(value?.emailLineColor) || defaultInvoiceGenerationSettings.emailLineColor,
+    emailButtonColor: normalizeInvoiceAccentColor(value?.emailButtonColor) || defaultInvoiceGenerationSettings.emailButtonColor,
+    emailHeadingColor: normalizeInvoiceAccentColor(value?.emailHeadingColor) || defaultInvoiceGenerationSettings.emailHeadingColor,
+    emailHeading2Color: normalizeInvoiceAccentColor(value?.emailHeading2Color) || defaultInvoiceGenerationSettings.emailHeading2Color,
+    emailHeading3Color: normalizeInvoiceAccentColor(value?.emailHeading3Color) || defaultInvoiceGenerationSettings.emailHeading3Color,
+    emailTextColor: normalizeInvoiceAccentColor(value?.emailTextColor) || defaultInvoiceGenerationSettings.emailTextColor,
+    emailInvoiceVisibleRows: Array.isArray(value?.emailInvoiceVisibleRows)
+      ? Array.from(new Set([...value.emailInvoiceVisibleRows.filter((item): item is string => ["amount", "number", "dueDate", "apartment", "address"].includes(String(item))), "address"]))
+      : defaultInvoiceGenerationSettings.emailInvoiceVisibleRows,
     providerAddress: value?.providerAddress ?? defaultInvoiceGenerationSettings.providerAddress,
     overrideBankName: value?.overrideBankName ?? defaultInvoiceGenerationSettings.overrideBankName,
     overrideBankAccountIban: value?.overrideBankAccountIban ?? defaultInvoiceGenerationSettings.overrideBankAccountIban,
@@ -1145,13 +1044,225 @@ function renderEmailPreviewHtml(language: EmailTemplateLanguage, type: EmailTemp
   };
 }
 
-function EmailTemplatesPanel({ companyName, initialAccentColor }: { companyName: string; initialAccentColor: string }) {
+function applyPreviewColors(html: string, colors: { line: string; button: string; heading: string; heading2: string; heading3: string; text: string }) {
+  const styled = html
+    .replace(/#155dfc/gi, colors.line)
+    .replace(/#0f172a/gi, colors.heading)
+    .replace(/#334155/gi, colors.text)
+    .replace(/rgba\(21,\s*93,\s*252,/gi, `rgba(${Number.parseInt(colors.button.slice(1, 3), 16)}, ${Number.parseInt(colors.button.slice(3, 5), 16)}, ${Number.parseInt(colors.button.slice(5, 7), 16)},`)
+    .replace(/background:#155DFC/gi, `background:${colors.button}`)
+    .replace(/border:1px solid #155DFC/gi, `border:1px solid ${colors.button}`);
+
+  return styled.replace(
+    "</style>",
+    `.domera-email-title { color:${colors.heading} !important; } .domera-email-header > div { color:${colors.heading3} !important; } .domera-email-content h2 { color:${colors.heading2} !important; } .domera-email-content h3 { color:${colors.heading3} !important; }</style>`,
+  );
+}
+
+function escapePreviewHtml(value: string) {
+  return value.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character] ?? character);
+}
+
+function EmailBrandingPanel({ company }: { company: CompanySettings }) {
+  const t = useTranslations("settings");
+  const notify = useNotifications();
+  const [companyName, setCompanyName] = useState(company.name);
+  const [emailBrandName, setEmailBrandName] = useState(company.emailBrandName || company.name);
+  const [colors, setColors] = useState({
+    line: company.invoiceSettings.emailLineColor,
+    button: company.invoiceSettings.emailButtonColor,
+    heading: company.invoiceSettings.emailHeadingColor,
+    text: company.invoiceSettings.emailTextColor,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!companyName.trim() || !emailBrandName.trim()) return;
+    setSaving(true);
+    try {
+      await updateCompany(company.companyId, {
+        companyName: companyName.trim(),
+        emailBrandName: emailBrandName.trim(),
+        invoiceSettings: {
+          ...company.invoiceSettings,
+          emailLineColor: colors.line,
+          emailButtonColor: colors.button,
+          emailHeadingColor: colors.heading,
+          emailTextColor: colors.text,
+        },
+      });
+      notify.success(t("emailBranding.saved"));
+    } catch (error) {
+      notify.error(error instanceof Error ? error.message : t("emailBranding.saveFailed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl py-7">
+      <h2 className="text-2xl font-bold text-black">{t("emailBranding.title")}</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{t("emailBranding.description")}</p>
+      <label className="mt-6 block">
+        <span className="mb-1.5 block text-sm font-semibold text-black">{t("emailBranding.companyName")}</span>
+        <input value={companyName} onChange={(event) => setCompanyName(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-base outline-none focus:border-black" />
+      </label>
+      <label className="mt-4 block">
+        <span className="mb-1.5 block text-sm font-semibold text-black">{t("emailBranding.senderName")}</span>
+        <input value={emailBrandName} onChange={(event) => setEmailBrandName(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-base outline-none focus:border-black" />
+        <span className="mt-1.5 block text-xs text-slate-500">{t("emailBranding.senderNameHint")}</span>
+      </label>
+      <div className="mt-7 grid gap-4 sm:grid-cols-2">
+        {([
+          ["line", "lineColor"],
+          ["button", "buttonColor"],
+          ["heading", "headingColor"],
+          ["text", "textColor"],
+        ] as const).map(([key, label]) => (
+          <label key={key} className="block">
+            <span className="mb-1.5 block text-sm font-semibold text-black">{t(`emailBranding.${label}`)}</span>
+            <div className="flex gap-2">
+              <input type="color" value={colors[key]} onChange={(event) => setColors((current) => ({ ...current, [key]: event.target.value }))} className="h-11 w-14 rounded-lg border border-slate-300 bg-white p-1" />
+              <input value={colors[key]} onChange={(event) => setColors((current) => ({ ...current, [key]: event.target.value }))} className="h-11 min-w-0 flex-1 rounded-lg border border-slate-300 px-3 outline-none focus:border-black" />
+            </div>
+          </label>
+        ))}
+      </div>
+      <Button type="button" variant="dark" className="mt-6" onClick={save} disabled={saving || !companyName.trim() || !emailBrandName.trim()}>
+        {saving ? t("emailBranding.saving") : t("emailBranding.save")}
+      </Button>
+    </div>
+  );
+}
+
+const invoicePreviewRows = ["amount", "number", "dueDate", "apartment", "address"] as const;
+type InvoicePreviewRow = typeof invoicePreviewRows[number];
+
+function applyInvoicePreviewOptions(
+  html: string,
+  visibleRows: Record<InvoicePreviewRow, boolean>,
+  rowOrder: InvoicePreviewRow[],
+) {
+  const rows = [...html.matchAll(/<tr class="domera-email-detail-row">[\s\S]*?<\/tr>/g)];
+  const invoiceRows = rows.slice(0, invoicePreviewRows.length);
+  if (invoiceRows.length !== invoicePreviewRows.length) return html;
+
+  const firstRow = invoiceRows[0];
+  const lastRow = invoiceRows[invoiceRows.length - 1];
+  if (!firstRow || !lastRow || firstRow.index === undefined || lastRow.index === undefined) return html;
+
+  const rowHtmlByKey = Object.fromEntries(
+    invoicePreviewRows.map((row, index) => [row, invoiceRows[index][0]]),
+  ) as Record<InvoicePreviewRow, string>;
+  const orderedRows = rowOrder.filter((row) => visibleRows[row]).map((row) => rowHtmlByKey[row]).join("");
+  const endIndex = lastRow.index + lastRow[0].length;
+
+  return `${html.slice(0, firstRow.index)}${orderedRows}${html.slice(endIndex)}`;
+}
+
+export function EmailTemplatesPanel({
+  initialColors,
+  companyId,
+  initialInvoiceSettings,
+  initialCompanyName = "",
+  initialCompanyAddress = "",
+  initialEmailBrandName = "",
+}: {
+  initialColors?: { line: string; button: string; heading: string; heading2: string; heading3: string; text: string };
+  companyId?: string;
+  initialInvoiceSettings?: InvoiceGenerationSettings;
+  initialCompanyName?: string;
+  initialCompanyAddress?: string;
+  initialEmailBrandName?: string;
+}) {
   const t = useTranslations("settings");
   const [templateType, setTemplateType] = useState<EmailTemplateType>("meterReadingReminder");
+  const [showStyle, setShowStyle] = useState(false);
   const [language, setLanguage] = useState<EmailTemplateLanguage>("lv");
-  const [accentColorDraft, setAccentColorDraft] = useState(() => normalizeInvoiceAccentColor(initialAccentColor) || "#155DFC");
-  const accentColor = normalizeInvoiceAccentColor(accentColorDraft) || "#155DFC";
-  const preview = renderEmailPreviewHtml(language, templateType, companyName, accentColor);
+  const [visibleInvoiceRows, setVisibleInvoiceRows] = useState<Record<InvoicePreviewRow, boolean>>(() => {
+    const visible = initialInvoiceSettings?.emailInvoiceVisibleRows ?? invoicePreviewRows;
+    return Object.fromEntries(invoicePreviewRows.map((row) => [row, visible.includes(row)])) as Record<InvoicePreviewRow, boolean>;
+  });
+  const [invoiceRowOrder, setInvoiceRowOrder] = useState<InvoicePreviewRow[]>(() => {
+    const savedOrder = (initialInvoiceSettings?.emailInvoiceVisibleRows ?? [])
+      .filter((row): row is InvoicePreviewRow => invoicePreviewRows.includes(row as InvoicePreviewRow));
+    return [...savedOrder, ...invoicePreviewRows.filter((row) => !savedOrder.includes(row))];
+  });
+  const [preview, setPreview] = useState<EmailTemplatePreview | null>(null);
+  const [previewError, setPreviewError] = useState(false);
+  const [colors, setColors] = useState({
+    line: normalizeInvoiceAccentColor(initialColors?.line) || "#155DFC",
+    button: normalizeInvoiceAccentColor(initialColors?.button) || "#155DFC",
+    heading: normalizeInvoiceAccentColor(initialColors?.heading) || "#0F172A",
+    heading2: normalizeInvoiceAccentColor(initialColors?.heading2) || "#0F172A",
+    heading3: normalizeInvoiceAccentColor(initialColors?.heading3) || "#64748B",
+    text: normalizeInvoiceAccentColor(initialColors?.text) || "#334155",
+  });
+  const [savingStyle, setSavingStyle] = useState(false);
+  const styleReadyRef = useRef(false);
+  const [companyName, setCompanyName] = useState(initialCompanyName);
+  const [emailBrandName, setEmailBrandName] = useState(initialEmailBrandName);
+  const styledPreviewHtml = preview
+    ? applyPreviewColors(preview.html, colors)
+        .replace(/Domera Management/gi, escapePreviewHtml(companyName.trim() || "Domera"))
+        .replace(/Brivibas 10/gi, escapePreviewHtml(initialCompanyAddress.trim() || "Brivibas 10"))
+    : null;
+  const previewHtml = styledPreviewHtml && templateType === "invoiceGenerated"
+    ? applyInvoicePreviewOptions(styledPreviewHtml, visibleInvoiceRows, invoiceRowOrder)
+    : styledPreviewHtml;
+  const previewSubject = preview?.subject
+    .replace(/Domera Management/gi, companyName.trim() || "Domera")
+    .replace(/Domera/gi, companyName.trim() || "Domera");
+  const inboxSender = emailBrandName.trim() || "Domera";
+
+  useEffect(() => {
+    let cancelled = false;
+    setPreviewError(false);
+
+    void apiFetch<EmailTemplatePreview>(
+      `/emails/templates/preview?type=${encodeURIComponent(templateType)}&language=${encodeURIComponent(language)}`,
+      { skipClientCache: true },
+    )
+      .then((nextPreview) => {
+        if (!cancelled) setPreview(nextPreview);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewError(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [language, templateType]);
+
+  useEffect(() => {
+    if (!styleReadyRef.current) {
+      styleReadyRef.current = true;
+      return;
+    }
+    if (!companyId || !initialInvoiceSettings) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setSavingStyle(true);
+      void updateCompany(companyId, {
+        emailBrandName: emailBrandName.trim(),
+        invoiceSettings: {
+          ...initialInvoiceSettings,
+          emailLineColor: colors.line,
+          emailButtonColor: colors.button,
+          emailHeadingColor: colors.heading,
+          emailHeading2Color: colors.heading2,
+          emailHeading3Color: colors.heading3,
+          emailTextColor: colors.text,
+          emailInvoiceVisibleRows: invoiceRowOrder.filter((row) => visibleInvoiceRows[row]),
+        },
+      })
+        .catch(() => undefined)
+        .finally(() => setSavingStyle(false));
+    }, 600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [colors, companyId, emailBrandName, initialInvoiceSettings, invoiceRowOrder, visibleInvoiceRows]);
 
   return (
     <div className="py-7">
@@ -1159,71 +1270,110 @@ function EmailTemplatesPanel({ companyName, initialAccentColor }: { companyName:
         <aside className="space-y-2">
           <h2 className="text-xl font-bold leading-7 text-black">{t("emailTemplates.title")}</h2>
           <p className="text-sm leading-6 text-slate-600">{t("emailTemplates.description")}</p>
-          <label className="block pt-3">
-            <span className="mb-1.5 block text-sm font-semibold text-black">{t("emailTemplates.language")}</span>
-            <select
-              value={language}
-              onChange={(event) => setLanguage(event.target.value as EmailTemplateLanguage)}
-              className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-base leading-6 text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
-            >
-              <option value="lv">{t("languages.lv")}</option>
-              <option value="ru">{t("languages.ru")}</option>
-              <option value="en">{t("languages.en")}</option>
-            </select>
-          </label>
-          <label className="block pt-3">
-            <span className="mb-1.5 block text-sm font-semibold text-black">{t("emailTemplates.accentColor")}</span>
-            <div className="flex gap-2">
-              <input
-                type="color"
-                value={accentColor}
-                onChange={(event) => setAccentColorDraft(event.target.value)}
-                className="h-11 w-14 rounded-lg border border-slate-300 bg-white p-1"
-              />
-              <input
-                type="text"
-                value={accentColorDraft}
-                onChange={(event) => setAccentColorDraft(event.target.value)}
-                onBlur={() => setAccentColorDraft(accentColor)}
-                className="h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-base leading-6 text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
-              />
+          <button type="button" onClick={() => setShowStyle(true)} className={`mt-3 w-full rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition ${showStyle ? "bg-[#155DFC] text-white hover:bg-[#124fd1]" : "bg-white text-slate-700 hover:bg-slate-100"}`}>
+            {t("emailBranding.title")}
+          </button>
+          {showStyle ? (
+            <div className="space-y-3 px-3 pb-3 pt-2">
+              <label className="block text-sm font-medium text-slate-700">
+                <span className="mb-1 block">{t("emailTemplates.language")}</span>
+                <select value={language} onChange={(event) => setLanguage(event.target.value as EmailTemplateLanguage)} className="h-9 w-full rounded border border-slate-300 bg-white px-2">
+                  <option value="lv">{t("languages.lv")}</option>
+                  <option value="ru">{t("languages.ru")}</option>
+                  <option value="en">{t("languages.en")}</option>
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                <span className="mb-1 block">{t("emailBranding.companyName")}</span>
+                <input value={companyName} readOnly className="h-9 w-full cursor-default rounded border border-slate-200 bg-slate-50 px-2 text-slate-600" />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                <span className="mb-1 block">{t("emailBranding.senderName")}</span>
+                <input value={emailBrandName} onChange={(event) => setEmailBrandName(event.target.value)} className="h-9 w-full rounded border border-slate-300 px-2" />
+                <span className="mt-1 block text-xs font-normal text-slate-500">{t("emailBranding.senderNameHint")}</span>
+              </label>
+              {([
+                ["line", "lineColor"],
+                ["button", "buttonColor"],
+                ["heading", "headingColor"],
+                ["heading2", "heading2Color"],
+                ["heading3", "heading3Color"],
+                ["text", "textColor"],
+              ] as const).map(([key, label]) => (
+                <label key={key} className="block text-sm font-medium text-slate-700">
+                  <span className="mb-1 block">{t(`emailBranding.${label}`)}</span>
+                  <div className="flex gap-2"><input type="color" value={colors[key]} onChange={(event) => setColors((current) => ({ ...current, [key]: event.target.value }))} className="h-9 w-12 rounded border border-slate-300 p-1" /><input value={colors[key]} onChange={(event) => setColors((current) => ({ ...current, [key]: event.target.value }))} className="h-9 min-w-0 flex-1 rounded border border-slate-300 px-2" /></div>
+                </label>
+              ))}
+              <fieldset className="mt-5 border-t border-slate-200 pt-4">
+                <legend className="mb-2 text-sm font-semibold text-slate-700">{t("emailTemplates.invoiceRows.title")}</legend>
+                <div className="space-y-2">
+                  {invoiceRowOrder.map((row, index) => (
+                    <div key={row} className="flex items-center gap-1 text-sm font-medium text-slate-700">
+                      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                        <input type="checkbox" checked={visibleInvoiceRows[row]} onChange={(event) => setVisibleInvoiceRows((current) => ({ ...current, [row]: event.target.checked }))} className="h-4 w-4 rounded border-slate-300" />
+                        <span>{t(`emailTemplates.invoiceRows.${row}`)}</span>
+                      </label>
+                      <button type="button" aria-label="Переместить выше" disabled={index === 0} onClick={() => setInvoiceRowOrder((current) => { const next = [...current]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next; })} className="rounded px-1 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-30">↑</button>
+                      <button type="button" aria-label="Переместить ниже" disabled={index === invoiceRowOrder.length - 1} onClick={() => setInvoiceRowOrder((current) => { const next = [...current]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next; })} className="rounded px-1 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-30">↓</button>
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
+              {savingStyle ? <p className="text-center text-xs text-slate-500">{t("emailBranding.saving")}</p> : null}
             </div>
-          </label>
+          ) : null}
           <div className="space-y-1 pt-3">
             {emailTemplateTypes.map((type) => {
               const active = type === templateType;
               return (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => setTemplateType(type)}
-                  className={`w-full rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition ${
-                    active
-                      ? "bg-black text-white"
-                      : "bg-white text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  {t(`emailTemplates.types.${type}`)}
-                </button>
+                <div key={type}>
+                  <button
+                    type="button"
+                    onClick={() => { setTemplateType(type); setShowStyle(false); }}
+                    className={`w-full rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition ${
+                      active
+                        ? "bg-[#155DFC] text-white hover:bg-[#124fd1]"
+                        : "bg-white text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    {t(`emailTemplates.types.${type}`)}
+                  </button>
+                </div>
               );
             })}
           </div>
         </aside>
 
         <div className="min-w-0 rounded-lg border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <p className="text-xs font-semibold uppercase text-slate-500">{t("emailTemplates.subject")}</p>
-            <p className="mt-1 break-words text-base font-semibold text-black">
-              {preview.subject}
-            </p>
+          <div className="border-b border-slate-200 bg-white px-4 py-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Как письмо будет выглядеть во входящих</p>
+            <div className="flex min-w-0 items-start gap-3 rounded-lg bg-white px-3 py-3 text-sm text-slate-700">
+              <span className="mt-0.5 text-slate-400">☆</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <span className="shrink-0 font-semibold text-slate-900">{inboxSender}</span>
+                  <span className="truncate text-slate-700">{previewSubject ?? "…"}</span>
+                </div>
+                {templateType === "invoiceGenerated" ? (
+                  <span className="mt-2 inline-flex items-center rounded-full border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600"><span className="mr-1 rounded bg-red-500 px-1 py-0.5 text-[9px] font-bold text-white">PDF</span> Rēķins.pdf</span>
+                ) : null}
+              </div>
+            </div>
           </div>
           <div className="bg-slate-100 p-3">
-            <iframe
-              title={t("emailTemplates.preview")}
-              srcDoc={preview.html}
-              className="h-[640px] w-full rounded-md border border-slate-200 bg-white"
-              sandbox=""
-            />
+            {previewHtml ? (
+              <iframe
+                title={t("emailTemplates.preview")}
+                srcDoc={previewHtml}
+                className="h-[640px] w-full rounded-md border border-slate-200 bg-white"
+                sandbox=""
+              />
+            ) : (
+              <div className="flex h-[640px] items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-500">
+                {previewError ? "Neizdevās ielādēt e-pasta priekšskatījumu." : "Ielādē priekšskatījumu…"}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -3814,7 +3964,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
   );
 }
 
-export function SettingsTabs({ user, notificationSettings, company, isAccountant = false }: SettingsTabsProps) {
+export function SettingsTabs({ user, notificationSettings, company, isAccountant = false, initialTab, hideTabs = false }: SettingsTabsProps) {
   const notify = useNotifications();
   const t = useTranslations("settings");
   const tabs = company
@@ -3822,6 +3972,7 @@ export function SettingsTabs({ user, notificationSettings, company, isAccountant
         "user",
         ...(company.permissions.viewCompanyInfo && !isAccountant ? (["company"] satisfies SettingsTab[]) : []),
         ...(company.permissions.viewApiKeys || company.permissions.manageApiKeys ? (["apiKey"] satisfies SettingsTab[]) : []),
+        ...(!isAccountant ? (["emailBranding"] satisfies SettingsTab[]) : []),
         ...(company.permissions.manageInvoiceSettings && company.hasElectricityEnabled
           ? (["invoiceGeneration"] satisfies SettingsTab[])
           : []),
@@ -3829,7 +3980,8 @@ export function SettingsTabs({ user, notificationSettings, company, isAccountant
         "notifications",
       ] satisfies SettingsTab[])
     : baseTabs;
-  const [activeTab, setActiveTab] = useState<SettingsTab>("user");
+  const visibleTabs = hideTabs ? tabs : tabs.filter((tab) => !["company", "apiKey", "emailTemplates", "emailBranding"].includes(tab));
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => initialTab && tabs.includes(initialTab) ? initialTab : "user");
   const [editingField, setEditingField] = useState<EditableField>(null);
   const [displayName, setDisplayName] = useState(user.username);
   const [headerName, setHeaderName] = useState(user.userName);
@@ -4058,9 +4210,9 @@ export function SettingsTabs({ user, notificationSettings, company, isAccountant
 
   return (
     <section className="w-full bg-white px-6 py-6 sm:px-8 lg:px-10">
-      <div className="overflow-x-auto border-b border-slate-300">
+      {!hideTabs ? <div className="overflow-x-auto border-b border-slate-300">
         <nav className="flex min-w-max gap-7" aria-label={t("sectionsAria")}>
-          {tabs.map((tab) => {
+          {visibleTabs.map((tab) => {
             const isActive = tab === activeTab;
 
             return (
@@ -4080,7 +4232,7 @@ export function SettingsTabs({ user, notificationSettings, company, isAccountant
             );
           })}
         </nav>
-      </div>
+      </div> : null}
 
       {activeTab === "user" ? (
         <>
@@ -4171,15 +4323,14 @@ export function SettingsTabs({ user, notificationSettings, company, isAccountant
         />
       ) : null}
 
+      {activeTab === "emailBranding" && company && !isAccountant ? <EmailBrandingPanel company={company} /> : null}
+
       {activeTab === "invoiceGeneration" && company?.permissions.manageInvoiceSettings && company.hasElectricityEnabled ? (
         <InvoiceGenerationPanel company={company} recipientName={displayName || user.username || user.userName || user.email} />
       ) : null}
 
       {activeTab === "emailTemplates" && company && !isAccountant ? (
-        <EmailTemplatesPanel
-          companyName={company.name || company.email || "Domera"}
-          initialAccentColor={company.invoiceSettings.accentColor}
-        />
+        <EmailTemplatesPanel companyId={company.companyId} initialInvoiceSettings={company.invoiceSettings} initialCompanyName={company.name} initialCompanyAddress={company.address} initialEmailBrandName={company.emailBrandName} initialColors={{ line: company.invoiceSettings.emailLineColor, button: company.invoiceSettings.emailButtonColor, heading: company.invoiceSettings.emailHeadingColor, heading2: company.invoiceSettings.emailHeading2Color, heading3: company.invoiceSettings.emailHeading3Color, text: company.invoiceSettings.emailTextColor }} />
       ) : null}
 
     </section>

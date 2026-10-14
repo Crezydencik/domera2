@@ -44,7 +44,7 @@ export declare class BuildingsService {
         requestId: string;
     }>;
     list(request: Request, user: RequestUser, companyId: string): Promise<{
-        items: {
+        items: ({
             apartmentLimit: number;
             approvedApartmentsCount: number;
             apartmentsCount: number;
@@ -53,7 +53,9 @@ export declare class BuildingsService {
             actualApartmentsCount: number;
             occupiedApartments: number;
             id: string;
-        }[];
+        } | {
+            id: string;
+        })[];
     }>;
     byId(request: Request, user: RequestUser, buildingId: string): Promise<{
         apartmentLimit: number;

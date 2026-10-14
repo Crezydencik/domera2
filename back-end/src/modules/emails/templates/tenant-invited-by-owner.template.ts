@@ -1,5 +1,5 @@
 import { EmailTemplate, EmailLanguage } from '../email.types';
-import { bulletList, button, detailRows, infoBox, note, paragraph, renderEmailLayout } from './email-layout.template';
+import { bulletList, button, detailRows, headerIdentity, infoBox, note, paragraph, renderEmailLayout } from './email-layout.template';
 
 export interface TenantInvitedByOwnerParams {
   tenantName?: string;
@@ -20,7 +20,7 @@ export const tenantInvitedByOwnerTemplates: Record<
       language: 'en',
       brandName: params.brandName,
       title: 'You are invited as a tenant',
-      badge: 'Tenant access',
+      badge: headerIdentity(params.brandName),
       children: `
         ${paragraph(`Hello${params.tenantName ? ` ${params.tenantName}` : ''}, ${params.ownerName} has invited you to Domera as a tenant. Accept the invitation to access the apartment details and tenant services connected to this property.`)}
         ${detailRows([
@@ -47,7 +47,7 @@ export const tenantInvitedByOwnerTemplates: Record<
       language: 'ru',
       brandName: params.brandName,
       title: 'Вас пригласили как арендатора',
-      badge: 'Доступ арендатора',
+      badge: headerIdentity(params.brandName),
       children: `
         ${paragraph(`Здравствуйте${params.tenantName ? `, ${params.tenantName}` : ''}. ${params.ownerName} приглашает вас в Domera в качестве арендатора. Примите приглашение, чтобы получить доступ к данным квартиры и сервисам арендатора.`)}
         ${detailRows([
@@ -74,7 +74,7 @@ export const tenantInvitedByOwnerTemplates: Record<
       language: 'lv',
       brandName: params.brandName,
       title: 'Jūs esat uzaicināts kā īrnieks',
-      badge: 'Īrnieka piekļuve',
+      badge: headerIdentity(params.brandName),
       children: `
         ${paragraph(`Sveiki${params.tenantName ? `, ${params.tenantName}` : ''}. ${params.ownerName} aicina jūs pievienoties Domera kā īrnieku. Pieņemiet uzaicinājumu, lai piekļūtu dzīvokļa informācijai un ar šo īpašumu saistītajiem īrnieka pakalpojumiem.`)}
         ${detailRows([

@@ -1,5 +1,5 @@
 import { EmailTemplate, EmailLanguage } from '../email.types';
-import { alertBox, button, detailRows, note, paragraph, renderEmailLayout } from './email-layout.template';
+import { alertBox, button, detailRows, headerIdentity, note, paragraph, renderEmailLayout } from './email-layout.template';
 
 export interface MeterReadingReminderParams {
   tenantName?: string;
@@ -18,13 +18,20 @@ function periodValue(params: MeterReadingReminderParams, untilLabel: string) {
   return params.periodLabel || (params.deadline ? `${untilLabel} ${params.deadline}` : undefined);
 }
 
+function propertyLocation(params: MeterReadingReminderParams, language: EmailLanguage): string {
+  const address = params.buildingName?.trim();
+  const apartment = params.apartmentNumber?.trim();
+  const apartmentLabel = language === 'ru' ? 'Квартира' : language === 'lv' ? 'Dzīvoklis' : 'Apartment';
+  return [address, apartment ? `${apartmentLabel} ${apartment}` : undefined].filter(Boolean).join(' · ');
+}
+
 function closingSummaryBox(params: MeterReadingReminderParams, countdownLabel: string, periodLabel: string, untilLabel: string) {
   if (!countdownLabel) return detailRows([{ label: periodLabel, value: periodValue(params, untilLabel) }]);
   const days = params.daysUntilDeadline;
   const period = periodValue(params, untilLabel);
 
   return `
-    <div style="margin:0 0 30px;padding:22px 24px;background:#f8fafc;border:1px solid #dbe4f0;border-radius:10px;text-align:center;">
+    <div style="margin:0 0 30px;padding:22px 24px;text-align:center;">
       ${days !== undefined && Number.isFinite(days) ? `
         <div style="font-size:54px;line-height:1;font-weight:900;color:#155DFC;letter-spacing:0;">${Math.max(0, Math.floor(days))}</div>
         <div style="margin:8px 0 18px;font-size:13px;line-height:1.4;font-weight:800;color:#475569;text-transform:uppercase;">${countdownLabel}</div>
@@ -41,15 +48,15 @@ function closingSummaryBox(params: MeterReadingReminderParams, countdownLabel: s
 
 function copyFor(language: EmailLanguage, params: MeterReadingReminderParams) {
   const stage = params.reminderStage || 'start';
-  const apartment = params.apartmentNumber;
+  const badge = headerIdentity(params.brandName);
 
   if (language === 'ru') {
     if (stage === 'close') {
       return {
-        subject: 'Последний момент сдать показания воды - Domera',
+        subject: `Последний момент сдать показания воды - ${params.brandName || 'Domera'}`,
         title: 'Последний момент сдать показания воды',
-        badge: params.buildingName || 'Показания',
-        body: `Здравствуйте${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Отправьте показания${apartment ? ` для квартиры ${apartment}` : ''}.`,
+        badge: badge || 'Показания',
+        body: `Здравствуйте${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Отправьте показания.`,
         countdownLabel: 'дней до окончания сдачи',
         alert: '',
         button: 'Отправить показания',
@@ -58,10 +65,10 @@ function copyFor(language: EmailLanguage, params: MeterReadingReminderParams) {
     }
     if (stage === 'end') {
       return {
-        subject: 'Скоро заканчивается сдача показаний - Domera',
+        subject: `Скоро заканчивается сдача показаний - ${params.brandName || 'Domera'}`,
         title: 'Сдача показаний скоро закончится',
-        badge: params.buildingName || 'Показания',
-        body: `Здравствуйте${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Отправьте показания${apartment ? ` для квартиры ${apartment}` : ''}, если ещё не сделали этого.`,
+        badge: badge || 'Показания',
+        body: `Здравствуйте${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Отправьте показания, если ещё не сделали этого.`,
         countdownLabel: 'дней до окончания сдачи',
         alert: '',
         button: 'Отправить показания',
@@ -69,10 +76,10 @@ function copyFor(language: EmailLanguage, params: MeterReadingReminderParams) {
       };
     }
     return {
-      subject: 'Отправка показаний счётчиков - Domera',
+      subject: `Отправка показаний счётчиков - ${params.brandName || 'Domera'}`,
       title: 'Отправка показаний счётчиков',
-      badge: params.buildingName || 'Показания',
-      body: `Здравствуйте${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Пришло время отправить показания${apartment ? ` для квартиры ${apartment}` : ''}.`,
+      badge: badge || 'Показания',
+      body: `Здравствуйте${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Пришло время отправить показания.`,
       countdownLabel: 'дней до окончания сдачи',
       alert: '',
       button: 'Отправить показания',
@@ -83,10 +90,10 @@ function copyFor(language: EmailLanguage, params: MeterReadingReminderParams) {
   if (language === 'lv') {
     if (stage === 'close') {
       return {
-        subject: 'Pēdējais brīdis iesniegt ūdens rādījumus - Domera',
+        subject: `Pēdējais brīdis iesniegt ūdens rādījumus - ${params.brandName || 'Domera'}`,
         title: 'Pēdējais brīdis iesniegt ūdens rādījumus',
-        badge: params.buildingName || 'Rādījumi',
-        body: `Sveiki${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Lūdzu, iesniedziet rādījumus${apartment ? ` dzīvoklim ${apartment}` : ''}.`,
+        badge: badge || 'Rādījumi',
+        body: `Sveiki${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Lūdzu, iesniedziet rādījumus.`,
         countdownLabel: 'dienas līdz beigām',
         alert: '',
         button: 'Iesniegt rādījumus',
@@ -95,10 +102,10 @@ function copyFor(language: EmailLanguage, params: MeterReadingReminderParams) {
     }
     if (stage === 'end') {
       return {
-        subject: 'Skaitītāju rādījumu iesniegšanas periods drīz beigsies - Domera',
+        subject: `Skaitītāju rādījumu iesniegšanas periods drīz beigsies - ${params.brandName || 'Domera'}`,
         title: 'Rādījumu iesniegšana drīz beigsies',
-        badge: params.buildingName || 'Rādījumi',
-        body: `Sveiki${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Lūdzu, iesniedziet rādījumus${apartment ? ` dzīvoklim ${apartment}` : ''}, ja tas vēl nav izdarīts.`,
+        badge: badge || 'Rādījumi',
+        body: `Sveiki${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Lūdzu, iesniedziet rādījumus, ja tas vēl nav izdarīts.`,
         countdownLabel: 'dienas līdz beigām',
         alert: '',
         button: 'Iesniegt rādījumus',
@@ -106,10 +113,10 @@ function copyFor(language: EmailLanguage, params: MeterReadingReminderParams) {
       };
     }
     return {
-      subject: 'Skaitītāju rādījumu iesniegšana - Domera',
+      subject: `Skaitītāju rādījumu iesniegšana - ${params.brandName || 'Domera'}`,
       title: 'Skaitītāju rādījumu iesniegšana',
-      badge: params.buildingName || 'Rādījumi',
-      body: `Sveiki${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Pienācis laiks iesniegt rādījumus${apartment ? ` dzīvoklim ${apartment}` : ''}.`,
+      badge: badge || 'Rādījumi',
+      body: `Sveiki${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Pienācis laiks iesniegt rādījumus.`,
       countdownLabel: 'dienas līdz beigām',
       alert: '',
       button: 'Iesniegt rādījumus',
@@ -119,10 +126,10 @@ function copyFor(language: EmailLanguage, params: MeterReadingReminderParams) {
 
   if (stage === 'close') {
     return {
-      subject: 'Last chance to submit water readings - Domera',
+      subject: `Last chance to submit water readings - ${params.brandName || 'Domera'}`,
       title: 'Last chance to submit water readings',
-      badge: params.buildingName || 'Meter readings',
-      body: `Hello${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Please submit meter readings${apartment ? ` for apartment ${apartment}` : ''}.`,
+      badge: badge || 'Meter readings',
+      body: `Hello${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Please submit meter readings.`,
       countdownLabel: 'days until closing',
       alert: '',
       button: 'Submit readings',
@@ -131,10 +138,10 @@ function copyFor(language: EmailLanguage, params: MeterReadingReminderParams) {
   }
   if (stage === 'end') {
     return {
-      subject: 'Meter reading submission period is ending - Domera',
+      subject: `Meter reading submission period is ending - ${params.brandName || 'Domera'}`,
       title: 'Submission period is ending',
-      badge: params.buildingName || 'Meter readings',
-      body: `Hello${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Please submit readings${apartment ? ` for apartment ${apartment}` : ''} if you have not done so yet.`,
+      badge: badge || 'Meter readings',
+      body: `Hello${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. Please submit readings if you have not done so yet.`,
       countdownLabel: 'days until closing',
       alert: '',
       button: 'Submit readings',
@@ -142,10 +149,10 @@ function copyFor(language: EmailLanguage, params: MeterReadingReminderParams) {
     };
   }
   return {
-    subject: 'Time to submit your meter readings - Domera',
+    subject: `Time to submit your meter readings - ${params.brandName || 'Domera'}`,
     title: 'Submit meter readings',
-    badge: params.buildingName || 'Meter readings',
-    body: `Hello${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. It is time to submit meter readings${apartment ? ` for apartment ${apartment}` : ''}.`,
+    badge: badge || 'Meter readings',
+    body: `Hello${params.tenantName ? `, <strong>${params.tenantName}</strong>` : ''}. It is time to submit meter readings.`,
     countdownLabel: 'days until closing',
     alert: '',
     button: 'Submit readings',
@@ -166,8 +173,9 @@ export const meterReadingReminderTemplates: Record<
       brandName: params.brandName,
       title: copy.title,
       badge: copy.badge,
+      location: propertyLocation(params, 'en'),
       children: `
-        ${paragraph(copy.body)}
+        ${paragraph(copy.body.replace('. ', '.<br />'), 'center')}
         ${closingSummaryBox(params, copy.countdownLabel, 'Submission period', 'Until')}
         ${copy.alert ? alertBox(copy.alert) : ''}
         ${button(copy.button, params.submissionLink)}
@@ -186,8 +194,9 @@ export const meterReadingReminderTemplates: Record<
       brandName: params.brandName,
       title: copy.title,
       badge: copy.badge,
+      location: propertyLocation(params, 'ru'),
       children: `
-        ${paragraph(copy.body)}
+        ${paragraph(copy.body.replace('. ', '.<br />'), 'center')}
         ${closingSummaryBox(params, copy.countdownLabel, 'Период сдачи', 'до')}
         ${copy.alert ? alertBox(copy.alert) : ''}
         ${button(copy.button, params.submissionLink)}
@@ -206,8 +215,9 @@ export const meterReadingReminderTemplates: Record<
       brandName: params.brandName,
       title: copy.title,
       badge: copy.badge,
+      location: propertyLocation(params, 'lv'),
       children: `
-        ${paragraph(copy.body)}
+        ${paragraph(copy.body.replace('. ', '.<br />'), 'center')}
         ${closingSummaryBox(params, copy.countdownLabel, 'Iesniegšanas periods', 'līdz')}
         ${copy.alert ? alertBox(copy.alert) : ''}
         ${button(copy.button, params.submissionLink)}

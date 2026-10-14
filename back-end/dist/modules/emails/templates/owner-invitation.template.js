@@ -7,20 +7,20 @@ function locationLine(params, language) {
     const apartment = params.apartmentNumber?.trim();
     if (language === 'ru') {
         return [
-            'Приглашаем вас присоединиться к жилью в Domera',
+            'Приглашаем вас присоединиться к жилью',
             building ? `по адресу ${building}` : '',
             apartment ? `квартира ${apartment}` : '',
         ].filter(Boolean).join(', ') + '.';
     }
     if (language === 'lv') {
         return [
-            'Jūs esat aicināts pievienoties Domera',
+            'Jūs esat aicināts pievienoties',
             building ? `ēkai pēc adreses ${building}` : '',
             apartment ? `dzīvoklim ${apartment}` : '',
         ].filter(Boolean).join(' ') + '.';
     }
     return [
-        'You are invited to join Domera',
+        'You are invited to join the property',
         building ? `for the building at ${building}` : '',
         apartment ? `apartment ${apartment}` : '',
     ].filter(Boolean).join(', ') + '.';
@@ -32,7 +32,7 @@ exports.ownerInvitationTemplates = {
             language: 'en',
             brandName: params.brandName || params.companyName,
             title: 'Property owner invitation',
-            badge: params.companyName,
+            badge: (0, email_layout_template_1.headerIdentity)(params.companyName),
             children: `
         ${(0, email_layout_template_1.paragraph)(locationLine(params, 'en'))}
         ${(0, email_layout_template_1.detailRows)([
@@ -52,7 +52,7 @@ exports.ownerInvitationTemplates = {
             language: 'ru',
             brandName: params.brandName || params.companyName,
             title: 'Приглашение собственника',
-            badge: params.companyName,
+            badge: (0, email_layout_template_1.headerIdentity)(params.companyName),
             children: `
         ${(0, email_layout_template_1.paragraph)(locationLine(params, 'ru'))}
         ${(0, email_layout_template_1.detailRows)([
@@ -72,7 +72,7 @@ exports.ownerInvitationTemplates = {
             language: 'lv',
             brandName: params.brandName || params.companyName,
             title: 'Īpašnieka uzaicinājums',
-            badge: params.companyName,
+            badge: (0, email_layout_template_1.headerIdentity)(params.companyName),
             children: `
         ${(0, email_layout_template_1.paragraph)(locationLine(params, 'lv'))}
         ${(0, email_layout_template_1.detailRows)([

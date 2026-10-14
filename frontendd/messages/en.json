@@ -308,12 +308,16 @@
         "buildingMainMeter": "Main building meter",
         "debts": "Debts",
         "documents": "Documents",
-        "mailings": "Information mailings",
+        "mailings": "Mail",
         "mailingTemplates": "Create template",
         "mailingTemplatesNav": "Templates",
         "sentMailings": "Sent",
         "notificationsPage": "Notifications",
         "mailbox": "Mail",
+        "company": "Company",
+        "apiKey": "API key",
+        "emailBranding": "Email settings",
+        "emailTemplates": "Email templates",
         "settings": "Settings"
       },
       "roles": {
@@ -1846,6 +1850,7 @@
       "fields": {
         "name": "Company name",
         "registrationNumber": "Registration number",
+        "address": "Company address",
         "email": "Company email",
         "phone": "Company phone",
         "bankName": "Bank name",
@@ -2002,6 +2007,14 @@
       "loading": "Loading template...",
       "emptyPreview": "Select a template to see the preview.",
       "loadFailed": "Failed to load email template.",
+      "invoiceRows": {
+        "title": "Invoice details",
+        "amount": "Amount",
+        "number": "Invoice number",
+        "dueDate": "Due date",
+        "apartment": "Apartment",
+        "address": "Address"
+      },
       "types": {
         "registrationCode": "Registration code",
         "passwordReset": "Password reset",
@@ -2013,6 +2026,23 @@
         "meterReadingClosingReminder": "Submission ending reminder",
         "notification": "General notification"
       }
+    },
+    "emailBranding": {
+      "title": "Email settings",
+      "description": "Set the company name, sender name, and email colors.",
+      "companyName": "Company name",
+      "senderName": "Email sender name",
+      "senderNameHint": "Used only as the sender name in the recipient's inbox.",
+      "lineColor": "Line color",
+      "buttonColor": "Button color",
+      "headingColor": "H1 color",
+      "heading2Color": "H2 color",
+      "heading3Color": "H3 color",
+      "textColor": "Body text color",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Email branding saved.",
+      "saveFailed": "Could not save email branding."
     },
     "apiKeys": {
       "title": "API keys",

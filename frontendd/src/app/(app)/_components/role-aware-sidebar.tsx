@@ -77,6 +77,9 @@ const navIconByHref: Partial<Record<string, LucideIcon>> = {
   [ROUTES.mailings]: Mail,
   [ROUTES.support]: LifeBuoy,
   [ROUTES.settings]: Settings,
+  [ROUTES.settingsCompany]: Building2,
+  [ROUTES.settingsApiKeys]: Settings,
+  [ROUTES.settingsMail]: Mail,
 };
 
 type UserProfileSummary = {
@@ -186,6 +189,9 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
       { href: ROUTES.sentMailings, label: tm("sentMailings"), icon: "◦", childOf: ROUTES.mailings },
       // { href: ROUTES.notifications, label: tm("notifications"), icon: "◉" },
       { href: ROUTES.settings, label: tm("settings"), icon: "⚙" },
+      { href: ROUTES.settingsCompany, label: tm("company"), icon: "▣", childOf: ROUTES.settings },
+      { href: ROUTES.settingsApiKeys, label: tm("apiKey"), icon: "◦", childOf: ROUTES.settings },
+      { href: ROUTES.settingsMail, label: tm("emailTemplates"), icon: "✉", childOf: ROUTES.settings },
     ],
     resident: [
       { href: ROUTES.dashboard, label: tm("dashboard"), icon: "⌂" },
@@ -227,6 +233,9 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
     : navByRole[role];
   const navItems = baseNavItems.filter((item) => {
     if (initialIsAccountant && item.href === ROUTES.residents) {
+      return false;
+    }
+    if (initialIsAccountant && [ROUTES.settingsCompany, ROUTES.settingsApiKeys, ROUTES.settingsMail].includes(item.href as typeof ROUTES.settingsCompany)) {
       return false;
     }
 
@@ -311,6 +320,9 @@ const userName = resolveProfileName(profileSummary, undefined, userEmail);
       { href: ROUTES.sentMailings, key: "sentMailings" },
       { href: ROUTES.notifications, key: "notificationsPage" },
       { href: ROUTES.support, key: "support" },
+      { href: ROUTES.settingsCompany, key: "company", exact: true },
+      { href: ROUTES.settingsApiKeys, key: "apiKey", exact: true },
+      { href: ROUTES.settingsMail, key: "emailTemplates", exact: true },
       { href: ROUTES.settings, key: "settings" },
     ];
 

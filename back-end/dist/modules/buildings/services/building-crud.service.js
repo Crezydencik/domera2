@@ -29,7 +29,7 @@ let BuildingCrudService = class BuildingCrudService {
         this.platformNotificationService = platformNotificationService;
         this.companyPayloadService = companyPayloadService;
     }
-    async list(request, user, companyId) {
+    async list(request, user, companyId, includeOccupancy = true) {
         this.assertManagement(user);
         const normalizedCompanyId = companyId?.trim();
         if (!normalizedCompanyId)
@@ -40,14 +40,18 @@ let BuildingCrudService = class BuildingCrudService {
         const [legacySnap, managedBySnap, occupancyStats] = await Promise.all([
             db.collection('buildings').where('companyId', '==', normalizedCompanyId).get(),
             db.collection('buildings').where('managedBy.companyId', '==', normalizedCompanyId).get(),
-            this.buildingStatsService.getBuildingOccupancyStats(normalizedCompanyId),
+            includeOccupancy
+                ? this.buildingStatsService.getBuildingOccupancyStats(normalizedCompanyId)
+                : Promise.resolve(undefined),
         ]);
         const merged = new Map();
         for (const doc of [...legacySnap.docs, ...managedBySnap.docs]) {
             merged.set(doc.id, doc.data());
         }
         return {
-            items: Array.from(merged.entries()).map(([id, data]) => this.buildingStatsService.applyOccupancyStats(id, data, occupancyStats.get(id))),
+            items: Array.from(merged.entries()).map(([id, data]) => includeOccupancy
+                ? this.buildingStatsService.applyOccupancyStats(id, data, occupancyStats?.get(id))
+                : { id, ...data }),
         };
     }
     async byId(request, user, buildingId) {

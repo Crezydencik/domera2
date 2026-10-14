@@ -307,12 +307,16 @@
         "buildingMainMeter": "Основной счётчик дома",
         "debts": "Долги",
         "documents": "Документы",
-        "mailings": "Информационные рассылки",
+        "mailings": "Почта",
         "mailingTemplates": "Создание шаблона",
         "mailingTemplatesNav": "Шаблоны",
         "sentMailings": "Отправленные",
         "notificationsPage": "Уведомления",
         "mailbox": "Почта",
+        "company": "Компания",
+        "apiKey": "API ключ",
+        "emailBranding": "Настройки писем",
+        "emailTemplates": "Шаблоны писем",
         "settings": "Настройки"
       },
       "roles": {
@@ -1846,6 +1850,7 @@
       "fields": {
         "name": "Название компании",
         "registrationNumber": "Регистрационный номер",
+        "address": "Адрес компании",
         "email": "Email компании",
         "phone": "Телефон компании",
         "bankName": "Название банка",
@@ -2002,6 +2007,14 @@
       "loading": "Загрузка шаблона...",
       "emptyPreview": "Выберите шаблон, чтобы увидеть предпросмотр.",
       "loadFailed": "Не удалось загрузить шаблон письма.",
+      "invoiceRows": {
+        "title": "Строки счёта",
+        "amount": "Сумма",
+        "number": "Номер счёта",
+        "dueDate": "Срок оплаты",
+        "apartment": "Квартира",
+        "address": "Адрес"
+      },
       "types": {
         "registrationCode": "Код регистрации",
         "passwordReset": "Сброс пароля",
@@ -2013,6 +2026,23 @@
         "meterReadingClosingReminder": "Напоминание об окончании сдачи",
         "notification": "Общее уведомление"
       }
+    },
+    "emailBranding": {
+      "title": "Настройки писем",
+      "description": "Настройте название компании, имя отправителя и цвета писем.",
+      "companyName": "Название компании",
+      "senderName": "Имя в письмах",
+      "senderNameHint": "Используется только как имя отправителя в почтовом ящике.",
+      "lineColor": "Цвет линии",
+      "buttonColor": "Цвет кнопки",
+      "headingColor": "Цвет H1",
+      "heading2Color": "Цвет H2",
+      "heading3Color": "Цвет H3",
+      "textColor": "Цвет обычного текста",
+      "save": "Сохранить",
+      "saving": "Сохранение…",
+      "saved": "Оформление писем сохранено.",
+      "saveFailed": "Не удалось сохранить оформление писем."
     },
     "apiKeys": {
       "title": "API ключи",

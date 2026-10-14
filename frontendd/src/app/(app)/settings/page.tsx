@@ -1,6 +1,8 @@
+import { redirect } from "next/navigation";
 import type { CompanyApiKeyItem, CompanyMemberPermissions } from "@/shared/api/company";
 import type { NotificationSettings } from "@/shared/api/notifications";
 import { isApprovedBuilding, isElectricityEnabledBuilding } from "@/shared/lib/buildings";
+import { ROUTES } from "@/shared/lib/routes";
 import { apiFetch } from "@/shared/server/api-client";
 import { getSettingsPageData } from "@/shared/server/page-loaders/settings.loader";
 import { SettingsTabs } from "./settings-tabs";
@@ -8,6 +10,8 @@ import { SettingsTabs } from "./settings-tabs";
 type SettingsPageProps = {
   searchParams?: Promise<{ role?: string }>;
 };
+
+type SettingsSection = "company" | "apiKey" | "emailTemplates" | "emailBranding";
 
 type UnknownRecord = Record<string, unknown>;
 type InvoiceSettingsLanguage = "ru" | "lv" | "en";
@@ -141,6 +145,15 @@ function normalizeInvoiceSettings(value: unknown) {
     logoDataUrl: normalizeInvoiceLogoDataUrl(settings.logoDataUrl),
     logoHidden: settings.logoHidden === true,
     accentColor: normalizeInvoiceAccentColor(settings.accentColor) || "#ef3340",
+    emailLineColor: normalizeInvoiceAccentColor(settings.emailLineColor) || "#155DFC",
+    emailButtonColor: normalizeInvoiceAccentColor(settings.emailButtonColor) || "#155DFC",
+    emailHeadingColor: normalizeInvoiceAccentColor(settings.emailHeadingColor) || "#0F172A",
+    emailHeading2Color: normalizeInvoiceAccentColor(settings.emailHeading2Color) || "#0F172A",
+    emailHeading3Color: normalizeInvoiceAccentColor(settings.emailHeading3Color) || "#64748B",
+    emailTextColor: normalizeInvoiceAccentColor(settings.emailTextColor) || "#334155",
+    emailInvoiceVisibleRows: Array.isArray(settings.emailInvoiceVisibleRows)
+      ? Array.from(new Set([...settings.emailInvoiceVisibleRows.filter((item): item is string => ["amount", "number", "dueDate", "apartment", "address"].includes(String(item))), "address"]))
+      : ["amount", "number", "dueDate", "apartment", "address"],
     providerAddress: firstString(settings.providerAddress),
     overrideBankName: firstString(settings.overrideBankName),
     overrideBankAccountIban: firstString(settings.overrideBankAccountIban),
@@ -190,9 +203,14 @@ function resolveCompanyMemberType(memberId: string, companyId: string, managerId
   return "employee";
 }
 
-export default async function SettingsPage({ searchParams }: SettingsPageProps) {
-  const params = (await searchParams) ?? {};
-  const data = await getSettingsPageData(params.role);
+export async function SettingsPageContent({
+  roleHint,
+  section,
+}: {
+  roleHint?: string;
+  section?: SettingsSection;
+}) {
+  const data = await getSettingsPageData(roleHint);
   const profile = data.profile;
 
   const userId = firstString(profile?.uid, profile?.id, data.userId);
@@ -207,6 +225,9 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const accountType = firstString(profile?.accountType, profile?.role);
   const normalizedAccountType = normalizeAccessValue(accountType);
   const isAccountant = normalizeAccessValue(data.rawRole) === "accountant" || normalizedAccountType === "accountant";
+  if (section && (data.role !== "managementCompany" || isAccountant)) {
+    redirect(ROUTES.dashboard);
+  }
   const canViewCompany =
     data.role === "managementCompany" &&
     (normalizedAccountType === "" || normalizedAccountType === "managementcompany" || normalizedAccountType === "accountant");
@@ -266,10 +287,13 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         }}
         notificationSettings={notificationSettings}
         isAccountant={isAccountant}
+        initialTab={section}
+        hideTabs={Boolean(section)}
         company={canViewCompany ? {
           canManage: currentUserPermissions.editCompanyInfo === true,
           companyId,
           name: firstString(company?.companyName, company?.name, profile?.companyName, fullName),
+          emailBrandName: firstString(company?.emailBrandName),
           registrationNumber: firstString(company?.registrationNumber, profile?.registrationNumber),
           address: firstString(company?.address, company?.companyAddress, profile?.address, profile?.companyAddress),
           email: firstString(company?.companyEmail, company?.email, company?.contactEmail, profile?.companyEmail, email),
@@ -334,4 +358,9 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       />
     </div>
   );
+}
+
+export default async function SettingsPage({ searchParams }: SettingsPageProps) {
+  const params = (await searchParams) ?? {};
+  return <SettingsPageContent roleHint={params.role} />;
 }
