@@ -7,7 +7,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 import { Request } from 'express';
 import { isPropertyMemberRole, isStaffRole } from '../../common/auth/role.constants';
@@ -93,7 +93,6 @@ const INVOICE_STATUSES = new Set(['draft', 'pending', 'issued', 'paid', 'overdue
 const INVOICE_RECIPIENT_TYPES = new Set<InvoiceRecipientType>(['owner', 'tenant', 'general']);
 const UPLOAD_SOURCES = new Set<InvoiceUploadSource>(['api', 'manual', 'sftp', 'email', 'zip', 'accounting']);
 const ALLOWED_PDF_PROXY_HOSTS = new Set(['firebasestorage.googleapis.com', 'storage.googleapis.com']);
-const PUBLIC_INVOICE_LINK_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const INVOICE_METER_READING_KEYS: readonly InvoiceMeterReadingKey[] = ['coldmeterwater', 'hotmeterwater', 'electricitymeter'];
 
 type InvoicePdfPayload = {
@@ -1460,10 +1459,6 @@ export class InvoicesService {
     return this.downloadInvoicePdfFromUrl(pdfUrl, fileName);
   }
 
-  private hashPublicInvoiceToken(token: string): string {
-    return createHash('sha256').update(token).digest('hex');
-  }
-
   private resolvePublicAppBaseUrl(request: Request): string {
     const configured = this.firstString(
       process.env.FRONTEND_URL,
@@ -1482,50 +1477,11 @@ export class InvoicesService {
       return `${protocol}://${hostname}:3000`;
     }
 
-    return 'https://domera.app';
+    return 'https://www.domera.lv';
   }
 
-  private async createPublicInvoicePdfLink(params: {
-    request: Request;
-    invoiceId: string;
-    invoicePath: string;
-    apartmentId: string;
-    companyId: string;
-    buildingId: string;
-    recipientEmail: string;
-  }): Promise<string> {
-    const token = randomBytes(32).toString('hex');
-    const tokenHash = this.hashPublicInvoiceToken(token);
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + PUBLIC_INVOICE_LINK_TTL_MS);
-    const linkRef = this.getApartmentInvoicePublicLinksCollection(params.apartmentId).doc(tokenHash);
-    const publicLinkRef = this.firebaseAdminService.firestore.collection('invoice_public_links').doc(tokenHash);
-    const linkData = {
-      tokenHash,
-      invoiceId: params.invoiceId,
-      invoicePath: params.invoicePath,
-      apartmentId: params.apartmentId,
-      companyId: params.companyId || null,
-      buildingId: params.buildingId || null,
-      recipientEmail: params.recipientEmail,
-      createdAt: now,
-      expiresAt,
-      createdBy: 'invoice.approval',
-    };
-
-    const batch = this.firebaseAdminService.firestore.batch();
-    batch.set(linkRef, linkData);
-    batch.set(publicLinkRef, {
-      ...linkData,
-      apartmentPublicLinkPath: linkRef.path,
-    });
-    await batch.commit();
-
-    return this.publicInvoiceViewLink(token, params.request);
-  }
-
-  publicInvoiceViewLink(token: string, request: Request): string {
-    return `${this.resolvePublicAppBaseUrl(request)}/pdf/${encodeURIComponent(token)}`;
+  private authenticatedInvoiceViewLink(invoiceId: string, request: Request): string {
+    return `${this.resolvePublicAppBaseUrl(request)}/invoices?openInvoice=${encodeURIComponent(invoiceId)}`;
   }
 
   private resolveInvoiceEmailLanguage(invoice: Record<string, unknown>, apartment: Record<string, unknown>): 'en' | 'ru' | 'lv' {
@@ -1610,10 +1566,6 @@ export class InvoicesService {
     invoiceId: string;
     invoiceData: Record<string, unknown>;
     apartment: Record<string, unknown>;
-    apartmentId: string;
-    companyId: string;
-    buildingId: string;
-    invoicePath: string;
   }): Promise<void> {
     const recipient = this.resolveInvoiceRecipient({ invoice: params.invoiceData, apartment: params.apartment });
     const recipientEmail = recipient.email;
@@ -1624,15 +1576,7 @@ export class InvoicesService {
 
     const [pdf, invoiceLink] = await Promise.all([
       this.resolveInvoicePdfPayload(params.invoiceData, params.invoiceId),
-      this.createPublicInvoicePdfLink({
-        request: params.request,
-        invoiceId: params.invoiceId,
-        invoicePath: params.invoicePath,
-        apartmentId: params.apartmentId,
-        companyId: params.companyId,
-        buildingId: params.buildingId,
-        recipientEmail,
-      }),
+      this.authenticatedInvoiceViewLink(params.invoiceId, params.request),
     ]);
 
     await this.emailService.sendInvoiceGenerated({
@@ -3122,10 +3066,6 @@ export class InvoicesService {
         invoiceId,
         invoiceData,
         apartment,
-        apartmentId,
-        companyId,
-        buildingId,
-        invoicePath,
       }).catch((error) => {
         this.logger.warn(`invoice.email.send_failed invoiceId=${invoiceId} reason=${this.errorMessage(error)}`);
       });
@@ -4125,52 +4065,6 @@ export class InvoicesService {
     return this.resolveInvoicePdfPayload(invoice, invoiceId);
   }
 
-  async publicPdf(token: string): Promise<InvoicePdfPayload> {
-    const normalizedToken = this.firstString(token);
-    if (!normalizedToken) {
-      throw new NotFoundException('Invoice PDF not found');
-    }
-
-    const tokenHash = this.hashPublicInvoiceToken(normalizedToken);
-    const directLinkSnap = await this.firebaseAdminService.firestore
-      .collection('invoice_public_links')
-      .doc(tokenHash)
-      .get();
-    const groupedLinkSnap = directLinkSnap.exists
-      ? null
-      : await this.firebaseAdminService.firestore
-        .collectionGroup('invoice_public_links')
-        .where('tokenHash', '==', tokenHash)
-        .limit(1)
-        .get();
-    const linkDoc = directLinkSnap.exists ? directLinkSnap : groupedLinkSnap?.docs[0];
-    if (!linkDoc?.exists) {
-      throw new NotFoundException('Invoice PDF not found');
-    }
-
-    const link = linkDoc.data() as Record<string, unknown>;
-    const expiresAt = link.expiresAt;
-    const expiryDate = expiresAt && typeof (expiresAt as { toDate?: unknown }).toDate === 'function'
-      ? (expiresAt as { toDate: () => Date }).toDate()
-      : null;
-    if (expiryDate && expiryDate.getTime() < Date.now()) {
-      throw new NotFoundException('Invoice PDF not found');
-    }
-
-    const invoicePath = this.firstString(link.invoicePath);
-    const invoiceId = this.firstString(link.invoiceId);
-    if (!invoicePath || !invoiceId) {
-      throw new NotFoundException('Invoice PDF not found');
-    }
-
-    const invoiceSnap = await this.firebaseAdminService.firestore.doc(invoicePath).get();
-    if (!invoiceSnap.exists) {
-      throw new NotFoundException('Invoice PDF not found');
-    }
-
-    return this.resolveInvoicePdfPayload({ id: invoiceId, ...invoiceSnap.data() }, invoiceId);
-  }
-
   async resendEmail(request: Request, user: RequestUser, invoiceId: string) {
     this.assertAuthenticated(user);
     if (!this.isStaff(user)) {
@@ -4210,10 +4104,6 @@ export class InvoicesService {
       invoiceId,
       invoiceData,
       apartment,
-      apartmentId,
-      companyId,
-      buildingId,
-      invoicePath: invoice.ref.path,
     });
 
     void this.auditLogService.write({

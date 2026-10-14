@@ -178,21 +178,6 @@ let InvoicesController = class InvoicesController {
     cancelPendingApproval(request, user, approvalId) {
         return this.invoicesService.cancelPendingApproval(request, user, approvalId);
     }
-    async publicPdf(request, token, response) {
-        if (request.query.raw !== '1') {
-            response.redirect(302, this.invoicesService.publicInvoiceViewLink(token, request));
-            return;
-        }
-        const pdf = await this.invoicesService.publicPdf(token);
-        const fallbackFileName = pdf.fileName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '').trim() || 'invoice.pdf';
-        const encodedFileName = encodeURIComponent(pdf.fileName);
-        response.setHeader('Content-Type', pdf.contentType || 'application/pdf');
-        response.setHeader('Content-Length', String(pdf.buffer.length));
-        response.setHeader('Content-Disposition', `inline; filename="${fallbackFileName}"; filename*=UTF-8''${encodedFileName}`);
-        response.setHeader('Cache-Control', 'private, no-store');
-        response.setHeader('X-Content-Type-Options', 'nosniff');
-        response.end(pdf.buffer);
-    }
     resendEmail(request, user, invoiceId) {
         return this.invoicesService.resendEmail(request, user, invoiceId);
     }
@@ -448,20 +433,6 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, String]),
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "cancelPendingApproval", null);
-__decorate([
-    (0, common_1.Get)('public/:token/pdf'),
-    (0, swagger_1.ApiOperation)({ summary: 'Open invoice PDF by public token' }),
-    (0, swagger_1.ApiParam)({ name: 'token', type: String }),
-    (0, swagger_1.ApiOkResponse)({
-        description: 'Invoice PDF returned successfully.',
-    }),
-    __param(0, (0, common_1.Req)()),
-    __param(1, (0, common_1.Param)('token')),
-    __param(2, (0, common_1.Res)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String, Object]),
-    __metadata("design:returntype", Promise)
-], InvoicesController.prototype, "publicPdf", null);
 __decorate([
     (0, common_1.Post)(':invoiceId/resend-email'),
     (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),

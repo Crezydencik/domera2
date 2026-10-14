@@ -97,10 +97,8 @@ export declare class InvoicesService {
     private assertSafeProxyUrl;
     private downloadInvoicePdfFromUrl;
     private resolveInvoicePdfPayload;
-    private hashPublicInvoiceToken;
     private resolvePublicAppBaseUrl;
-    private createPublicInvoicePdfLink;
-    publicInvoiceViewLink(token: string, request: Request): string;
+    private authenticatedInvoiceViewLink;
     private resolveInvoiceEmailLanguage;
     private resolveInvoiceEmailAmount;
     private resolveInvoiceRecipient;
@@ -243,7 +241,6 @@ export declare class InvoicesService {
     }>;
     byId(user: RequestUser, invoiceId: string, includePdfUrl?: boolean): Promise<Record<string, unknown>>;
     pdf(user: RequestUser, invoiceId: string): Promise<InvoicePdfPayload>;
-    publicPdf(token: string): Promise<InvoicePdfPayload>;
     resendEmail(request: Request, user: RequestUser, invoiceId: string): Promise<{
         success: boolean;
     }>;

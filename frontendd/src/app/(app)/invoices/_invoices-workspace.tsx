@@ -1,7 +1,7 @@
 "use client";
 
 import { useLocale } from "next-intl";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FiAlertCircle, FiCheckCircle, FiChevronDown, FiEye, FiFileText, FiRefreshCw, FiTrash2, FiUploadCloud, FiX } from "react-icons/fi";
 import { DataTable } from "@/components/data-table";
@@ -812,6 +812,66 @@ function QueueStatusBadge({ status, copy }: { status: QueueStatus; copy: Copy })
   );
 }
 
+function EmailInvoiceModal({ invoiceId, copy, onClose }: { invoiceId: string; copy: Copy; onClose: () => void }) {
+  const [loading, setLoading] = useState(true);
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let url: string | null = null;
+
+    async function loadInvoice() {
+      setLoading(true);
+      setError(false);
+      try {
+        const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/pdf`, {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error(`Invoice PDF request failed (${response.status})`);
+
+        url = URL.createObjectURL(await response.blob());
+        if (!cancelled) setObjectUrl(url);
+      } catch {
+        if (!cancelled) setError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadInvoice();
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [invoiceId]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-sm sm:p-5" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={copy.pdf}
+        className="relative flex h-[min(92dvh,920px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-4 py-3">
+          <h3 className="min-w-0 truncate text-sm font-semibold text-slate-900">{copy.pdf}</h3>
+          <button type="button" onClick={onClose} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-800" aria-label={copy.close}>
+            <FiX className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 bg-slate-100">
+          {loading ? <div className="flex h-full items-center justify-center text-sm font-medium text-slate-600">{copy.openingPdf}</div> : null}
+          {!loading && error ? <div className="flex h-full items-center justify-center px-6 text-center text-sm font-medium text-rose-700">{copy.openPdfFailed}</div> : null}
+          {!loading && !error && objectUrl ? <iframe src={objectUrl} title={copy.pdf} className="h-full w-full border-0 bg-white" /> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function InvoicesWorkspace({
   role,
   companyId,
@@ -835,6 +895,7 @@ export function InvoicesWorkspace({
 }) {
   const locale = useLocale();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const copy = getCopy(locale);
   const notifications = useNotifications();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2316,6 +2377,13 @@ export function InvoicesWorkspace({
             <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-5 py-8 text-sm text-slate-500">{copy.emptyHistory}</div>
           )}
         </section>
+      ) : null}
+      {searchParams.get("openInvoice") ? (
+        <EmailInvoiceModal
+          invoiceId={searchParams.get("openInvoice") ?? ""}
+          copy={copy}
+          onClose={() => router.replace("/invoices")}
+        />
       ) : null}
     </div>
   );

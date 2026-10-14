@@ -16,10 +16,7 @@ export const authRoutes = new Set<string>([
   ROUTES.acceptInvitation,
 ]);
 
-export const publicRoutes = [
-  "/invoices/public",
-  "/pdf",
-];
+export const publicRoutes: string[] = [];
 
 export const allowedRoutesByRole: Record<DashboardRole, string[]> = {
   platformAdmin: [

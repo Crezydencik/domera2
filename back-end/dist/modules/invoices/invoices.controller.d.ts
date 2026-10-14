@@ -146,7 +146,6 @@ export declare class InvoicesController {
         success: boolean;
         message: string;
     }>;
-    publicPdf(request: Request, token: string, response: Response): Promise<void>;
     resendEmail(request: Request, user: RequestUser, invoiceId: string): Promise<{
         success: boolean;
     }>;

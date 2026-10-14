@@ -422,34 +422,6 @@ export class InvoicesController {
     return this.invoicesService.cancelPendingApproval(request, user, approvalId);
   }
 
-  @Get('public/:token/pdf')
-  @ApiOperation({ summary: 'Open invoice PDF by public token' })
-  @ApiParam({ name: 'token', type: String })
-  @ApiOkResponse({
-    description: 'Invoice PDF returned successfully.',
-  })
-  async publicPdf(
-    @Req() request: Request,
-    @Param('token') token: string,
-    @Res() response: Response,
-  ) {
-    if (request.query.raw !== '1') {
-      response.redirect(302, this.invoicesService.publicInvoiceViewLink(token, request));
-      return;
-    }
-
-    const pdf = await this.invoicesService.publicPdf(token);
-    const fallbackFileName = pdf.fileName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '').trim() || 'invoice.pdf';
-    const encodedFileName = encodeURIComponent(pdf.fileName);
-
-    response.setHeader('Content-Type', pdf.contentType || 'application/pdf');
-    response.setHeader('Content-Length', String(pdf.buffer.length));
-    response.setHeader('Content-Disposition', `inline; filename="${fallbackFileName}"; filename*=UTF-8''${encodedFileName}`);
-    response.setHeader('Cache-Control', 'private, no-store');
-    response.setHeader('X-Content-Type-Options', 'nosniff');
-    response.end(pdf.buffer);
-  }
-
   @Post(':invoiceId/resend-email')
   @UseGuards(FirebaseAuthGuard, RolesGuard)
   @Roles(...STAFF_ROLES)
