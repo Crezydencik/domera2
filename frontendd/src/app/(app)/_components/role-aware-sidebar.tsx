@@ -247,7 +247,17 @@ function hasPendingBuildingCreationRequests(users: PlatformUser[]) {
     if (
       role === "managementCompany"
       && !hasBuildings
-      && [ROUTES.invoices, ROUTES.documents, ROUTES.mailings, ROUTES.mailingTemplates, ROUTES.sentMailings].includes(item.href as typeof ROUTES.invoices)
+      && [
+        ROUTES.apartments,
+        ROUTES.residents,
+        ROUTES.meterReadings,
+        ROUTES.invoices,
+        ROUTES.documents,
+        ROUTES.mailings,
+        ROUTES.mailingTemplates,
+        ROUTES.sentMailings,
+        ROUTES.settingsMail,
+      ].includes(item.href as typeof ROUTES.invoices)
     ) {
       return false;
     }

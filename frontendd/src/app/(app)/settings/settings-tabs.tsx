@@ -3046,6 +3046,10 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     name: company.name,
     registrationNumber: company.registrationNumber,
     address: company.address,
+    country: company.country,
+    city: company.city,
+    postalCode: company.postalCode,
+    houseNumber: company.houseNumber,
     email: company.email,
     phone: company.phone,
     bankName: company.bankName,
@@ -3058,6 +3062,10 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     name: company.name,
     registrationNumber: company.registrationNumber,
     address: company.address,
+    country: company.country,
+    city: company.city,
+    postalCode: company.postalCode,
+    houseNumber: company.houseNumber,
     email: company.email,
     phone: company.phone,
     bankName: company.bankName,
@@ -3298,6 +3306,40 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     }
   };
 
+  const saveCompanyAddress = async () => {
+    if (!canEditCompanyInfo) return;
+
+    const addressParts = [draft.city, draft.houseNumber, draft.postalCode, draft.country]
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const nextAddress = addressParts.join(", ") || draft.address.trim();
+    const nextDetails = {
+      address: nextAddress,
+      country: draft.country.trim(),
+      city: draft.city.trim(),
+      postalCode: draft.postalCode.trim(),
+      houseNumber: draft.houseNumber.trim(),
+    };
+
+    setIsSaving(true);
+    setFeedback("");
+
+    try {
+      await updateCompany(details.companyId, nextDetails);
+      setDetails((current) => ({ ...current, ...nextDetails }));
+      setDraft((current) => ({ ...current, ...nextDetails }));
+      setEditingField(null);
+      notify.success(t("toast.companySaved"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("errors.companySaveFailed");
+      setFeedbackTone("error");
+      setFeedback(message);
+      notify.error(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const addMember = async () => {
     if (memberCreateAccount && !canManageMembers) return;
     if (!memberCreateAccount && !canEditCompanyInfo) return;
@@ -3502,6 +3544,54 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
     return <SettingsRow label={meta.label} value={value(details[field])} onEdit={canEditCompanyInfo ? () => startEdit(field) : undefined} />;
   };
 
+  const renderCompanyAddressBlock = () => {
+    const addressValues = [details.country, details.city, details.postalCode, details.houseNumber].filter(Boolean);
+
+    if (editingField === "address") {
+      return (
+        <form
+          className="grid gap-4 border-t border-slate-200 py-6 sm:grid-cols-[1fr_auto] sm:items-start"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveCompanyAddress();
+          }}
+        >
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-black">{t("company.fields.address")}</h3>
+            <div className="mt-4 grid max-w-3xl gap-4 sm:grid-cols-2">
+              {([
+                ["country", t("company.fields.country")],
+                ["city", t("company.fields.city")],
+                ["postalCode", t("company.fields.postalCode")],
+                ["houseNumber", t("company.fields.houseNumber")],
+              ] as const).map(([field, label]) => (
+                <label key={field} className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-black">{label}</span>
+                  <input
+                    type="text"
+                    value={draft[field]}
+                    disabled={isSaving}
+                    onChange={(event) => setDraft((current) => ({ ...current, [field]: event.target.value }))}
+                    className="h-[46px] w-full rounded-lg border border-slate-300 bg-white px-3 text-base text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
+                  />
+                </label>
+              ))}
+            </div>
+            {feedback ? <p className={`mt-2 text-sm font-medium ${feedbackTone === "success" ? "text-emerald-700" : "text-red-600"}`}>{feedback}</p> : null}
+            <Button type="submit" variant="dark" size="pill" disabled={isSaving} className="mt-4 font-bold leading-5">
+              {t("actions.save")}
+            </Button>
+          </div>
+          <Button type="button" variant="inlineLink" size="link" onClick={cancelEdit} disabled={isSaving} className="justify-self-start font-semibold leading-5 sm:justify-self-end">
+            {t("actions.cancel")}
+          </Button>
+        </form>
+      );
+    }
+
+    return <SettingsRow label={t("company.fields.address")} value={value(addressValues.join(", ") || details.address)} onEdit={canEditCompanyInfo ? () => startEdit("address") : undefined} />;
+  };
+
   const renderBankDetailsBlock = () => {
     if (isEditingBankDetails) {
       return (
@@ -3588,7 +3678,7 @@ function CompanyPanel({ company, currentUserId }: { company: CompanySettings; cu
       <div className="mt-7">
         {renderCompanyField("name")}
         {renderCompanyField("registrationNumber")}
-        {renderCompanyField("address")}
+        {renderCompanyAddressBlock()}
         {renderCompanyField("email")}
         {renderCompanyField("phone")}
         {renderBankDetailsBlock()}

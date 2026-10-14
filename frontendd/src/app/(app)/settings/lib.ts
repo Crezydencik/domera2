@@ -90,6 +90,10 @@ export type CompanySettings = {
   emailBrandName: string;
   registrationNumber: string;
   address: string;
+  country: string;
+  city: string;
+  postalCode: string;
+  houseNumber: string;
   email: string;
   phone: string;
   bankName: string;
@@ -124,5 +128,5 @@ export type CompanyMemberPermissionKey = keyof CompanyMemberPermissions;
 export type NameDraft = { firstName: string; lastName: string };
 export type PasswordDraft = { current: string; next: string; repeat: string };
 export type VisiblePasswordField = keyof PasswordDraft;
-export type CompanyDraft = Pick<CompanySettings, "companyId" | "name" | "registrationNumber" | "address" | "email" | "phone" | "bankName" | "bankAccountIban" | "bankSwift" | "bankBeneficiary">;
+export type CompanyDraft = Pick<CompanySettings, "companyId" | "name" | "registrationNumber" | "address" | "country" | "city" | "postalCode" | "houseNumber" | "email" | "phone" | "bankName" | "bankAccountIban" | "bankSwift" | "bankBeneficiary">;
 export type CompanyMemberRole = "ManagementCompany" | "Accountant";
