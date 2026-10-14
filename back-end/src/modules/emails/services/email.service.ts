@@ -94,8 +94,11 @@ export class EmailService {
   }
 
   async sendInvoiceGenerated(dto: SendInvoiceGeneratedEmailDto): Promise<{ id: string }> {
-    const template = this.templateService.invoiceGenerated(dto);
     const fromName = await this.resolveCompanySenderName(dto.brandName, dto.companyId);
+    const template = this.templateService.invoiceGenerated({
+      ...dto,
+      brandName: fromName ?? dto.brandName,
+    });
     return this.sendTracked(
       'invoiceGenerated',
       {
