@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FiLoader, FiTrash2 } from "react-icons/fi";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { deleteInvoiceAction } from "@/shared/actions/billing";
@@ -29,6 +30,7 @@ export function InvoiceDeleteButton({
   successLabel,
   errorLabel,
 }: InvoiceDeleteButtonProps) {
+  const router = useRouter();
   const confirm = useConfirm();
   const notifications = useNotifications();
   const [deleting, setDeleting] = useState(false);
@@ -59,6 +61,7 @@ export function InvoiceDeleteButton({
         return;
       }
       notifications.success(successLabel);
+      router.refresh();
     } catch (error) {
       notifications.error(error instanceof Error && error.message ? error.message : errorLabel);
     } finally {
