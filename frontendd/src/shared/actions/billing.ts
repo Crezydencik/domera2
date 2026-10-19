@@ -19,6 +19,23 @@ type BatchMutationResponse = {
   message?: string;
 };
 
+export type InvoiceActionResult = {
+  success: boolean;
+  message?: string;
+};
+
+async function runInvoiceAction(action: () => Promise<unknown>): Promise<InvoiceActionResult> {
+  try {
+    await action();
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error && error.message ? error.message : "Unable to complete the invoice action.",
+    };
+  }
+}
+
 function revalidateBillingViews() {
   revalidatePath("/invoices");
   revalidatePath("/apartments");
@@ -69,16 +86,18 @@ export async function cancelPendingInvoiceApprovalsAction(approvalIds: string[])
   return response;
 }
 
-export async function deleteInvoiceAction(invoiceId: string) {
-  const response = await apiFetch<{ success?: boolean }>(`/invoices/${encodeURIComponent(invoiceId)}`, {
+export async function deleteInvoiceAction(invoiceId: string): Promise<InvoiceActionResult> {
+  const result = await runInvoiceAction(() => apiFetch<{ success?: boolean }>(`/invoices/${encodeURIComponent(invoiceId)}`, {
     method: "DELETE",
-  });
-  revalidateBillingViews();
-  return response;
+  }));
+  if (result.success) {
+    revalidateBillingViews();
+  }
+  return result;
 }
 
-export async function resendInvoiceEmailAction(invoiceId: string) {
-  return apiFetch<{ success?: boolean }>(`/invoices/${encodeURIComponent(invoiceId)}/resend-email`, {
+export async function resendInvoiceEmailAction(invoiceId: string): Promise<InvoiceActionResult> {
+  return runInvoiceAction(() => apiFetch<{ success?: boolean }>(`/invoices/${encodeURIComponent(invoiceId)}/resend-email`, {
     method: "POST",
-  });
+  }));
 }

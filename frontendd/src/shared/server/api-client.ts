@@ -166,7 +166,18 @@ export async function apiFetch<T>(path: string, init?: ServerApiFetchInit): Prom
     }
 
     if (!response.ok) {
-      throw new DomeraApiError(`Request failed for ${path}`, response.status);
+      const payload = await parseJsonResponse<Record<string, unknown>>(response, path).catch(() => null);
+      const message = payload && typeof payload === "object"
+        ? Array.isArray(payload.message)
+          ? payload.message.filter((item): item is string => typeof item === "string").join(", ")
+          : typeof payload.message === "string"
+            ? payload.message
+            : typeof payload.error === "string"
+              ? payload.error
+              : ""
+        : "";
+
+      throw new DomeraApiError(message || `Request failed for ${path}`, response.status);
     }
 
     const payload = await parseJsonResponse<T>(response, path);

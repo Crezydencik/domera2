@@ -26,7 +26,11 @@ export function InvoiceResendEmailButton({
   async function handleResend() {
     try {
       setSending(true);
-      await resendInvoiceEmailAction(invoiceId);
+      const result = await resendInvoiceEmailAction(invoiceId);
+      if (!result.success) {
+        notifications.error(result.message || errorLabel);
+        return;
+      }
       notifications.success(successLabel);
     } catch (error) {
       notifications.error(error instanceof Error && error.message ? error.message : errorLabel);

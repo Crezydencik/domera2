@@ -53,7 +53,11 @@ export function InvoiceDeleteButton({
 
     try {
       setDeleting(true);
-      await deleteInvoiceAction(invoiceId);
+      const result = await deleteInvoiceAction(invoiceId);
+      if (!result.success) {
+        notifications.error(result.message || errorLabel);
+        return;
+      }
       notifications.success(successLabel);
     } catch (error) {
       notifications.error(error instanceof Error && error.message ? error.message : errorLabel);
