@@ -6,6 +6,7 @@ import {
   resolveUserRole,
 } from '../../../common/auth/role.constants';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
+import { runInBackground } from '../../../common/utils/background';
 
 @Injectable()
 export class AuthProfileProvisioningService {
@@ -211,9 +212,9 @@ export class AuthProfileProvisioningService {
     }
 
     if (current.storageFoldersStatus !== 'ready') {
-      void this.ensureCompanyStorageFolders(ref, input.uid).catch((error) => {
+      runInBackground(this.ensureCompanyStorageFolders(ref, input.uid).catch((error) => {
         console.error('Failed to schedule management company storage folders:', error);
-      });
+      }), 'storage_folders');
     }
 
     return nextData as Record<string, unknown>;

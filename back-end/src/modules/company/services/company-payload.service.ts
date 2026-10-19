@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { FieldValue } from 'firebase-admin/firestore';
+import { firstString } from '../../../common/utils/values';
 
 export type CompanyMemberPermissions = {
   viewCompanyInfo: boolean;
@@ -15,12 +16,7 @@ export type CompanyMemberPermissions = {
 @Injectable()
 export class CompanyPayloadService {
   firstString(...values: unknown[]): string {
-    for (const value of values) {
-      if (typeof value === 'string' && value.trim()) return value.trim();
-      if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-    }
-
-    return '';
+    return firstString(...values);
   }
 
   toOptionalTrimmedString(value: unknown): string | undefined {

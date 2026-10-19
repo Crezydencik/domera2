@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
+import { firstNonEmptyString } from '../../../common/utils/values';
 
 export type BuildingCompanySummary = {
   companyId: string;
@@ -36,8 +37,8 @@ export class BuildingPayloadService {
     companySummary: BuildingCompanySummary,
     existing?: Record<string, unknown>,
   ) {
-    const name = this.firstString(payload.name, payload.title, existing?.name, existing?.title);
-    const address = this.firstString(payload.address, payload.street, payload.location, existing?.address, existing?.street, existing?.location);
+    const name = firstNonEmptyString(payload.name, payload.title, existing?.name, existing?.title);
+    const address = firstNonEmptyString(payload.address, payload.street, payload.location, existing?.address, existing?.street, existing?.location);
 
     if (!name) {
       throw new BadRequestException('name is required');
@@ -77,14 +78,15 @@ export class BuildingPayloadService {
       name,
       title: name,
       address,
-      country: this.firstString(payload.country, existing?.country),
-      city: this.firstString(payload.city, existing?.city),
-      postalCode: this.firstString(payload.postalCode, payload.zipCode, existing?.postalCode, existing?.zipCode),
-      houseNumber: this.firstString(payload.houseNumber, existing?.houseNumber),
-      comment: this.firstString(payload.comment, payload.buildingComment, existing?.comment, existing?.buildingComment),
+      country: firstNonEmptyString(payload.country, existing?.country),
+      city: firstNonEmptyString(payload.city, existing?.city),
+      postalCode: firstNonEmptyString(payload.postalCode, payload.zipCode, existing?.postalCode, existing?.zipCode),
+      houseNumber: firstNonEmptyString(payload.houseNumber, existing?.houseNumber),
+      comment: firstNonEmptyString(payload.comment, payload.buildingComment, existing?.comment, existing?.buildingComment),
       street: address,
       location: address,
       companyId,
+      scopeVersion: 2,
       managedBy: companySummary,
       apartmentsCount,
       apartmentIds,
@@ -104,16 +106,6 @@ export class BuildingPayloadService {
           : existing?.buildingMainMeterEntries,
       ),
     };
-  }
-
-  private firstString(...values: unknown[]) {
-    for (const value of values) {
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
-    }
-
-    return '';
   }
 
   private firstNumber(...values: unknown[]) {
@@ -319,8 +311,8 @@ export class BuildingPayloadService {
       .map((entry) => {
         if (!entry || typeof entry !== 'object') return null;
         const item = entry as Record<string, unknown>;
-        const monthKey = this.firstString(item.monthKey);
-        const readingDate = this.firstString(item.readingDate);
+        const monthKey = firstNonEmptyString(item.monthKey);
+        const readingDate = firstNonEmptyString(item.readingDate);
         const currentValue = this.optionalNumber(item.currentValue);
         const coldCurrentValue = this.optionalNumber(item.coldCurrentValue);
         const hotCurrentValue = this.optionalNumber(item.hotCurrentValue);

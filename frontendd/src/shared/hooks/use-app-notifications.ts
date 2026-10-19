@@ -159,30 +159,35 @@ async function loadOwnerMissingReadingStatus() {
   });
   const apartments = Array.isArray(response.apartments) ? response.apartments : [];
   const missingApartmentLabels: string[] = [];
+  const apartmentsWithMeters = apartments.filter((apartment) =>
+    firstString(apartment.id, apartment.apartmentId) && meterKeysFromApartment(apartment).length > 0);
+  if (apartmentsWithMeters.length === 0) return missingApartmentLabels;
 
-  await Promise.all(
-    apartments.map(async (apartment) => {
-      const apartmentId = firstString(apartment.id, apartment.apartmentId);
-      const apartmentLabel = firstString(apartment.number, apartment.apartmentNumber, apartment.readableId, apartmentId);
-      const requiredMeterKeys = meterKeysFromApartment(apartment);
+  // One request for the current month across all of the owner's apartments (was one
+  // /meter-readings request per apartment on every refresh — an N+1 in the header).
+  const [year, monthNumber] = month.split("-");
+  const readingsResponse = await apiFetch<{ items?: UnknownRecord[] }>(
+    `/meter-readings?month=${Number(monthNumber)}&year=${Number(year)}`,
+    { redirectOnAuthError: false },
+  ).catch(() => ({ items: [] as UnknownRecord[] }));
+  const submittedKeysByApartment = new Map<string, Set<string>>();
+  for (const reading of readingsResponse.items ?? []) {
+    if (readingMonthKey(reading) !== month) continue;
+    const apartmentId = firstString(reading.apartmentId);
+    if (!apartmentId) continue;
+    const keys = submittedKeysByApartment.get(apartmentId) ?? new Set<string>();
+    keys.add(firstString(reading.meterKey));
+    submittedKeysByApartment.set(apartmentId, keys);
+  }
 
-      if (!apartmentId || requiredMeterKeys.length === 0) return;
-
-      const readingsResponse = await apiFetch<{ items?: UnknownRecord[] }>(
-        `/meter-readings?apartmentId=${encodeURIComponent(apartmentId)}`,
-        { redirectOnAuthError: false },
-      ).catch(() => ({ items: [] }));
-      const submittedKeys = new Set(
-        (readingsResponse.items ?? [])
-          .filter((reading) => readingMonthKey(reading) === month)
-          .map((reading) => firstString(reading.meterKey)),
-      );
-
-      if (!requiredMeterKeys.every((key) => submittedKeys.has(key))) {
-        missingApartmentLabels.push(`№ ${apartmentLabel}`);
-      }
-    }),
-  );
+  for (const apartment of apartmentsWithMeters) {
+    const apartmentId = firstString(apartment.id, apartment.apartmentId);
+    const apartmentLabel = firstString(apartment.number, apartment.apartmentNumber, apartment.readableId, apartmentId);
+    const submittedKeys = submittedKeysByApartment.get(apartmentId) ?? new Set<string>();
+    if (!meterKeysFromApartment(apartment).every((key) => submittedKeys.has(key))) {
+      missingApartmentLabels.push(`№ ${apartmentLabel}`);
+    }
+  }
 
   return missingApartmentLabels;
 }

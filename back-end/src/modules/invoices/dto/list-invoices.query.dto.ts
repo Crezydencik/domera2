@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ListInvoicesQueryDto {
@@ -21,4 +21,15 @@ export class ListInvoicesQueryDto {
   @IsOptional()
   @IsString()
   recipientType?: string;
+
+  @ApiPropertyOptional({ description: 'Page size (1-200). When omitted, all invoices are returned (legacy behaviour).' })
+  @IsOptional()
+  @Matches(/^\d{1,3}$/)
+  limit?: string;
+
+  @ApiPropertyOptional({ description: 'Opaque cursor from the previous page (`nextCursor`).' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  cursor?: string;
 }

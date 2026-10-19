@@ -20,6 +20,11 @@ import { BuildingPayloadService } from './building-payload.service';
 import { BuildingStatsService } from './building-stats.service';
 import { BuildingPlatformNotificationService } from './building-platform-notification.service';
 import { CompanyPayloadService } from '../../company/services/company-payload.service';
+import { TooManyRequestsException } from '../../../common/errors/too-many-requests.exception';
+import { deleteMeterReminderSchedule, markMeterReminderScheduleDue } from '../../../common/utils/meter-reminder-schedule';
+import { BUILDING_STATS_COLLECTION } from '../../../common/utils/building-stats-cache';
+import { legacyScopeQuery } from '../../../common/utils/legacy-scope';
+import { firstNonEmptyString } from '../../../common/utils/values';
 
 @Injectable()
 export class BuildingCrudService {
@@ -42,18 +47,18 @@ export class BuildingCrudService {
     await this.enforceRateLimit(request, 'buildings:list', `${user.uid}:${normalizedCompanyId}`, 50);
 
     const db = this.firebaseAdminService.firestore;
-    const [legacySnap, managedBySnap, occupancyStats] = await Promise.all([
+    const [legacySnap, managedBySnap] = await Promise.all([
       db.collection('buildings').where('companyId', '==', normalizedCompanyId).get(),
-      db.collection('buildings').where('managedBy.companyId', '==', normalizedCompanyId).get(),
-      includeOccupancy
-        ? this.buildingStatsService.getBuildingOccupancyStats(normalizedCompanyId)
-        : Promise.resolve(undefined),
+      legacyScopeQuery(() => db.collection('buildings').where('managedBy.companyId', '==', normalizedCompanyId).get()),
     ]);
 
     const merged = new Map<string, Record<string, unknown>>();
     for (const doc of [...legacySnap.docs, ...managedBySnap.docs]) {
       merged.set(doc.id, doc.data() as Record<string, unknown>);
     }
+    const occupancyStats = includeOccupancy
+      ? await this.buildingStatsService.getStatsForBuildings(Array.from(merged.keys()))
+      : undefined;
 
     return {
       items: Array.from(merged.entries()).map(([id, data]) =>
@@ -80,7 +85,8 @@ export class BuildingCrudService {
 
     if (companyId) this.assertManagementCompanyScope(user, companyId);
 
-    const occupancyStats = companyId ? await this.buildingStatsService.getBuildingOccupancyStats(companyId) : undefined;
+    // Stats of this one building only (was: every apartment of the company).
+    const occupancyStats = await this.buildingStatsService.getStatsForBuildings([snap.id]);
 
     return this.buildingStatsService.applyOccupancyStats(snap.id, data, occupancyStats?.get(snap.id));
   }
@@ -123,7 +129,7 @@ export class BuildingCrudService {
 
     if (this.isBuildingCreationRequestStatus(current.status)) {
       const deletedAt = new Date();
-      const requestedBy = this.firstString(current.requestedBy);
+      const requestedBy = firstNonEmptyString(current.requestedBy);
       const batch = db.batch();
 
       batch.delete(ref);
@@ -172,7 +178,9 @@ export class BuildingCrudService {
     const updatedAt = new Date();
     const batch = db.batch();
     batch.set(ref, { ...normalizedPayload, updatedAt }, { merge: true });
-    const normalizedStatus = this.firstString(normalizedPayload.status).toLowerCase();
+    // Reading config may have changed: let the reminder job re-evaluate this building now.
+    markMeterReminderScheduleDue(db, batch, buildingId, updatedAt);
+    const normalizedStatus = firstNonEmptyString(normalizedPayload.status).toLowerCase();
     if (!['pending', 'rejected', 'cancelled', 'canceled'].includes(normalizedStatus)) {
       batch.set(
         db.collection('companies').doc(companyId),
@@ -209,7 +217,7 @@ export class BuildingCrudService {
 
     if (this.isBuildingCreationRequestStatus(current.status)) {
       const deletedAt = new Date();
-      const requestedBy = this.firstString(current.requestedBy);
+      const requestedBy = firstNonEmptyString(current.requestedBy);
       const batch = db.batch();
 
       batch.delete(ref);
@@ -277,6 +285,8 @@ export class BuildingCrudService {
 
     const batch = db.batch();
     batch.delete(ref);
+    deleteMeterReminderSchedule(db, batch, buildingId);
+    batch.delete(db.collection(BUILDING_STATS_COLLECTION).doc(buildingId));
     batch.set(
       db.collection('companies').doc(companyId),
       {
@@ -359,7 +369,7 @@ export class BuildingCrudService {
   }
 
   private effectiveManagementCompanyId(user: RequestUser): string {
-    const companyId = this.firstString(user.companyId);
+    const companyId = firstNonEmptyString(user.companyId);
     if (companyId) return companyId;
     if (user.role === 'ManagementCompany') return user.uid;
     throw new ForbiddenException('Company scope is required');
@@ -382,17 +392,7 @@ export class BuildingCrudService {
       limit,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
-  }
-
-  private firstString(...values: unknown[]) {
-    for (const value of values) {
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
-    }
-
-    return '';
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
   }
 
   private isBuildingCreationRequestStatus(value: unknown) {
@@ -406,9 +406,9 @@ export class BuildingCrudService {
 
     return {
       companyId,
-      companyName: this.firstString(data.companyName, data.name) || companyId,
-      companyEmail: this.firstString(data.companyEmail, data.contactEmail, data.email) || undefined,
-      companyPhone: this.firstString(data.companyPhone, data.contactPhone, data.phone) || undefined,
+      companyName: firstNonEmptyString(data.companyName, data.name) || companyId,
+      companyEmail: firstNonEmptyString(data.companyEmail, data.contactEmail, data.email) || undefined,
+      companyPhone: firstNonEmptyString(data.companyPhone, data.contactPhone, data.phone) || undefined,
     };
   }
 

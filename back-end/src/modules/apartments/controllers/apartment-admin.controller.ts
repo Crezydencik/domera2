@@ -32,13 +32,14 @@ export class ApartmentAdminController {
   }
 
   @Post('migrate/readable-ids')
-  @ApiOperation({ summary: 'Migrate apartments by generating readable IDs (admin only)' })
-  @Roles('ManagementCompany')
+  @ApiOperation({ summary: 'Migrate apartments by generating readable IDs (platform admin only)' })
+  // Touches every apartment on the platform, not only the caller's company.
+  @Roles('PlatformAdmin')
   migrateReadableIds(
     @CurrentUser() user: RequestUser,
   ) {
-    if (user.role !== 'ManagementCompany') {
-      throw new ForbiddenException('Only management company users can run migration');
+    if (user.role !== 'PlatformAdmin') {
+      throw new ForbiddenException('Only platform administrators can run migration');
     }
     return this.apartmentsService.migrateApartmentReadableIds();
   }
@@ -54,6 +55,25 @@ export class ApartmentAdminController {
     @Query('apply') apply?: string,
   ) {
     return this.apartmentsService.migrateCanonicalScope({
+      request,
+      user,
+      cursor,
+      limit: limit ? Number(limit) : undefined,
+      apply: apply === 'true',
+    });
+  }
+
+  @Post('migrate/member-keys')
+  @ApiOperation({ summary: 'Preview or apply a bounded memberKeys backfill (platform admin only)' })
+  @Roles('PlatformAdmin')
+  memberKeysMigration(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+    @Query('apply') apply?: string,
+  ) {
+    return this.apartmentsService.migrateMemberKeys({
       request,
       user,
       cursor,

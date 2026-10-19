@@ -4,6 +4,7 @@ import { RequestUser } from '../../../common/auth/request-user.type';
 import { NotificationAccessService } from './notification-access.service';
 import { NotificationRepositoryService } from './notification-repository.service';
 import { NotificationSettingsService } from './notification-settings.service';
+import { sanitizeClientPayload } from '../../../common/utils/client-payload';
 
 @Injectable()
 export class NotificationQueryService {
@@ -72,7 +73,7 @@ export class NotificationQueryService {
 
     const ref = this.repositoryService.userNotificationsCollection(targetUserId).doc();
     const data = {
-      ...payload,
+      ...sanitizeClientPayload(payload, { protectedKeys: ['notificationId', 'userId'] }),
       notificationId: ref.id,
       userId: targetUserId,
       read: Boolean(payload.read ?? false),

@@ -5,6 +5,7 @@ import { FirebaseAdminService } from '../../../common/infrastructure/firebase/fi
 import { MeterReadingAccessService } from './meter-reading-access.service';
 import { MeterReadingBuildingService } from './meter-reading-building.service';
 import { MeterReadingHelperService } from './meter-reading-helper.service';
+import { firestoreDateToIso } from '../../../common/utils/firestore-dates';
 
 @Injectable()
 export class MeterReadingQueryService {
@@ -115,6 +116,15 @@ export class MeterReadingQueryService {
   private filterByPeriod(items: Record<string, unknown>[], period?: { month: number; year: number }) {
     if (!period) return items;
 
-    return items.filter((item) => Number(item.month) === period.month && Number(item.year) === period.year);
+    const key = `${period.year}-${String(period.month).padStart(2, '0')}`;
+    return items.filter((item) => {
+      const month = Number(item.month);
+      const year = Number(item.year);
+      if (Number.isFinite(month) && Number.isFinite(year) && month > 0) {
+        return month === period.month && year === period.year;
+      }
+      // Legacy entries without month/year: use the submission date (same rule as the frontend).
+      return (firestoreDateToIso(item.submittedAt ?? item.createdAt) ?? '').slice(0, 7) === key;
+    });
   }
 }

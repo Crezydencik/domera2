@@ -15,6 +15,9 @@ import { BuildingPayloadService } from './building-payload.service';
 import { BuildingStorageService } from './building-storage.service';
 import { BuildingPlatformBillingService } from './building-platform-billing.service';
 import { BuildingPlatformNotificationService } from './building-platform-notification.service';
+import { TooManyRequestsException } from '../../../common/errors/too-many-requests.exception';
+import { markMeterReminderScheduleDue } from '../../../common/utils/meter-reminder-schedule';
+import { firstNonEmptyString } from '../../../common/utils/values';
 
 @Injectable()
 export class BuildingCreationRequestService {
@@ -50,7 +53,7 @@ export class BuildingCreationRequestService {
     this.assertManagement(user);
     this.assertManagementCompanyMutation(user);
 
-    const normalizedCompanyId = this.firstString(payload.companyId, this.effectiveManagementCompanyId(user));
+    const normalizedCompanyId = firstNonEmptyString(payload.companyId, this.effectiveManagementCompanyId(user));
     if (!normalizedCompanyId) throw new BadRequestException('companyId is required');
     this.assertManagementCompanyScope(user, normalizedCompanyId);
 
@@ -65,7 +68,7 @@ export class BuildingCreationRequestService {
       normalizedCompanyId,
       companySummary,
     );
-    const explicitRequestId = this.firstString(
+    const explicitRequestId = firstNonEmptyString(
       payload.requestId,
       rawBuilding.requestId,
       rawBuilding.buildingId,
@@ -84,7 +87,7 @@ export class BuildingCreationRequestService {
       }
 
       const existingData = existingSnap.data() as Record<string, unknown>;
-      const existingCompanyId = this.firstString(
+      const existingCompanyId = firstNonEmptyString(
         existingData.companyId,
         (existingData.managedBy as Record<string, unknown> | undefined)?.companyId,
       );
@@ -92,7 +95,7 @@ export class BuildingCreationRequestService {
         throw new ForbiddenException('Access denied for building request');
       }
 
-      const existingStatus = this.firstString(existingData.status).toLowerCase();
+      const existingStatus = firstNonEmptyString(existingData.status).toLowerCase();
       if (existingStatus === 'pending') {
         return { success: true, alreadyPending: true, status: 'pending', requestId: explicitRequestId };
       }
@@ -109,9 +112,9 @@ export class BuildingCreationRequestService {
       const existingPendingBuilding = sameCompanyBuildings.docs.find((doc) => {
         const data = doc.data() as Record<string, unknown>;
         return (
-          this.firstString(data.status).toLowerCase() === 'pending'
-          && this.firstString(data.name, data.title).toLowerCase() === buildingPayload.name.toLowerCase()
-          && this.firstString(data.address, data.street, data.location).toLowerCase() === buildingPayload.address.toLowerCase()
+          firstNonEmptyString(data.status).toLowerCase() === 'pending'
+          && firstNonEmptyString(data.name, data.title).toLowerCase() === buildingPayload.name.toLowerCase()
+          && firstNonEmptyString(data.address, data.street, data.location).toLowerCase() === buildingPayload.address.toLowerCase()
         );
       });
 
@@ -127,8 +130,8 @@ export class BuildingCreationRequestService {
     const requestedAt = new Date();
     const requesterSnap = await db.collection('users').doc(user.uid).get();
     const requesterData = requesterSnap.exists ? (requesterSnap.data() as Record<string, unknown>) : {};
-    const requesterEmail = this.firstString(user.email, requesterData.email);
-    const requesterName = this.firstString(
+    const requesterEmail = firstNonEmptyString(user.email, requesterData.email);
+    const requesterName = firstNonEmptyString(
       requesterData.fullName,
       [requesterData.firstName, requesterData.lastName].filter((value) => typeof value === 'string' && value.trim()).join(' '),
       requesterEmail,
@@ -235,14 +238,14 @@ export class BuildingCreationRequestService {
       ? (pendingBuildingSnap.data() as Record<string, unknown>)
       : undefined;
 
-    if (pendingBuildingData && this.firstString(pendingBuildingData.status).toLowerCase() === 'pending') {
-      const companyId = this.firstString(pendingBuildingData.companyId, (pendingBuildingData.managedBy as Record<string, unknown> | undefined)?.companyId);
+    if (pendingBuildingData && firstNonEmptyString(pendingBuildingData.status).toLowerCase() === 'pending') {
+      const companyId = firstNonEmptyString(pendingBuildingData.companyId, (pendingBuildingData.managedBy as Record<string, unknown> | undefined)?.companyId);
       if (!companyId) throw new BadRequestException('companyId is missing for request');
 
-      const requestedBy = this.firstString(pendingBuildingData.requestedBy);
+      const requestedBy = firstNonEmptyString(pendingBuildingData.requestedBy);
       const reviewedAt = new Date();
       const requestStatus = approved ? 'approved' : 'rejected';
-      const reviewComment = this.firstString(options.reviewComment, options.rejectionComment, options.comment);
+      const reviewComment = firstNonEmptyString(options.reviewComment, options.rejectionComment, options.comment);
       const subscriptionPricePerApartment = this.optionalNonNegativeNumber(
         options.subscriptionPricePerApartment ?? pendingBuildingData.subscriptionPricePerApartment,
         'subscriptionPricePerApartment',
@@ -269,7 +272,7 @@ export class BuildingCreationRequestService {
             companyId,
             companyName: companySummary.companyName,
             requestedBy,
-            requesterEmail: this.firstString(pendingBuildingData.requesterEmail),
+            requesterEmail: firstNonEmptyString(pendingBuildingData.requesterEmail),
             buildingId: pendingBuildingRef.id,
             buildingName: normalizedBuilding.name,
             buildingAddress: normalizedBuilding.address,
@@ -364,6 +367,7 @@ export class BuildingCreationRequestService {
         );
       }
 
+      if (approved) markMeterReminderScheduleDue(db, batch, normalizedRequestId, reviewedAt);
       await this.platformNotificationService.markCreationRequestNotificationsRead(batch, normalizedRequestId, reviewedAt);
       await batch.commit();
 
@@ -406,12 +410,12 @@ export class BuildingCreationRequestService {
       ? (pendingBuildingSnap.data() as Record<string, unknown>)
       : undefined;
 
-    if (pendingBuildingData && this.firstString(pendingBuildingData.status).toLowerCase() === 'pending') {
-      const companyId = this.firstString(pendingBuildingData.companyId, (pendingBuildingData.managedBy as Record<string, unknown> | undefined)?.companyId);
+    if (pendingBuildingData && firstNonEmptyString(pendingBuildingData.status).toLowerCase() === 'pending') {
+      const companyId = firstNonEmptyString(pendingBuildingData.companyId, (pendingBuildingData.managedBy as Record<string, unknown> | undefined)?.companyId);
       if (!companyId) throw new BadRequestException('companyId is missing for request');
       this.assertManagementCompanyScope(user, companyId);
 
-      const requestedBy = this.firstString(pendingBuildingData.requestedBy);
+      const requestedBy = firstNonEmptyString(pendingBuildingData.requestedBy);
       if (requestedBy && requestedBy !== user.uid && user.role !== 'Accountant') {
         throw new ForbiddenException('Only the requester can cancel this building creation request');
       }
@@ -481,7 +485,7 @@ export class BuildingCreationRequestService {
   }
 
   private effectiveManagementCompanyId(user: RequestUser): string {
-    const companyId = this.firstString(user.companyId);
+    const companyId = firstNonEmptyString(user.companyId);
     if (companyId) return companyId;
     if (user.role === 'ManagementCompany') return user.uid;
     throw new ForbiddenException('Company scope is required');
@@ -504,17 +508,7 @@ export class BuildingCreationRequestService {
       limit,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
-  }
-
-  private firstString(...values: unknown[]) {
-    for (const value of values) {
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
-    }
-
-    return '';
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
   }
 
   private optionalNonNegativeNumber(value: unknown, fieldName: string): number | undefined {
@@ -536,9 +530,9 @@ export class BuildingCreationRequestService {
 
     return {
       companyId,
-      companyName: this.firstString(data.companyName, data.name) || companyId,
-      companyEmail: this.firstString(data.companyEmail, data.contactEmail, data.email) || undefined,
-      companyPhone: this.firstString(data.companyPhone, data.contactPhone, data.phone) || undefined,
+      companyName: firstNonEmptyString(data.companyName, data.name) || companyId,
+      companyEmail: firstNonEmptyString(data.companyEmail, data.contactEmail, data.email) || undefined,
+      companyPhone: firstNonEmptyString(data.companyPhone, data.contactPhone, data.phone) || undefined,
     };
   }
 

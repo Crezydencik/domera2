@@ -13,7 +13,7 @@ import {
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { FirebaseAuthGuard, OptionalFirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
 import { RequestUser } from '../../common/auth/request-user.type';
-import { PROPERTY_MEMBER_ROLES, STAFF_ROLES } from '../../common/auth/role.constants';
+import { PROPERTY_MEMBER_ROLES } from '../../common/auth/role.constants';
 import { Roles } from '../../common/auth/roles.decorator';
 import { RolesGuard } from '../../common/auth/roles.guard';
 import { InvitationsService } from './invitations.service';

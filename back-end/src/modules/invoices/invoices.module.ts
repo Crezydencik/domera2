@@ -5,10 +5,21 @@ import { InvoicesController } from './invoices.controller';
 import { InvoicesService } from './invoices.service';
 import { InvoiceUploadAuthGuard } from './invoice-upload-auth.guard';
 import { EmailModule } from '../emails/email.module';
+import { InvoicePdfStorageService } from './services/invoice-pdf-storage.service';
+import { InvoiceUploadHistoryService } from './services/invoice-upload-history.service';
+import { InvoiceZipExtractor } from './services/invoice-zip-extractor';
 
 @Module({
   imports: [EmailModule],
   controllers: [InvoicesController],
-  providers: [InvoicesService, FirebaseAuthGuard, RolesGuard, InvoiceUploadAuthGuard],
+  providers: [
+    InvoicesService,
+    InvoicePdfStorageService,
+    InvoiceUploadHistoryService,
+    InvoiceZipExtractor,
+    FirebaseAuthGuard,
+    RolesGuard,
+    InvoiceUploadAuthGuard,
+  ],
 })
 export class InvoicesModule {}

@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { ApiBearerAuth, ApiCookieAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/auth/current-user.decorator';
@@ -9,9 +21,11 @@ import { RolesGuard } from '../../../common/auth/roles.guard';
 import { PROPERTY_MEMBER_ROLES, STAFF_ROLES } from '../../../common/auth/role.constants';
 import { ApartmentsService } from '../apartments.service';
 import { CreateApartmentDto, UpdateApartmentDto } from '../dto/create-apartment.dto';
+import { BuildingStatsInvalidationInterceptor } from '../../../common/interceptors/building-stats-invalidation.interceptor';
 
 @ApiTags('Apartments')
 @Controller('apartments')
+@UseInterceptors(BuildingStatsInvalidationInterceptor)
 @UseGuards(FirebaseAuthGuard, RolesGuard)
 @Roles('ManagementCompany', 'Accountant')
 @ApiBearerAuth()

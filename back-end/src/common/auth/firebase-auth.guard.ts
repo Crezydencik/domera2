@@ -8,14 +8,23 @@ import { parse as parseCookie } from 'cookie';
 import { createHash } from 'node:crypto';
 import { DecodedIdToken } from 'firebase-admin/auth';
 import { FirebaseAdminService } from '../infrastructure/firebase/firebase-admin.service';
-import { resolveAccountType, resolveUserRole } from './role.constants';
+import {
+  isPlatformAdminRole,
+  isPropertyMemberRole,
+  isStaffRole,
+  resolveAccountType,
+  resolveUserRole,
+} from './role.constants';
 import { RequestUser } from './request-user.type';
 
 const SESSION_COOKIE_NAME = '__session';
 const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED !== 'false';
+// Verification with checkRevoked=true is a network round-trip to Firebase Auth on every request.
+// A short cache keeps revocation latency bounded (≤ TTL per instance) while removing that call
+// from the hot path. Set FIREBASE_AUTH_CACHE_TTL_MS=0 to disable.
 const AUTH_CACHE_TTL_MS = Math.max(
   0,
-  Number(process.env.FIREBASE_AUTH_CACHE_TTL_MS ?? (CHECK_REVOKED_TOKENS ? 0 : 60000)),
+  Number(process.env.FIREBASE_AUTH_CACHE_TTL_MS ?? (CHECK_REVOKED_TOKENS ? 30000 : 60000)),
 );
 const USER_PROFILE_CACHE_TTL_MS = Math.max(
   0,
@@ -33,6 +42,7 @@ type AuthToken = { source: TokenSource; value: string };
 type CacheEntry<T> = {
   expiresAt: number;
   promise: Promise<T>;
+  uid?: string;
 };
 type UserProfileHydration = {
   role?: RequestUser['role'];
@@ -85,7 +95,7 @@ export class FirebaseAuthGuard implements CanActivate {
       let companyId = toOptionalString(decoded.companyId);
       let apartmentId = toOptionalString(decoded.apartmentId);
 
-      if (!role || !accountType || !companyId || !apartmentId) {
+      if (this.needsProfileHydration(role, accountType, companyId, apartmentId)) {
         try {
           const profile = await this.getUserProfileHydration(decoded.uid);
           if (profile) {
@@ -113,6 +123,37 @@ export class FirebaseAuthGuard implements CanActivate {
     } catch {
       throw new UnauthorizedException('Invalid authentication token');
     }
+  }
+
+  /**
+   * Drops cached token verification and profile for a user on this instance.
+   * Call after role / company / apartment changes or token revocation.
+   */
+  static invalidateUser(uid: string | undefined | null): void {
+    if (!uid) return;
+    FirebaseAuthGuard.userProfileCache.delete(uid);
+    for (const [key, entry] of FirebaseAuthGuard.authCache) {
+      if (entry.uid === uid) FirebaseAuthGuard.authCache.delete(key);
+    }
+  }
+
+  /**
+   * Profile is read only when the token does not carry what the role actually needs:
+   * staff need companyId, property members need apartmentId (optional), admins need nothing.
+   * Previously the profile was read whenever ANY of the four fields was missing, i.e. on
+   * practically every request (staff never have apartmentId, residents never have companyId).
+   */
+  private needsProfileHydration(
+    role: RequestUser['role'],
+    accountType: RequestUser['accountType'],
+    companyId: string | undefined,
+    apartmentId: string | undefined,
+  ): boolean {
+    if (!role || !accountType) return true;
+    if (isPlatformAdminRole(role)) return false;
+    if (isStaffRole(role)) return !companyId;
+    if (isPropertyMemberRole(role)) return !apartmentId;
+    return false;
   }
 
   private extractToken(headers: Record<string, string | undefined>):
@@ -156,6 +197,7 @@ export class FirebaseAuthGuard implements CanActivate {
     const entry: CacheEntry<DecodedIdToken> = {
       expiresAt: now + AUTH_CACHE_TTL_MS,
       promise: promise.then((decoded) => {
+        entry.uid = decoded.uid;
         const tokenExpiresAt = typeof decoded.exp === 'number' ? decoded.exp * 1000 : entry.expiresAt;
         entry.expiresAt = Math.min(entry.expiresAt, tokenExpiresAt);
         return decoded;

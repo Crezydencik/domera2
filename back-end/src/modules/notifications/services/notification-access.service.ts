@@ -1,8 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Request } from 'express';
 import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../../common/services/rate-limit.service';
+import { TooManyRequestsException } from '../../../common/errors/too-many-requests.exception';
 
 @Injectable()
 export class NotificationAccessService {
@@ -44,6 +45,6 @@ export class NotificationAccessService {
       limit,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
   }
 }

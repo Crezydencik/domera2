@@ -1,73 +1,110 @@
 import { Injectable } from '@nestjs/common';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
+import { BUILDING_STATS_COLLECTION, BUILDING_STATS_TTL_MS } from '../../../common/utils/building-stats-cache';
+import { legacyScopeQuery } from '../../../common/utils/legacy-scope';
+import { firstNonEmptyString } from '../../../common/utils/values';
 
 export type BuildingOccupancyStats = {
   apartmentsCount: number;
   occupiedApartments: number;
 };
 
+const STATS_FIELDS = ['buildingId', 'houseId', 'residentId', 'ownerActivated', 'tenants'] as const;
+const RECOMPUTE_CONCURRENCY = 10;
+
 @Injectable()
 export class BuildingStatsService {
   constructor(private readonly firebaseAdminService: FirebaseAdminService) {}
 
-  async getBuildingOccupancyStats(companyId: string) {
+  /**
+   * Stats for the given buildings. Fresh values come from `building_stats` (one batched read);
+   * only stale/missing buildings are recomputed, and only from their own apartments.
+   * Previously every GET /buildings scanned all apartments of the company (admin: of the platform).
+   */
+  async getStatsForBuildings(buildingIds: string[], now = new Date()): Promise<Map<string, BuildingOccupancyStats>> {
     const db = this.firebaseAdminService.firestore;
-    const [byArray, byLegacy] = await Promise.all([
-      db.collection('apartments').where('companyIds', 'array-contains', companyId).get(),
-      db.collection('apartments').where('companyId', '==', companyId).get(),
+    const ids = Array.from(new Set(buildingIds.map((id) => id?.trim()).filter((id): id is string => Boolean(id))));
+    const result = new Map<string, BuildingOccupancyStats>();
+    const stale: string[] = [];
+
+    for (let index = 0; index < ids.length; index += 300) {
+      const refs = ids.slice(index, index + 300).map((id) => db.collection(BUILDING_STATS_COLLECTION).doc(id));
+      for (const snap of await db.getAll(...refs)) {
+        const data = snap.exists ? snap.data() as Record<string, unknown> : undefined;
+        if (data && this.isFresh(data, now)) {
+          result.set(snap.id, {
+            apartmentsCount: this.firstNumber(data.apartmentsCount),
+            occupiedApartments: this.firstNumber(data.occupiedApartments),
+          });
+        } else {
+          stale.push(snap.id);
+        }
+      }
+    }
+
+    for (let index = 0; index < stale.length; index += RECOMPUTE_CONCURRENCY) {
+      const chunk = stale.slice(index, index + RECOMPUTE_CONCURRENCY);
+      const computed = await Promise.all(chunk.map((id) => this.recomputeBuildingStats(id, now)));
+      chunk.forEach((id, position) => result.set(id, computed[position]!));
+    }
+
+    return result;
+  }
+
+  /** Recomputes one building from its apartments and stores the result. */
+  async recomputeBuildingStats(buildingId: string, startedAt = new Date()): Promise<BuildingOccupancyStats> {
+    const db = this.firebaseAdminService.firestore;
+    const [byBuildingId, byLegacyHouseId] = await Promise.all([
+      db.collection('apartments').where('buildingId', '==', buildingId).select(...STATS_FIELDS).get(),
+      legacyScopeQuery(() => db.collection('apartments').where('houseId', '==', buildingId).select(...STATS_FIELDS).get()),
     ]);
 
-    const stats = new Map<string, BuildingOccupancyStats>();
     const merged = new Map<string, Record<string, unknown>>();
-
-    for (const doc of [...byArray.docs, ...byLegacy.docs]) {
-      merged.set(doc.id, doc.data() as Record<string, unknown>);
+    for (const doc of byBuildingId.docs) merged.set(doc.id, doc.data() as Record<string, unknown>);
+    for (const doc of byLegacyHouseId.docs) {
+      const data = doc.data() as Record<string, unknown>;
+      // An apartment moved to another building keeps its old houseId: buildingId wins.
+      const ownBuildingId = firstNonEmptyString(data.buildingId);
+      if (ownBuildingId && ownBuildingId !== buildingId) continue;
+      merged.set(doc.id, data);
     }
 
+    const stats: BuildingOccupancyStats = { apartmentsCount: merged.size, occupiedApartments: 0 };
     for (const apartment of merged.values()) {
-      const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId.trim() : '';
-      if (!buildingId) {
-        continue;
-      }
-
-      const current = stats.get(buildingId) ?? { apartmentsCount: 0, occupiedApartments: 0 };
-      current.apartmentsCount += 1;
-      if (this.isApartmentOccupied(apartment)) {
-        current.occupiedApartments += 1;
-      }
-      stats.set(buildingId, current);
+      if (this.isApartmentOccupied(apartment)) stats.occupiedApartments += 1;
     }
+
+    // computedAt = start of the computation: a write that lands meanwhile sets a newer staleAt,
+    // so this result is treated as stale on the next read.
+    await db.collection(BUILDING_STATS_COLLECTION).doc(buildingId).set(
+      { ...stats, buildingId, computedAt: startedAt },
+      { merge: true },
+    ).catch(() => undefined);
 
     return stats;
   }
 
-  async getAllBuildingOccupancyStats() {
-    const snap = await this.firebaseAdminService.firestore.collection('apartments').get();
-    const stats = new Map<string, BuildingOccupancyStats>();
+  private isFresh(data: Record<string, unknown>, now: Date): boolean {
+    const computedAt = this.toMillis(data.computedAt);
+    if (computedAt === null) return false;
+    const staleAt = this.toMillis(data.staleAt);
+    if (staleAt !== null && staleAt >= computedAt) return false;
+    return now.getTime() - computedAt < BUILDING_STATS_TTL_MS;
+  }
 
-    for (const doc of snap.docs) {
-      const apartment = doc.data() as Record<string, unknown>;
-      const buildingId = this.firstString(apartment.buildingId, apartment.houseId);
-      if (!buildingId) {
-        continue;
-      }
-
-      const current = stats.get(buildingId) ?? { apartmentsCount: 0, occupiedApartments: 0 };
-      current.apartmentsCount += 1;
-      if (this.isApartmentOccupied(apartment)) {
-        current.occupiedApartments += 1;
-      }
-      stats.set(buildingId, current);
+  private toMillis(value: unknown): number | null {
+    if (value instanceof Date) return value.getTime();
+    if (value && typeof value === 'object' && typeof (value as { toMillis?: () => number }).toMillis === 'function') {
+      return (value as { toMillis: () => number }).toMillis();
     }
-
-    return stats;
+    return null;
   }
 
   async buildingHasLinkedApartments(buildingId: string) {
     const db = this.firebaseAdminService.firestore;
     const [byBuildingId, byLegacyHouseId] = await Promise.all([
       db.collection('apartments').where('buildingId', '==', buildingId).limit(1).get(),
-      db.collection('apartments').where('houseId', '==', buildingId).limit(1).get(),
+      legacyScopeQuery(() => db.collection('apartments').where('houseId', '==', buildingId).limit(1).get()),
     ]);
 
     return !byBuildingId.empty || !byLegacyHouseId.empty;
@@ -107,16 +144,6 @@ export class BuildingStatsService {
 
     const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
     return tenants.some((tenant) => tenant && typeof tenant === 'object');
-  }
-
-  private firstString(...values: unknown[]) {
-    for (const value of values) {
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
-    }
-
-    return '';
   }
 
   private firstNumber(...values: unknown[]) {

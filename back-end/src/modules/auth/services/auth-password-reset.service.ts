@@ -8,6 +8,7 @@ import { ConfirmPasswordResetDto } from '../dto/confirm-password-reset.dto';
 import { SendPasswordResetDto } from '../dto/send-password-reset.dto';
 import { AuthEmailService } from './auth-email.service';
 import { FirebaseIdentityToolkitService } from './firebase-identity-toolkit.service';
+import { runInBackground } from '../../../common/utils/background';
 
 @Injectable()
 export class AuthPasswordResetService {
@@ -25,12 +26,12 @@ export class AuthPasswordResetService {
       oobCode,
     });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'auth.password_reset_preview',
       status: 'success',
       targetEmail: result.email,
-    });
+    }), 'audit');
 
     return {
       email: result.email ? this.normalizeEmail(result.email) : '',
@@ -43,11 +44,11 @@ export class AuthPasswordResetService {
       newPassword: input.newPassword,
     });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'auth.password_reset_confirm',
       status: 'success',
-    });
+    }), 'audit');
 
     return { success: true };
   }
@@ -74,7 +75,7 @@ export class AuthPasswordResetService {
         throw error;
       }
 
-      void this.auditLogService.write({
+      runInBackground(this.auditLogService.write({
         request,
         action: 'auth.password_reset_send',
         status: 'error',
@@ -83,7 +84,7 @@ export class AuthPasswordResetService {
           skipped: 'rate-limit-unavailable',
           providerMessage: error instanceof Error ? error.message : 'unknown',
         },
-      });
+      }), 'audit');
     }
 
     const origin = (
@@ -99,7 +100,7 @@ export class AuthPasswordResetService {
     } catch (error) {
       const code = (error as { code?: string } | undefined)?.code;
 
-      void this.auditLogService.write({
+      runInBackground(this.auditLogService.write({
         request,
         action: 'auth.password_reset_send',
         status: 'success',
@@ -108,7 +109,7 @@ export class AuthPasswordResetService {
           skipped: code === 'auth/user-not-found' ? 'user-not-found' : 'link-generation-failed',
           providerCode: code,
         },
-      });
+      }), 'audit');
 
       return { success: true, message: 'Vēstule nosūtīta' };
     }
@@ -126,7 +127,7 @@ export class AuthPasswordResetService {
     try {
       ({ errorMessage } = await this.authEmailService.sendPasswordReset(email, lang, resetLink));
     } catch (error) {
-      void this.auditLogService.write({
+      runInBackground(this.auditLogService.write({
         request,
         action: 'auth.password_reset_send',
         status: 'success',
@@ -136,30 +137,30 @@ export class AuthPasswordResetService {
           providerMessage: error instanceof Error ? error.message : 'unknown',
           lang,
         },
-      });
+      }), 'audit');
 
       return { success: true, message: 'Vēstule nosūtīta' };
     }
 
     if (errorMessage) {
-      void this.auditLogService.write({
+      runInBackground(this.auditLogService.write({
         request,
         action: 'auth.password_reset_send',
         status: 'success',
         targetEmail: email,
         metadata: { skipped: 'resend-error', providerMessage: errorMessage, lang },
-      });
+      }), 'audit');
 
       return { success: true, message: 'Vēstule nosūtīta' };
     }
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'auth.password_reset_send',
       status: 'success',
       targetEmail: email,
       metadata: { lang },
-    });
+    }), 'audit');
 
     return { success: true, message: 'Vēstule nosūtīta' };
   }

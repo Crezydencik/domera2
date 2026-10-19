@@ -19,6 +19,9 @@ import {
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
 import { BuildingsService } from '../buildings/buildings.service';
+import { TooManyRequestsException } from '../../common/errors/too-many-requests.exception';
+import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
+import { refreshApartmentMemberKeys } from '../../common/utils/apartment-members';
 
 type PropertyMembership = {
   hasOwnership: boolean;
@@ -452,6 +455,7 @@ export class UsersService {
 
         if (Object.keys(update).length > 1) {
           await doc.ref.set(update, { merge: true });
+          await refreshApartmentMemberKeys(db, doc.id).catch(() => undefined);
         }
       }),
     );
@@ -601,7 +605,7 @@ export class UsersService {
       limit,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
   }
 
   async byId(request: Request, user: RequestUser, userId: string) {
@@ -856,6 +860,7 @@ export class UsersService {
     };
 
     await ref.set(data, { merge: true });
+    FirebaseAuthGuard.invalidateUser(userId);
     await this.syncLinkedApartmentProfiles(userId, currentData, data);
     return { success: true };
   }
@@ -891,6 +896,7 @@ export class UsersService {
 
     const nextData = { ...current, ...normalizedPayload, updatedAt: new Date() };
     await ref.set({ ...normalizedPayload, updatedAt: nextData.updatedAt }, { merge: true });
+    FirebaseAuthGuard.invalidateUser(userId);
     await this.syncLinkedApartmentProfiles(userId, current, nextData);
     return { success: true };
   }

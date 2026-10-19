@@ -11,6 +11,17 @@ export type EmailLogType =
   | 'meterReadingReminder'
   | 'notification';
 
+export const EMAIL_LOG_TYPES = [
+  'registrationCode',
+  'passwordReset',
+  'ownerInvitation',
+  'tenantInvitation',
+  'tenantInvitedByOwner',
+  'invoiceGenerated',
+  'meterReadingReminder',
+  'notification',
+] as const satisfies readonly EmailLogType[];
+
 export type EmailLogStatus = 'success' | 'error';
 
 export type EmailLogInput = {
@@ -77,6 +88,63 @@ export class EmailLogService {
     if (query.buildingId) ref = ref.where('buildingId', '==', query.buildingId);
     if (query.apartmentId) ref = ref.where('apartmentId', '==', query.apartmentId);
 
+    try {
+      return await this.getStatsViaAggregation(ref, query.type);
+    } catch (error) {
+      if (!this.isMissingIndexError(error)) throw error;
+      this.logger.warn(`email.log.stats.index_missing fallback=full_read reason=${error instanceof Error ? error.message : String(error)}`);
+      return this.getStatsFromDocuments(ref);
+    }
+  }
+
+  /**
+   * count() aggregations (billed per 1000 index entries) instead of downloading every log entry.
+   * "error" = total - success, matching the document-based variant (anything not 'success').
+   */
+  private async getStatsViaAggregation(ref: FirebaseFirestore.Query, fixedType?: EmailLogType) {
+    const last30DaysStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const count = async (query: FirebaseFirestore.Query) => (await query.count().get()).data().count;
+    const types: Array<EmailLogType> = fixedType ? [fixedType] : [...EMAIL_LOG_TYPES];
+
+    const [total, success, last30Total, last30Success, lastSnap, perType] = await Promise.all([
+      count(ref),
+      count(ref.where('status', '==', 'success')),
+      count(ref.where('createdAt', '>=', last30DaysStart)),
+      count(ref.where('status', '==', 'success').where('createdAt', '>=', last30DaysStart)),
+      ref.orderBy('createdAt', 'desc').limit(1).get(),
+      Promise.all(types.map(async (type) => {
+        const typed = fixedType ? ref : ref.where('type', '==', type);
+        const [typeTotal, typeSuccess] = await Promise.all([count(typed), count(typed.where('status', '==', 'success'))]);
+        return { type, total: typeTotal, success: typeSuccess };
+      })),
+    ]);
+
+    const byType: Record<string, { total: number; success: number; error: number }> = {};
+    let knownTotal = 0;
+    let knownSuccess = 0;
+    for (const item of perType) {
+      if (item.total === 0) continue;
+      byType[item.type] = { total: item.total, success: item.success, error: item.total - item.success };
+      knownTotal += item.total;
+      knownSuccess += item.success;
+    }
+    if (!fixedType && total > knownTotal) {
+      // Entries with a missing/unknown type, as the document-based variant reports them.
+      byType.unknown = { total: total - knownTotal, success: success - knownSuccess, error: total - knownTotal - (success - knownSuccess) };
+    }
+
+    const lastCreatedAt = lastSnap.docs[0] ? this.toDate(lastSnap.docs[0].data().createdAt) : null;
+    return {
+      total,
+      success,
+      error: total - success,
+      last30Days: { total: last30Total, success: last30Success, error: last30Total - last30Success },
+      byType,
+      lastSentAt: lastCreatedAt ? lastCreatedAt.toISOString() : null,
+    };
+  }
+
+  private async getStatsFromDocuments(ref: FirebaseFirestore.Query) {
     const snapshot = await ref.get();
     const now = Date.now();
     const last30DaysStart = now - 30 * 24 * 60 * 60 * 1000;
@@ -133,6 +201,33 @@ export class EmailLogService {
     return snapshot.docs.some((doc) => doc.data().status === 'success');
   }
 
+  /**
+   * Batched variant of hasSuccessfulDeliveryKey: returns the subset of keys that already have a
+   * successful delivery. Uses `in` queries (30 keys each) instead of one query per key.
+   */
+  async successfulDeliveryKeys(deliveryKeys: string[]): Promise<Set<string>> {
+    const keys = Array.from(new Set(deliveryKeys.map((key) => key.trim()).filter(Boolean)));
+    const found = new Set<string>();
+    const chunks: string[][] = [];
+    for (let index = 0; index < keys.length; index += 30) chunks.push(keys.slice(index, index + 30));
+
+    const collection = this.firebaseAdminService.firestore.collection('email_logs');
+    const CONCURRENCY = 5;
+    for (let index = 0; index < chunks.length; index += CONCURRENCY) {
+      const snapshots = await Promise.all(
+        chunks.slice(index, index + CONCURRENCY).map((chunk) => collection.where('deliveryKey', 'in', chunk).get()),
+      );
+      for (const snapshot of snapshots) {
+        for (const doc of snapshot.docs) {
+          const data = doc.data();
+          if (data.status === 'success' && typeof data.deliveryKey === 'string') found.add(data.deliveryKey);
+        }
+      }
+    }
+
+    return found;
+  }
+
   async getDeliveries(query: {
     type?: EmailLogType;
     companyId?: string;
@@ -148,9 +243,21 @@ export class EmailLogService {
     if (query.buildingId) ref = ref.where('buildingId', '==', query.buildingId);
     if (query.apartmentId) ref = ref.where('apartmentId', '==', query.apartmentId);
 
-    const snapshot = await ref.get();
     const limit = Math.min(5000, Math.max(1, query.limit ?? 200));
     const prefix = query.deliveryKeyPrefix?.trim();
+    // Prefix and page size are pushed into the query instead of reading the whole log and
+    // filtering in JS. Falls back to the old full read while the composite index is missing.
+    const narrowed = prefix
+      ? ref.where('deliveryKey', '>=', prefix).where('deliveryKey', '<', `${prefix}\uf8ff`).limit(5000)
+      : ref.orderBy('createdAt', 'desc').limit(limit);
+    let snapshot: FirebaseFirestore.QuerySnapshot;
+    try {
+      snapshot = await narrowed.get();
+    } catch (error) {
+      if (!this.isMissingIndexError(error)) throw error;
+      this.logger.warn(`email.log.deliveries.index_missing fallback=full_read reason=${error instanceof Error ? error.message : String(error)}`);
+      snapshot = await ref.get();
+    }
 
     return snapshot.docs
       .map((doc): EmailDeliveryLogItem => {
@@ -176,6 +283,12 @@ export class EmailLogService {
       .filter((item) => !prefix || item.deliveryKey?.startsWith(prefix))
       .sort((a, b) => (new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()))
       .slice(0, limit);
+  }
+
+  private isMissingIndexError(error: unknown): boolean {
+    const code = (error as { code?: unknown } | undefined)?.code;
+    return code === 9 || code === 'failed-precondition'
+      || /requires an index|FAILED_PRECONDITION/i.test(error instanceof Error ? error.message : String(error));
   }
 
   private normalizeType(value: unknown): EmailLogType | 'unknown' {

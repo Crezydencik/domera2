@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { EmailModule } from '../emails/email.module';
+import { InternalCronController } from './controllers/internal-cron.controller';
 import { MeterReadingsController } from './controllers/meter-readings.controller';
 import { MeterReadingReminderJob } from './jobs/meter-reading-reminder.job';
 import { ElectricityPaymentService } from './services/electricity-payment.service';
@@ -14,7 +15,7 @@ import { CompanyPayloadService } from '../company/services/company-payload.servi
 
 @Module({
   imports: [EmailModule],
-  controllers: [MeterReadingsController],
+  controllers: [MeterReadingsController, InternalCronController],
   providers: [
     MeterReadingsService,
     MeterReadingAccessService,

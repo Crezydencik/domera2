@@ -13,6 +13,9 @@ import { RateLimitService } from '../../../../common/services/rate-limit.service
 import { normalizeEmail } from '../../../../common/utils/invitation-token';
 import { resolveAccountType } from '../../../../common/auth/role.constants';
 import { CompanyAccessService } from '../../services/company-access.service';
+import { TooManyRequestsException } from '../../../../common/errors/too-many-requests.exception';
+import { FirebaseAuthGuard } from '../../../../common/auth/firebase-auth.guard';
+import { runInBackground } from '../../../../common/utils/background';
 
 @Injectable()
 export class CompanyInvitationsService {
@@ -54,7 +57,7 @@ export class CompanyInvitationsService {
       60_000,
     );
     if (!rl.allowed) {
-      throw new BadRequestException('Too many requests');
+      throw new TooManyRequestsException(rl.resetAt);
     }
 
     this.assertCompanyScope(user, companyId);
@@ -118,7 +121,7 @@ export class CompanyInvitationsService {
       10,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
 
     this.assertCompanyScope(user, companyId);
 
@@ -151,7 +154,7 @@ export class CompanyInvitationsService {
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'company_invitation.send',
       status: 'success',
@@ -161,7 +164,7 @@ export class CompanyInvitationsService {
       invitationId: invitationRef.id,
       targetEmail: email,
       metadata: { role, buildingId },
-    });
+    }), 'audit');
 
     return { success: true, invitationId: invitationRef.id };
   }
@@ -179,7 +182,7 @@ export class CompanyInvitationsService {
       10,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
 
     const db = this.firebaseAdminService.firestore;
     const invitationRef = db.collection('company_invitations').doc(invitationId);
@@ -261,8 +264,9 @@ export class CompanyInvitationsService {
       }, { merge: true });
       tx.set(invitationRef, { status: 'accepted', acceptedAt: new Date(), acceptedByUid: user.uid }, { merge: true });
     });
+    FirebaseAuthGuard.invalidateUser(user.uid);
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'company_invitation.accept',
       status: 'success',
@@ -275,7 +279,7 @@ export class CompanyInvitationsService {
         buildingId: typeof invitation.buildingId === 'string' ? invitation.buildingId : undefined,
         role: invitedRole,
       },
-    });
+    }), 'audit');
 
     return { success: true };
   }

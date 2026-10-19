@@ -27,6 +27,14 @@ import { ApartmentMeterService } from './services/apartment-meter.service';
 import { ApartmentStorageService } from './services/apartment-storage.service';
 import { ApartmentCodeContext, ApartmentWriteOperation } from './types/apartment.types';
 import { ImportInput, ImportRow, ParsedReading } from './types/import.types';
+import { TooManyRequestsException } from '../../common/errors/too-many-requests.exception';
+import { legacyScopeQuery } from '../../common/utils/legacy-scope';
+import { MEMBER_KEYS_VERSION, computeApartmentMemberKeys } from '../../common/utils/apartment-members';
+import { runInBackground } from '../../common/utils/background';
+import { TtlCache } from '../../common/utils/ttl-cache';
+import { firstString } from '../../common/utils/values';
+
+const OWNER_UID_BY_EMAIL = new TtlCache<string, string | null>({ ttlMs: 5 * 60 * 1000, maxEntries: 5000 });
 const APARTMENT_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
 const APARTMENT_IMPORT_MAX_ROWS = 5_000;
 
@@ -60,27 +68,13 @@ export class ApartmentsService {
     );
 
     if (!rl.allowed) {
-      throw new BadRequestException('Too many requests');
+      throw new TooManyRequestsException(rl.resetAt);
     }
-  }
-
-  private firstString(...values: unknown[]): string {
-    for (const value of values) {
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
-
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return String(value);
-      }
-    }
-
-    return '';
   }
 
   private compareApartmentOrder(left: Record<string, unknown>, right: Record<string, unknown>): number {
-    const leftLabel = this.firstString(left.number, left.apartmentNumber, left.id, left.apartmentId);
-    const rightLabel = this.firstString(right.number, right.apartmentNumber, right.id, right.apartmentId);
+    const leftLabel = firstString(left.number, left.apartmentNumber, left.id, left.apartmentId);
+    const rightLabel = firstString(right.number, right.apartmentNumber, right.id, right.apartmentId);
     const leftNumber = Number(leftLabel);
     const rightNumber = Number(rightLabel);
     const bothNumeric =
@@ -132,8 +126,8 @@ export class ApartmentsService {
 
   private async withOwnerInvitationDates<T extends Record<string, unknown>>(items: T[]): Promise<T[]> {
     const missingOwnerInvitationDates = items.filter((item) => {
-      const apartmentId = this.firstString(item.id, item.apartmentId);
-      const ownerEmail = this.firstString(item.ownerEmail);
+      const apartmentId = firstString(item.id, item.apartmentId);
+      const ownerEmail = firstString(item.ownerEmail);
       return apartmentId && ownerEmail && !item.ownerInvitedAt;
     });
 
@@ -141,12 +135,12 @@ export class ApartmentsService {
 
     const latestByApartment = new Map<string, { date: unknown; invitationId: string; millis: number }>();
     const apartmentIds = Array.from(
-      new Set(missingOwnerInvitationDates.map((item) => this.firstString(item.id, item.apartmentId)).filter(Boolean)),
+      new Set(missingOwnerInvitationDates.map((item) => firstString(item.id, item.apartmentId)).filter(Boolean)),
     );
     const ownerEmailByApartment = new Map(
       missingOwnerInvitationDates.map((item) => [
-        this.firstString(item.id, item.apartmentId),
-        this.firstString(item.ownerEmail).toLowerCase(),
+        firstString(item.id, item.apartmentId),
+        firstString(item.ownerEmail).toLowerCase(),
       ]),
     );
 
@@ -161,13 +155,13 @@ export class ApartmentsService {
 
       for (const invitationDoc of invitations.docs) {
         const invitation = invitationDoc.data() as Record<string, unknown>;
-        const apartmentId = this.firstString(invitation.apartmentId);
+        const apartmentId = firstString(invitation.apartmentId);
         const ownerEmail = ownerEmailByApartment.get(apartmentId);
         if (!apartmentId || !ownerEmail) continue;
 
-        const invitationEmail = this.firstString(invitation.email).toLowerCase();
-        const inviteType = this.firstString(invitation.inviteType).toLowerCase();
-        const role = this.firstString(invitation.role).toLowerCase();
+        const invitationEmail = firstString(invitation.email).toLowerCase();
+        const inviteType = firstString(invitation.inviteType).toLowerCase();
+        const role = firstString(invitation.role).toLowerCase();
         const isOwnerInvitation = inviteType === 'owner' || role === 'landlord';
         if (!isOwnerInvitation || invitationEmail !== ownerEmail) continue;
 
@@ -186,7 +180,7 @@ export class ApartmentsService {
 
     return items.map((item) => {
       if (item.ownerInvitedAt) return item;
-      const apartmentId = this.firstString(item.id, item.apartmentId);
+      const apartmentId = firstString(item.id, item.apartmentId);
       const invitation = latestByApartment.get(apartmentId);
       if (!invitation) return item;
 
@@ -200,16 +194,16 @@ export class ApartmentsService {
 
   private async withResolvedOwnerAccess<T extends Record<string, unknown>>(items: T[]): Promise<T[]> {
     const missingOwnerLinks = items.filter((item) => {
-      const apartmentId = this.firstString(item.id, item.apartmentId);
-      const ownerEmail = this.firstString(item.ownerEmail).toLowerCase();
-      const ownerId = this.firstString(item.ownerId);
+      const apartmentId = firstString(item.id, item.apartmentId);
+      const ownerEmail = firstString(item.ownerEmail).toLowerCase();
+      const ownerId = firstString(item.ownerId);
       return apartmentId && ownerEmail && !ownerId;
     });
 
     if (missingOwnerLinks.length === 0) return items;
 
     const emails = Array.from(
-      new Set(missingOwnerLinks.map((item) => this.firstString(item.ownerEmail).toLowerCase()).filter(Boolean)),
+      new Set(missingOwnerLinks.map((item) => firstString(item.ownerEmail).toLowerCase()).filter(Boolean)),
     );
     const userIdByEmail = new Map<string, string>();
 
@@ -224,35 +218,39 @@ export class ApartmentsService {
 
       for (const doc of usersSnap.docs) {
         const data = doc.data() as Record<string, unknown>;
-        const email = this.firstString(data.email).toLowerCase();
+        const email = firstString(data.email).toLowerCase();
         if (email && !userIdByEmail.has(email)) {
           userIdByEmail.set(email, doc.id);
         }
       }
     }
 
+    // Firebase Auth lookups are network calls on a read path: cache hits and misses briefly
+    // (invited-but-unregistered owners were looked up again on every apartment list).
     await Promise.all(
       emails
         .filter((email) => !userIdByEmail.has(email))
         .map(async (email) => {
-          try {
-            const user = await this.firebaseAdminService.auth.getUserByEmail(email);
-            userIdByEmail.set(email, user.uid);
-          } catch {
-            // No auth user exists for this email, so the owner is still invitation-only.
-          }
+          const uid = await OWNER_UID_BY_EMAIL.getOrLoad(email, async () => {
+            try {
+              return (await this.firebaseAdminService.auth.getUserByEmail(email)).uid;
+            } catch {
+              return null; // No auth user exists for this email: the owner is still invitation-only.
+            }
+          });
+          if (uid) userIdByEmail.set(email, uid);
         }),
     );
 
     if (userIdByEmail.size === 0) return items;
 
     const nextItems = items.map((item) => {
-      const apartmentId = this.firstString(item.id, item.apartmentId);
-      const ownerEmail = this.firstString(item.ownerEmail).toLowerCase();
+      const apartmentId = firstString(item.id, item.apartmentId);
+      const ownerEmail = firstString(item.ownerEmail).toLowerCase();
       const resolvedOwnerId = ownerEmail ? userIdByEmail.get(ownerEmail) : undefined;
       if (!apartmentId || !resolvedOwnerId) return item;
 
-      const ownerId = this.firstString(item.ownerId);
+      const ownerId = firstString(item.ownerId);
       if (ownerId) return item;
 
       return {
@@ -318,7 +316,7 @@ export class ApartmentsService {
       throw new ForbiddenException('This building is locked by the platform administrator');
     }
 
-    const status = this.firstString(data.status).toLowerCase();
+    const status = firstString(data.status).toLowerCase();
     if (['pending', 'rejected', 'cancelled', 'canceled'].includes(status)) {
       throw new ForbiddenException('Apartments can be added only after the building request is approved');
     }
@@ -339,18 +337,28 @@ export class ApartmentsService {
 
   private async countBuildingApartments(buildingId: string, excludeApartmentId?: string): Promise<number> {
     const db = this.firebaseAdminService.firestore;
-    const [byBuildingId, byLegacyHouseId] = await Promise.all([
-      db.collection('apartments').where('buildingId', '==', buildingId).get(),
-      db.collection('apartments').where('houseId', '==', buildingId).get(),
+    // count() aggregation is billed per 1000 index entries instead of one read per apartment.
+    // Legacy houseId-only apartments are few; they are read with an id/buildingId field mask.
+    const [byBuildingIdCount, byLegacyHouseId, excluded] = await Promise.all([
+      db.collection('apartments').where('buildingId', '==', buildingId).count().get(),
+      legacyScopeQuery(() => db.collection('apartments').where('houseId', '==', buildingId).select('buildingId').get()),
+      excludeApartmentId ? db.collection('apartments').doc(excludeApartmentId).get() : Promise.resolve(null),
     ]);
 
-    const ids = new Set<string>();
-    for (const doc of [...byBuildingId.docs, ...byLegacyHouseId.docs]) {
-      if (excludeApartmentId && doc.id === excludeApartmentId) continue;
-      ids.add(doc.id);
+    let total = byBuildingIdCount.data().count;
+    for (const doc of byLegacyHouseId.docs) {
+      const ownBuildingId = firstString(doc.data().buildingId);
+      if (!ownBuildingId) total += 1; // counted only here, not in the buildingId aggregation
     }
 
-    return ids.size;
+    if (excluded?.exists) {
+      const data = excluded.data() as Record<string, unknown>;
+      const belongsHere = firstString(data.buildingId) === buildingId
+        || (!firstString(data.buildingId) && firstString(data.houseId) === buildingId);
+      if (belongsHere) total -= 1;
+    }
+
+    return Math.max(0, total);
   }
 
   private async assertBuildingApartmentCapacity(params: {
@@ -377,18 +385,18 @@ export class ApartmentsService {
   }
 
   private buildFormerOwnerArchiveUpdate(apartmentId: string, apartment: Record<string, unknown>) {
-    const ownerId = this.firstString(apartment.ownerId);
-    const ownerEmail = this.firstString(apartment.ownerEmail).toLowerCase();
+    const ownerId = firstString(apartment.ownerId);
+    const ownerEmail = firstString(apartment.ownerEmail).toLowerCase();
     if (!ownerId && !ownerEmail) return {};
 
     const update: Record<string, unknown> = {
       formerOwners: FieldValue.arrayUnion({
         ownerId: ownerId || null,
         ownerEmail: ownerEmail || null,
-        owner: this.firstString(apartment.owner) || null,
-        ownerFirstName: this.firstString(apartment.ownerFirstName) || null,
-        ownerLastName: this.firstString(apartment.ownerLastName) || null,
-        ownerContractNumber: this.firstString(apartment.ownerContractNumber) || null,
+        owner: firstString(apartment.owner) || null,
+        ownerFirstName: firstString(apartment.ownerFirstName) || null,
+        ownerLastName: firstString(apartment.ownerLastName) || null,
+        ownerContractNumber: firstString(apartment.ownerContractNumber) || null,
         ownerStartedAt: apartment.ownerAcceptedAt ?? apartment.ownerInvitedAt ?? null,
         ownerAcceptedAt: apartment.ownerAcceptedAt ?? null,
         removedFromApartmentId: apartmentId,
@@ -1153,7 +1161,7 @@ export class ApartmentsService {
       5,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
 
     const db = this.firebaseAdminService.firestore;
     const importBuildingData = await this.getApprovedBuildingOrThrow(buildingId, companyId);
@@ -1303,6 +1311,7 @@ export class ApartmentsService {
           normalizedNumber: normalizedApartmentNumber,
           companyId,
           companyIds: [companyId],
+          apartmentScopeVersion: 2,
           storageApartmentId: apartmentRef.id,
           readableId,
           createdAt: FieldValue.serverTimestamp(),
@@ -1394,7 +1403,12 @@ export class ApartmentsService {
         }
 
         writeOperations.push((batch) => {
-          batch.set(apartmentRef, { ...apartmentData, waterReadings });
+          batch.set(apartmentRef, {
+            ...apartmentData,
+            waterReadings,
+            memberKeys: computeApartmentMemberKeys(apartmentData),
+            memberKeysVersion: MEMBER_KEYS_VERSION,
+          });
         });
 
         importedApartmentNumbers.add(normalizedApartmentNumber);
@@ -1427,7 +1441,7 @@ export class ApartmentsService {
       ));
     }
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'apartments.import',
       status: 'success',
@@ -1440,7 +1454,7 @@ export class ApartmentsService {
         skippedDuplicates: results.skippedDuplicates.length,
         rowErrors: results.errors.length,
       },
-    });
+    }), 'audit');
 
     return { success: true, results };
   }
@@ -1492,7 +1506,7 @@ export class ApartmentsService {
 
       const [byArray, byLegacy] = await Promise.all([
         db.collection('apartments').where('companyIds', 'array-contains', companyId).get(),
-        db.collection('apartments').where('companyId', '==', companyId).get(),
+        legacyScopeQuery(() => db.collection('apartments').where('companyId', '==', companyId).get()),
       ]);
 
       const merged = new Map<string, Record<string, unknown>>();
@@ -1513,7 +1527,7 @@ export class ApartmentsService {
       const scopedCompanyId = this.effectiveStaffCompanyId(user);
       const [byArray, byLegacy] = await Promise.all([
         db.collection('apartments').where('companyIds', 'array-contains', scopedCompanyId).get(),
-        db.collection('apartments').where('companyId', '==', scopedCompanyId).get(),
+        legacyScopeQuery(() => db.collection('apartments').where('companyId', '==', scopedCompanyId).get()),
       ]);
 
       const merged = new Map<string, Record<string, unknown>>();
@@ -1534,7 +1548,7 @@ export class ApartmentsService {
       accessibleItems = rawItems.filter((item) => this.apartmentBelongsToStaffCompany(user, item));
     } else if (isPropertyMemberRole(user.role)) {
       const accessibleApartmentIds = await this.getAccessibleApartmentIds(user);
-      accessibleItems = rawItems.filter((item) => accessibleApartmentIds.includes(this.firstString(item.id)));
+      accessibleItems = rawItems.filter((item) => accessibleApartmentIds.includes(firstString(item.id)));
     } else {
       throw new ForbiddenException('Insufficient permissions');
     }
@@ -1626,6 +1640,7 @@ export class ApartmentsService {
       buildingId,
       companyId,
       companyIds: [companyId],
+      apartmentScopeVersion: 2,
       storageApartmentId: ref.id,
       readableId,
       ...(typeof payload.address === 'string' && payload.address.trim() ? { address: payload.address.trim() } : {}),
@@ -1639,7 +1654,7 @@ export class ApartmentsService {
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    await ref.set(data);
+    await ref.set({ ...data, memberKeys: computeApartmentMemberKeys(data), memberKeysVersion: MEMBER_KEYS_VERSION });
 
     await this.markStorageFolders(ref, [
       ...this.getBuildingStorageFolders(companyId, buildingId),
@@ -1713,7 +1728,7 @@ export class ApartmentsService {
         .get();
       const hasDuplicate = duplicateByNormalizedNumber.docs.some((doc) => doc.id !== apartmentId);
       if (hasDuplicate) {
-        throw new BadRequestException('РљРІР°СЂС‚РёСЂР° СЃ С‚Р°РєРёРј РЅРѕРјРµСЂРѕРј СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚ РІ СЌС‚РѕРј РґРѕРјРµ');
+        throw new BadRequestException('Квартира с таким номером уже существует в этом доме');
       }
     }
 
@@ -2060,7 +2075,7 @@ export class ApartmentsService {
       // Don't throw - operation succeeded even if email fails
     }
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       action: 'updateOwner',
       apartmentId,
       actorUid: user.uid,
@@ -2068,7 +2083,7 @@ export class ApartmentsService {
       companyId: user.companyId,
       status: 'success',
       metadata: { ownerEmail: email },
-    });
+    }), 'audit');
 
     return { success: true, ownerActivated };
   }
@@ -2127,7 +2142,7 @@ export class ApartmentsService {
       });
     }
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       action: 'removeOwner',
       apartmentId,
       actorUid: user.uid,
@@ -2135,7 +2150,7 @@ export class ApartmentsService {
       companyId: user.companyId,
       status: 'success',
       metadata: { ownerEmail },
-    });
+    }), 'audit');
 
     return { success: true };
   }
@@ -2492,7 +2507,7 @@ export class ApartmentsService {
         nextPermissions.delete('viewDocuments');
         nextPermissions.delete('documents');
       }
-      const name = [firstName, lastName].filter(Boolean).join(' ') || this.firstString(tenant.name, tenant.email);
+      const name = [firstName, lastName].filter(Boolean).join(' ') || firstString(tenant.name, tenant.email);
       const nextTenant: Record<string, unknown> = {
         ...tenant,
         name,
@@ -2572,10 +2587,10 @@ export class ApartmentsService {
     }
 
     const ownerInvitationContext = await this.apartmentInvitationService.resolveInvitationContext(apartment);
-    const ownerName = this.firstString(
+    const ownerName = firstString(
       apartment.owner,
       apartment.ownerName,
-      [this.firstString(apartment.ownerFirstName), this.firstString(apartment.ownerLastName)].filter(Boolean).join(' '),
+      [firstString(apartment.ownerFirstName), firstString(apartment.ownerLastName)].filter(Boolean).join(' '),
     );
 
     await this.apartmentInvitationService.createOwnerInvitationNotification({
@@ -2613,7 +2628,7 @@ export class ApartmentsService {
       { merge: true },
     );
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       action: 'resendOwnerInvitation',
       apartmentId,
       actorUid: user.uid,
@@ -2621,7 +2636,7 @@ export class ApartmentsService {
       companyId: user.companyId,
       status: 'success',
       metadata: { ownerEmail },
-    });
+    }), 'audit');
 
     return { success: true };
   }
@@ -2693,7 +2708,7 @@ export class ApartmentsService {
 
     await apartmentRef.set({ tenants: updatedTenants, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       action: 'resendTenantInvitation',
       apartmentId,
       actorUid: user.uid,
@@ -2701,7 +2716,7 @@ export class ApartmentsService {
       companyId: user.companyId,
       status: 'success',
       metadata: { tenantEmail },
-    });
+    }), 'audit');
 
     return { success: true };
   }
@@ -2872,6 +2887,11 @@ export class ApartmentsService {
       await batch.commit();
     }
 
+    const db = this.firebaseAdminService.firestore;
+    const [total, canonical] = await Promise.all([
+      db.collection('apartments').count().get(),
+      db.collection('apartments').where('apartmentScopeVersion', '==', 2).count().get(),
+    ]);
     const lastDocId = page.at(-1)?.id;
     return {
       mode: params.apply ? 'applied' : 'dry-run',
@@ -2880,18 +2900,74 @@ export class ApartmentsService {
       updated: params.apply ? eligible : 0,
       alreadyCanonical,
       skipped,
+      // Apartments not yet marked canonical (whole collection, via count aggregation).
+      remaining: Math.max(0, total.data().count - canonical.data().count),
+      hasMore,
+      nextCursor: hasMore && lastDocId ? this.encodeMigrationCursor(lastDocId) : undefined,
+    };
+  }
+
+  /**
+   * Bounded, resumable backfill of `memberKeys` (membership candidate index). When `remaining`
+   * reaches 0, set APARTMENT_MEMBER_KEYS=true to switch discovery to a single query.
+   */
+  async migrateMemberKeys(params: {
+    request: Request;
+    user: RequestUser;
+    cursor?: string;
+    limit?: number;
+    apply: boolean;
+  }) {
+    if (normalizeUserRole(params.user.role) !== 'PlatformAdmin') {
+      throw new ForbiddenException('Only platform administrators can run the member keys migration');
+    }
+    await this.enforceRateLimit(params.request, 'apartments:migrate-member-keys', params.user.uid, 10);
+
+    const db = this.firebaseAdminService.firestore;
+    const limit = Number.isFinite(params.limit) ? Math.min(400, Math.max(1, Math.floor(params.limit!))) : 200;
+    const cursorId = this.decodeMigrationCursor(params.cursor);
+    let query = db.collection('apartments').orderBy(FieldPath.documentId()).limit(limit + 1);
+    if (cursorId) query = query.startAfter(cursorId);
+
+    const snapshot = await query.get();
+    const page = snapshot.docs.slice(0, limit);
+    const hasMore = snapshot.docs.length > limit;
+    const batch = params.apply ? db.batch() : null;
+    let eligible = 0;
+
+    for (const doc of page) {
+      const data = doc.data() as Record<string, unknown>;
+      const next = computeApartmentMemberKeys(data);
+      const current = Array.isArray(data.memberKeys) ? (data.memberKeys as unknown[]).map(String) : null;
+      if (current && data.memberKeysVersion === MEMBER_KEYS_VERSION && current.join('\n') === next.join('\n')) continue;
+      eligible += 1;
+      batch?.set(doc.ref, { memberKeys: next, memberKeysVersion: MEMBER_KEYS_VERSION }, { merge: true });
+    }
+    if (batch && eligible > 0) await batch.commit();
+
+    const [total, done] = await Promise.all([
+      db.collection('apartments').count().get(),
+      db.collection('apartments').where('memberKeysVersion', '==', MEMBER_KEYS_VERSION).count().get(),
+    ]);
+    const lastDocId = page.at(-1)?.id;
+    return {
+      mode: params.apply ? 'applied' : 'dry-run',
+      scanned: page.length,
+      eligible,
+      updated: params.apply ? eligible : 0,
+      remaining: Math.max(0, total.data().count - done.data().count),
       hasMore,
       nextCursor: hasMore && lastDocId ? this.encodeMigrationCursor(lastDocId) : undefined,
     };
   }
 
   private buildCanonicalScopePatch(apartment: Record<string, unknown>): Record<string, unknown> | null {
-    const directCompanyId = this.firstString(apartment.companyId);
+    const directCompanyId = firstString(apartment.companyId);
     const companyIds = Array.isArray(apartment.companyIds)
       ? apartment.companyIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
       : [];
     const canonicalCompanyId = directCompanyId || companyIds[0] || '';
-    const canonicalBuildingId = this.firstString(apartment.buildingId, apartment.houseId);
+    const canonicalBuildingId = firstString(apartment.buildingId, apartment.houseId);
 
     if (!canonicalCompanyId || !canonicalBuildingId) return null;
 
@@ -2900,10 +2976,10 @@ export class ApartmentsService {
     if (!Array.isArray(apartment.companyIds) || !companyIds.includes(canonicalCompanyId)) {
       patch.companyIds = Array.from(new Set([...companyIds, canonicalCompanyId]));
     }
-    if (!this.firstString(apartment.buildingId)) patch.buildingId = canonicalBuildingId;
+    if (!firstString(apartment.buildingId)) patch.buildingId = canonicalBuildingId;
 
-    const number = this.firstString(apartment.number, apartment.apartmentNumber);
-    if (number && !this.firstString(apartment.normalizedNumber)) {
+    const number = firstString(apartment.number, apartment.apartmentNumber);
+    if (number && !firstString(apartment.normalizedNumber)) {
       patch.normalizedNumber = this.normalizeApartmentNumber(number);
     }
     if (apartment.apartmentScopeVersion !== 2) patch.apartmentScopeVersion = 2;

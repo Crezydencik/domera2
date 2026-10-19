@@ -8,7 +8,6 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
-import { inflateRawSync } from 'node:zlib';
 import { Request } from 'express';
 import { isPropertyMemberRole, isStaffRole } from '../../common/auth/role.constants';
 import { RequestUser } from '../../common/auth/request-user.type';
@@ -18,88 +17,18 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { normalizeEmail } from '../../common/utils/invitation-token';
 import { buildMeterHistorySnapshot } from '../../common/utils/meter-reading-history';
 import { EmailService } from '../emails/services/email.service';
-
-type UploadedInvoiceFile = {
-  fieldname?: string;
-  buffer: Buffer;
-  originalname?: string;
-  mimetype?: string;
-  size?: number;
-};
-
-type InvoiceUploadRequest = Request & {
-  apiCredential?: {
-    id?: string;
-    label?: string;
-    source?: string;
-    buildingId?: string;
-    allowedBuildingIds?: string[];
-  };
-};
-
-type InvoiceUploadSource = 'api' | 'manual' | 'sftp' | 'email' | 'zip' | 'accounting';
-type InvoiceRecipientType = 'owner' | 'tenant' | 'general';
-
-type ResolvedApartment = {
-  id: string;
-  data: Record<string, unknown>;
-};
-
-type UploadHistoryInput = {
-  historyId?: string;
-  request?: Request;
-  status: 'success' | 'error' | 'duplicate' | 'pending' | 'cancelled';
-  source: InvoiceUploadSource;
-  actorUid?: string;
-  actorRole?: string;
-  companyId?: string;
-  buildingId?: string;
-  apartmentId?: string;
-  invoiceId?: string;
-  externalId?: string;
-  fileName?: string;
-  fileSize?: number;
-  error?: string;
-  metadata?: Record<string, unknown>;
-};
-
-type InvoiceDocumentLocation = {
-  ref: FirebaseFirestore.DocumentReference;
-  data: Record<string, unknown>;
-  apartmentId: string;
-};
-
-type PendingInvoiceApprovalLocation = {
-  ref: FirebaseFirestore.DocumentReference;
-  data: Record<string, unknown>;
-  buildingId: string;
-};
-
-type ApartmentInvoiceContext = {
-  id: string;
-  data: Record<string, unknown>;
-};
-
-type InvoiceMeterReadingKey = 'coldmeterwater' | 'hotmeterwater' | 'electricitymeter';
-
-const MAX_INVOICE_PDF_BYTES = 25 * 1024 * 1024;
-const MAX_INVOICE_BATCH_FILES = 50;
-const INVOICE_BATCH_UPLOAD_CONCURRENCY = 4;
-const INVOICE_TRASH_RETENTION_DAYS = 30;
-const MAX_INVOICE_ZIP_BYTES = 500 * 1024 * 1024;
-const MAX_INVOICE_ZIP_ENTRIES = 200;
-const MAX_INVOICE_ZIP_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
-const INVOICE_STATUSES = new Set(['draft', 'pending', 'issued', 'paid', 'overdue', 'cancelled']);
-const INVOICE_RECIPIENT_TYPES = new Set<InvoiceRecipientType>(['owner', 'tenant', 'general']);
-const UPLOAD_SOURCES = new Set<InvoiceUploadSource>(['api', 'manual', 'sftp', 'email', 'zip', 'accounting']);
-const ALLOWED_PDF_PROXY_HOSTS = new Set(['firebasestorage.googleapis.com', 'storage.googleapis.com']);
-const INVOICE_METER_READING_KEYS: readonly InvoiceMeterReadingKey[] = ['coldmeterwater', 'hotmeterwater', 'electricitymeter'];
-
-type InvoicePdfPayload = {
-  buffer: Buffer;
-  fileName: string;
-  contentType: string;
-};
+import { TooManyRequestsException } from '../../common/errors/too-many-requests.exception';
+import { legacyScopeQuery } from '../../common/utils/legacy-scope';
+import { findCandidateApartments } from '../../common/utils/apartment-members';
+import { sanitizeClientPayload } from '../../common/utils/client-payload';
+import { runInBackground } from '../../common/utils/background';
+import { firstString, errorMessage } from '../../common/utils/values';
+import { INVOICE_PROTECTED_FIELDS, MAX_INVOICE_PDF_BYTES, MAX_INVOICE_BATCH_FILES, INVOICE_BATCH_UPLOAD_CONCURRENCY, INVOICE_TRASH_RETENTION_DAYS, INVOICE_STATUSES, INVOICE_RECIPIENT_TYPES, UPLOAD_SOURCES, INVOICE_METER_READING_KEYS } from './invoice.types';
+import type { UploadedInvoiceFile, InvoiceUploadRequest, InvoiceUploadSource, InvoiceRecipientType, ResolvedApartment, UploadHistoryInput, InvoiceDocumentLocation, PendingInvoiceApprovalLocation, ApartmentInvoiceContext, InvoiceMeterReadingKey, InvoicePdfPayload } from './invoice.types';
+import { firestoreDateToIso, firestoreDateToMillis } from '../../common/utils/firestore-dates';
+import { InvoicePdfStorageService } from './services/invoice-pdf-storage.service';
+import { InvoiceUploadHistoryService } from './services/invoice-upload-history.service';
+import { InvoiceZipExtractor } from './services/invoice-zip-extractor';
 
 @Injectable()
 export class InvoicesService {
@@ -110,6 +39,9 @@ export class InvoicesService {
     private readonly rateLimitService: RateLimitService,
     private readonly auditLogService: AuditLogService,
     private readonly emailService: EmailService,
+    private readonly pdfStorage: InvoicePdfStorageService,
+    private readonly uploadHistory: InvoiceUploadHistoryService,
+    private readonly zipExtractor: InvoiceZipExtractor,
   ) {}
 
   private assertAuthenticated(user: RequestUser | undefined): asserts user is RequestUser {
@@ -121,7 +53,7 @@ export class InvoicesService {
   }
 
   private requireStaffCompanyId(user: RequestUser): string {
-    const companyId = this.firstString(user.companyId);
+    const companyId = firstString(user.companyId);
     if (!companyId) {
       throw new ForbiddenException('Company scope is required');
     }
@@ -129,34 +61,20 @@ export class InvoicesService {
     return companyId;
   }
 
-  private firstString(...values: unknown[]): string {
-    for (const value of values) {
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
-
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return String(value);
-      }
-    }
-
-    return '';
-  }
-
   private normalizeSource(value: unknown): InvoiceUploadSource {
-    const normalized = this.firstString(value).toLowerCase();
+    const normalized = firstString(value).toLowerCase();
     return UPLOAD_SOURCES.has(normalized as InvoiceUploadSource)
       ? (normalized as InvoiceUploadSource)
       : 'api';
   }
 
   private normalizeStatus(value: unknown): string {
-    const normalized = this.firstString(value).toLowerCase().replace(/\s+/g, '_');
+    const normalized = firstString(value).toLowerCase().replace(/\s+/g, '_');
     return INVOICE_STATUSES.has(normalized) ? normalized : 'pending';
   }
 
   private normalizeRecipientType(value: unknown): InvoiceRecipientType {
-    const normalized = this.firstString(value).toLowerCase().replace(/[\s-]+/g, '_');
+    const normalized = firstString(value).toLowerCase().replace(/[\s-]+/g, '_');
     return INVOICE_RECIPIENT_TYPES.has(normalized as InvoiceRecipientType)
       ? (normalized as InvoiceRecipientType)
       : 'general';
@@ -169,7 +87,7 @@ export class InvoicesService {
   private isActiveTenantRecord(tenant: unknown, now = new Date()): tenant is Record<string, unknown> {
     if (!tenant || typeof tenant !== 'object') return false;
     const record = tenant as Record<string, unknown>;
-    const status = this.firstString(record.status).toLowerCase();
+    const status = firstString(record.status).toLowerCase();
     if (['removed', 'deleted', 'revoked', 'inactive', 'pending'].includes(status)) return false;
 
     const isConfirmed =
@@ -185,7 +103,7 @@ export class InvoicesService {
     if (fromDate && now < fromDate) return false;
     if (until && now > until) return false;
 
-    return Boolean(this.firstString(record.userId, record.email));
+    return Boolean(firstString(record.userId, record.email));
   }
 
   private hasActiveTenant(apartment: Record<string, unknown>): boolean {
@@ -196,7 +114,7 @@ export class InvoicesService {
   }
 
   private hasActiveOwner(apartment: Record<string, unknown>): boolean {
-    return apartment.ownerActivated === true && Boolean(this.firstString(apartment.ownerId, apartment.ownerEmail));
+    return apartment.ownerActivated === true && Boolean(firstString(apartment.ownerId, apartment.ownerEmail));
   }
 
   private resolveEffectiveRecipientType(
@@ -223,7 +141,7 @@ export class InvoicesService {
   }
 
   private normalizeCurrency(value: unknown): string {
-    const currency = this.firstString(value).toUpperCase();
+    const currency = firstString(value).toUpperCase();
     if (!/^[A-Z]{3}$/.test(currency)) {
       throw new BadRequestException('Invalid invoice currency');
     }
@@ -232,7 +150,7 @@ export class InvoicesService {
   }
 
   private parseDate(value: unknown, fieldName: string): string {
-    const raw = this.firstString(value);
+    const raw = firstString(value);
     if (!raw) {
       throw new BadRequestException(`${fieldName} is required`);
     }
@@ -246,7 +164,7 @@ export class InvoicesService {
   }
 
   private parseBillingPeriod(payload: Record<string, unknown>) {
-    const raw = this.firstString(
+    const raw = firstString(
       payload.period,
       payload.billingPeriod,
       payload.billing_period,
@@ -304,21 +222,13 @@ export class InvoicesService {
   }
 
   private normalizeFileName(value: unknown): string {
-    const name = this.firstString(value) || 'invoice.pdf';
+    const name = firstString(value) || 'invoice.pdf';
     const normalized = name.replace(/[/\\?%*:|"<>]/g, '_').trim();
     return normalized.toLowerCase().endsWith('.pdf') ? normalized : `${normalized}.pdf`;
   }
 
   private normalizeLookupValue(value: string): string {
     return value.trim().replace(/\s+/g, ' ').toLowerCase();
-  }
-
-  private sanitizePathSegment(value: string): string {
-    return value
-      .trim()
-      .replace(/[^A-Za-z0-9._-]+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .slice(0, 120) || 'unknown';
   }
 
   private buildInvoiceId(): string {
@@ -333,12 +243,12 @@ export class InvoicesService {
 
   private extractCompanyIds(data: Record<string, unknown>): string[] {
     const companyIds = new Set<string>();
-    const companyId = this.firstString(data.companyId);
+    const companyId = firstString(data.companyId);
     if (companyId) companyIds.add(companyId);
 
     if (Array.isArray(data.companyIds)) {
       for (const value of data.companyIds) {
-        const id = this.firstString(value);
+        const id = firstString(value);
         if (id) companyIds.add(id);
       }
     }
@@ -347,15 +257,15 @@ export class InvoicesService {
   }
 
   private async getCompanyApartmentContexts(companyId: string, buildingId?: string): Promise<ApartmentInvoiceContext[]> {
-    const normalizedCompanyId = this.firstString(companyId);
+    const normalizedCompanyId = firstString(companyId);
     if (!normalizedCompanyId) return [];
 
     const db = this.firebaseAdminService.firestore;
     const [arraySnap, directSnap] = await Promise.all([
       db.collection('apartments').where('companyIds', 'array-contains', normalizedCompanyId).get(),
-      db.collection('apartments').where('companyId', '==', normalizedCompanyId).get(),
+      legacyScopeQuery(() => db.collection('apartments').where('companyId', '==', normalizedCompanyId).get()),
     ]);
-    const requestedBuildingId = this.firstString(buildingId);
+    const requestedBuildingId = firstString(buildingId);
     const contexts = new Map<string, ApartmentInvoiceContext>();
 
     for (const doc of [...arraySnap.docs, ...directSnap.docs]) {
@@ -387,19 +297,8 @@ export class InvoicesService {
     return values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
   }
 
-  private apiCredentialMetadata(request?: Request): Record<string, unknown> {
-    const credential = (request as InvoiceUploadRequest | undefined)?.apiCredential;
-    if (!credential) return {};
-
-    return {
-      apiKeyId: this.firstString(credential.id) || undefined,
-      apiName: this.firstString(credential.label) || undefined,
-      apiSource: this.firstString(credential.source) || undefined,
-    };
-  }
-
   private resolveLookupBuildingId(payload: Record<string, unknown>, request: Request): string {
-    return this.firstString(
+    return firstString(
       payload.buildingId,
       payload.building_id,
       payload.houseId,
@@ -441,7 +340,7 @@ export class InvoicesService {
       apartment.managementAgreementNumber,
     ];
 
-    if (directValues.some((value) => this.normalizeLookupValue(this.firstString(value)) === normalized)) {
+    if (directValues.some((value) => this.normalizeLookupValue(firstString(value)) === normalized)) {
       return true;
     }
 
@@ -456,7 +355,7 @@ export class InvoicesService {
     return nestedLists.some((list) => Array.isArray(list) && list.some((entry) => {
       if (!entry || typeof entry !== 'object') return false;
       const record = entry as Record<string, unknown>;
-      return this.normalizeLookupValue(this.firstString(
+      return this.normalizeLookupValue(firstString(
         record.contractNumber,
         record.ownerContractNumber,
         record.tenantContractNumber,
@@ -485,9 +384,9 @@ export class InvoicesService {
 
   private async resolveApartment(payload: Record<string, unknown>, request: Request): Promise<ResolvedApartment> {
     const db = this.firebaseAdminService.firestore;
-    const directId = this.firstString(payload.apartmentId, payload.apartment_id);
+    const directId = firstString(payload.apartmentId, payload.apartment_id);
     const lookupBuildingId = this.resolveLookupBuildingId(payload, request);
-    const accountId = this.firstString(
+    const accountId = firstString(
       payload.accountId,
       payload.account_id,
       payload.personalAccountId,
@@ -497,13 +396,13 @@ export class InvoicesService {
       payload.billingAccountId,
       payload.billing_account_id,
     );
-    const contractNumber = this.firstString(
+    const contractNumber = firstString(
       payload.contractNumber,
       payload.contract_number,
       payload.agreementNumber,
       payload.agreement_number,
     );
-    const apartmentNumber = this.firstString(
+    const apartmentNumber = firstString(
       payload.apartmentNumber,
       payload.apartment_number,
       payload.flatNumber,
@@ -572,7 +471,7 @@ export class InvoicesService {
       const snap = await db.collection('apartments').where('buildingId', '==', lookupBuildingId).get();
       const matches = snap.docs
         .map((doc) => ({ id: doc.id, data: doc.data() as Record<string, unknown> }))
-        .filter((apartment) => this.normalizeLookupValue(this.firstString(
+        .filter((apartment) => this.normalizeLookupValue(firstString(
           apartment.data.number,
           apartment.data.apartmentNumber,
           apartment.data.label,
@@ -590,8 +489,8 @@ export class InvoicesService {
   }
 
   private resolveBuildingId(payload: Record<string, unknown>, apartment: Record<string, unknown>): string {
-    const payloadBuildingId = this.firstString(payload.buildingId, payload.building_id, payload.houseId, payload.house_id);
-    const apartmentBuildingId = this.firstString(apartment.buildingId, apartment.houseId);
+    const payloadBuildingId = firstString(payload.buildingId, payload.building_id, payload.houseId, payload.house_id);
+    const apartmentBuildingId = firstString(apartment.buildingId, apartment.houseId);
 
     if (payloadBuildingId && apartmentBuildingId && payloadBuildingId !== apartmentBuildingId) {
       throw new BadRequestException('Apartment does not belong to the selected building');
@@ -631,7 +530,7 @@ export class InvoicesService {
     }
 
     const data = snap.data() as Record<string, unknown>;
-    return this.firstString(
+    return firstString(
       data.companyId,
       (data.managedBy as Record<string, unknown> | undefined)?.companyId,
     );
@@ -643,7 +542,7 @@ export class InvoicesService {
     const db = this.firebaseAdminService.firestore;
     const [directSnap, managedSnap] = await Promise.all([
       db.collection('buildings').where('companyId', '==', companyId).get(),
-      db.collection('buildings').where('managedBy.companyId', '==', companyId).get(),
+      legacyScopeQuery(() => db.collection('buildings').where('managedBy.companyId', '==', companyId).get()),
     ]);
 
     return Array.from(new Set([
@@ -684,71 +583,61 @@ export class InvoicesService {
     apartmentId: string;
     readingId: string;
   }): Promise<void> {
-    const apartmentId = this.firstString(params.apartmentId);
-    const readingId = this.firstString(params.readingId);
+    const apartmentId = firstString(params.apartmentId);
+    const readingId = firstString(params.readingId);
     if (!apartmentId || !readingId) return;
 
-    const apartmentRef = this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId);
-    const apartmentSnap = await apartmentRef.get();
-    if (!apartmentSnap.exists) return;
+    const db = this.firebaseAdminService.firestore;
+    const apartmentRef = db.collection('apartments').doc(apartmentId);
+    // Transaction + single-meter write: no lost updates against concurrent meter submissions.
+    await db.runTransaction(async (tx) => {
+      const apartmentSnap = await tx.get(apartmentRef);
+      if (!apartmentSnap.exists) return;
 
-    const apartment = apartmentSnap.data() as Record<string, unknown>;
-    const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
-    let foundKey: InvoiceMeterReadingKey | null = null;
-    let foundGroup: Record<string, unknown> | null = null;
+      const apartment = apartmentSnap.data() as Record<string, unknown>;
+      const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
+      let foundKey: InvoiceMeterReadingKey | null = null;
+      let foundGroup: Record<string, unknown> | null = null;
 
-    for (const key of INVOICE_METER_READING_KEYS) {
-      const group = wr[key] as Record<string, unknown> | undefined;
-      if (!group || !Array.isArray(group.history)) continue;
-      const hasReading = (group.history as Record<string, unknown>[]).some((entry) => this.firstString(entry.id) === readingId);
-      if (!hasReading) continue;
+      for (const key of INVOICE_METER_READING_KEYS) {
+        const group = wr[key] as Record<string, unknown> | undefined;
+        if (!group || !Array.isArray(group.history)) continue;
+        const hasReading = (group.history as Record<string, unknown>[]).some((entry) => firstString(entry.id) === readingId);
+        if (!hasReading) continue;
 
-      foundKey = key;
-      foundGroup = group;
-      break;
-    }
+        foundKey = key;
+        foundGroup = group;
+        break;
+      }
 
-    if (!foundKey || !foundGroup) return;
+      if (!foundKey || !foundGroup) return;
 
-    const history = (foundGroup.history as Record<string, unknown>[]).filter((entry) => this.firstString(entry.id) !== readingId);
-    const preserveMultipleElectricityReadings = foundKey === 'electricitymeter'
-      && history.some((entry) =>
-        this.firstString(entry.source, entry.meterReadingSource) === 'electricity_invoice'
-        || Boolean(this.firstString(entry.linkedInvoiceId, entry.linkedInvoiceExternalId))
-      );
-    const { history: recalculatedHistory, latestReading } = buildMeterHistorySnapshot(history as never[], {
-      collapseMonthly: foundKey === 'electricitymeter' ? !preserveMultipleElectricityReadings : true,
-    });
+      const history = (foundGroup.history as Record<string, unknown>[]).filter((entry) => firstString(entry.id) !== readingId);
+      const preserveMultipleElectricityReadings = foundKey === 'electricitymeter'
+        && history.some((entry) =>
+          firstString(entry.source, entry.meterReadingSource) === 'electricity_invoice'
+          || Boolean(firstString(entry.linkedInvoiceId, entry.linkedInvoiceExternalId))
+        );
+      const { history: recalculatedHistory, latestReading } = buildMeterHistorySnapshot(history as never[], {
+        collapseMonthly: foundKey === 'electricitymeter' ? !preserveMultipleElectricityReadings : true,
+      });
 
-    await apartmentRef.set(
-      {
-        waterReadings: {
-          ...wr,
-          [foundKey]: {
-            ...foundGroup,
-            history: recalculatedHistory,
-            currentValue: latestReading?.currentValue ?? null,
-            previousValue: latestReading?.previousValue ?? null,
-            submittedAt: latestReading?.submittedAt ?? null,
+      tx.set(
+        apartmentRef,
+        {
+          waterReadings: {
+            [foundKey]: {
+              ...foundGroup,
+              history: recalculatedHistory,
+              currentValue: latestReading?.currentValue ?? null,
+              previousValue: latestReading?.previousValue ?? null,
+              submittedAt: latestReading?.submittedAt ?? null,
+            },
           },
         },
-      },
-      { merge: true },
-    );
-  }
-
-  private getApartmentInvoiceUploadHistoryCollection(apartmentId: string): FirebaseFirestore.CollectionReference {
-    return this.firebaseAdminService.firestore
-      .collection('apartments')
-      .doc(apartmentId)
-      .collection('invoice_uploads');
-  }
-
-  private getLegacyBuildingInvoiceUploadHistoryCollection(buildingId: string): FirebaseFirestore.CollectionReference {
-    return this.firebaseAdminService.firestore
-      .collection('buildings')
-      .doc(buildingId)
-      .collection('invoice_uploads');
+        { merge: true },
+      );
+    });
   }
 
   private getBuildingTrashCollection(buildingId: string): FirebaseFirestore.CollectionReference {
@@ -763,7 +652,7 @@ export class InvoicesService {
     data: Record<string, unknown>,
     fallbackApartmentId?: string,
   ): string {
-    return this.firstString(data.apartmentId, fallbackApartmentId, ref.parent.parent?.id);
+    return firstString(data.apartmentId, fallbackApartmentId, ref.parent.parent?.id);
   }
 
   private invoiceApartmentCompanyId(apartment: Record<string, unknown> | undefined): string {
@@ -789,7 +678,7 @@ export class InvoicesService {
   }
 
   private invoiceDateRange(data: Record<string, unknown>): { start: Date; end: Date } | null {
-    const period = this.firstString(data.period);
+    const period = firstString(data.period);
     const match = /^(\d{4})-(\d{2})$/.exec(period);
     if (match) {
       const year = Number(match[1]);
@@ -863,10 +752,10 @@ export class InvoicesService {
     companyId?: string;
     buildingId?: string;
   }): boolean {
-    const companyId = this.firstString(params.companyId);
-    const buildingId = this.firstString(params.buildingId);
+    const companyId = firstString(params.companyId);
+    const buildingId = firstString(params.buildingId);
     const apartmentCompanyIds = this.extractCompanyIds(params.apartment);
-    const apartmentBuildingId = this.firstString(params.apartment.buildingId, params.apartment.houseId);
+    const apartmentBuildingId = firstString(params.apartment.buildingId, params.apartment.houseId);
 
     return (!companyId || apartmentCompanyIds.includes(companyId))
       && (!buildingId || apartmentBuildingId === buildingId);
@@ -883,23 +772,23 @@ export class InvoicesService {
     const safeData = { ...data };
     delete safeData.pdfUrl;
     const apartmentId = this.resolveInvoiceApartmentId(doc.ref, data, fallbackApartmentId);
-    const companyId = this.firstString(data.companyId, this.invoiceApartmentCompanyId(apartmentData));
-    const buildingId = this.firstString(data.buildingId, apartmentData?.buildingId, apartmentData?.houseId);
+    const companyId = firstString(data.companyId, this.invoiceApartmentCompanyId(apartmentData));
+    const buildingId = firstString(data.buildingId, apartmentData?.buildingId, apartmentData?.houseId);
 
     return {
       id: doc.id,
       ...safeData,
-      pdfAvailable: Boolean(this.firstString(data.storagePath, data.pdfUrl)),
+      pdfAvailable: Boolean(firstString(data.storagePath, data.pdfUrl)),
       apartmentId,
       companyId: companyId || undefined,
       buildingId: buildingId || undefined,
-      apartmentNumber: this.firstString(
+      apartmentNumber: firstString(
         data.apartmentNumber,
         data.number,
         apartmentData?.number,
         apartmentData?.apartmentNumber,
       ) || undefined,
-      invoicePath: this.firstString(data.invoicePath, doc.ref.path),
+      invoicePath: firstString(data.invoicePath, doc.ref.path),
       recipientType: this.normalizeRecipientType(data.recipientType ?? data.recipient_type),
     };
   }
@@ -911,7 +800,7 @@ export class InvoicesService {
       : null;
     const apartmentData = apartmentSnap?.exists ? apartmentSnap.data() as Record<string, unknown> : undefined;
     const data = this.invoiceItemFromDoc(doc, fallbackApartmentId, apartmentData);
-    const apartmentId = this.firstString(data.apartmentId, fallbackApartmentId);
+    const apartmentId = firstString(data.apartmentId, fallbackApartmentId);
 
     return {
       ref: doc.ref,
@@ -935,7 +824,7 @@ export class InvoicesService {
       ref: snap.ref,
       data: {
         ...this.invoiceItemFromDoc(snap as FirebaseFirestore.QueryDocumentSnapshot, apartmentId, apartmentData),
-        id: this.firstString(data.id, snap.id),
+        id: firstString(data.id, snap.id),
       },
       apartmentId,
     };
@@ -986,13 +875,13 @@ export class InvoicesService {
 
     const data = marker.data() as Record<string, unknown>;
     const targetId = target === 'invoice'
-      ? this.firstString(data.invoiceId)
-      : this.firstString(data.approvalId);
+      ? firstString(data.invoiceId)
+      : firstString(data.approvalId);
     const storedPath = target === 'invoice'
-      ? this.firstString(data.invoicePath)
-      : this.firstString(data.approvalPath);
-    const apartmentId = this.firstString(data.apartmentId);
-    const buildingId = this.firstString(data.buildingId);
+      ? firstString(data.invoicePath)
+      : firstString(data.approvalPath);
+    const apartmentId = firstString(data.apartmentId);
+    const buildingId = firstString(data.buildingId);
     const fallbackPath = target === 'invoice' && apartmentId && targetId
       ? `apartments/${apartmentId}/invoices/${targetId}`
       : target === 'approval' && buildingId && targetId
@@ -1025,7 +914,7 @@ export class InvoicesService {
   private shouldQueueInvoiceApproval(request: Request, payload?: Record<string, unknown>): boolean {
     if ((request as InvoiceUploadRequest).apiCredential) return true;
 
-    const raw = this.firstString(
+    const raw = firstString(
       payload?.queueApproval,
       payload?.queue_approval,
       payload?.approvalRequired,
@@ -1044,15 +933,15 @@ export class InvoicesService {
     const data = doc.data() as Record<string, unknown>;
     const safeData = { ...data };
     delete safeData.pdfUrl;
-    const buildingId = this.firstString(data.buildingId, fallbackBuildingId, doc.ref.parent.parent?.id);
+    const buildingId = firstString(data.buildingId, fallbackBuildingId, doc.ref.parent.parent?.id);
 
     return {
       id: doc.id,
       ...safeData,
-      pdfAvailable: Boolean(this.firstString(data.storagePath, data.pdfUrl)),
+      pdfAvailable: Boolean(firstString(data.storagePath, data.pdfUrl)),
       buildingId: buildingId || undefined,
-      createdAt: this.firestoreDateToIso(data.createdAt),
-      updatedAt: this.firestoreDateToIso(data.updatedAt),
+      createdAt: firestoreDateToIso(data.createdAt),
+      updatedAt: firestoreDateToIso(data.updatedAt),
     };
   }
 
@@ -1062,8 +951,8 @@ export class InvoicesService {
     buildingId?: string;
   }): Promise<string[]> {
     const staffCompanyId = this.requireStaffCompanyId(params.user);
-    const requestedCompanyId = this.firstString(params.companyId, staffCompanyId);
-    const requestedBuildingId = this.firstString(params.buildingId);
+    const requestedCompanyId = firstString(params.companyId, staffCompanyId);
+    const requestedBuildingId = firstString(params.buildingId);
 
     if (requestedCompanyId !== staffCompanyId) {
       throw new ForbiddenException('Access denied for company');
@@ -1093,7 +982,7 @@ export class InvoicesService {
     user: RequestUser,
     approvalId: string,
   ): Promise<PendingInvoiceApprovalLocation> {
-    const normalizedApprovalId = this.firstString(approvalId);
+    const normalizedApprovalId = firstString(approvalId);
     if (!normalizedApprovalId) {
       throw new BadRequestException('approvalId is required');
     }
@@ -1115,9 +1004,9 @@ export class InvoicesService {
       throw new NotFoundException('Invoice approval not found');
     }
 
-    const buildingId = this.firstString(snap.ref.parent.parent?.id);
+    const buildingId = firstString(snap.ref.parent.parent?.id);
     const data = this.pendingApprovalItemFromDoc(snap, buildingId);
-    const companyId = this.firstString(data.companyId);
+    const companyId = firstString(data.companyId);
     if (!companyId || companyId !== this.requireStaffCompanyId(user)) {
       throw new ForbiddenException('Access denied for company');
     }
@@ -1152,9 +1041,9 @@ export class InvoicesService {
   }): Promise<ApartmentInvoiceContext[]> {
     const db = this.firebaseAdminService.firestore;
     const staffCompanyId = this.requireStaffCompanyId(params.user);
-    const requestedCompanyId = this.firstString(params.companyId, staffCompanyId);
-    const requestedApartmentId = this.firstString(params.apartmentId);
-    const requestedBuildingId = this.firstString(params.buildingId);
+    const requestedCompanyId = firstString(params.companyId, staffCompanyId);
+    const requestedApartmentId = firstString(params.apartmentId);
+    const requestedBuildingId = firstString(params.buildingId);
 
     if (requestedCompanyId !== staffCompanyId) {
       throw new ForbiddenException('Access denied for company');
@@ -1210,7 +1099,7 @@ export class InvoicesService {
 
     const [arraySnap, directSnap] = await Promise.all([
       db.collection('apartments').where('companyIds', 'array-contains', requestedCompanyId).get(),
-      db.collection('apartments').where('companyId', '==', requestedCompanyId).get(),
+      legacyScopeQuery(() => db.collection('apartments').where('companyId', '==', requestedCompanyId).get()),
     ]);
     addDocs(arraySnap.docs);
     addDocs(directSnap.docs);
@@ -1219,9 +1108,25 @@ export class InvoicesService {
   }
 
   private async findInvoiceDocument(invoiceId: string, user?: RequestUser): Promise<InvoiceDocumentLocation> {
-    const normalizedInvoiceId = this.firstString(invoiceId);
+    const normalizedInvoiceId = firstString(invoiceId);
     if (!normalizedInvoiceId) {
       throw new BadRequestException('invoiceId is required');
+    }
+
+    // Staff fast path: one indexed collection-group lookup by id (callers verify company scope).
+    // Previously this loaded every apartment of the company first and then probed each of them.
+    if (user && this.isStaff(user)) {
+      const staffCompanyId = firstString(user.companyId);
+      const byIdSnapshot = await this.firebaseAdminService.firestore
+        .collectionGroup('invoices')
+        .where('id', '==', normalizedInvoiceId)
+        .limit(5)
+        .get();
+      const preferred = byIdSnapshot.docs.find((doc) => doc.data().companyId === staffCompanyId) ?? byIdSnapshot.docs[0];
+      if (preferred) {
+        if (byIdSnapshot.size > 1) this.logger.warn(`invoice.lookup.duplicate_id invoiceId=${normalizedInvoiceId}`);
+        return this.invoiceLocationFromDoc(preferred);
+      }
     }
 
     const apartmentIds = user
@@ -1259,7 +1164,7 @@ export class InvoicesService {
     buildingCompanyId: string;
   }): string {
     const staffCompanyId = this.requireStaffCompanyId(params.user);
-    const payloadCompanyId = this.firstString(params.payload.companyId, params.payload.company_id);
+    const payloadCompanyId = firstString(params.payload.companyId, params.payload.company_id);
     if (payloadCompanyId && payloadCompanyId !== staffCompanyId) {
       throw new ForbiddenException('Access denied for company');
     }
@@ -1281,7 +1186,7 @@ export class InvoicesService {
   private resolveResidentContext(apartment: Record<string, unknown>) {
     const residentUserIds = new Set<string>();
     const addUserId = (value: unknown) => {
-      const id = this.firstString(value);
+      const id = firstString(value);
       if (id) residentUserIds.add(id);
     };
 
@@ -1295,9 +1200,9 @@ export class InvoicesService {
     }
 
     return {
-      residentId: this.firstString(apartment.residentId) || Array.from(residentUserIds)[0] || null,
+      residentId: firstString(apartment.residentId) || Array.from(residentUserIds)[0] || null,
       residentUserIds: Array.from(residentUserIds),
-      residentName: this.firstString(
+      residentName: firstString(
         apartment.residentName,
         [apartment.residentFirstName, apartment.residentLastName]
           .filter((value) => typeof value === 'string' && value.trim())
@@ -1307,160 +1212,13 @@ export class InvoicesService {
           .filter((value) => typeof value === 'string' && value.trim())
           .join(' '),
       ) || null,
-      residentEmail: this.firstString(apartment.residentEmail, apartment.ownerEmail) || null,
-      apartmentNumber: this.firstString(apartment.number, apartment.apartmentNumber, apartment.label),
+      residentEmail: firstString(apartment.residentEmail, apartment.ownerEmail) || null,
+      apartmentNumber: firstString(apartment.number, apartment.apartmentNumber, apartment.label),
     };
-  }
-
-  private buildStoragePath(params: {
-    companyId: string;
-    buildingId: string;
-    apartmentId: string;
-    period: string;
-    invoiceId: string;
-  }): string {
-    return [
-      'companies',
-      this.sanitizePathSegment(params.companyId),
-      'buildings',
-      this.sanitizePathSegment(params.buildingId),
-      'apartments',
-      this.sanitizePathSegment(params.apartmentId),
-      'invoices',
-      this.sanitizePathSegment(params.period),
-      `${this.sanitizePathSegment(params.invoiceId)}.pdf`,
-    ].join('/');
-  }
-
-  private buildPendingApprovalStoragePath(params: {
-    companyId: string;
-    buildingId: string;
-    approvalId: string;
-  }): string {
-    return [
-      'companies',
-      this.sanitizePathSegment(params.companyId),
-      'buildings',
-      this.sanitizePathSegment(params.buildingId),
-      'invoice_approvals',
-      `${this.sanitizePathSegment(params.approvalId)}.pdf`,
-    ].join('/');
-  }
-
-  private buildFirebaseDownloadUrl(bucketName: string, storagePath: string, token: string): string {
-    return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucketName)}/o/${encodeURIComponent(storagePath)}?alt=media&token=${encodeURIComponent(token)}`;
-  }
-
-  private sanitizePdfFileName(value: string): string {
-    const normalized = value
-      .replace(/[\r\n]/g, ' ')
-      .replace(/[\\/:*?"<>|]+/g, '-')
-      .replace(/\.pdf$/i, '')
-      .trim();
-
-    return `${normalized || 'invoice'}.pdf`;
-  }
-
-  private resolveInvoicePdfFileName(invoice: Record<string, unknown>, invoiceId: string): string {
-    return this.sanitizePdfFileName(
-      this.firstString(invoice.originalFileName, invoice.externalId, invoice.id, invoiceId) || invoiceId,
-    );
-  }
-
-  private assertSafeProxyUrl(value: string): URL {
-    let url: URL;
-    try {
-      url = new URL(value);
-    } catch {
-      throw new NotFoundException('Invoice PDF not found');
-    }
-
-    if (url.protocol !== 'https:' || !ALLOWED_PDF_PROXY_HOSTS.has(url.hostname)) {
-      throw new ForbiddenException('Invoice PDF URL cannot be proxied');
-    }
-
-    return url;
-  }
-
-  private async downloadInvoicePdfFromUrl(pdfUrl: string, fileName: string): Promise<InvoicePdfPayload> {
-    const url = this.assertSafeProxyUrl(pdfUrl);
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new NotFoundException('Invoice PDF not found');
-    }
-
-    const contentLength = Number(response.headers.get('content-length') ?? 0);
-    if (Number.isFinite(contentLength) && contentLength > MAX_INVOICE_PDF_BYTES) {
-      throw new BadRequestException('Invoice PDF is too large');
-    }
-
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > MAX_INVOICE_PDF_BYTES) {
-      throw new BadRequestException('Invoice PDF is too large');
-    }
-
-    return {
-      buffer,
-      fileName,
-      contentType: response.headers.get('content-type') || 'application/pdf',
-    };
-  }
-
-  private async resolveInvoicePdfPayload(invoice: Record<string, unknown>, invoiceId: string): Promise<InvoicePdfPayload> {
-    const fileName = this.resolveInvoicePdfFileName(invoice, invoiceId);
-    const storagePath = this.firstString(invoice.storagePath);
-    const pdfUrl = this.firstString(invoice.pdfUrl);
-    const approvedFromApprovalId = this.firstString(invoice.approvedFromApprovalId);
-    const restoredPendingApprovalPath = approvedFromApprovalId
-      ? this.buildPendingApprovalStoragePath({
-          companyId: this.firstString(invoice.companyId),
-          buildingId: this.firstString(invoice.buildingId),
-          approvalId: approvedFromApprovalId,
-        })
-      : '';
-    const storagePaths = Array.from(new Set([storagePath, restoredPendingApprovalPath].filter(Boolean)));
-
-    for (const candidateStoragePath of storagePaths) {
-      const storageBucket = this.firstString(invoice.storageBucket);
-      const bucket = storageBucket
-        ? this.firebaseAdminService.storage.bucket(storageBucket)
-        : this.firebaseAdminService.storageBucket;
-      const file = bucket.file(candidateStoragePath);
-
-      try {
-        const [metadata] = await file.getMetadata();
-        const size = Number(metadata.size ?? 0);
-        if (Number.isFinite(size) && size > MAX_INVOICE_PDF_BYTES) {
-          throw new BadRequestException('Invoice PDF is too large');
-        }
-
-        const [buffer] = await file.download();
-        return {
-          buffer,
-          fileName,
-          contentType: typeof metadata.contentType === 'string' && metadata.contentType
-            ? metadata.contentType
-            : 'application/pdf',
-        };
-      } catch (error) {
-        if (error instanceof BadRequestException) {
-          throw error;
-        }
-
-        this.logger.warn(`invoice.pdf.storage_download_failed invoiceId=${invoiceId} path=${candidateStoragePath} reason=${this.errorMessage(error)}`);
-      }
-    }
-
-    if (!pdfUrl) {
-      throw new NotFoundException('Invoice PDF not found');
-    }
-
-    return this.downloadInvoicePdfFromUrl(pdfUrl, fileName);
   }
 
   private resolvePublicAppBaseUrl(request: Request): string {
-    const configured = this.firstString(
+    const configured = firstString(
       process.env.FRONTEND_URL,
       process.env.PUBLIC_FRONTEND_URL,
       process.env.APP_PUBLIC_URL,
@@ -1485,18 +1243,18 @@ export class InvoicesService {
   }
 
   private resolveInvoiceEmailLanguage(invoice: Record<string, unknown>, apartment: Record<string, unknown>): 'en' | 'ru' | 'lv' {
-    const language = this.firstString(invoice.language, invoice.locale, apartment.language, apartment.locale).slice(0, 2).toLowerCase();
+    const language = firstString(invoice.language, invoice.locale, apartment.language, apartment.locale).slice(0, 2).toLowerCase();
     return language === 'en' || language === 'ru' || language === 'lv' ? language : 'lv';
   }
 
   private resolveInvoiceEmailAmount(invoice: Record<string, unknown>): string {
-    const currency = this.firstString(invoice.currency, 'EUR') || 'EUR';
+    const currency = firstString(invoice.currency, 'EUR') || 'EUR';
     const amount = invoice.amount;
     if (typeof amount === 'number' && Number.isFinite(amount)) {
       return `${amount.toFixed(2)} ${currency}`;
     }
 
-    return this.firstString(invoice.amount, invoice.totalAmount, invoice.total, `0 ${currency}`);
+    return firstString(invoice.amount, invoice.totalAmount, invoice.total, `0 ${currency}`);
   }
 
   private resolveInvoiceRecipient(params: {
@@ -1504,7 +1262,7 @@ export class InvoicesService {
     apartment: Record<string, unknown>;
   }): { email: string; name: string } {
     const recipientType = this.normalizeRecipientType(params.invoice.recipientType ?? params.invoice.recipient_type);
-    const ownerName = this.firstString(
+    const ownerName = firstString(
       params.apartment.ownerName,
       params.apartment.owner,
       [params.apartment.ownerFirstName, params.apartment.ownerLastName]
@@ -1518,7 +1276,7 @@ export class InvoicesService {
       }
 
       return {
-        email: normalizeEmail(this.firstString(params.apartment.ownerEmail, params.invoice.ownerEmail)),
+        email: normalizeEmail(firstString(params.apartment.ownerEmail, params.invoice.ownerEmail)),
         name: ownerName,
       };
     }
@@ -1531,12 +1289,12 @@ export class InvoicesService {
       }
 
       return {
-        email: normalizeEmail(this.firstString(
+        email: normalizeEmail(firstString(
           activeTenant?.email,
           params.invoice.residentEmail,
           params.apartment.residentEmail,
         )),
-        name: this.firstString(
+        name: firstString(
           params.invoice.residentName,
           activeTenant?.name,
           activeTenant?.fullName,
@@ -1548,16 +1306,16 @@ export class InvoicesService {
       };
     }
 
-    const activeResidentEmail = this.firstString(params.apartment.residentId)
-      ? normalizeEmail(this.firstString(params.invoice.residentEmail, params.apartment.residentEmail))
+    const activeResidentEmail = firstString(params.apartment.residentId)
+      ? normalizeEmail(firstString(params.invoice.residentEmail, params.apartment.residentEmail))
       : '';
     const activeOwnerEmail = this.hasActiveOwner(params.apartment)
-      ? normalizeEmail(this.firstString(params.apartment.ownerEmail, params.invoice.ownerEmail))
+      ? normalizeEmail(firstString(params.apartment.ownerEmail, params.invoice.ownerEmail))
       : '';
 
     return {
-      email: this.firstString(activeResidentEmail, activeOwnerEmail),
-      name: this.firstString(params.invoice.residentName, params.apartment.residentName, ownerName),
+      email: firstString(activeResidentEmail, activeOwnerEmail),
+      name: firstString(params.invoice.residentName, params.apartment.residentName, ownerName),
     };
   }
 
@@ -1575,25 +1333,25 @@ export class InvoicesService {
     }
 
     const [pdf, invoiceLink] = await Promise.all([
-      this.resolveInvoicePdfPayload(params.invoiceData, params.invoiceId),
+      this.pdfStorage.resolveInvoicePdfPayload(params.invoiceData, params.invoiceId),
       this.authenticatedInvoiceViewLink(params.invoiceId, params.request),
     ]);
 
     await this.emailService.sendInvoiceGenerated({
       to: recipientEmail,
       tenantName: recipient.name,
-      companyId: this.firstString(
+      companyId: firstString(
         params.invoiceData.companyId,
         params.invoiceData.managementCompanyId,
         params.apartment.companyId,
         params.apartment.managementCompanyId,
       ),
-      brandName: this.firstString(params.invoiceData.companyName, params.apartment.companyName, params.apartment.managementCompanyName),
-      apartmentNumber: this.firstString(params.invoiceData.apartmentNumber, params.apartment.number, params.apartment.apartmentNumber),
-      buildingName: this.firstString(params.invoiceData.buildingName, params.apartment.buildingName),
-      invoiceNumber: this.firstString(params.invoiceData.invoiceNumber, params.invoiceData.externalId, params.invoiceId),
+      brandName: firstString(params.invoiceData.companyName, params.apartment.companyName, params.apartment.managementCompanyName),
+      apartmentNumber: firstString(params.invoiceData.apartmentNumber, params.apartment.number, params.apartment.apartmentNumber),
+      buildingName: firstString(params.invoiceData.buildingName, params.apartment.buildingName),
+      invoiceNumber: firstString(params.invoiceData.invoiceNumber, params.invoiceData.externalId, params.invoiceId),
       amount: this.resolveInvoiceEmailAmount(params.invoiceData),
-      dueDate: this.firstString(params.invoiceData.dueDate, params.invoiceData.paymentDueDate, params.invoiceData.period, ''),
+      dueDate: firstString(params.invoiceData.dueDate, params.invoiceData.paymentDueDate, params.invoiceData.period, ''),
       invoiceLink,
       language: this.resolveInvoiceEmailLanguage(params.invoiceData, params.apartment),
       attachments: [
@@ -1606,256 +1364,12 @@ export class InvoicesService {
     });
   }
 
-  private async saveInvoicePdf(params: {
-    file: UploadedInvoiceFile;
-    storagePath: string;
-    externalId: string;
-    invoiceId: string;
-    originalFileName: string;
-  }) {
-    const bucket = this.firebaseAdminService.storageBucket;
-    const downloadToken = randomUUID();
-    await bucket.file(params.storagePath).save(params.file.buffer, {
-      resumable: false,
-      metadata: {
-        contentType: 'application/pdf',
-        contentDisposition: `inline; filename="${params.originalFileName.replace(/"/g, '')}"`,
-        metadata: {
-          firebaseStorageDownloadTokens: downloadToken,
-          externalId: params.externalId,
-          invoiceId: params.invoiceId,
-        },
-      },
-    });
-
-    return {
-      bucket: bucket.name,
-      storagePath: params.storagePath,
-      pdfUrl: this.buildFirebaseDownloadUrl(bucket.name, params.storagePath, downloadToken),
-    };
-  }
-
-  private errorMessage(error: unknown): string {
-    if (error instanceof Error && error.message.trim()) {
-      return error.message;
-    }
-
-    return 'Invoice upload failed';
-  }
-
   private parseJson(value: string, message: string): unknown {
     try {
       return JSON.parse(value) as unknown;
     } catch {
       throw new BadRequestException(message);
     }
-  }
-
-  private isZipFile(file: UploadedInvoiceFile): boolean {
-    const name = this.firstString(file.originalname).toLowerCase();
-    const mimetype = this.firstString(file.mimetype).toLowerCase();
-
-    return name.endsWith('.zip')
-      || mimetype === 'application/zip'
-      || mimetype === 'application/x-zip-compressed'
-      || mimetype === 'multipart/x-zip';
-  }
-
-  private pathBaseName(value: string): string {
-    const normalized = value.replace(/\\/g, '/');
-    return normalized.split('/').filter(Boolean).pop() ?? normalized;
-  }
-
-  private findZipEndOfCentralDirectory(buffer: Buffer): number {
-    const minOffset = Math.max(0, buffer.length - 65_557);
-    for (let offset = buffer.length - 22; offset >= minOffset; offset -= 1) {
-      if (buffer.readUInt32LE(offset) === 0x06054b50) {
-        return offset;
-      }
-    }
-
-    throw new BadRequestException('Invalid ZIP archive');
-  }
-
-  private readZipEntryContent(params: {
-    archive: Buffer;
-    entryName: string;
-    compressionMethod: number;
-    generalPurposeFlag: number;
-    compressedSize: number;
-    uncompressedSize: number;
-    localHeaderOffset: number;
-  }): Buffer {
-    if ((params.generalPurposeFlag & 0x01) !== 0) {
-      throw new BadRequestException(`Encrypted ZIP entries are not supported: ${params.entryName}`);
-    }
-
-    if (params.compressedSize === 0xffffffff || params.uncompressedSize === 0xffffffff) {
-      throw new BadRequestException('ZIP64 archives are not supported');
-    }
-
-    if (params.uncompressedSize > MAX_INVOICE_PDF_BYTES && params.entryName.toLowerCase().endsWith('.pdf')) {
-      throw new BadRequestException(`PDF file is too large: ${params.entryName}`);
-    }
-
-    if (params.localHeaderOffset < 0 || params.localHeaderOffset + 30 > params.archive.length) {
-      throw new BadRequestException(`Invalid ZIP entry header: ${params.entryName}`);
-    }
-
-    if (params.archive.readUInt32LE(params.localHeaderOffset) !== 0x04034b50) {
-      throw new BadRequestException(`Invalid ZIP entry header: ${params.entryName}`);
-    }
-
-    const fileNameLength = params.archive.readUInt16LE(params.localHeaderOffset + 26);
-    const extraLength = params.archive.readUInt16LE(params.localHeaderOffset + 28);
-    const dataOffset = params.localHeaderOffset + 30 + fileNameLength + extraLength;
-    const dataEnd = dataOffset + params.compressedSize;
-    if (dataOffset < 0 || dataEnd > params.archive.length) {
-      throw new BadRequestException(`Invalid ZIP entry data: ${params.entryName}`);
-    }
-
-    const compressed = params.archive.subarray(dataOffset, dataEnd);
-    let content: Buffer;
-    if (params.compressionMethod === 0) {
-      content = Buffer.from(compressed);
-    } else if (params.compressionMethod === 8) {
-      try {
-        content = inflateRawSync(compressed, { maxOutputLength: MAX_INVOICE_PDF_BYTES + 1 });
-      } catch {
-        throw new BadRequestException(`Could not extract ZIP entry: ${params.entryName}`);
-      }
-    } else {
-      throw new BadRequestException(`Unsupported ZIP compression method for ${params.entryName}`);
-    }
-
-    if (params.uncompressedSize > 0 && content.length !== params.uncompressedSize) {
-      throw new BadRequestException(`Invalid ZIP entry size: ${params.entryName}`);
-    }
-    if (content.length > MAX_INVOICE_PDF_BYTES) {
-      throw new BadRequestException(`ZIP entry is too large: ${params.entryName}`);
-    }
-
-    return content;
-  }
-
-  private extractZipInvoiceBatch(file: UploadedInvoiceFile): {
-    files: UploadedInvoiceFile[];
-    itemsJson?: string;
-  } {
-    const archive = file.buffer;
-    const archiveName = this.firstString(file.originalname, 'archive.zip');
-    if (!archive || archive.length < 22) {
-      throw new BadRequestException(`Invalid ZIP archive: ${archiveName}`);
-    }
-
-    if (archive.length > MAX_INVOICE_ZIP_BYTES) {
-      throw new BadRequestException(`ZIP archive is too large: ${archiveName}`);
-    }
-
-    const eocdOffset = this.findZipEndOfCentralDirectory(archive);
-    const entryCount = archive.readUInt16LE(eocdOffset + 10);
-    const centralDirectorySize = archive.readUInt32LE(eocdOffset + 12);
-    const centralDirectoryOffset = archive.readUInt32LE(eocdOffset + 16);
-    if (entryCount > MAX_INVOICE_ZIP_ENTRIES) {
-      throw new BadRequestException(`ZIP archive contains too many files: ${archiveName}`);
-    }
-
-    if (
-      centralDirectoryOffset < 0
-      || centralDirectorySize < 0
-      || centralDirectoryOffset + centralDirectorySize > archive.length
-    ) {
-      throw new BadRequestException(`Invalid ZIP archive: ${archiveName}`);
-    }
-
-    const pdfFiles: UploadedInvoiceFile[] = [];
-    let itemsJson: string | undefined;
-    let totalUncompressed = 0;
-    let offset = centralDirectoryOffset;
-
-    for (let index = 0; index < entryCount; index += 1) {
-      if (offset + 46 > archive.length || archive.readUInt32LE(offset) !== 0x02014b50) {
-        throw new BadRequestException(`Invalid ZIP central directory: ${archiveName}`);
-      }
-
-      const generalPurposeFlag = archive.readUInt16LE(offset + 8);
-      const compressionMethod = archive.readUInt16LE(offset + 10);
-      const compressedSize = archive.readUInt32LE(offset + 20);
-      const uncompressedSize = archive.readUInt32LE(offset + 24);
-      const fileNameLength = archive.readUInt16LE(offset + 28);
-      const extraLength = archive.readUInt16LE(offset + 30);
-      const commentLength = archive.readUInt16LE(offset + 32);
-      const localHeaderOffset = archive.readUInt32LE(offset + 42);
-      const nameStart = offset + 46;
-      const nameEnd = nameStart + fileNameLength;
-      if (nameEnd > archive.length) {
-        throw new BadRequestException(`Invalid ZIP entry name: ${archiveName}`);
-      }
-
-      const rawName = archive.toString('utf8', nameStart, nameEnd).replace(/\\/g, '/');
-      const entryName = rawName.replace(/^\/+/, '');
-      const baseName = this.pathBaseName(entryName);
-      const normalizedName = entryName.toLowerCase();
-      const normalizedBaseName = baseName.toLowerCase();
-      offset = nameEnd + extraLength + commentLength;
-
-      if (
-        !entryName
-        || entryName.endsWith('/')
-        || normalizedName.startsWith('__macosx/')
-        || normalizedBaseName === '.ds_store'
-      ) {
-        continue;
-      }
-
-      const isPdf = normalizedName.endsWith('.pdf');
-      const isItemsJson = normalizedBaseName === 'items.json';
-      if (!isPdf && !isItemsJson) {
-        continue;
-      }
-
-      totalUncompressed += uncompressedSize;
-      if (totalUncompressed > MAX_INVOICE_ZIP_UNCOMPRESSED_BYTES) {
-        throw new BadRequestException(`ZIP archive is too large after extraction: ${archiveName}`);
-      }
-
-      const content = this.readZipEntryContent({
-        archive,
-        entryName,
-        compressionMethod,
-        generalPurposeFlag,
-        compressedSize,
-        uncompressedSize,
-        localHeaderOffset,
-      });
-
-      if (isItemsJson) {
-        if (itemsJson !== undefined) {
-          throw new BadRequestException('ZIP archive must contain only one items.json file');
-        }
-
-        itemsJson = content.toString('utf8');
-        continue;
-      }
-
-      pdfFiles.push({
-        fieldname: 'files',
-        buffer: content,
-        originalname: baseName,
-        mimetype: 'application/pdf',
-        size: content.length,
-      });
-    }
-
-    if (pdfFiles.length === 0) {
-      throw new BadRequestException(`ZIP archive must contain at least one PDF file: ${archiveName}`);
-    }
-
-    if (pdfFiles.length > MAX_INVOICE_BATCH_FILES) {
-      throw new BadRequestException(`Batch upload supports up to ${MAX_INVOICE_BATCH_FILES} invoices`);
-    }
-
-    return { files: pdfFiles, itemsJson };
   }
 
   private expandBatchArchives(
@@ -1866,12 +1380,12 @@ export class InvoicesService {
     let zippedItems: string | undefined;
 
     for (const file of files) {
-      if (!this.isZipFile(file)) {
+      if (!this.zipExtractor.isZipFile(file)) {
         expandedFiles.push(file);
         continue;
       }
 
-      const extracted = this.extractZipInvoiceBatch(file);
+      const extracted = this.zipExtractor.extractZipInvoiceBatch(file);
       expandedFiles.push(...extracted.files);
       if (extracted.itemsJson !== undefined) {
         if (zippedItems !== undefined) {
@@ -1959,16 +1473,16 @@ export class InvoicesService {
   }): UploadedInvoiceFile {
     const { files, item, itemIndex, usedIndexes } = params;
     const fileIndex = this.parseFileIndex(item.fileIndex ?? item.file_index, files.length);
-    const fileName = this.firstString(item.fileName, item.file_name, item.originalFileName, item.original_file_name);
+    const fileName = firstString(item.fileName, item.file_name, item.originalFileName, item.original_file_name);
 
     let resolvedIndex = fileIndex;
     if (resolvedIndex === null && fileName) {
-      const requestedBaseName = this.pathBaseName(fileName);
+      const requestedBaseName = this.zipExtractor.pathBaseName(fileName);
       resolvedIndex = files.findIndex((file, index) =>
         !usedIndexes.has(index)
           && (
             file.originalname === fileName
-            || this.pathBaseName(file.originalname ?? '') === requestedBaseName
+            || this.zipExtractor.pathBaseName(file.originalname ?? '') === requestedBaseName
           ),
       );
       if (resolvedIndex < 0) {
@@ -2000,7 +1514,7 @@ export class InvoicesService {
   }
 
   private hasApartmentLookup(item: Record<string, unknown>): boolean {
-    return Boolean(this.firstString(
+    return Boolean(firstString(
       item.apartmentId,
       item.apartment_id,
       item.accountId,
@@ -2057,351 +1571,6 @@ export class InvoicesService {
     return { ...payload, ...item };
   }
 
-  private async writeUploadHistory(input: UploadHistoryInput): Promise<void> {
-    try {
-      const apartmentId = input.apartmentId?.trim();
-      const buildingId = input.buildingId?.trim();
-      if (!apartmentId && !buildingId) {
-        this.logger.warn('invoice.upload.history.write.skipped reason=missing_apartmentId_and_buildingId');
-        return;
-      }
-
-      const collection = apartmentId
-        ? this.getApartmentInvoiceUploadHistoryCollection(apartmentId)
-        : this.getLegacyBuildingInvoiceUploadHistoryCollection(buildingId!);
-
-      const now = new Date();
-      const payload = {
-        status: input.status,
-        source: input.source,
-        actorUid: input.actorUid ?? null,
-        actorRole: input.actorRole ?? null,
-        companyId: input.companyId ?? null,
-        buildingId: buildingId ?? null,
-        apartmentId: apartmentId ?? null,
-        invoiceId: input.invoiceId ?? null,
-        externalId: input.externalId ?? null,
-        fileName: input.fileName ?? null,
-        fileSize: input.fileSize ?? null,
-        error: input.error ?? null,
-        metadata: {
-          ...this.apiCredentialMetadata(input.request),
-          ...(input.metadata ?? {}),
-        },
-        ip: input.request?.ip ?? null,
-        userAgent: input.request?.headers['user-agent'] ?? null,
-        updatedAt: now,
-      };
-
-      if (input.historyId) {
-        const ref = collection.doc(input.historyId);
-        const snap = await ref.get();
-        await ref.set({
-          ...payload,
-          createdAt: snap.exists ? (snap.data() as Record<string, unknown>).createdAt ?? now : now,
-        }, { merge: true });
-        return;
-      }
-
-      await collection.add({
-        ...payload,
-        createdAt: now,
-      });
-    } catch (error) {
-      this.logger.warn(`invoice.upload.history.write.failed reason=${this.errorMessage(error)}`);
-    }
-  }
-
-  private uploadHistoryStatusFromResults(results: Array<Record<string, unknown>>): string {
-    const failed = results.filter((item) => item.success === false && item.cancelled !== true).length;
-    const waiting = results.filter((item) => this.firstString(item.approval_id, item.approvalId) && !this.firstString(item.invoice_id, item.invoiceId) && item.cancelled !== true).length;
-    const cancelled = results.filter((item) => item.cancelled === true).length;
-
-    if (failed > 0) return 'error';
-    if (waiting > 0) return 'pending';
-    if (cancelled > 0 && cancelled === results.length) return 'cancelled';
-    return 'success';
-  }
-
-  private async updateUploadHistoryForApproval(params: {
-    approvalId: string;
-    buildingId: string;
-    apartmentId?: string;
-    companyId?: string;
-    historyId?: string;
-    historyBuildingId?: string;
-    historyApartmentId?: string;
-    invoiceId?: string;
-    status: 'approved' | 'cancelled';
-    error?: string;
-  }): Promise<void> {
-    const buildingId = this.firstString(params.buildingId);
-    const apartmentId = this.firstString(params.apartmentId);
-    const historyId = this.firstString(params.historyId);
-    const candidateBuildingIds = new Set<string>();
-    const candidateApartmentIds = new Set<string>();
-    const historyBuildingId = this.firstString(params.historyBuildingId);
-    const historyApartmentId = this.firstString(params.historyApartmentId);
-    if (historyApartmentId) candidateApartmentIds.add(historyApartmentId);
-    if (apartmentId) candidateApartmentIds.add(apartmentId);
-    if (historyBuildingId) candidateBuildingIds.add(historyBuildingId);
-    if (buildingId) candidateBuildingIds.add(buildingId);
-    // The approval carries both the original and resolved history location.
-    // Scanning every apartment and building in a company for each file made
-    // multi-file approvals progressively slower without improving the normal path.
-
-    if (candidateApartmentIds.size === 0 && candidateBuildingIds.size === 0) return;
-
-    try {
-      const now = new Date();
-      const updates: Array<Promise<unknown>> = [];
-      const visited = new Set<string>();
-
-      const queueUpdate = (doc: FirebaseFirestore.QueryDocumentSnapshot | FirebaseFirestore.DocumentSnapshot) => {
-        if (visited.has(doc.ref.path)) return;
-        visited.add(doc.ref.path);
-        if (!doc.exists) return;
-
-        const data = doc.data() as Record<string, unknown>;
-        const metadata = data.metadata && typeof data.metadata === 'object'
-          ? data.metadata as Record<string, unknown>
-          : {};
-        const directApprovalId = this.firstString(data.approvalId, metadata.approvalId);
-        const rawResults = Array.isArray(metadata.results) ? metadata.results : [];
-        const docIsRequestedHistory = historyId && doc.id === historyId;
-        let matched = directApprovalId === params.approvalId || Boolean(docIsRequestedHistory);
-        const nextResults = rawResults.map((value) => {
-          const result = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-          const resultApprovalId = this.firstString(result.approval_id, result.approvalId);
-          if (resultApprovalId !== params.approvalId) {
-            return value;
-          }
-
-          matched = true;
-          return {
-            ...result,
-            ...(params.invoiceId ? { invoice_id: params.invoiceId } : {}),
-            ...(params.status === 'cancelled' ? { cancelled: true, success: false, error: params.error ?? 'Cancelled' } : { success: true }),
-            message: params.status === 'cancelled' ? 'Invoice approval cancelled' : 'Invoice approved',
-          };
-        }) as Array<Record<string, unknown>>;
-
-        if (!matched) return;
-
-        const hasResults = nextResults.length > 0;
-        const approvedApprovalIds = Array.from(new Set([
-          ...(Array.isArray(metadata.approvedApprovalIds) ? metadata.approvedApprovalIds.map((value) => this.firstString(value)).filter(Boolean) : []),
-          ...(params.status === 'approved' ? [params.approvalId] : []),
-        ]));
-        const cancelledApprovalIds = Array.from(new Set([
-          ...(Array.isArray(metadata.cancelledApprovalIds) ? metadata.cancelledApprovalIds.map((value) => this.firstString(value)).filter(Boolean) : []),
-          ...(params.status === 'cancelled' ? [params.approvalId] : []),
-        ]));
-        const total = Number(metadata.total);
-        const completedCount = approvedApprovalIds.length + cancelledApprovalIds.length;
-        const nextStatus = hasResults
-          ? this.uploadHistoryStatusFromResults(nextResults)
-          : Number.isFinite(total) && total > 1 && completedCount < total
-            ? 'pending'
-            : cancelledApprovalIds.length > 0 && approvedApprovalIds.length === 0
-              ? 'cancelled'
-              : 'success';
-        const nextMetadata = {
-          ...metadata,
-          ...(params.invoiceId ? { invoiceId: params.invoiceId } : {}),
-          approvalId: params.approvalId,
-          approvedApprovalIds,
-          cancelledApprovalIds,
-          updatedAt: now,
-          ...(hasResults ? { results: nextResults } : {}),
-        };
-
-        updates.push(doc.ref.set({
-          status: nextStatus,
-          invoiceId: params.invoiceId ?? data.invoiceId ?? null,
-          error: nextStatus === 'error' ? (params.error ?? data.error ?? null) : null,
-          metadata: nextMetadata,
-          updatedAt: now,
-        }, { merge: true }));
-      };
-
-      const scanCollection = async (collection: FirebaseFirestore.CollectionReference) => {
-
-        if (historyId) {
-          queueUpdate(await collection.doc(historyId).get());
-        }
-
-        const snap = await collection.get();
-        for (const doc of snap.docs) {
-          queueUpdate(doc);
-        }
-      };
-
-      for (const currentApartmentId of candidateApartmentIds) {
-        await scanCollection(this.getApartmentInvoiceUploadHistoryCollection(currentApartmentId));
-      }
-
-      for (const currentBuildingId of candidateBuildingIds) {
-        await scanCollection(this.getLegacyBuildingInvoiceUploadHistoryCollection(currentBuildingId));
-      }
-
-      await Promise.allSettled(updates);
-    } catch (error) {
-      this.logger.warn(`invoice.upload.history.update.failed approvalId=${params.approvalId} reason=${this.errorMessage(error)}`);
-    }
-  }
-
-  private async reconcileUploadHistoryDoc(
-    params: { buildingId?: string; apartmentId?: string },
-    historyDoc: FirebaseFirestore.QueryDocumentSnapshot,
-  ): Promise<Record<string, unknown>> {
-    const data = historyDoc.data() as Record<string, unknown>;
-    const buildingId = this.firstString(data.buildingId, params.buildingId);
-    const apartmentId = this.firstString(data.apartmentId, params.apartmentId, historyDoc.ref.parent.parent?.id);
-    const baseItem = {
-      id: historyDoc.id,
-      ...data,
-      buildingId: buildingId || undefined,
-      apartmentId: apartmentId || undefined,
-      createdAt: this.firestoreDateToIso(data.createdAt),
-    };
-
-    if (this.firstString(data.status) !== 'pending') {
-      return baseItem;
-    }
-
-    const metadata = data.metadata && typeof data.metadata === 'object'
-      ? data.metadata as Record<string, unknown>
-      : {};
-    const rawResults = Array.isArray(metadata.results) ? metadata.results : [];
-    const approvalIds = Array.from(new Set(
-      rawResults
-        .map((value) => value && typeof value === 'object'
-          ? this.firstString((value as Record<string, unknown>).approval_id, (value as Record<string, unknown>).approvalId)
-          : '')
-        .filter(Boolean),
-    ));
-
-    if (approvalIds.length === 0) {
-      return baseItem;
-    }
-
-    if (!buildingId) {
-      return baseItem;
-    }
-
-    const db = this.firebaseAdminService.firestore;
-    const resolvedByApprovalId = new Map<string, { invoiceId?: string; pending: boolean }>();
-    for (const approvalId of approvalIds) {
-      const pendingSnap = await db
-        .collection('buildings')
-        .doc(buildingId)
-        .collection('invoice_approvals')
-        .doc(approvalId)
-        .get();
-
-      if (pendingSnap.exists) {
-        resolvedByApprovalId.set(approvalId, { pending: true });
-        continue;
-      }
-
-      const invoiceSnap = await db
-        .collectionGroup('invoices')
-        .where('approvedFromApprovalId', '==', approvalId)
-        .limit(1)
-        .get();
-      const invoiceDoc = invoiceSnap.docs[0];
-      const invoiceData = invoiceDoc?.data() as Record<string, unknown> | undefined;
-      resolvedByApprovalId.set(approvalId, {
-        pending: false,
-        invoiceId: invoiceDoc ? this.firstString(invoiceData?.id, invoiceDoc.id) : undefined,
-      });
-    }
-
-    const nextResults = rawResults.map((value) => {
-      const result = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-      const approvalId = this.firstString(result.approval_id, result.approvalId);
-      const resolved = resolvedByApprovalId.get(approvalId);
-      if (!approvalId || !resolved || resolved.pending) {
-        return value;
-      }
-
-      if (resolved.invoiceId) {
-        return {
-          ...result,
-          success: true,
-          invoice_id: resolved.invoiceId,
-          message: 'Invoice approved',
-        };
-      }
-
-      return {
-        ...result,
-        success: false,
-        cancelled: true,
-        error: 'Cancelled',
-        message: 'Invoice approval cancelled',
-      };
-    }) as Array<Record<string, unknown>>;
-
-    const nextStatus = this.uploadHistoryStatusFromResults(nextResults);
-    const firstInvoiceId = this.firstString(...nextResults.map((result) => result.invoice_id));
-    const nextMetadata = {
-      ...metadata,
-      ...(firstInvoiceId ? { invoiceId: firstInvoiceId } : {}),
-      results: nextResults,
-      updatedAt: new Date(),
-    };
-    const nextItem = {
-      ...baseItem,
-      status: nextStatus,
-      invoiceId: firstInvoiceId || data.invoiceId || null,
-      error: nextStatus === 'error' ? data.error ?? null : null,
-      metadata: nextMetadata,
-    };
-
-    if (nextStatus !== data.status || JSON.stringify(nextResults) !== JSON.stringify(rawResults)) {
-      await historyDoc.ref.set({
-        status: nextStatus,
-        invoiceId: nextItem.invoiceId,
-        error: nextItem.error,
-        metadata: nextMetadata,
-        updatedAt: new Date(),
-      }, { merge: true });
-    }
-
-    return nextItem;
-  }
-
-  private firestoreDateToIso(value: unknown): string | null {
-    if (value instanceof Date) {
-      return value.toISOString();
-    }
-
-    if (typeof value === 'string') {
-      const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? value : date.toISOString();
-    }
-
-    if (typeof value === 'number') {
-      const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? null : date.toISOString();
-    }
-
-    if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') {
-      return (value.toDate() as Date).toISOString();
-    }
-
-    return null;
-  }
-
-  private firestoreDateToMillis(value: unknown): number {
-    const iso = this.firestoreDateToIso(value);
-    if (!iso) return 0;
-    const millis = new Date(iso).getTime();
-    return Number.isFinite(millis) ? millis : 0;
-  }
-
   async upload(
     request: Request,
     user: RequestUser,
@@ -2416,13 +1585,13 @@ export class InvoicesService {
     const source = this.normalizeSource(payload.source ?? payload.uploadSource);
     const skipUploadHistory = payload.__skipUploadHistory === true;
     const originalFileName = this.normalizeFileName(file.originalname);
-    const batchId = this.firstString(payload.batchId, payload.batch_id);
-    const uploadHistoryId = this.firstString(payload.uploadHistoryId, payload.upload_history_id, batchId);
-    const uploadHistoryBuildingId = this.firstString(
+    const batchId = firstString(payload.batchId, payload.batch_id);
+    const uploadHistoryId = firstString(payload.uploadHistoryId, payload.upload_history_id, batchId);
+    const uploadHistoryBuildingId = firstString(
       payload.uploadHistoryBuildingId,
       payload.upload_history_building_id,
     );
-    const uploadHistoryApartmentId = this.firstString(
+    const uploadHistoryApartmentId = firstString(
       payload.uploadHistoryApartmentId,
       payload.upload_history_apartment_id,
     );
@@ -2453,10 +1622,10 @@ export class InvoicesService {
         60_000,
       );
       if (!rl.allowed) {
-        throw new BadRequestException('Too many requests');
+        throw new TooManyRequestsException(rl.resetAt);
       }
 
-      const externalId = this.firstString(payload.externalId, payload.external_id);
+      const externalId = firstString(payload.externalId, payload.external_id);
       if (!externalId) {
         throw new BadRequestException('external_id is required');
       }
@@ -2484,8 +1653,8 @@ export class InvoicesService {
       );
       const recipientType = this.resolveEffectiveRecipientType(apartment.data, requestedRecipientType);
       this.assertRecipientTypeAllowed(apartment.data, recipientType);
-      const comment = this.firstString(payload.comment);
-      const meterReadingId = this.firstString(payload.meterReadingId, payload.meter_reading_id);
+      const comment = firstString(payload.comment);
+      const meterReadingId = firstString(payload.meterReadingId, payload.meter_reading_id);
       const residentContext = this.resolveResidentContext(apartment.data);
 
       Object.assign(historyContext, {
@@ -2500,7 +1669,7 @@ export class InvoicesService {
       const now = new Date();
       const baseInvoiceData = {
         apartmentId: apartment.id,
-        accountId: this.firstString(
+        accountId: firstString(
           apartment.data.accountId,
           apartment.data.personalAccountId,
           apartment.data.billingAccountId,
@@ -2546,7 +1715,7 @@ export class InvoicesService {
         const approvalPath = invoiceRef.path;
         uniqueRef = this.getApartmentPendingInvoiceExternalIdsCollection(apartment.id).doc(externalKey);
         const invoiceExternalRef = this.getApartmentInvoiceExternalIdsCollection(apartment.id).doc(externalKey);
-        storagePathForCleanup = this.buildPendingApprovalStoragePath({
+        storagePathForCleanup = this.pdfStorage.buildPendingApprovalStoragePath({
           companyId,
           buildingId,
           approvalId,
@@ -2620,7 +1789,7 @@ export class InvoicesService {
         });
         invoiceReserved = true;
 
-        const storedFile = await this.saveInvoicePdf({
+        const storedFile = await this.pdfStorage.saveInvoicePdf({
           file,
           storagePath: storagePathForCleanup,
           externalId,
@@ -2640,7 +1809,7 @@ export class InvoicesService {
         );
 
         if (!skipUploadHistory) {
-          await this.writeUploadHistory({
+          await this.uploadHistory.writeUploadHistory({
             ...historyContext,
             status: 'success',
             metadata: {
@@ -2654,7 +1823,7 @@ export class InvoicesService {
           });
         }
 
-        void this.auditLogService.write({
+        runInBackground(this.auditLogService.write({
           request,
           action: 'invoice.upload_pending_approval',
           status: 'success',
@@ -2671,7 +1840,7 @@ export class InvoicesService {
             fileName: originalFileName,
             ...(batchId ? { batchId, batchIndex } : {}),
           },
-        });
+        }), 'audit');
 
         return {
           success: true,
@@ -2687,7 +1856,7 @@ export class InvoicesService {
       invoiceRef = this.getApartmentInvoiceCollection(apartment.id).doc(invoiceId);
       const invoicePath = invoiceRef.path;
       uniqueRef = this.getApartmentInvoiceExternalIdsCollection(apartment.id).doc(externalKey);
-      storagePathForCleanup = this.buildStoragePath({
+      storagePathForCleanup = this.pdfStorage.buildStoragePath({
         companyId,
         buildingId,
         apartmentId: apartment.id,
@@ -2729,7 +1898,7 @@ export class InvoicesService {
       });
       invoiceReserved = true;
 
-      const storedFile = await this.saveInvoicePdf({
+      const storedFile = await this.pdfStorage.saveInvoicePdf({
         file,
         storagePath: storagePathForCleanup,
         externalId,
@@ -2749,7 +1918,7 @@ export class InvoicesService {
       );
 
       if (!skipUploadHistory) {
-        await this.writeUploadHistory({
+        await this.uploadHistory.writeUploadHistory({
           ...historyContext,
           status: 'success',
           invoiceId,
@@ -2763,7 +1932,7 @@ export class InvoicesService {
         });
       }
 
-      void this.auditLogService.write({
+      runInBackground(this.auditLogService.write({
         request,
         action: 'invoice.upload',
         status: 'success',
@@ -2780,7 +1949,7 @@ export class InvoicesService {
           fileName: originalFileName,
           ...(batchId ? { batchId, batchIndex } : {}),
         },
-      });
+      }), 'audit');
 
       return {
         success: true,
@@ -2791,7 +1960,7 @@ export class InvoicesService {
         message: 'Invoice uploaded successfully',
       };
     } catch (error) {
-      const message = this.errorMessage(error);
+      const message = errorMessage(error);
       const duplicate = error instanceof ConflictException;
 
       if (invoiceReserved) {
@@ -2805,7 +1974,7 @@ export class InvoicesService {
       }
 
       if (!skipUploadHistory) {
-        await this.writeUploadHistory({
+        await this.uploadHistory.writeUploadHistory({
           ...historyContext,
           status: duplicate ? 'duplicate' : 'error',
           error: message,
@@ -2813,7 +1982,7 @@ export class InvoicesService {
         });
       }
 
-      void this.auditLogService.write({
+      runInBackground(this.auditLogService.write({
         request,
         action: 'invoice.upload',
         status: duplicate ? 'denied' : 'error',
@@ -2828,7 +1997,7 @@ export class InvoicesService {
           fileName: originalFileName,
           ...(batchId ? { batchId, batchIndex } : {}),
         },
-      });
+      }), 'audit');
 
       if (duplicate) {
         this.logger.warn(`invoice.upload.duplicate externalId=${historyContext.externalId ?? 'unknown'} companyId=${historyContext.companyId ?? 'unknown'}`);
@@ -2848,8 +2017,8 @@ export class InvoicesService {
 
     const buildingIds = await this.getPendingApprovalBuildingIds({
       user,
-      companyId: this.firstString(query.companyId),
-      buildingId: this.firstString(query.buildingId, query.building_id),
+      companyId: firstString(query.companyId),
+      buildingId: firstString(query.buildingId, query.building_id),
     });
     const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50));
 
@@ -2866,7 +2035,7 @@ export class InvoicesService {
 
     const items = snapshots
       .flatMap(({ buildingId, snap }) => snap.docs.map((doc) => this.pendingApprovalItemFromDoc(doc, buildingId)))
-      .sort((left, right) => this.firestoreDateToMillis(right.createdAt) - this.firestoreDateToMillis(left.createdAt))
+      .sort((left, right) => firestoreDateToMillis(right.createdAt) - firestoreDateToMillis(left.createdAt))
       .slice(0, limit);
 
     return { items };
@@ -2879,12 +2048,12 @@ export class InvoicesService {
     }
 
     const approval = await this.findPendingApprovalDocument(user, approvalId);
-    const storagePath = this.firstString(approval.data.storagePath);
+    const storagePath = firstString(approval.data.storagePath);
     if (!storagePath) {
       throw new NotFoundException('Invoice PDF not found');
     }
 
-    const storageBucket = this.firstString(approval.data.storageBucket);
+    const storageBucket = firstString(approval.data.storageBucket);
     const bucket = storageBucket
       ? this.firebaseAdminService.storage.bucket(storageBucket)
       : this.firebaseAdminService.storageBucket;
@@ -2896,13 +2065,7 @@ export class InvoicesService {
     }
 
     const [buffer] = await file.download();
-    return {
-      buffer,
-      fileName: this.resolveInvoicePdfFileName(approval.data, approvalId),
-      contentType: typeof metadata.contentType === 'string' && metadata.contentType
-        ? metadata.contentType
-        : 'application/pdf',
-    };
+    return this.pdfStorage.asPdfPayload(buffer, this.pdfStorage.resolveInvoicePdfFileName(approval.data, approvalId));
   }
 
   async approvePendingApproval(request: Request, user: RequestUser, approvalId: string, options: Record<string, unknown> = {}) {
@@ -2913,7 +2076,7 @@ export class InvoicesService {
 
     const approval = await this.findPendingApprovalDocument(user, approvalId);
     const data = approval.data;
-    const apartmentId = this.firstString(data.apartmentId);
+    const apartmentId = firstString(data.apartmentId);
     if (!apartmentId) {
       throw new BadRequestException('Approval is missing apartmentId');
     }
@@ -2924,8 +2087,8 @@ export class InvoicesService {
     }
 
     const apartment = apartmentSnap.data() as Record<string, unknown>;
-    const companyId = this.firstString(data.companyId);
-    const buildingId = this.firstString(data.buildingId, approval.buildingId);
+    const companyId = firstString(data.companyId);
+    const buildingId = firstString(data.buildingId, approval.buildingId);
     if (!companyId || companyId !== this.requireStaffCompanyId(user)) {
       throw new ForbiddenException('Access denied for company');
     }
@@ -2934,7 +2097,7 @@ export class InvoicesService {
       throw new ForbiddenException('Approval apartment no longer matches building/company');
     }
 
-    const externalId = this.firstString(data.externalId);
+    const externalId = firstString(data.externalId);
     if (!externalId) {
       throw new BadRequestException('Approval is missing externalId');
     }
@@ -2942,7 +2105,7 @@ export class InvoicesService {
     const db = this.firebaseAdminService.firestore;
     const invoiceId = this.buildInvoiceId();
     const recipientType = this.normalizeRecipientType(data.recipientType ?? data.recipient_type);
-    const externalKey = this.firstString(data.externalIdKey)
+    const externalKey = firstString(data.externalIdKey)
       || this.hashExternalId(companyId, this.externalDedupeValue(externalId, recipientType));
     const invoiceRef = this.getApartmentInvoiceCollection(apartmentId).doc(invoiceId);
     const invoicePath = invoiceRef.path;
@@ -2958,23 +2121,23 @@ export class InvoicesService {
       companyId,
       month: data.month ?? null,
       year: data.year ?? null,
-      period: this.firstString(data.period) || null,
+      period: firstString(data.period) || null,
       invoiceDate: data.invoiceDate ?? null,
       dueDate: data.dueDate ?? data.invoiceDate ?? null,
       amount: data.amount ?? null,
-      currency: this.firstString(data.currency, 'EUR'),
+      currency: firstString(data.currency, 'EUR'),
       status: this.normalizeStatus(data.invoiceStatus ?? data.status),
       recipientType,
       comment: data.comment ?? null,
       meterReadingId: data.meterReadingId ?? null,
       externalId,
       externalIdKey: externalKey,
-      source: this.firstString(data.source, 'api'),
-      batchId: this.firstString(data.batchId) || null,
+      source: firstString(data.source, 'api'),
+      batchId: firstString(data.batchId) || null,
       batchIndex: typeof data.batchIndex === 'number' ? data.batchIndex : null,
-      pdfUrl: this.firstString(data.pdfUrl),
-      storagePath: this.firstString(data.storagePath) || null,
-      storageBucket: this.firstString(data.storageBucket) || null,
+      pdfUrl: firstString(data.pdfUrl),
+      storagePath: firstString(data.storagePath) || null,
+      storageBucket: firstString(data.storageBucket) || null,
       residentId: data.residentId ?? null,
       residentUserIds: Array.isArray(data.residentUserIds) ? data.residentUserIds : [],
       residentName: data.residentName ?? null,
@@ -3023,7 +2186,7 @@ export class InvoicesService {
         invoicePath,
         apartmentId,
         buildingId,
-        source: this.firstString(data.source, 'api'),
+        source: firstString(data.source, 'api'),
         approvalId,
         recipientType,
         createdAt: now,
@@ -3033,7 +2196,7 @@ export class InvoicesService {
       transaction.delete(pendingExternalRef);
     });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invoice.approve_api_upload',
       status: 'success',
@@ -3046,35 +2209,35 @@ export class InvoicesService {
         invoiceId,
         externalId,
       },
-    });
+    }), 'audit');
 
-    await this.updateUploadHistoryForApproval({
+    await this.uploadHistory.updateUploadHistoryForApproval({
       approvalId,
       buildingId,
       apartmentId,
       companyId,
-      historyId: this.firstString(data.uploadHistoryId, data.batchId),
-      historyBuildingId: this.firstString(data.uploadHistoryBuildingId, buildingId),
-      historyApartmentId: this.firstString(data.uploadHistoryApartmentId, apartmentId),
+      historyId: firstString(data.uploadHistoryId, data.batchId),
+      historyBuildingId: firstString(data.uploadHistoryBuildingId, buildingId),
+      historyApartmentId: firstString(data.uploadHistoryApartmentId, apartmentId),
       invoiceId,
       status: 'approved',
     });
 
     const requestedNotificationIds = Array.isArray(options.notifyApprovalIds)
-      ? options.notifyApprovalIds.map((value) => this.firstString(value)).filter(Boolean)
+      ? options.notifyApprovalIds.map((value) => firstString(value)).filter(Boolean)
       : [];
     const notifyRecipients = options.notifyRecipients !== false
       && options.notifyRecipients !== 'false'
       && (requestedNotificationIds.length === 0 || requestedNotificationIds.includes(approvalId));
     if (notifyRecipients) {
-      void this.sendApprovedInvoiceEmail({
+      runInBackground(this.sendApprovedInvoiceEmail({
         request,
         invoiceId,
         invoiceData,
         apartment,
       }).catch((error) => {
-        this.logger.warn(`invoice.email.send_failed invoiceId=${invoiceId} reason=${this.errorMessage(error)}`);
-      });
+        this.logger.warn(`invoice.email.send_failed invoiceId=${invoiceId} reason=${errorMessage(error)}`);
+      }), 'invoice_email');
     }
 
     return {
@@ -3092,18 +2255,18 @@ export class InvoicesService {
 
     const approval = await this.findPendingApprovalDocument(user, approvalId);
     const data = approval.data;
-    const companyId = this.firstString(data.companyId);
-    const buildingId = this.firstString(data.buildingId, approval.buildingId);
-    const apartmentId = this.firstString(data.apartmentId);
-    const meterReadingId = this.firstString(data.meterReadingId, data.meter_reading_id);
-    const externalId = this.firstString(data.externalId);
-    const externalKey = this.firstString(data.externalIdKey)
+    const companyId = firstString(data.companyId);
+    const buildingId = firstString(data.buildingId, approval.buildingId);
+    const apartmentId = firstString(data.apartmentId);
+    const meterReadingId = firstString(data.meterReadingId, data.meter_reading_id);
+    const externalId = firstString(data.externalId);
+    const externalKey = firstString(data.externalIdKey)
       || (companyId && externalId ? this.hashExternalId(companyId, externalId) : '');
     const pendingExternalRef = externalKey && apartmentId
       ? this.getApartmentPendingInvoiceExternalIdsCollection(apartmentId).doc(externalKey)
       : null;
-    const storagePath = this.firstString(data.storagePath);
-    const storageBucket = this.firstString(data.storageBucket);
+    const storagePath = firstString(data.storagePath);
+    const storageBucket = firstString(data.storageBucket);
 
     await this.firebaseAdminService.firestore.runTransaction(async (transaction) => {
       const approvalSnap = await transaction.get(approval.ref);
@@ -3124,11 +2287,11 @@ export class InvoicesService {
 
     if (meterReadingId && apartmentId) {
       await this.removeLinkedMeterReading({ apartmentId, readingId: meterReadingId }).catch((error) => {
-        this.logger.warn(`invoice.approval.linked_reading_delete_failed approvalId=${approvalId} reason=${this.errorMessage(error)}`);
+        this.logger.warn(`invoice.approval.linked_reading_delete_failed approvalId=${approvalId} reason=${errorMessage(error)}`);
       });
     }
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invoice.cancel_api_upload',
       status: 'success',
@@ -3141,16 +2304,16 @@ export class InvoicesService {
         externalId,
         buildingId,
       },
-    });
+    }), 'audit');
 
-    await this.updateUploadHistoryForApproval({
+    await this.uploadHistory.updateUploadHistoryForApproval({
       approvalId,
       buildingId,
       apartmentId,
       companyId,
-      historyId: this.firstString(data.uploadHistoryId, data.batchId),
-      historyBuildingId: this.firstString(data.uploadHistoryBuildingId, buildingId),
-      historyApartmentId: this.firstString(data.uploadHistoryApartmentId, apartmentId),
+      historyId: firstString(data.uploadHistoryId, data.batchId),
+      historyBuildingId: firstString(data.uploadHistoryBuildingId, buildingId),
+      historyApartmentId: firstString(data.uploadHistoryApartmentId, apartmentId),
       status: 'cancelled',
       error: 'Cancelled',
     });
@@ -3167,7 +2330,7 @@ export class InvoicesService {
       return [];
     }
 
-    return Array.from(new Set(raw.map((value) => this.firstString(value)).filter(Boolean)));
+    return Array.from(new Set(raw.map((value) => firstString(value)).filter(Boolean)));
   }
 
   private async processApprovalIds<T>(
@@ -3206,13 +2369,13 @@ export class InvoicesService {
         return {
           approval_id: approvalId,
           success: true,
-          invoice_id: this.firstString(result.invoice_id) || undefined,
+          invoice_id: firstString(result.invoice_id) || undefined,
         };
       } catch (error) {
         return {
           approval_id: approvalId,
           success: false,
-          error: this.errorMessage(error),
+          error: errorMessage(error),
         };
       }
     });
@@ -3244,7 +2407,7 @@ export class InvoicesService {
         return {
           approval_id: approvalId,
           success: false,
-          error: this.errorMessage(error),
+          error: errorMessage(error),
         };
       }
     });
@@ -3284,11 +2447,11 @@ export class InvoicesService {
       60_000,
     );
     if (!rl.allowed) {
-      throw new BadRequestException('Too many requests');
+      throw new TooManyRequestsException(rl.resetAt);
     }
 
     const requestFileName = files.length === 1
-      ? this.firstString(files[0]?.originalname, 'upload')
+      ? firstString(files[0]?.originalname, 'upload')
       : `${files.length} files`;
     const expandedBatch = this.expandBatchArchives(files, payload);
     const batchFiles = expandedBatch.files;
@@ -3324,9 +2487,9 @@ export class InvoicesService {
       await Promise.all(Array.from(buildingIds, (buildingId) => this.assertNoPendingApprovalsForApiUpload(buildingId)));
     }
 
-    let historyCompanyId = this.firstString(commonPayload.companyId, commonPayload.company_id, user.companyId);
-    let historyBuildingId = this.firstString(commonPayload.buildingId, commonPayload.building_id, apiBuildingIds[0]);
-    let historyApartmentId = this.firstString(commonPayload.apartmentId, commonPayload.apartment_id);
+    let historyCompanyId = firstString(commonPayload.companyId, commonPayload.company_id, user.companyId);
+    let historyBuildingId = firstString(commonPayload.buildingId, commonPayload.building_id, apiBuildingIds[0]);
+    let historyApartmentId = firstString(commonPayload.apartmentId, commonPayload.apartment_id);
 
     if (!historyApartmentId || !historyBuildingId || !historyCompanyId) {
       try {
@@ -3336,15 +2499,15 @@ export class InvoicesService {
         this.assertApiKeyCanAccessBuilding(request, buildingId);
         const buildingCompanyId = await this.getBuildingCompanyId(buildingId);
 
-        historyApartmentId = this.firstString(historyApartmentId, apartment.id);
-        historyBuildingId = this.firstString(historyBuildingId, buildingId);
-        historyCompanyId = this.firstString(
+        historyApartmentId = firstString(historyApartmentId, apartment.id);
+        historyBuildingId = firstString(historyBuildingId, buildingId);
+        historyCompanyId = firstString(
           historyCompanyId,
           buildingCompanyId,
           this.extractCompanyIds(apartment.data)[0],
         );
       } catch (error) {
-        this.logger.warn(`invoice.upload_batch.history_scope_unresolved reason=${this.errorMessage(error)}`);
+        this.logger.warn(`invoice.upload_batch.history_scope_unresolved reason=${errorMessage(error)}`);
       }
     }
 
@@ -3358,7 +2521,7 @@ export class InvoicesService {
     const initialHistoryBuildingId = historyBuildingId;
     const initialHistoryApartmentId = historyApartmentId;
 
-    await this.writeUploadHistory({
+    await this.uploadHistory.writeUploadHistory({
       historyId: batchId,
       request,
       status: 'pending',
@@ -3380,7 +2543,7 @@ export class InvoicesService {
         processed: 0,
         failed: 0,
         waiting: batchFiles.length,
-        files: batchFiles.map((file) => this.firstString(file.originalname)).filter(Boolean),
+        files: batchFiles.map((file) => firstString(file.originalname)).filter(Boolean),
         results: [],
       },
     });
@@ -3404,11 +2567,11 @@ export class InvoicesService {
       fileName: string;
       payload: Record<string, unknown>;
     }> = [];
-    const commonExternalId = this.firstString(commonPayload.externalId, commonPayload.external_id);
+    const commonExternalId = firstString(commonPayload.externalId, commonPayload.external_id);
     const externalIdCounts = new Map<string, number>();
 
     for (const item of items) {
-      const externalId = this.firstString(item.externalId, item.external_id, commonExternalId);
+      const externalId = firstString(item.externalId, item.external_id, commonExternalId);
       if (!externalId) continue;
 
       const key = externalId.trim().toLowerCase();
@@ -3419,7 +2582,7 @@ export class InvoicesService {
 
     for (const [index, item] of items.entries()) {
       let fileName = this.normalizeFileName(
-        this.firstString(item.fileName, item.file_name, batchFiles[index]?.originalname) || `invoice-${index + 1}.pdf`,
+        firstString(item.fileName, item.file_name, batchFiles[index]?.originalname) || `invoice-${index + 1}.pdf`,
       );
 
       try {
@@ -3430,12 +2593,12 @@ export class InvoicesService {
           usedIndexes,
         });
         fileName = this.normalizeFileName(file.originalname ?? fileName);
-        const itemExternalId = this.firstString(item.externalId, item.external_id);
-        const baseExternalId = this.firstString(itemExternalId, commonExternalId);
+        const itemExternalId = firstString(item.externalId, item.external_id);
+        const baseExternalId = firstString(itemExternalId, commonExternalId);
         const duplicateExternalIdInBatch =
           baseExternalId && (externalIdCounts.get(baseExternalId.trim().toLowerCase()) ?? 0) > 1;
         const batchItemExternalId = baseExternalId;
-        const itemRecipientType = this.firstString(
+        const itemRecipientType = firstString(
           item.recipientType,
           item.recipient_type,
           item.recepientType,
@@ -3482,7 +2645,7 @@ export class InvoicesService {
           index,
           fileName,
           success: false,
-          error: this.errorMessage(error),
+          error: errorMessage(error),
         });
       }
     }
@@ -3519,7 +2682,7 @@ export class InvoicesService {
             message: uploadResult.message,
           });
         } catch (error) {
-          const message = this.errorMessage(error);
+          const message = errorMessage(error);
           const waitingApprovalId = message.match(/waiting for approval:\s*([A-Za-z0-9_-]+)/)?.[1];
           if (waitingApprovalId) {
             results.push({
@@ -3551,9 +2714,9 @@ export class InvoicesService {
 
     results.sort((left, right) => left.index - right.index);
     for (const result of results) {
-      historyCompanyId = this.firstString(historyCompanyId, result.company_id);
-      historyBuildingId = this.firstString(historyBuildingId, result.building_id);
-      historyApartmentId = this.firstString(historyApartmentId, result.apartment_id);
+      historyCompanyId = firstString(historyCompanyId, result.company_id);
+      historyBuildingId = firstString(historyBuildingId, result.building_id);
+      historyApartmentId = firstString(historyApartmentId, result.apartment_id);
     }
 
     const processed = results.filter((item) => item.success).length;
@@ -3586,13 +2749,13 @@ export class InvoicesService {
         processed,
         failed,
         waiting,
-        files: batchFiles.map((file) => this.firstString(file.originalname)).filter(Boolean),
+        files: batchFiles.map((file) => firstString(file.originalname)).filter(Boolean),
         results,
       },
     };
-    await this.writeUploadHistory(finalHistoryInput);
+    await this.uploadHistory.writeUploadHistory(finalHistoryInput);
     if (initialHistoryApartmentId && initialHistoryApartmentId !== historyApartmentId) {
-      await this.writeUploadHistory({
+      await this.uploadHistory.writeUploadHistory({
         ...finalHistoryInput,
         apartmentId: initialHistoryApartmentId,
         metadata: {
@@ -3603,7 +2766,7 @@ export class InvoicesService {
       });
     }
     if (initialHistoryBuildingId && initialHistoryBuildingId !== historyBuildingId) {
-      await this.writeUploadHistory({
+      await this.uploadHistory.writeUploadHistory({
         ...finalHistoryInput,
         buildingId: initialHistoryBuildingId,
         apartmentId: initialHistoryApartmentId,
@@ -3616,7 +2779,7 @@ export class InvoicesService {
       });
     }
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invoice.upload_batch',
       status: processed > 0 ? 'success' : 'error',
@@ -3630,7 +2793,7 @@ export class InvoicesService {
         processed,
         failed,
       },
-    });
+    }), 'audit');
 
     return {
       success: failed === 0,
@@ -3654,14 +2817,14 @@ export class InvoicesService {
     }
 
     const staffCompanyId = this.requireStaffCompanyId(user);
-    const requestedCompanyId = this.firstString(query.companyId);
+    const requestedCompanyId = firstString(query.companyId);
     if (requestedCompanyId && requestedCompanyId !== staffCompanyId) {
       throw new ForbiddenException('Access denied for company');
     }
 
     const companyId = requestedCompanyId || staffCompanyId;
-    const requestedBuildingId = this.firstString(query.buildingId, query.building_id);
-    const requestedApartmentId = this.firstString(query.apartmentId, query.apartment_id);
+    const requestedBuildingId = firstString(query.buildingId, query.building_id);
+    const requestedApartmentId = firstString(query.apartmentId, query.apartment_id);
     const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50));
 
     let legacyBuildingIds: string[] = [];
@@ -3691,7 +2854,7 @@ export class InvoicesService {
     if (requestedApartmentId) {
       legacyBuildingIds = Array.from(new Set(
         apartmentContexts
-          .map((apartment) => this.firstString(apartment.data.buildingId, apartment.data.houseId))
+          .map((apartment) => firstString(apartment.data.buildingId, apartment.data.houseId))
           .filter(Boolean),
       ));
     }
@@ -3702,12 +2865,12 @@ export class InvoicesService {
     }>> = [
       ...apartmentContexts.map(async (apartment) => ({
         apartmentId: apartment.id,
-        buildingId: this.firstString(apartment.data.buildingId, apartment.data.houseId) || undefined,
-        snap: await this.getApartmentInvoiceUploadHistoryCollection(apartment.id).get(),
+        buildingId: firstString(apartment.data.buildingId, apartment.data.houseId) || undefined,
+        snap: await this.uploadHistory.getApartmentInvoiceUploadHistoryCollection(apartment.id).get(),
       })),
       ...legacyBuildingIds.map(async (buildingId) => ({
         buildingId,
-        snap: await this.getLegacyBuildingInvoiceUploadHistoryCollection(buildingId).get(),
+        snap: await this.uploadHistory.getLegacyBuildingInvoiceUploadHistoryCollection(buildingId).get(),
       })),
     ];
     const snapshotResults = await Promise.allSettled(
@@ -3717,144 +2880,65 @@ export class InvoicesService {
       if (result.status === 'fulfilled') return [result.value];
 
       this.logger.warn(
-        `invoice.upload.history.read.failed index=${index} reason=${this.errorMessage(result.reason)}`,
+        `invoice.upload.history.read.failed index=${index} reason=${errorMessage(result.reason)}`,
       );
       return [];
     });
 
+    const entries = snapshots.flatMap(({ apartmentId, buildingId, snap }) =>
+      snap.docs.map((historyDoc) => ({ apartmentId, buildingId, historyDoc })),
+    );
+    const entryKey = (entry: (typeof entries)[number]) =>
+      `${firstString(entry.apartmentId, entry.buildingId)}:${entry.historyDoc.id}`;
+
+    // Pass 1: cheap, no I/O — find which docs end up on this page.
+    const baseItemsByPath = new Map<string, Record<string, unknown>>();
+    for (const entry of entries) {
+      baseItemsByPath.set(entryKey(entry), this.uploadHistory.toUploadHistoryBaseItem(entry, entry.historyDoc));
+    }
+    const pageKeys = new Set(
+      this.uploadHistory.groupUploadHistoryItems(baseItemsByPath, limit).flatMap((item) => item.__sourceKeys as string[]),
+    );
+
+    // Pass 2: reconcile (may hit Firestore) only pending docs that are actually returned.
     const reconcileResults = await Promise.allSettled(
-      snapshots
-        .flatMap(({ apartmentId, buildingId, snap }) => snap.docs.map((historyDoc) => ({ apartmentId, buildingId, historyDoc })))
-        .map(async ({ apartmentId, buildingId, historyDoc }) => ({
-          buildingId,
-          apartmentId,
-          historyDocId: historyDoc.id,
-          item: await this.reconcileUploadHistoryDoc({ buildingId, apartmentId }, historyDoc),
+      entries
+        .filter((entry) => pageKeys.has(entryKey(entry)))
+        .map(async (entry) => ({
+          key: entryKey(entry),
+          item: await this.uploadHistory.reconcileUploadHistoryDoc(
+            { buildingId: entry.buildingId, apartmentId: entry.apartmentId },
+            entry.historyDoc,
+          ),
         })),
     );
     const rawItemsByPath = new Map<string, Record<string, unknown>>();
     for (const result of reconcileResults) {
       if (result.status === 'fulfilled') {
-        rawItemsByPath.set(
-          `${this.firstString(result.value.apartmentId, result.value.buildingId)}:${result.value.historyDocId}`,
-          result.value.item,
-        );
+        rawItemsByPath.set(result.value.key, result.value.item);
         continue;
       }
 
-      this.logger.warn(`invoice.upload.history.reconcile.failed reason=${this.errorMessage(result.reason)}`);
-    }
-    const rawItems: Array<Record<string, unknown>> = Array.from(rawItemsByPath.values());
-    const groupedByBatchId = new Map<string, Array<Record<string, unknown>>>();
-    const ungroupedItems: Array<Record<string, unknown>> = [];
-    for (const item of rawItems) {
-      const metadata = item.metadata && typeof item.metadata === 'object'
-        ? item.metadata as Record<string, unknown>
-        : {};
-      const batchId = this.firstString(metadata.batchId);
-      if (!batchId) {
-        ungroupedItems.push(item);
-        continue;
-      }
-
-      const group = groupedByBatchId.get(batchId) ?? [];
-      group.push(item);
-      groupedByBatchId.set(batchId, group);
+      this.logger.warn(`invoice.upload.history.reconcile.failed reason=${errorMessage(result.reason)}`);
     }
 
-    const batchItems: Array<Record<string, unknown>> = Array.from(groupedByBatchId.entries()).map(([batchId, group]) => {
-      const aggregate = group.find((item) => {
-        const metadata = item.metadata && typeof item.metadata === 'object'
-          ? item.metadata as Record<string, unknown>
-          : {};
-        return this.firstString(metadata.batchId) === batchId && item.id === batchId;
-      }) ?? group[0]!;
-      const metadata = aggregate.metadata && typeof aggregate.metadata === 'object'
-        ? aggregate.metadata as Record<string, unknown>
-        : {};
-      const mergedResults = group.flatMap((item) => {
-        const itemMetadata = item.metadata && typeof item.metadata === 'object'
-          ? item.metadata as Record<string, unknown>
-          : {};
-        return Array.isArray(itemMetadata.results) ? itemMetadata.results : [];
-      });
-
-      return {
-        ...aggregate,
-        metadata: {
-          ...metadata,
-          results: mergedResults.length ? mergedResults : metadata.results,
-        },
-      } as Record<string, unknown>;
+    const items = this.uploadHistory.groupUploadHistoryItems(rawItemsByPath, limit).map((item) => {
+      const rest: Record<string, unknown> = { ...item };
+      delete rest.__sourceKeys;
+      return rest;
     });
-
-    const items = [...ungroupedItems, ...batchItems]
-      .sort((a, b) => this.firestoreDateToMillis(b.createdAt) - this.firestoreDateToMillis(a.createdAt))
-      .slice(0, limit);
 
     return { items };
   }
 
   private async getAccessibleApartmentIds(user: RequestUser): Promise<string[]> {
-    const apartmentIds = new Set<string>();
-
-    if (typeof user.apartmentId === 'string' && user.apartmentId.trim()) {
-      apartmentIds.add(user.apartmentId.trim());
-    }
-
-    const userSnap = await this.firebaseAdminService.firestore.collection('users').doc(user.uid).get();
-    const userData = userSnap.exists ? (userSnap.data() as Record<string, unknown>) : {};
-
-    const addApartmentId = (value: unknown) => {
-      if (typeof value === 'string' && value.trim()) {
-        apartmentIds.add(value.trim());
-      }
-    };
-
-    addApartmentId(userData.apartmentId);
-
-    if (Array.isArray(userData.apartmentIds)) {
-      for (const apartmentId of userData.apartmentIds) {
-        addApartmentId(apartmentId);
-      }
-    }
-
-    const normalizedEmail = normalizeEmail(
-      (typeof user.email === 'string' ? user.email : typeof userData.email === 'string' ? userData.email : '') ?? '',
-    );
-
-    if (normalizedEmail) {
-      const [residentSnap, ownerIdSnap, ownerEmailSnap] = await Promise.all([
-        this.firebaseAdminService.firestore.collection('apartments').where('residentId', '==', user.uid).get(),
-        this.firebaseAdminService.firestore.collection('apartments').where('ownerId', '==', user.uid).get(),
-        this.firebaseAdminService.firestore.collection('apartments').where('ownerEmail', '==', normalizedEmail).get(),
-      ]);
-
-      for (const doc of residentSnap.docs) {
-        apartmentIds.add(doc.id);
-      }
-
-      for (const snap of [ownerIdSnap, ownerEmailSnap]) {
-        for (const doc of snap.docs) {
-          const apartment = doc.data() as Record<string, unknown>;
-          if (apartment.ownerActivated === true) {
-            apartmentIds.add(doc.id);
-          }
-        }
-      }
-    }
-
-    const candidateIds = Array.from(apartmentIds);
-    if (candidateIds.length === 0) return [];
-
-    const refs = candidateIds.map((id) => this.firebaseAdminService.firestore.collection('apartments').doc(id));
-    const snaps = await this.firebaseAdminService.firestore.getAll(...refs);
+    // One shared candidate lookup (1 query with APARTMENT_MEMBER_KEYS=true); the access rules
+    // below are unchanged and still decide which candidates are accessible.
+    const candidates = await findCandidateApartments(this.firebaseAdminService.firestore, user);
     const normalizedUserEmail = normalizeEmail(user.email ?? '');
 
-    return snaps
-      .filter((snap) => snap.exists)
-      .filter((snap) => {
-        const apartment = snap.data() as Record<string, unknown>;
+    return Array.from(candidates.entries())
+      .filter(([, apartment]) => {
         const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
         const ownerEmail = typeof apartment.ownerEmail === 'string' ? normalizeEmail(apartment.ownerEmail) : '';
         // A stale primary-resident pointer cannot authorize invoice access.
@@ -3875,7 +2959,7 @@ export class InvoicesService {
 
         return isResident || isOwner || isTenant;
       })
-      .map((snap) => snap.id);
+      .map(([apartmentId]) => apartmentId);
   }
 
   async create(request: Request, user: RequestUser, payload: Record<string, unknown>) {
@@ -3895,7 +2979,7 @@ export class InvoicesService {
       20,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
 
     const db = this.firebaseAdminService.firestore;
     const apartmentSnap = await db.collection('apartments').doc(apartmentId).get();
@@ -3926,20 +3010,20 @@ export class InvoicesService {
       month: Number(payload.month),
       year: Number(payload.year),
       amount,
-      currency: this.firstString(payload.currency, 'EUR'),
-      externalId: this.firstString(payload.externalId) || null,
-      meterReadingId: this.firstString(payload.meterReadingId, payload.meter_reading_id) || null,
-      period: this.firstString(payload.period) || null,
+      currency: firstString(payload.currency, 'EUR'),
+      externalId: firstString(payload.externalId) || null,
+      meterReadingId: firstString(payload.meterReadingId, payload.meter_reading_id) || null,
+      period: firstString(payload.period) || null,
       invoiceDate: this.parseOptionalDate(payload.invoiceDate) ?? new Date(),
       dueDate: this.parseOptionalDate(payload.dueDate) ?? this.parseOptionalDate(payload.invoiceDate) ?? new Date(),
-      comment: this.firstString(payload.comment) || '',
+      comment: firstString(payload.comment) || '',
       status:
         payload.status === 'pending' || payload.status === 'paid' || payload.status === 'overdue'
           ? payload.status
           : 'pending',
       pdfUrl: typeof payload.pdfUrl === 'string' ? payload.pdfUrl : '',
       companyId: targetCompanyId,
-      buildingId: this.firstString(payload.buildingId, apartmentData.buildingId, apartmentData.houseId) || null,
+      buildingId: firstString(payload.buildingId, apartmentData.buildingId, apartmentData.houseId) || null,
       recipientType,
       createdAt: new Date(),
       createdByUid: user.uid,
@@ -3947,7 +3031,7 @@ export class InvoicesService {
 
     await ref.set(data);
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invoice.create',
       status: 'success',
@@ -3956,7 +3040,7 @@ export class InvoicesService {
       companyId: targetCompanyId,
       apartmentId,
       metadata: { invoiceId },
-    });
+    }), 'audit');
 
     return { success: true, invoice: data };
   }
@@ -3968,6 +3052,23 @@ export class InvoicesService {
       const companyId = query.companyId ?? user.companyId;
       const requestedApartmentId = typeof query.apartmentId === 'string' ? query.apartmentId.trim() : '';
       const requestedBuildingId = typeof query.buildingId === 'string' ? query.buildingId.trim() : '';
+
+      // Company / building lists: one collection-group query instead of one query per apartment.
+      if (!requestedApartmentId) {
+        const staffCompanyId = this.requireStaffCompanyId(user);
+        if (firstString(companyId, staffCompanyId) !== staffCompanyId) {
+          throw new ForbiddenException('Access denied for company');
+        }
+        const page = await this.listStaffInvoicesViaCollectionGroup({
+          companyId: staffCompanyId,
+          buildingId: requestedBuildingId || undefined,
+          recipientType: query.recipientType ? this.normalizeRecipientType(query.recipientType) : null,
+          limit: query.limit ? Math.min(200, Math.max(1, Number(query.limit) || 50)) : undefined,
+          cursor: firstString(query.cursor) || undefined,
+        });
+        if (page) return { ...page, query };
+      }
+
       const apartmentContexts = await this.getStaffInvoiceApartmentContexts({
         user,
         companyId,
@@ -4031,6 +3132,100 @@ export class InvoicesService {
     return { items, query };
   }
 
+  /**
+   * Staff invoice list via collectionGroup('invoices') filtered by companyId (+ buildingId).
+   * - without `limit`: returns everything (legacy response shape), single query;
+   * - with `limit`: ordered by createdAt desc, returns `nextCursor`.
+   * Returns null when the required Firestore index is missing, so the caller can fall back.
+   */
+  private async listStaffInvoicesViaCollectionGroup(params: {
+    companyId: string;
+    buildingId?: string;
+    recipientType: string | null;
+    limit?: number;
+    cursor?: string;
+  }): Promise<{ items: Array<Record<string, unknown>>; nextCursor: string | null } | null> {
+    const db = this.firebaseAdminService.firestore;
+    let ref: FirebaseFirestore.Query = db.collectionGroup('invoices').where('companyId', '==', params.companyId);
+    if (params.buildingId) ref = ref.where('buildingId', '==', params.buildingId);
+
+    if (params.limit) {
+      ref = ref.orderBy('createdAt', 'desc');
+      if (params.cursor) {
+        const cursorPath = this.decodeInvoiceCursor(params.cursor);
+        const cursorSnap = cursorPath ? await db.doc(cursorPath).get() : null;
+        if (!cursorSnap?.exists) throw new BadRequestException('Invalid cursor');
+        const cursorData = cursorSnap.data() as Record<string, unknown>;
+        if (cursorData.companyId !== params.companyId) throw new BadRequestException('Invalid cursor');
+        ref = ref.startAfter(cursorSnap);
+      }
+      ref = ref.limit(params.limit + 1);
+    }
+
+    let snapshot: FirebaseFirestore.QuerySnapshot;
+    try {
+      snapshot = await ref.get();
+    } catch (error) {
+      if (this.isMissingIndexError(error)) {
+        this.logger.warn(`invoice.list.collection_group_index_missing fallback=per_apartment reason=${errorMessage(error)}`);
+        return null;
+      }
+      throw error;
+    }
+
+    const hasMore = Boolean(params.limit && snapshot.docs.length > params.limit);
+    const docs = hasMore ? snapshot.docs.slice(0, params.limit) : snapshot.docs;
+
+    // Enrich only invoices that lack denormalized apartment fields, with one batched read.
+    const apartmentIdsToLoad = Array.from(new Set(
+      docs
+        .filter((doc) => {
+          const data = doc.data();
+          return !firstString(data.buildingId) || !firstString(data.apartmentNumber, data.number);
+        })
+        .map((doc) => doc.ref.parent.parent?.id)
+        .filter((id): id is string => Boolean(id)),
+    ));
+    const apartmentsById = new Map<string, Record<string, unknown>>();
+    for (let index = 0; index < apartmentIdsToLoad.length; index += 300) {
+      const refs = apartmentIdsToLoad.slice(index, index + 300).map((id) => db.collection('apartments').doc(id));
+      for (const snap of await db.getAll(...refs)) {
+        if (snap.exists) apartmentsById.set(snap.id, snap.data() as Record<string, unknown>);
+      }
+    }
+
+    const items = docs
+      .map((doc) => {
+        const apartmentId = doc.ref.parent.parent?.id;
+        return this.invoiceItemFromDoc(doc, apartmentId, apartmentId ? apartmentsById.get(apartmentId) : undefined);
+      })
+      .filter((item) => !params.recipientType || item.recipientType === params.recipientType);
+
+    const lastDoc = docs[docs.length - 1];
+    return {
+      items,
+      nextCursor: hasMore && lastDoc ? this.encodeInvoiceCursor(lastDoc.ref.path) : null,
+    };
+  }
+
+  private encodeInvoiceCursor(path: string): string {
+    return Buffer.from(path, 'utf8').toString('base64url');
+  }
+
+  private decodeInvoiceCursor(cursor: string): string | null {
+    try {
+      const path = Buffer.from(cursor, 'base64url').toString('utf8');
+      return /^apartments\/[^/]+\/invoices\/[^/]+$/.test(path) ? path : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private isMissingIndexError(error: unknown): boolean {
+    const code = (error as { code?: unknown } | undefined)?.code;
+    return code === 9 || code === 'failed-precondition' || /requires an index|FAILED_PRECONDITION/i.test(errorMessage(error));
+  }
+
   async byId(user: RequestUser, invoiceId: string, includePdfUrl = false) {
     this.assertAuthenticated(user);
     const invoice = await this.findInvoiceDocument(invoiceId, user);
@@ -4068,7 +3263,7 @@ export class InvoicesService {
 
   async pdf(user: RequestUser, invoiceId: string): Promise<InvoicePdfPayload> {
     const invoice = await this.byId(user, invoiceId, true) as Record<string, unknown>;
-    return this.resolveInvoicePdfPayload(invoice, invoiceId);
+    return this.pdfStorage.resolveInvoicePdfPayload(invoice, invoiceId);
   }
 
   async resendEmail(request: Request, user: RequestUser, invoiceId: string) {
@@ -4082,7 +3277,7 @@ export class InvoicesService {
       20,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
 
     const invoice = await this.findInvoiceDocument(invoiceId, user);
     const invoiceData = invoice.data;
@@ -4091,7 +3286,7 @@ export class InvoicesService {
       throw new ForbiddenException('Access denied for company');
     }
 
-    const apartmentId = this.firstString(invoice.apartmentId, invoiceData.apartmentId);
+    const apartmentId = firstString(invoice.apartmentId, invoiceData.apartmentId);
     if (!apartmentId) {
       throw new NotFoundException('Apartment not found');
     }
@@ -4102,8 +3297,7 @@ export class InvoicesService {
     }
 
     const apartment = apartmentSnap.data() as Record<string, unknown>;
-    const companyId = this.firstString(invoiceData.companyId, this.invoiceApartmentCompanyId(apartment));
-    const buildingId = this.firstString(invoiceData.buildingId, apartment.buildingId, apartment.houseId);
+    const companyId = firstString(invoiceData.companyId, this.invoiceApartmentCompanyId(apartment));
 
     await this.sendApprovedInvoiceEmail({
       request,
@@ -4112,7 +3306,7 @@ export class InvoicesService {
       apartment,
     });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invoice.email_resend',
       status: 'success',
@@ -4121,7 +3315,7 @@ export class InvoicesService {
       companyId,
       apartmentId,
       metadata: { invoiceId },
-    });
+    }), 'audit');
 
     return { success: true };
   }
@@ -4133,11 +3327,11 @@ export class InvoicesService {
     }
 
     const rl = await this.rateLimitService.consume(
-      this.rateLimitService.buildKey(request, 'invoice:update', invoiceId),
+      this.rateLimitService.buildKey(request, 'invoice:update', `${user.uid}:${invoiceId}`),
       30,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
 
     const invoice = await this.findInvoiceDocument(invoiceId, user);
     const ref = invoice.ref;
@@ -4147,13 +3341,16 @@ export class InvoicesService {
       throw new ForbiddenException('Access denied for company');
     }
 
-    const nextPayload: Record<string, unknown> = { ...payload, updatedAt: new Date() };
-    delete nextPayload.id;
-    delete nextPayload.apartmentId;
+    // Scope and storage pointers are server-owned: a client-set storagePath/storageBucket let staff
+    // download any file in the bucket (incl. other companies') through GET /invoices/:id/pdf.
+    const nextPayload: Record<string, unknown> = {
+      ...sanitizeClientPayload(payload, { protectedKeys: INVOICE_PROTECTED_FIELDS }),
+      updatedAt: new Date(),
+    };
 
     await ref.set(nextPayload, { merge: true });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action:
         typeof payload.pdfUrl === 'string' && payload.pdfUrl !== current.pdfUrl
@@ -4165,7 +3362,7 @@ export class InvoicesService {
       companyId: targetCompanyId,
       apartmentId: typeof current.apartmentId === 'string' ? current.apartmentId : undefined,
       metadata: { invoiceId },
-    });
+    }), 'audit');
 
     return { success: true };
   }
@@ -4174,7 +3371,7 @@ export class InvoicesService {
     trashId: string,
     user: RequestUser,
   ): Promise<{ ref: FirebaseFirestore.DocumentReference; data: Record<string, unknown> }> {
-    const normalizedTrashId = this.firstString(trashId);
+    const normalizedTrashId = firstString(trashId);
     if (!normalizedTrashId) {
       throw new BadRequestException('trashId is required');
     }
@@ -4191,7 +3388,7 @@ export class InvoicesService {
     }
 
     const data = doc.data() as Record<string, unknown>;
-    const companyId = this.firstString(data.companyId);
+    const companyId = firstString(data.companyId);
     if (!companyId || companyId !== this.requireStaffCompanyId(user)) {
       throw new ForbiddenException('Access denied for company');
     }
@@ -4206,7 +3403,7 @@ export class InvoicesService {
     }
 
     const companyId = this.requireStaffCompanyId(user);
-    const requestedBuildingId = this.firstString(query.buildingId);
+    const requestedBuildingId = firstString(query.buildingId);
     const limitValue = Number(query.limit ?? 100);
     const limit = Number.isFinite(limitValue) && limitValue > 0 ? Math.min(Math.floor(limitValue), 200) : 100;
     let trashQuery: FirebaseFirestore.Query = this.firebaseAdminService.firestore
@@ -4247,13 +3444,13 @@ export class InvoicesService {
       throw new BadRequestException('Trash item is missing invoice data');
     }
 
-    const apartmentId = this.firstString(data.apartmentId, invoiceData.apartmentId);
-    const invoiceId = this.firstString(data.originalInvoiceId, invoiceData.id);
-    const buildingId = this.firstString(data.buildingId, invoiceData.buildingId);
-    const companyId = this.firstString(data.companyId, invoiceData.companyId);
-    const externalId = this.firstString(invoiceData.externalId);
+    const apartmentId = firstString(data.apartmentId, invoiceData.apartmentId);
+    const invoiceId = firstString(data.originalInvoiceId, invoiceData.id);
+    const buildingId = firstString(data.buildingId, invoiceData.buildingId);
+    const companyId = firstString(data.companyId, invoiceData.companyId);
+    const externalId = firstString(invoiceData.externalId);
     const recipientType = this.normalizeRecipientType(invoiceData.recipientType ?? invoiceData.recipient_type);
-    const externalIdKey = this.firstString(invoiceData.externalIdKey)
+    const externalIdKey = firstString(invoiceData.externalIdKey)
       || (companyId && externalId ? this.hashExternalId(companyId, this.externalDedupeValue(externalId, recipientType)) : '');
 
     if (!apartmentId || !invoiceId || !companyId || companyId !== this.requireStaffCompanyId(user)) {
@@ -4303,7 +3500,7 @@ export class InvoicesService {
           invoicePath,
           apartmentId,
           buildingId: buildingId || invoiceData.buildingId || null,
-          source: this.firstString(invoiceData.source, 'api'),
+          source: firstString(invoiceData.source, 'api'),
           recipientType,
           restoredAt: now,
           restoredByUid: user.uid,
@@ -4313,7 +3510,7 @@ export class InvoicesService {
       transaction.delete(trash.ref);
     });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invoice.restore',
       status: 'success',
@@ -4322,7 +3519,7 @@ export class InvoicesService {
       companyId,
       apartmentId,
       metadata: { invoiceId, trashId },
-    });
+    }), 'audit');
 
     return { success: true, invoice_id: invoiceId };
   }
@@ -4343,10 +3540,10 @@ export class InvoicesService {
     const invoiceData = data.invoiceData && typeof data.invoiceData === 'object'
       ? data.invoiceData as Record<string, unknown>
       : {};
-    const storagePath = this.firstString(data.storagePath, invoiceData.storagePath);
-    const storageBucket = this.firstString(data.storageBucket, invoiceData.storageBucket);
-    const companyId = this.firstString(data.companyId, invoiceData.companyId);
-    const apartmentId = this.firstString(data.apartmentId, invoiceData.apartmentId);
+    const storagePath = firstString(data.storagePath, invoiceData.storagePath);
+    const storageBucket = firstString(data.storageBucket, invoiceData.storageBucket);
+    const companyId = firstString(data.companyId, invoiceData.companyId);
+    const apartmentId = firstString(data.apartmentId, invoiceData.apartmentId);
 
     await trash.ref.delete();
     if (storagePath) {
@@ -4356,7 +3553,7 @@ export class InvoicesService {
       ).file(storagePath).delete({ ignoreNotFound: true }).catch(() => null);
     }
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invoice.trash_purge',
       status: 'success',
@@ -4365,7 +3562,7 @@ export class InvoicesService {
       companyId,
       apartmentId,
       metadata: { trashId, storagePath },
-    });
+    }), 'audit');
 
     return { success: true };
   }
@@ -4378,13 +3575,13 @@ export class InvoicesService {
 
     const [rl, invoice] = await Promise.all([
       this.rateLimitService.consume(
-        this.rateLimitService.buildKey(request, 'invoice:delete', invoiceId),
+        this.rateLimitService.buildKey(request, 'invoice:delete', `${user.uid}:${invoiceId}`),
         20,
         60_000,
       ),
       this.findInvoiceDocument(invoiceId, user),
     ]);
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
 
     const ref = invoice.ref;
     const current = invoice.data;
@@ -4395,20 +3592,20 @@ export class InvoicesService {
 
     const storagePath = typeof current.storagePath === 'string' ? current.storagePath : '';
     const storageBucket = typeof current.storageBucket === 'string' ? current.storageBucket : '';
-    const apartmentId = this.firstString(current.apartmentId, ref.parent.parent?.id);
-    let buildingId = this.firstString(current.buildingId);
+    const apartmentId = firstString(current.apartmentId, ref.parent.parent?.id);
+    let buildingId = firstString(current.buildingId);
     if (!buildingId && apartmentId) {
       const apartmentSnap = await this.firebaseAdminService.firestore.collection('apartments').doc(apartmentId).get();
       const apartment = apartmentSnap.exists ? apartmentSnap.data() as Record<string, unknown> : {};
-      buildingId = this.firstString(apartment.buildingId, apartment.houseId);
+      buildingId = firstString(apartment.buildingId, apartment.houseId);
     }
     if (!buildingId) {
       throw new BadRequestException('Invoice is missing buildingId for trash retention');
     }
-    const externalId = this.firstString(current.externalId);
-    const companyId = this.firstString(targetCompanyId, user.companyId);
+    const externalId = firstString(current.externalId);
+    const companyId = firstString(targetCompanyId, user.companyId);
     const recipientType = this.normalizeRecipientType(current.recipientType ?? current.recipient_type);
-    const externalIdKey = this.firstString(current.externalIdKey)
+    const externalIdKey = firstString(current.externalIdKey)
       || (companyId && externalId ? this.hashExternalId(companyId, this.externalDedupeValue(externalId, recipientType)) : '');
     const deleteQueryDocs = async (query: FirebaseFirestore.Query) => {
       const snap = await query.get();
@@ -4447,7 +3644,7 @@ export class InvoicesService {
         recipientType,
         storagePath: storagePath || null,
         storageBucket: storageBucket || null,
-        pdfUrl: this.firstString(current.pdfUrl) || null,
+        pdfUrl: firstString(current.pdfUrl) || null,
         deletedAt: now,
         deletedByUid: user.uid,
         deletedByRole: user.role,
@@ -4468,7 +3665,7 @@ export class InvoicesService {
       deleteQueryDocs(this.firebaseAdminService.firestore.collection('invoice_public_links').where('invoiceId', '==', invoiceId)),
     ]);
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invoice.delete',
       status: 'success',
@@ -4483,7 +3680,7 @@ export class InvoicesService {
         hadPdf: typeof current.pdfUrl === 'string' && current.pdfUrl.length > 0,
         hadStorageFile: Boolean(storagePath),
       },
-    });
+    }), 'audit');
 
     return { success: true, trash_id: trashId, expires_at: expiresAt.toISOString() };
   }

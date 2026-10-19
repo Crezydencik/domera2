@@ -18,6 +18,7 @@ import { RolesGuard } from '../../../common/auth/roles.guard';
 import { ApartmentsService } from '../apartments.service';
 import { ImportApartmentsDto } from '../dto/import-apartments.dto';
 import { ImportApartmentsResponseDto } from '../dto/import-apartments-response.dto';
+import { BuildingStatsInvalidationInterceptor } from '../../../common/interceptors/building-stats-invalidation.interceptor';
 
 type UploadedBinaryFile = {
   buffer: Buffer;
@@ -57,6 +58,7 @@ function apartmentImportFileFilter(
 
 @ApiTags('Apartments')
 @Controller('apartments')
+@UseInterceptors(BuildingStatsInvalidationInterceptor)
 @UseGuards(FirebaseAuthGuard, RolesGuard)
 @Roles('ManagementCompany', 'Accountant')
 @ApiBearerAuth()

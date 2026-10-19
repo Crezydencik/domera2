@@ -26,6 +26,8 @@ import { AuthSessionService } from './services/auth-session.service';
 import { FirebaseIdentityToolkitService } from './services/firebase-identity-toolkit.service';
 import { RegistrationCodeService } from './services/registration-code.service';
 import { AuthSessionResult } from './types/auth-session.types';
+import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
+import { runInBackground } from '../../common/utils/background';
 
 const EMAIL_CHANGE_TTL_MS = 30 * 60 * 1000;
 const EMAIL_CHANGE_COLLECTION = 'email_change_requests';
@@ -156,12 +158,12 @@ export class AuthService {
     });
 
     if (resolveAccountType({ role: profile.role, accountType: profile.accountType }) === 'ManagementCompany') {
-      void this.profileProvisioningService.ensureManagementCompanyDocument({
+      runInBackground(this.profileProvisioningService.ensureManagementCompanyDocument({
         uid: authResult.localId,
         email: authResult.email ?? email,
       }).catch((error) => {
         console.error('Failed to hydrate management company during login:', error);
-      });
+      }), 'company_provisioning');
     }
 
     const session = await this.authSessionService.createSessionCookieFromTrustedLogin({
@@ -172,13 +174,13 @@ export class AuthService {
       profile,
     });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'auth.login',
       status: 'success',
       targetEmail: email,
       metadata: { rememberMe: Boolean(input.rememberMe) },
-    });
+    }), 'audit');
 
     return {
       userId: authResult.localId,
@@ -216,6 +218,8 @@ export class AuthService {
         email,
         password: input.password,
         displayName: fullName || undefined,
+        // Ownership of the address was just proven with the e-mailed registration code.
+        emailVerified: true,
       });
       uid = created.uid;
       createdUid = created.uid;
@@ -283,13 +287,13 @@ export class AuthService {
       email,
     });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'auth.register',
       status: 'success',
       targetEmail: email,
       metadata: { accountType },
-    });
+    }), 'audit');
 
     return {
       userId: uid,
@@ -354,13 +358,13 @@ export class AuthService {
       throw this.createServiceError(`Failed to send verification email: ${errorMessage}`, 500);
     }
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'auth.email_change_request',
       status: 'success',
       targetEmail: nextEmail,
       metadata: { previousEmail: currentEmail, targetUserId: user.uid },
-    });
+    }), 'audit');
 
     return {
       success: true,
@@ -433,6 +437,7 @@ export class AuthService {
 
     await this.firebaseAdminService.auth.updateUser(uid, { email: nextEmail });
     await this.firebaseAdminService.auth.revokeRefreshTokens(uid);
+    FirebaseAuthGuard.invalidateUser(uid);
     await userRef.set(
       {
         uid,
@@ -457,13 +462,13 @@ export class AuthService {
     });
     await ref.set({ status: 'confirmed', confirmedAt: new Date(), updatedAt: new Date() }, { merge: true });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'auth.email_change_confirm',
       status: 'success',
       targetEmail: nextEmail,
       metadata: { previousEmail: currentEmail, targetUserId: uid },
-    });
+    }), 'audit');
 
     return { success: true, userId: uid, email: nextEmail };
   }
@@ -483,6 +488,7 @@ export class AuthService {
 
     await this.firebaseAdminService.auth.updateUser(user.uid, { password: input.newPassword });
     await this.firebaseAdminService.auth.revokeRefreshTokens(user.uid);
+    FirebaseAuthGuard.invalidateUser(user.uid);
 
     await this.firebaseAdminService.firestore.collection('users').doc(user.uid).set(
       {
@@ -507,13 +513,13 @@ export class AuthService {
       email,
     });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'auth.password_change',
       status: 'success',
       targetEmail: email,
       metadata: { targetUserId: user.uid },
-    });
+    }), 'audit');
 
     return { success: true, userId: user.uid, email, session };
   }

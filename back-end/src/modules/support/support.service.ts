@@ -6,6 +6,7 @@ import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { AddSupportMessageDto } from './dto/add-support-message.dto';
 import { CreateSupportFeedbackDto } from './dto/create-support-feedback.dto';
+import { getPlatformAdminDocs } from '../../common/utils/platform-admins';
 
 @Injectable()
 export class SupportService {
@@ -33,19 +34,8 @@ export class SupportService {
     return null;
   }
 
-  private async getPlatformAdminDocs() {
-    const db = this.firebaseAdminService.firestore;
-    const [byRole, byAccountType] = await Promise.all([
-      db.collection('users').where('role', '==', 'PlatformAdmin').get(),
-      db.collection('users').where('accountType', '==', 'PlatformAdmin').get(),
-    ]);
-
-    const admins = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-    for (const doc of [...byRole.docs, ...byAccountType.docs]) {
-      admins.set(doc.id, doc);
-    }
-
-    return Array.from(admins.values());
+  private getPlatformAdminDocs() {
+    return getPlatformAdminDocs(this.firebaseAdminService.firestore);
   }
 
   private async notifyPlatformAdmins(params: {

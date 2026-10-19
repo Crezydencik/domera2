@@ -9,6 +9,7 @@ import { FirebaseAdminService } from '../../../common/infrastructure/firebase/fi
 import { RegisterEmailCodeRequestDto } from '../dto/register-email-code-request.dto';
 import { RegisterEmailCodeVerifyDto } from '../dto/register-email-code-verify.dto';
 import { AuthEmailService } from './auth-email.service';
+import { runInBackground } from '../../../common/utils/background';
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const TOKEN_TTL_MS = 30 * 60 * 1000;
@@ -71,13 +72,13 @@ export class RegistrationCodeService {
       throw new Error(`Resend error: ${errorMessage}`);
     }
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'auth.register_code.request',
       status: 'success',
       targetEmail: email,
       metadata: { locale },
-    });
+    }), 'audit');
 
     return { success: true, expiresInSeconds: CODE_TTL_MS / 1000 };
   }
@@ -98,36 +99,36 @@ export class RegistrationCodeService {
 
     const db = this.firebaseAdminService.firestore;
     const docRef = db.collection(COLLECTION).doc(this.makeDocId(email));
-    const snap = await docRef.get();
-
-    if (!snap.exists) {
-      this.throwServiceError('Code not found', 404);
-    }
-
-    const data = snap.data() as {
-      codeHash: string;
-      attempts?: number;
-      expiresAt?: FirebaseFirestore.Timestamp;
-    };
-
     const now = Date.now();
-    const expiresAtMs = data?.expiresAt?.toMillis?.() ?? 0;
-    const attempts = typeof data?.attempts === 'number' ? data.attempts : 0;
 
-    if (!expiresAtMs || now > expiresAtMs) {
-      await docRef.delete();
-      this.throwServiceError('Code expired', 410);
-    }
+    // The attempt is counted atomically BEFORE the code is compared. Previously the counter was a
+    // read-then-update, so a burst of parallel guesses all saw `attempts = 0` and bypassed MAX_ATTEMPTS.
+    const outcome = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(docRef);
+      if (!snap.exists) return 'missing' as const;
 
-    if (attempts >= MAX_ATTEMPTS) {
-      this.throwServiceError('Too many invalid attempts', 429);
-    }
+      const data = snap.data() as {
+        codeHash?: string;
+        attempts?: number;
+        expiresAt?: FirebaseFirestore.Timestamp;
+      };
+      const expiresAtMs = data?.expiresAt?.toMillis?.() ?? 0;
+      const attempts = typeof data?.attempts === 'number' ? data.attempts : 0;
 
-    const expectedHash = this.hashCode(email, code);
-    if (!this.safeEqual(expectedHash, data.codeHash)) {
-      await docRef.update({ attempts: attempts + 1, updatedAt: new Date(now) });
-      this.throwServiceError('Invalid code', 400);
-    }
+      if (!expiresAtMs || now > expiresAtMs) {
+        tx.delete(docRef);
+        return 'expired' as const;
+      }
+      if (attempts >= MAX_ATTEMPTS || !data.codeHash) return 'locked' as const;
+
+      tx.update(docRef, { attempts: attempts + 1, updatedAt: new Date(now) });
+      return this.safeEqual(this.hashCode(email, code), data.codeHash) ? 'ok' as const : 'invalid' as const;
+    });
+
+    if (outcome === 'missing') this.throwServiceError('Code not found', 404);
+    if (outcome === 'expired') this.throwServiceError('Code expired', 410);
+    if (outcome === 'locked') this.throwServiceError('Too many invalid attempts', 429);
+    if (outcome === 'invalid') this.throwServiceError('Invalid code', 400);
 
     const verificationToken = this.generateSecureToken();
     const tokenExpiresAt = now + TOKEN_TTL_MS;
@@ -142,12 +143,12 @@ export class RegistrationCodeService {
       updatedAt: new Date(now),
     });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'auth.register_code.verify',
       status: 'success',
       targetEmail: email,
-    });
+    }), 'audit');
 
     return {
       success: true,

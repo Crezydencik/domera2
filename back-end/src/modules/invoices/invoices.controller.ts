@@ -66,7 +66,7 @@ type UploadedBinaryFile = {
 };
 
 const INVOICE_ZIP_MAX_BYTES = 500 * 1024 * 1024;
-const INVOICE_BATCH_MAX_FILES = 50;
+const INVOICE_BATCH_MAX_FILES = 200;
 const INVOICE_ITEMS_MAX_BYTES = 1 * 1024 * 1024;
 
 function invoiceBatchFileFilter(
@@ -282,6 +282,8 @@ export class InvoicesController {
   @ApiQuery({ name: 'companyId', required: false, type: String })
   @ApiQuery({ name: 'apartmentId', required: false, type: String })
   @ApiQuery({ name: 'buildingId', required: false, type: String })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Enables pagination (1-200)' })
+  @ApiQuery({ name: 'cursor', required: false, type: String, description: 'nextCursor from the previous page' })
   @ApiOkResponse({
     description: 'Invoice list returned.',
     type: ListInvoicesResponseDto,

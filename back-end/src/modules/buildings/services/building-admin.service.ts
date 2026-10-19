@@ -6,12 +6,14 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { isPlatformAdminRole } from '../../../common/auth/role.constants';
 import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../../common/services/rate-limit.service';
 import { BuildingStatsService } from './building-stats.service';
+import { TooManyRequestsException } from '../../../common/errors/too-many-requests.exception';
+import { firstNonEmptyString } from '../../../common/utils/values';
 
 @Injectable()
 export class BuildingAdminService {
@@ -21,16 +23,105 @@ export class BuildingAdminService {
     private readonly buildingStatsService: BuildingStatsService,
   ) {}
 
+  /**
+   * Bounded, resumable migration: copies `managedBy.companyId` into `companyId` and marks
+   * buildings with `scopeVersion: 2`. Conflicting buildings (both set, different) are reported and
+   * left untouched. `remaining` = buildings not yet marked; when it is 0 together with the
+   * apartments migration, LEGACY_SCOPE_QUERIES=false can be set.
+   */
+  async migrateCanonicalScope(params: {
+    request: Request;
+    user: RequestUser;
+    cursor?: string;
+    limit?: number;
+    apply: boolean;
+  }) {
+    this.assertPlatformAdmin(params.user);
+    await this.enforceRateLimit(params.request, 'buildings:migrate-canonical-scope', params.user.uid, 5);
+
+    const db = this.firebaseAdminService.firestore;
+    const limit = Number.isFinite(params.limit) ? Math.min(300, Math.max(1, Math.floor(params.limit!))) : 100;
+    const cursorId = this.decodeMigrationCursor(params.cursor);
+    let query = db.collection('buildings').orderBy(FieldPath.documentId()).limit(limit + 1);
+    if (cursorId) query = query.startAfter(cursorId);
+
+    const snapshot = await query.get();
+    const page = snapshot.docs.slice(0, limit);
+    const hasMore = snapshot.docs.length > limit;
+    const batch = params.apply ? db.batch() : null;
+    const skipped: Array<{ buildingId: string; reason: string }> = [];
+    let eligible = 0;
+    let alreadyCanonical = 0;
+
+    for (const doc of page) {
+      const data = doc.data() as Record<string, unknown>;
+      const managedBy = data.managedBy && typeof data.managedBy === 'object' ? data.managedBy as Record<string, unknown> : {};
+      const directCompanyId = firstNonEmptyString(data.companyId);
+      const managedCompanyId = firstNonEmptyString(managedBy.companyId);
+
+      if (directCompanyId && managedCompanyId && directCompanyId !== managedCompanyId) {
+        skipped.push({ buildingId: doc.id, reason: `companyId (${directCompanyId}) differs from managedBy.companyId (${managedCompanyId})` });
+        continue;
+      }
+      const companyId = directCompanyId || managedCompanyId;
+      if (!companyId) {
+        skipped.push({ buildingId: doc.id, reason: 'companyId cannot be resolved' });
+        continue;
+      }
+
+      const patch: Record<string, unknown> = {};
+      if (!directCompanyId) patch.companyId = companyId;
+      if (data.scopeVersion !== 2) patch.scopeVersion = 2;
+      if (Object.keys(patch).length === 0) {
+        alreadyCanonical += 1;
+        continue;
+      }
+
+      eligible += 1;
+      batch?.set(doc.ref, { ...patch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    }
+
+    if (batch && eligible > 0) await batch.commit();
+
+    const [total, canonical] = await Promise.all([
+      db.collection('buildings').count().get(),
+      db.collection('buildings').where('scopeVersion', '==', 2).count().get(),
+    ]);
+    const lastDocId = page.at(-1)?.id;
+    return {
+      mode: params.apply ? 'applied' : 'dry-run',
+      scanned: page.length,
+      eligible,
+      updated: params.apply ? eligible : 0,
+      alreadyCanonical,
+      skipped,
+      remaining: Math.max(0, total.data().count - canonical.data().count),
+      hasMore,
+      nextCursor: hasMore && lastDocId ? Buffer.from(lastDocId, 'utf8').toString('base64url') : undefined,
+    };
+  }
+
+  private decodeMigrationCursor(cursor?: string): string | undefined {
+    if (!cursor || cursor.length > 512) return undefined;
+    try {
+      const id = Buffer.from(cursor, 'base64url').toString('utf8').trim();
+      return /^[A-Za-z0-9_-]{1,256}$/.test(id) ? id : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   async listAllForAdmin(request: Request, user: RequestUser) {
     this.assertPlatformAdmin(user);
     await this.enforceRateLimit(request, 'buildings:admin-list-all', user.uid, 50);
 
     const db = this.firebaseAdminService.firestore;
-    const [buildingsSnap, companiesSnap, occupancyStats] = await Promise.all([
+    const [buildingsSnap, companiesSnap] = await Promise.all([
       db.collection('buildings').get(),
       db.collection('companies').get(),
-      this.buildingStatsService.getAllBuildingOccupancyStats(),
     ]);
+    // Cached per-building stats (was: a scan of every apartment on the platform per request).
+    const occupancyStats = await this.buildingStatsService.getStatsForBuildings(buildingsSnap.docs.map((doc) => doc.id));
 
     const companies = new Map<string, Record<string, unknown>>();
     for (const doc of companiesSnap.docs) {
@@ -42,16 +133,16 @@ export class BuildingAdminService {
       const managedBy = data.managedBy && typeof data.managedBy === 'object'
         ? (data.managedBy as Record<string, unknown>)
         : {};
-      const companyId = this.firstString(data.companyId, managedBy.companyId);
+      const companyId = firstNonEmptyString(data.companyId, managedBy.companyId);
       const company = companyId ? companies.get(companyId) : undefined;
-      const companyName = this.firstString(
+      const companyName = firstNonEmptyString(
         data.companyName,
         managedBy.companyName,
         company?.companyName,
         company?.name,
         companyId,
       );
-      const companyEmail = this.firstString(
+      const companyEmail = firstNonEmptyString(
         data.companyEmail,
         data.contactEmail,
         managedBy.companyEmail,
@@ -61,7 +152,7 @@ export class BuildingAdminService {
         company?.contactEmail,
         company?.email,
       );
-      const companyPhone = this.firstString(
+      const companyPhone = firstNonEmptyString(
         data.companyPhone,
         data.contactPhone,
         data.phone,
@@ -72,7 +163,7 @@ export class BuildingAdminService {
         company?.contactPhone,
         company?.phone,
       );
-      const managerName = this.firstString(
+      const managerName = firstNonEmptyString(
         data.managerName,
         data.contactName,
         managedBy.managerName,
@@ -105,19 +196,20 @@ export class BuildingAdminService {
     await this.enforceRateLimit(request, 'buildings:admin-billing-invoices', user.uid, 50);
 
     const db = this.firebaseAdminService.firestore;
-    const [buildingsSnap, legacySnap] = await Promise.all([
-      db.collection('buildings').get(),
-      db.collection('platform_billing_invoices').get(),
-    ]);
-
-    const buildingInvoiceSnaps = await Promise.all(
-      buildingsSnap.docs.map((buildingDoc) =>
-        buildingDoc.ref.collection('platform_billing_invoices').get(),
-      ),
-    );
+    // One collection-group query covers buildings/*/platform_billing_invoices AND the legacy
+    // top-level platform_billing_invoices collection (was: one query per building on the platform).
+    const group = db.collectionGroup('platform_billing_invoices');
+    let docs: FirebaseFirestore.QueryDocumentSnapshot[];
+    try {
+      docs = (await group.orderBy('createdAt', 'desc').limit(500).get()).docs;
+    } catch (error) {
+      const code = (error as { code?: unknown } | undefined)?.code;
+      if (code !== 9 && !/requires an index|FAILED_PRECONDITION/i.test(String((error as Error)?.message))) throw error;
+      docs = (await group.get()).docs; // index not deployed yet: still a single query
+    }
 
     const itemsByPath = new Map<string, Record<string, unknown>>();
-    for (const doc of [...buildingInvoiceSnaps.flatMap((snap) => snap.docs), ...legacySnap.docs]) {
+    for (const doc of docs) {
       itemsByPath.set(doc.ref.path, {
         ...(doc.data() as Record<string, unknown>),
         id: doc.id,
@@ -183,17 +275,7 @@ export class BuildingAdminService {
       limit,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
-  }
-
-  private firstString(...values: unknown[]) {
-    for (const value of values) {
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
-    }
-
-    return '';
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
   }
 
   private dateSortValue(value: unknown) {

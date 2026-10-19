@@ -6,10 +6,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
-import { RequestUser } from '../../common/auth/request-user.type';
-
+import { TooManyRequestsException } from '../../common/errors/too-many-requests.exception';
+import { sanitizeClientPayload } from '../../common/utils/client-payload';
 
 @Injectable()
 export class ProjectsService {
@@ -49,7 +50,7 @@ export class ProjectsService {
       limit,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
   }
 
   async list(request: Request, user: RequestUser, companyId: string) {
@@ -98,10 +99,11 @@ export class ProjectsService {
     await this.enforceRateLimit(request, 'projects:create', `${user.uid}:${companyId}`, 30);
 
     const data = {
-      ...payload,
+      ...sanitizeClientPayload(payload, { protectedKeys: ['companyId'] }),
       companyId,
       title,
       createdAt: new Date(),
+      createdBy: user.uid,
     };
 
     const ref = this.firebaseAdminService.firestore.collection('projects').doc();
@@ -123,7 +125,11 @@ export class ProjectsService {
     const current = snap.data() as Record<string, unknown>;
     this.assertCompanyScope(user, current.companyId);
 
-    await ref.set({ ...payload, updatedAt: new Date() }, { merge: true });
+    // companyId must never change: it was the cross-tenant hole (`{"companyId": "<other>"}`).
+    await ref.set(
+      { ...sanitizeClientPayload(payload, { protectedKeys: ['companyId', 'companyIds'] }), updatedAt: new Date() },
+      { merge: true },
+    );
     return { success: true };
   }
 

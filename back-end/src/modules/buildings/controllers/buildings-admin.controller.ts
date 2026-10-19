@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import {
   ApiBearerAuth,
@@ -22,6 +22,24 @@ import { BuildingAdminService } from '../services/building-admin.service';
 @ApiCookieAuth('__session')
 export class BuildingsAdminController {
   constructor(private readonly buildingAdminService: BuildingAdminService) {}
+
+  @Post('admin/migrate/canonical-scope')
+  @ApiOperation({ summary: 'Preview or apply a bounded canonical building scope migration (platform admin only)' })
+  migrateCanonicalScope(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+    @Query('apply') apply?: string,
+  ) {
+    return this.buildingAdminService.migrateCanonicalScope({
+      request,
+      user,
+      cursor,
+      limit: limit ? Number(limit) : undefined,
+      apply: apply === 'true',
+    });
+  }
 
   @Get('admin/all')
   @ApiOperation({ summary: 'List all buildings for platform administrators' })

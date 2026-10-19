@@ -1,4 +1,15 @@
-import { BadRequestException, Body, Controller, Delete, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { ApiBearerAuth, ApiCookieAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/auth/current-user.decorator';
@@ -10,9 +21,11 @@ import { STAFF_ROLES } from '../../../common/auth/role.constants';
 import { ApartmentsService } from '../apartments.service';
 import { InviteTenantDto } from '../dto/invite-tenant.dto';
 import { UpdateTenantDto } from '../dto/update-tenant.dto';
+import { BuildingStatsInvalidationInterceptor } from '../../../common/interceptors/building-stats-invalidation.interceptor';
 
 @ApiTags('Apartments')
 @Controller('apartments')
+@UseInterceptors(BuildingStatsInvalidationInterceptor)
 @UseGuards(FirebaseAuthGuard, RolesGuard)
 @Roles('ManagementCompany', 'Accountant')
 @ApiBearerAuth()

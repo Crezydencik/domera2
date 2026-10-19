@@ -26,15 +26,44 @@ function isActiveTenant(tenant: unknown) {
   return record.activated === true || Boolean(record.acceptedAt) || Boolean(record.activatedAt) || status === "active" || status === "accepted";
 }
 function toPlainText(value: string) { return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(); }
+const PREVIEW_ALLOWED_TAGS = new Set(['b', 'strong', 'i', 'em', 'u', 'p', 'div', 'br', 'ul', 'ol', 'li', 'a']);
+function escapePreviewText(value: string) {
+  return value.replace(/&(?!(?:[a-z]+|#\d+|#x[0-9a-f]+);)/gi, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+// Same allow-list algorithm as the backend (common/utils/mailing-html.ts): only rebuilt allowed tags
+// and escaped text reach innerHTML. The old regex-strip left unclosed tags such as
+// `<img src=x onerror=...` untouched.
 function sanitizePreviewHtml(value: string) {
-  return value.replace(/<(\/)?([a-z0-9]+)([^>]*)>/gi, (_match, closing: string, tag: string, attributes: string) => {
-    const name = tag.toLowerCase();
-    if (!['b', 'strong', 'i', 'em', 'u', 'p', 'div', 'br', 'ul', 'ol', 'li', 'a'].includes(name)) return '';
-    if (closing) return `</${name}>`;
-    if (name === 'a') { const href = /href\s*=\s*["']([^"']+)["']/i.exec(attributes)?.[1] ?? ''; return /^https?:\/\//i.test(href) ? `<a href="${href.replace(/"/g, '&quot;')}" style="color:#2563eb;text-decoration:underline;text-underline-offset:2px;">` : '<a>'; }
-    const align = /text-align\s*:\s*(left|center|right|justify)/i.exec(attributes)?.[1];
-    return align && (name === 'p' || name === 'div') ? `<${name} style="text-align:${align}">` : `<${name}>`;
-  });
+  const input = value.slice(0, 20_000);
+  const tokenPattern = /<(\/)?([a-zA-Z][a-zA-Z0-9]*)\b([^<>]*)>/g;
+  const open: string[] = [];
+  let output = '';
+  let cursor = 0;
+  for (let match = tokenPattern.exec(input); match; match = tokenPattern.exec(input)) {
+    output += escapePreviewText(input.slice(cursor, match.index));
+    cursor = match.index + match[0].length;
+    const name = match[2].toLowerCase();
+    const attributes = match[3] ?? '';
+    if (!PREVIEW_ALLOWED_TAGS.has(name)) continue;
+    if (match[1]) {
+      const index = open.lastIndexOf(name);
+      if (index === -1) continue;
+      while (open.length > index) output += `</${open.pop()}>`;
+      continue;
+    }
+    if (name === 'br') { output += '<br>'; continue; }
+    if (name === 'a') {
+      const href = /href\s*=\s*["']([^"']+)["']/i.exec(attributes)?.[1] ?? '';
+      output += /^https?:\/\//i.test(href) ? `<a href="${escapePreviewText(href)}" style="color:#2563eb;text-decoration:underline;text-underline-offset:2px;">` : '<a>';
+    } else {
+      const align = /text-align\s*:\s*(left|center|right|justify)/i.exec(attributes)?.[1];
+      output += align && (name === 'p' || name === 'div') ? `<${name} style="text-align:${align.toLowerCase()}">` : `<${name}>`;
+    }
+    open.push(name);
+  }
+  output += escapePreviewText(input.slice(cursor));
+  while (open.length) output += `</${open.pop()}>`;
+  return output;
 }
 type MailingTemplate = { id: string; name: string; title: string; message: string; messageHtml?: string };
 type MailingHistory = { id: string; title: string; message?: string; recipients: number; sent: number; failed: number; createdAt?: unknown };
@@ -181,7 +210,7 @@ export function MailingsWorkspace({ buildings, apartments, company }: Props) {
     if (!name || !title.trim() || !message.trim()) return toast.warning(t("needContent"));
     try { await apiFetch("/emails/information-mailing/templates", { method: "POST", body: JSON.stringify({ name, title, message, messageHtml }) }); setTemplateName(""); await refreshSavedItems(); toast.success(t("templateSaved")); } catch { toast.error(t("templateSaveFailed")); }
   };
-  const loadTemplate = (template: MailingTemplate) => { setTitle(template.title); setMessage(template.message); setMessageHtml(template.messageHtml ?? template.message); if (editorRef.current) editorRef.current.innerHTML = template.messageHtml ?? template.message; };
+  const loadTemplate = (template: MailingTemplate) => { setTitle(template.title); setMessage(template.message); setMessageHtml(template.messageHtml ?? template.message); if (editorRef.current) editorRef.current.innerHTML = template.messageHtml ? sanitizePreviewHtml(template.messageHtml) : escapePreviewText(template.message); };
   const deleteTemplate = async (id: string) => { try { await apiFetch(`/emails/information-mailing/templates/${encodeURIComponent(id)}`, { method: "DELETE" }); await refreshSavedItems(); } catch { toast.error(t("failed")); } };
 
   const availableBuildings = buildings.filter((building) => building.id);

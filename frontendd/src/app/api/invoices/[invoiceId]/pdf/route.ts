@@ -47,12 +47,21 @@ export async function GET(
     return new Response(null, { status: response.status });
   }
 
+  // This route serves on the main site origin (www.domera.lv) with the user's cookies, so it must
+  // never pass through anything but a PDF: an upstream text/html body would run as script here.
+  const contentType = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (contentType !== "application/pdf") {
+    return new Response(null, { status: 502 });
+  }
+
   const headers = new Headers();
-  const contentType = response.headers.get("content-type");
   const contentDisposition = response.headers.get("content-disposition");
   const contentLength = response.headers.get("content-length");
 
-  if (contentType) headers.set("Content-Type", contentType);
+  headers.set("Content-Type", "application/pdf");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; object-src 'self'; frame-ancestors 'self'");
+  headers.set("Cache-Control", "private, no-store");
   if (contentDisposition) headers.set("Content-Disposition", contentDisposition);
   if (contentLength) headers.set("Content-Length", contentLength);
 

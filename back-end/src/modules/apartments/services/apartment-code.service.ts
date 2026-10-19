@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { ApartmentCodeContext } from '../types/apartment.types';
+import { TtlCache } from '../../../common/utils/ttl-cache';
 
 @Injectable()
 export class ApartmentCodeService {
-  private readonly contextCache = new Map<string, ApartmentCodeContext>();
+  // Bounded + TTL (was an unbounded Map that also kept renamed companies/buildings forever).
+  private readonly contextCache = new TtlCache<string, ApartmentCodeContext>({ ttlMs: 10 * 60 * 1000, maxEntries: 500 });
 
   constructor(private readonly firebaseAdminService: FirebaseAdminService) {}
 
@@ -38,24 +40,19 @@ export class ApartmentCodeService {
   }
 
   async getApartmentCodeContext(companyId: string, buildingId: string): Promise<ApartmentCodeContext> {
-    const cacheKey = `${companyId}:${buildingId}`;
-    const cached = this.contextCache.get(cacheKey);
-    if (cached) return cached;
-
-    const db = this.firebaseAdminService.firestore;
-    const [companySnap, buildingSnap] = await Promise.all([
-      db.collection('companies').doc(companyId).get(),
-      db.collection('buildings').doc(buildingId).get(),
-    ]);
-    const company = companySnap.exists ? (companySnap.data() as Record<string, unknown>) : {};
-    const building = buildingSnap.exists ? (buildingSnap.data() as Record<string, unknown>) : {};
-    const context = {
-      companyCode: this.buildReadableCode(company.companyName ?? company.name ?? companyId, 3, 'COM'),
-      buildingCode: this.buildReadableCode(building.name ?? building.title ?? building.address ?? buildingId, 4, 'HOME'),
-    };
-
-    this.contextCache.set(cacheKey, context);
-    return context;
+    return this.contextCache.getOrLoad(`${companyId}:${buildingId}`, async () => {
+      const db = this.firebaseAdminService.firestore;
+      const [companySnap, buildingSnap] = await Promise.all([
+        db.collection('companies').doc(companyId).get(),
+        db.collection('buildings').doc(buildingId).get(),
+      ]);
+      const company = companySnap.exists ? (companySnap.data() as Record<string, unknown>) : {};
+      const building = buildingSnap.exists ? (buildingSnap.data() as Record<string, unknown>) : {};
+      return {
+        companyCode: this.buildReadableCode(company.companyName ?? company.name ?? companyId, 3, 'COM'),
+        buildingCode: this.buildReadableCode(building.name ?? building.title ?? building.address ?? buildingId, 4, 'HOME'),
+      };
+    });
   }
 
   buildApartmentReadableId(context: ApartmentCodeContext, apartmentNumber: string | number): string {

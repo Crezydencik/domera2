@@ -4,6 +4,7 @@ import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { DocumentScope, MemberApartment, UnknownRecord } from '../types/document.types';
 import { DocumentHelperService } from './document-helper.service';
+import { findCandidateApartments } from '../../../common/utils/apartment-members';
 
 @Injectable()
 export class DocumentAccessService {
@@ -163,44 +164,10 @@ export class DocumentAccessService {
   }
 
   async resolveMemberApartments(user: RequestUser): Promise<MemberApartment[]> {
-    const db = this.firebaseAdminService.firestore;
-    const apartmentMap = new Map<string, UnknownRecord>();
-    const userEmail = this.helperService.firstString(user.email).toLowerCase();
-    const userSnap = await db.collection('users').doc(user.uid).get();
-    const userData = userSnap.exists ? (userSnap.data() as UnknownRecord) : {};
-    const apartmentIds = new Set<string>();
-
-    const addApartmentId = (value: unknown) => {
-      const apartmentId = this.helperService.firstString(value);
-      if (apartmentId) apartmentIds.add(apartmentId);
-    };
-
-    addApartmentId(user.apartmentId);
-    addApartmentId(userData.apartmentId);
-
-    if (Array.isArray(userData.apartmentIds)) {
-      userData.apartmentIds.forEach(addApartmentId);
-    }
-
-    const addSnap = (snap: FirebaseFirestore.QuerySnapshot) => {
-      for (const doc of snap.docs) apartmentMap.set(doc.id, doc.data() as UnknownRecord);
-    };
-
-    const apartmentRefs = Array.from(apartmentIds).map((id) => db.collection('apartments').doc(id));
-    const directSnaps = apartmentRefs.length > 0 ? await db.getAll(...apartmentRefs) : [];
-    for (const snap of directSnaps) {
-      if (snap.exists) apartmentMap.set(snap.id, snap.data() as UnknownRecord);
-    }
-
-    await Promise.all([
-      db.collection('apartments').where('residentId', '==', user.uid).get().then(addSnap),
-      db.collection('apartments').where('ownerId', '==', user.uid).get().then(addSnap),
-      db.collection('apartments').where('formerOwnerIds', 'array-contains', user.uid).get().then(addSnap),
-      userEmail ? db.collection('apartments').where('ownerEmail', '==', userEmail).get().then(addSnap) : Promise.resolve(),
-      userEmail ? db.collection('apartments').where('formerOwnerEmails', 'array-contains', userEmail).get().then(addSnap) : Promise.resolve(),
-    ]);
-
-    return Array.from(apartmentMap.entries()).map(([id, data]) => ({ id, data }));
+    // Candidates only: documentVisibleForApartmentAccess() checks owner / tenant / former-owner
+    // access per document, so a broader candidate set does not widen access.
+    const candidates = await findCandidateApartments(this.firebaseAdminService.firestore, user);
+    return Array.from(candidates.entries()).map(([id, data]) => ({ id, data: data as UnknownRecord }));
   }
 
   async canAccessDocument(

@@ -5,6 +5,7 @@ import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { AuditLogService } from '../../../common/services/audit-log.service';
 import { MeterReadingAccessService } from './meter-reading-access.service';
+import { runInBackground } from '../../../common/utils/background';
 
 @Injectable()
 export class ElectricityPaymentService {
@@ -136,7 +137,7 @@ export class ElectricityPaymentService {
 
     await ref.set(payment);
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: staffSubmission ? 'meter_reading.electricity_payment.confirm' : 'meter_reading.electricity_payment.request',
       status: 'success',
@@ -145,7 +146,7 @@ export class ElectricityPaymentService {
       companyId: user.companyId,
       apartmentId,
       metadata: { amount: payment.amount, paidKwh: payment.paidKwh },
-    });
+    }), 'audit');
 
     return { success: true, payment: { ...payment, paidAt: payment.paidAt.toISOString() } };
   }
@@ -177,7 +178,7 @@ export class ElectricityPaymentService {
       { merge: true },
     );
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'meter_reading.electricity_payment.confirm',
       status: 'success',
@@ -186,7 +187,7 @@ export class ElectricityPaymentService {
       companyId: user.companyId,
       apartmentId,
       metadata: { paymentId },
-    });
+    }), 'audit');
 
     return { success: true };
   }
@@ -209,7 +210,7 @@ export class ElectricityPaymentService {
 
     await paymentRef.delete();
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'meter_reading.electricity_payment.delete',
       status: 'success',
@@ -218,7 +219,7 @@ export class ElectricityPaymentService {
       companyId: user.companyId,
       apartmentId,
       metadata: { paymentId },
-    });
+    }), 'audit');
 
     return { success: true };
   }

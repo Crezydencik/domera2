@@ -9,6 +9,7 @@ import { hashInvitationToken } from '../../../common/utils/invitation-token';
 import { EmailService } from '../../emails/services/email.service';
 import { CompanyAccessService } from './company-access.service';
 import { CompanyMemberPermissions, CompanyPayloadService } from './company-payload.service';
+import { FirebaseAuthGuard } from '../../../common/auth/firebase-auth.guard';
 
 type CompanyMemberRole = 'ManagementCompany' | 'Accountant';
 
@@ -84,6 +85,7 @@ export class CompanyMemberService {
       },
       { merge: true },
     );
+    FirebaseAuthGuard.invalidateUser(params.targetUid);
 
     const companyRef = this.firebaseAdminService.firestore.collection('companies').doc(params.companyId);
     const userIds = Array.isArray(params.company.userIds)
@@ -405,6 +407,7 @@ export class CompanyMemberService {
         },
         { merge: true },
       );
+      FirebaseAuthGuard.invalidateUser(resolvedMemberId);
     }
 
     await companyRef.set(
@@ -531,6 +534,7 @@ export class CompanyMemberService {
       },
       { merge: true },
     );
+    FirebaseAuthGuard.invalidateUser(normalizedMemberId);
 
     await companyRef.set(
       {

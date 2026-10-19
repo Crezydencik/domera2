@@ -9,9 +9,10 @@ import { FirebaseAdminService } from './common/infrastructure/firebase/firebase-
 import { PerformanceMetricsInterceptor } from './common/interceptors/performance-metrics.interceptor';
 import { isPlatformAdminRole, resolveAccountType, resolveUserRole } from './common/auth/role.constants';
 import { AppModule } from './app.module';
+import { createCsrfOriginMiddleware, securityHeadersMiddleware } from './common/security/csrf-origin.middleware';
 
 const SESSION_COOKIE_NAME = '__session';
-const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED === 'true';
+const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED !== 'false';
 
 function normalizeOrigin(value: string): string {
   return value.trim().replace(/\/+$/, '');
@@ -180,6 +181,8 @@ export async function createApp() {
     },
   });
 
+  app.use(securityHeadersMiddleware);
+  app.use(createCsrfOriginMiddleware((origin) => isAllowedRequestOrigin(origin, allowedOrigins)));
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({

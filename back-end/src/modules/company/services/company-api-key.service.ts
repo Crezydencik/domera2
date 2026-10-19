@@ -6,6 +6,8 @@ import { RequestUser } from '../../../common/auth/request-user.type';
 import { AuditLogService } from '../../../common/services/audit-log.service';
 import { CompanyAccessService } from './company-access.service';
 import { CompanyPayloadService } from './company-payload.service';
+import { legacyScopeQuery } from '../../../common/utils/legacy-scope';
+import { runInBackground } from '../../../common/utils/background';
 
 @Injectable()
 export class CompanyApiKeyService {
@@ -75,7 +77,7 @@ export class CompanyApiKeyService {
   private async getCompanyBuildingContexts(companyId: string): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
     const db = this.firebaseAdminService.firestore;
     const [arraySnap, directSnap] = await Promise.all([
-      db.collection('buildings').where('managedBy.companyId', '==', companyId).get(),
+      legacyScopeQuery(() => db.collection('buildings').where('managedBy.companyId', '==', companyId).get()),
       db.collection('buildings').where('companyId', '==', companyId).get(),
     ]);
 
@@ -208,7 +210,7 @@ export class CompanyApiKeyService {
 
     await ref.set(data);
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'company.api_key.create',
       status: 'success',
@@ -225,7 +227,7 @@ export class CompanyApiKeyService {
         permission,
         scopes,
       },
-    });
+    }), 'audit');
 
     return {
       success: true,
@@ -262,7 +264,7 @@ export class CompanyApiKeyService {
 
     await ref.delete();
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'company.api_key.delete',
       status: 'success',
@@ -275,7 +277,7 @@ export class CompanyApiKeyService {
         buildingId: typeof data.buildingId === 'string' ? data.buildingId : ref.parent.parent?.id ?? null,
         label: typeof data.label === 'string' ? data.label : null,
       },
-    });
+    }), 'audit');
 
     return { success: true, keyId: normalizedKeyId };
   }

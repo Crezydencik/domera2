@@ -1,5 +1,5 @@
 import { IsEmail, IsString, IsOptional, IsEnum, IsIn, IsNumber, IsArray, ArrayMaxSize, IsObject } from 'class-validator';
-import { EmailLanguage, EmailType } from '../email.types';
+import { EmailLanguage } from '../email.types';
 
 export type EmailAttachmentDto = {
   filename: string;

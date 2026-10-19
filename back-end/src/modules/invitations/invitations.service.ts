@@ -15,6 +15,11 @@ import { isPropertyMemberRole, isStaffRole, resolveAccountType } from '../../com
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
 import { hashInvitationToken, normalizeEmail } from '../../common/utils/invitation-token';
+import { TooManyRequestsException } from '../../common/errors/too-many-requests.exception';
+import { FirebaseAuthGuard } from '../../common/auth/firebase-auth.guard';
+import { refreshApartmentMemberKeys } from '../../common/utils/apartment-members';
+import { runInBackground } from '../../common/utils/background';
+import { firstString } from '../../common/utils/values';
 
 @Injectable()
 export class InvitationsService {
@@ -37,11 +42,7 @@ export class InvitationsService {
     );
 
     if (!rl.allowed) {
-      throw new BadRequestException({
-        statusCode: 429,
-        message: 'Too many requests',
-        retryAfter: Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 1000)),
-      });
+      throw new TooManyRequestsException(rl.resetAt);
     }
   }
 
@@ -176,20 +177,6 @@ export class InvitationsService {
     }
   }
 
-  private firstString(...values: unknown[]): string {
-    for (const value of values) {
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
-
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return String(value);
-      }
-    }
-
-    return '';
-  }
-
   private resolveFrontendUrl(request: Request): string {
     void request;
     return (process.env.FRONTEND_URL || process.env.APP_URL || 'https://domera.app').replace(/\/+$/, '');
@@ -209,14 +196,14 @@ export class InvitationsService {
       return {
         apartmentLabel: '',
         buildingLabel: '',
-        managerLabel: this.firstString(company.companyName, company.name, fallbackCompanyId),
+        managerLabel: firstString(company.companyName, company.name, fallbackCompanyId),
       };
     }
 
     const apartmentSnap = await db.collection('apartments').doc(apartmentId).get();
     const apartment = apartmentSnap.exists ? (apartmentSnap.data() as Record<string, unknown>) : {};
-    const buildingId = this.firstString(apartment.buildingId, invitation.buildingId);
-    const companyId = this.firstString(
+    const buildingId = firstString(apartment.buildingId, invitation.buildingId);
+    const companyId = firstString(
       apartment.companyId,
       Array.isArray(apartment.companyIds) ? apartment.companyIds[0] : undefined,
       fallbackCompanyId,
@@ -234,7 +221,7 @@ export class InvitationsService {
       : {};
 
     return {
-      apartmentLabel: this.firstString(
+      apartmentLabel: firstString(
         apartment.number,
         apartment.apartmentNumber,
         apartment.label,
@@ -242,7 +229,7 @@ export class InvitationsService {
         apartment.address,
         apartmentId,
       ),
-      buildingLabel: this.firstString(
+      buildingLabel: firstString(
         apartment.buildingName,
         apartment.building,
         building.name,
@@ -250,7 +237,7 @@ export class InvitationsService {
         building.address,
         buildingId,
       ),
-      managerLabel: this.firstString(
+      managerLabel: firstString(
         apartment.managementCompanyName,
         apartment.companyName,
         managedBy.companyName,
@@ -306,7 +293,7 @@ export class InvitationsService {
       invitedByUid: user.uid,
     });
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invitation.send',
       status: 'success',
@@ -316,7 +303,7 @@ export class InvitationsService {
       apartmentId,
       invitationId: invitationRef.id,
       targetEmail: email,
-    });
+    }), 'audit');
 
     return {
       success: true,
@@ -368,7 +355,7 @@ export class InvitationsService {
     }
     const display = await this.resolveInvitationDisplay(invitation);
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invitation.resolve',
       status: 'success',
@@ -385,7 +372,7 @@ export class InvitationsService {
         role: typeof invitation.role === 'string' ? invitation.role : 'Resident',
         accountType: typeof invitation.accountType === 'string' ? invitation.accountType : 'Resident',
       },
-    });
+    }), 'audit');
 
     return {
       invitation: {
@@ -484,6 +471,7 @@ export class InvitationsService {
         },
         { merge: true },
       );
+      FirebaseAuthGuard.invalidateUser(uid);
 
       if (isCompanyMemberInvitation) {
         const companyRef = db.collection('companies').doc(companyId);
@@ -539,6 +527,7 @@ export class InvitationsService {
           },
           { merge: true },
         );
+        await refreshApartmentMemberKeys(this.firebaseAdminService.firestore, apartmentId).catch(() => undefined);
       } else {
         const apartmentRef = db.collection('apartments').doc(apartmentId);
         const apartmentSnap = await apartmentRef.get();
@@ -602,6 +591,7 @@ export class InvitationsService {
           },
           { merge: true },
         );
+        await refreshApartmentMemberKeys(this.firebaseAdminService.firestore, apartmentId).catch(() => undefined);
       }
       const invitationRef = db.collection('invitations').doc(docId);
       await db.runTransaction(async (tx) => {
@@ -666,7 +656,8 @@ export class InvitationsService {
     const createdUser = await this.firebaseAdminService.auth.createUser({
       email: invitationEmail,
       password,
-      emailVerified: false,
+      // The invitation token was delivered to this address, which proves ownership.
+      emailVerified: true,
     });
 
     await markAccepted(createdUser.uid, invitationEmail);
@@ -694,7 +685,7 @@ export class InvitationsService {
 
     const items = snapshot.docs.map((doc) => this.invitationPublicItem(doc));
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invitation.list',
       status: 'success',
@@ -702,7 +693,7 @@ export class InvitationsService {
       actorRole: user.role,
       companyId: normalizedCompanyId,
       metadata: { count: items.length },
-    });
+    }), 'audit');
 
     return { items };
   }
@@ -726,7 +717,6 @@ export class InvitationsService {
     }
 
     const doc = snapshot.docs[0];
-    const data = doc.data() as Record<string, unknown>;
     const invitation = this.invitationPublicItem(doc);
 
     if (isStaffRole(user.role)) {
@@ -775,7 +765,7 @@ export class InvitationsService {
       await this.clearPendingApartmentInvite(apartmentId, inviteType, email, normalizedInvitationId);
     }
 
-    void this.auditLogService.write({
+    runInBackground(this.auditLogService.write({
       request,
       action: 'invitation.revoke',
       status: 'success',
@@ -783,7 +773,7 @@ export class InvitationsService {
       actorRole: user.role,
       companyId,
       invitationId: normalizedInvitationId,
-    });
+    }), 'audit');
 
     return { success: true };
   }
@@ -821,6 +811,7 @@ export class InvitationsService {
         },
         { merge: true },
       );
+      await refreshApartmentMemberKeys(this.firebaseAdminService.firestore, apartmentId).catch(() => undefined);
       return;
     }
 
@@ -848,5 +839,6 @@ export class InvitationsService {
       },
       { merge: true },
     );
+    await refreshApartmentMemberKeys(this.firebaseAdminService.firestore, apartmentId).catch(() => undefined);
   }
 }

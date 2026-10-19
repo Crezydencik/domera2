@@ -9,6 +9,8 @@ import { Request } from 'express';
 import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
+import { TooManyRequestsException } from '../../common/errors/too-many-requests.exception';
+import { sanitizeClientPayload } from '../../common/utils/client-payload';
 
 @Injectable()
 export class NewsService {
@@ -48,7 +50,7 @@ export class NewsService {
       limit,
       60_000,
     );
-    if (!rl.allowed) throw new BadRequestException('Too many requests');
+    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
   }
 
   async list(request: Request, user: RequestUser, companyId: string) {
@@ -97,10 +99,11 @@ export class NewsService {
     await this.enforceRateLimit(request, 'news:create', `${user.uid}:${companyId}`, 30);
 
     const data = {
-      ...payload,
+      ...sanitizeClientPayload(payload, { protectedKeys: ['companyId'] }),
       companyId,
       title,
       createdAt: new Date(),
+      createdBy: user.uid,
     };
 
     const ref = this.firebaseAdminService.firestore.collection('news').doc();
@@ -122,7 +125,11 @@ export class NewsService {
     const current = snap.data() as Record<string, unknown>;
     this.assertCompanyScope(user, current.companyId);
 
-    await ref.set({ ...payload, updatedAt: new Date() }, { merge: true });
+    // companyId must never change: it was the cross-tenant hole (`{"companyId": "<other>"}`).
+    await ref.set(
+      { ...sanitizeClientPayload(payload, { protectedKeys: ['companyId', 'companyIds'] }), updatedAt: new Date() },
+      { merge: true },
+    );
     return { success: true };
   }
 

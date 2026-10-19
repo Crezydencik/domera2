@@ -9,6 +9,7 @@ import { FirebaseAdminService } from '../../../common/infrastructure/firebase/fi
 import { SetSessionDto } from '../dto/set-session.dto';
 import { AuthSessionResult } from '../types/auth-session.types';
 import { AuthProfileProvisioningService } from './auth-profile-provisioning.service';
+import { runInBackground } from '../../../common/utils/background';
 
 @Injectable()
 export class AuthSessionService {
@@ -42,7 +43,7 @@ export class AuthSessionService {
       companyId = undefined;
       apartmentId = undefined;
 
-      void this.firebaseAdminService.firestore.collection('users').doc(input.userId).set(
+      runInBackground(this.firebaseAdminService.firestore.collection('users').doc(input.userId).set(
         {
           uid: input.userId,
           email,
@@ -54,7 +55,7 @@ export class AuthSessionService {
         { merge: true },
       ).catch((error) => {
         console.error('Failed to update platform admin profile during login:', error);
-      });
+      }), 'firestore_write');
     }
 
     const ttlMs = this.getSessionTtlMs(input.rememberMe);

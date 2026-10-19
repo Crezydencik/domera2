@@ -7,16 +7,12 @@ import {
   UploadedDocumentFile,
   MAX_DOCUMENT_BYTES,
 } from '../types/document.types';
+import { firstString } from '../../../common/utils/values';
 
 @Injectable()
 export class DocumentHelperService {
   firstString(...values: unknown[]): string {
-    for (const value of values) {
-      if (typeof value === 'string' && value.trim()) return value.trim();
-      if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-    }
-
-    return '';
+    return firstString(...values);
   }
 
   normalizeScope(value: unknown): DocumentScope {

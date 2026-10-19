@@ -3,6 +3,8 @@ import { isPropertyMemberRole, isStaffRole } from '../../../common/auth/role.con
 import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { normalizeEmail } from '../../../common/utils/invitation-token';
+import { findCandidateApartments } from '../../../common/utils/apartment-members';
+import { firstString } from '../../../common/utils/values';
 
 @Injectable()
 export class ApartmentAccessService {
@@ -54,7 +56,7 @@ export class ApartmentAccessService {
   async assertApartmentBuildingEditableForStaff(user: RequestUser, apartment: Record<string, unknown>) {
     if (!this.isStaff(user)) return;
 
-    const buildingId = this.firstString(apartment.buildingId, apartment.houseId);
+    const buildingId = firstString(apartment.buildingId, apartment.houseId);
     if (!buildingId) return;
 
     const buildingSnap = await this.firebaseAdminService.firestore.collection('buildings').doc(buildingId).get();
@@ -75,66 +77,13 @@ export class ApartmentAccessService {
   }
 
   async getAccessibleApartmentIds(user: RequestUser): Promise<string[]> {
-    const apartmentIds = new Set<string>();
-
-    const addApartmentId = (value: unknown) => {
-      if (typeof value === 'string' && value.trim()) {
-        apartmentIds.add(value.trim());
-      }
-    };
-
-    addApartmentId(user.apartmentId);
-
-    const userSnap = await this.firebaseAdminService.firestore.collection('users').doc(user.uid).get();
-    const userData = userSnap.exists ? (userSnap.data() as Record<string, unknown>) : {};
-
-    addApartmentId(userData.apartmentId);
-
-    if (Array.isArray(userData.apartmentIds)) {
-      for (const apartmentId of userData.apartmentIds) {
-        addApartmentId(apartmentId);
-      }
-    }
-
-    const normalizedEmail = normalizeEmail(
-      (typeof user.email === 'string' ? user.email : typeof userData.email === 'string' ? userData.email : '') ?? '',
-    );
-
-    if (normalizedEmail) {
-      const [residentSnap, residentEmailSnap, ownerIdSnap, ownerEmailSnap] = await Promise.all([
-        this.firebaseAdminService.firestore.collection('apartments').where('residentId', '==', user.uid).get(),
-        this.firebaseAdminService.firestore.collection('apartments').where('residentEmail', '==', normalizedEmail).get(),
-        this.firebaseAdminService.firestore.collection('apartments').where('ownerId', '==', user.uid).get(),
-        this.firebaseAdminService.firestore.collection('apartments').where('ownerEmail', '==', normalizedEmail).get(),
-      ]);
-
-      for (const snap of [residentSnap, residentEmailSnap]) {
-        for (const doc of snap.docs) {
-          apartmentIds.add(doc.id);
-        }
-      }
-
-      for (const snap of [ownerIdSnap, ownerEmailSnap]) {
-        for (const doc of snap.docs) {
-          const apartment = doc.data() as Record<string, unknown>;
-          if (apartment.ownerActivated === true) {
-            apartmentIds.add(doc.id);
-          }
-        }
-      }
-    }
-
-    const candidateIds = Array.from(apartmentIds);
-    if (candidateIds.length === 0) return [];
-
-    const refs = candidateIds.map((id) => this.firebaseAdminService.firestore.collection('apartments').doc(id));
-    const snaps = await this.firebaseAdminService.firestore.getAll(...refs);
+    // One shared candidate lookup (1 query with APARTMENT_MEMBER_KEYS=true); the access rules
+    // below are unchanged and still decide which candidates are accessible.
+    const candidates = await findCandidateApartments(this.firebaseAdminService.firestore, user);
     const normalizedUserEmail = normalizeEmail(user.email ?? '');
 
-    return snaps
-      .filter((snap) => snap.exists)
-      .filter((snap) => {
-        const apartment = snap.data() as Record<string, unknown>;
+    return Array.from(candidates.entries())
+      .filter(([, apartment]) => {
         const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
         const ownerEmail = typeof apartment.ownerEmail === 'string' ? normalizeEmail(apartment.ownerEmail) : '';
         // residentId is legacy denormalized data, not an authorization grant.
@@ -162,7 +111,7 @@ export class ApartmentAccessService {
 
         return isResident || isOwner || isTenant;
       })
-      .map((snap) => snap.id);
+      .map(([apartmentId]) => apartmentId);
   }
 
   canManageTenants(user: RequestUser, apartment: Record<string, unknown>): boolean {
@@ -213,17 +162,4 @@ export class ApartmentAccessService {
     });
   }
 
-  private firstString(...values: unknown[]): string {
-    for (const value of values) {
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
-
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return String(value);
-      }
-    }
-
-    return '';
-  }
 }

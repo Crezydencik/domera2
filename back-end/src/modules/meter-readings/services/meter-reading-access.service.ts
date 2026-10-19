@@ -4,6 +4,7 @@ import { RequestUser } from '../../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { normalizeEmail } from '../../../common/utils/invitation-token';
 import { CompanyPayloadService } from '../../company/services/company-payload.service';
+import { findCandidateApartments } from '../../../common/utils/apartment-members';
 
 @Injectable()
 export class MeterReadingAccessService {
@@ -100,58 +101,9 @@ export class MeterReadingAccessService {
   }
 
   async getAccessibleApartmentIds(user: RequestUser): Promise<string[]> {
-    const db = this.firebaseAdminService.firestore;
-    const apartmentIds = new Set<string>();
-
-    const addApartmentId = (value: unknown) => {
-      if (typeof value === 'string' && value.trim()) {
-        apartmentIds.add(value.trim());
-      }
-    };
-
-    addApartmentId(user.apartmentId);
-
-    const userSnap = await db.collection('users').doc(user.uid).get();
-    const userData = userSnap.exists ? (userSnap.data() as Record<string, unknown>) : {};
-
-    addApartmentId(userData.apartmentId);
-
-    if (Array.isArray(userData.apartmentIds)) {
-      userData.apartmentIds.forEach(addApartmentId);
-    }
-
-    const normalizedEmail = normalizeEmail(
-      (typeof user.email === 'string' ? user.email : typeof userData.email === 'string' ? userData.email : '') ?? '',
-    );
-
-    const [residentSnap, ownerIdSnap, ownerEmailSnap] = await Promise.all([
-      db.collection('apartments').where('residentId', '==', user.uid).get(),
-      db.collection('apartments').where('ownerId', '==', user.uid).get(),
-      normalizedEmail
-        ? db.collection('apartments').where('ownerEmail', '==', normalizedEmail).get()
-        : Promise.resolve(null),
-    ]);
-
-    for (const doc of residentSnap.docs) {
-      apartmentIds.add(doc.id);
-    }
-
-    for (const snap of [ownerIdSnap, ownerEmailSnap]) {
-      if (!snap) continue;
-
-      for (const doc of snap.docs) {
-        apartmentIds.add(doc.id);
-      }
-    }
-
-    const candidateIds = Array.from(apartmentIds);
-    if (!candidateIds.length) return [];
-
-    const snaps = await db.getAll(...candidateIds.map((id) => db.collection('apartments').doc(id)));
-
-    return snaps
-      .filter((snap) => snap.exists)
-      .filter((snap) => this.hasApartmentAccess(user, snap.id, snap.data() as Record<string, unknown>))
-      .map((snap) => snap.id);
+    const candidates = await findCandidateApartments(this.firebaseAdminService.firestore, user);
+    return Array.from(candidates.entries())
+      .filter(([apartmentId, apartment]) => this.hasApartmentAccess(user, apartmentId, apartment))
+      .map(([apartmentId]) => apartmentId);
   }
 }

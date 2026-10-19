@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { FieldValue } from 'firebase-admin/firestore';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 
 export const DELETED_BUILDING_STORAGE_RETENTION_DAYS = 180;
