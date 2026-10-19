@@ -27,6 +27,13 @@ const apartment_code_service_1 = require("./services/apartment-code.service");
 const apartment_invitation_service_1 = require("./services/apartment-invitation.service");
 const apartment_meter_service_1 = require("./services/apartment-meter.service");
 const apartment_storage_service_1 = require("./services/apartment-storage.service");
+const too_many_requests_exception_1 = require("../../common/errors/too-many-requests.exception");
+const legacy_scope_1 = require("../../common/utils/legacy-scope");
+const apartment_members_1 = require("../../common/utils/apartment-members");
+const background_1 = require("../../common/utils/background");
+const ttl_cache_1 = require("../../common/utils/ttl-cache");
+const values_1 = require("../../common/utils/values");
+const OWNER_UID_BY_EMAIL = new ttl_cache_1.TtlCache({ ttlMs: 5 * 60 * 1000, maxEntries: 5000 });
 const APARTMENT_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
 const APARTMENT_IMPORT_MAX_ROWS = 5_000;
 let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
@@ -46,23 +53,12 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
     async enforceRateLimit(request, scope, discriminator, limit) {
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, scope, discriminator), limit, 60_000);
         if (!rl.allowed) {
-            throw new common_1.BadRequestException('Too many requests');
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
         }
-    }
-    firstString(...values) {
-        for (const value of values) {
-            if (typeof value === 'string' && value.trim()) {
-                return value.trim();
-            }
-            if (typeof value === 'number' && Number.isFinite(value)) {
-                return String(value);
-            }
-        }
-        return '';
     }
     compareApartmentOrder(left, right) {
-        const leftLabel = this.firstString(left.number, left.apartmentNumber, left.id, left.apartmentId);
-        const rightLabel = this.firstString(right.number, right.apartmentNumber, right.id, right.apartmentId);
+        const leftLabel = (0, values_1.firstString)(left.number, left.apartmentNumber, left.id, left.apartmentId);
+        const rightLabel = (0, values_1.firstString)(right.number, right.apartmentNumber, right.id, right.apartmentId);
         const leftNumber = Number(leftLabel);
         const rightNumber = Number(rightLabel);
         const bothNumeric = leftLabel !== '' &&
@@ -110,17 +106,17 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
     }
     async withOwnerInvitationDates(items) {
         const missingOwnerInvitationDates = items.filter((item) => {
-            const apartmentId = this.firstString(item.id, item.apartmentId);
-            const ownerEmail = this.firstString(item.ownerEmail);
+            const apartmentId = (0, values_1.firstString)(item.id, item.apartmentId);
+            const ownerEmail = (0, values_1.firstString)(item.ownerEmail);
             return apartmentId && ownerEmail && !item.ownerInvitedAt;
         });
         if (missingOwnerInvitationDates.length === 0)
             return items;
         const latestByApartment = new Map();
-        const apartmentIds = Array.from(new Set(missingOwnerInvitationDates.map((item) => this.firstString(item.id, item.apartmentId)).filter(Boolean)));
+        const apartmentIds = Array.from(new Set(missingOwnerInvitationDates.map((item) => (0, values_1.firstString)(item.id, item.apartmentId)).filter(Boolean)));
         const ownerEmailByApartment = new Map(missingOwnerInvitationDates.map((item) => [
-            this.firstString(item.id, item.apartmentId),
-            this.firstString(item.ownerEmail).toLowerCase(),
+            (0, values_1.firstString)(item.id, item.apartmentId),
+            (0, values_1.firstString)(item.ownerEmail).toLowerCase(),
         ]));
         for (let index = 0; index < apartmentIds.length; index += 30) {
             const chunk = apartmentIds.slice(index, index + 30);
@@ -132,13 +128,13 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                 .get();
             for (const invitationDoc of invitations.docs) {
                 const invitation = invitationDoc.data();
-                const apartmentId = this.firstString(invitation.apartmentId);
+                const apartmentId = (0, values_1.firstString)(invitation.apartmentId);
                 const ownerEmail = ownerEmailByApartment.get(apartmentId);
                 if (!apartmentId || !ownerEmail)
                     continue;
-                const invitationEmail = this.firstString(invitation.email).toLowerCase();
-                const inviteType = this.firstString(invitation.inviteType).toLowerCase();
-                const role = this.firstString(invitation.role).toLowerCase();
+                const invitationEmail = (0, values_1.firstString)(invitation.email).toLowerCase();
+                const inviteType = (0, values_1.firstString)(invitation.inviteType).toLowerCase();
+                const role = (0, values_1.firstString)(invitation.role).toLowerCase();
                 const isOwnerInvitation = inviteType === 'owner' || role === 'landlord';
                 if (!isOwnerInvitation || invitationEmail !== ownerEmail)
                     continue;
@@ -157,7 +153,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         return items.map((item) => {
             if (item.ownerInvitedAt)
                 return item;
-            const apartmentId = this.firstString(item.id, item.apartmentId);
+            const apartmentId = (0, values_1.firstString)(item.id, item.apartmentId);
             const invitation = latestByApartment.get(apartmentId);
             if (!invitation)
                 return item;
@@ -170,14 +166,14 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
     }
     async withResolvedOwnerAccess(items) {
         const missingOwnerLinks = items.filter((item) => {
-            const apartmentId = this.firstString(item.id, item.apartmentId);
-            const ownerEmail = this.firstString(item.ownerEmail).toLowerCase();
-            const ownerId = this.firstString(item.ownerId);
+            const apartmentId = (0, values_1.firstString)(item.id, item.apartmentId);
+            const ownerEmail = (0, values_1.firstString)(item.ownerEmail).toLowerCase();
+            const ownerId = (0, values_1.firstString)(item.ownerId);
             return apartmentId && ownerEmail && !ownerId;
         });
         if (missingOwnerLinks.length === 0)
             return items;
-        const emails = Array.from(new Set(missingOwnerLinks.map((item) => this.firstString(item.ownerEmail).toLowerCase()).filter(Boolean)));
+        const emails = Array.from(new Set(missingOwnerLinks.map((item) => (0, values_1.firstString)(item.ownerEmail).toLowerCase()).filter(Boolean)));
         const userIdByEmail = new Map();
         for (let index = 0; index < emails.length; index += 30) {
             const chunk = emails.slice(index, index + 30);
@@ -189,7 +185,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                 .get();
             for (const doc of usersSnap.docs) {
                 const data = doc.data();
-                const email = this.firstString(data.email).toLowerCase();
+                const email = (0, values_1.firstString)(data.email).toLowerCase();
                 if (email && !userIdByEmail.has(email)) {
                     userIdByEmail.set(email, doc.id);
                 }
@@ -198,22 +194,26 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         await Promise.all(emails
             .filter((email) => !userIdByEmail.has(email))
             .map(async (email) => {
-            try {
-                const user = await this.firebaseAdminService.auth.getUserByEmail(email);
-                userIdByEmail.set(email, user.uid);
-            }
-            catch {
-            }
+            const uid = await OWNER_UID_BY_EMAIL.getOrLoad(email, async () => {
+                try {
+                    return (await this.firebaseAdminService.auth.getUserByEmail(email)).uid;
+                }
+                catch {
+                    return null;
+                }
+            });
+            if (uid)
+                userIdByEmail.set(email, uid);
         }));
         if (userIdByEmail.size === 0)
             return items;
         const nextItems = items.map((item) => {
-            const apartmentId = this.firstString(item.id, item.apartmentId);
-            const ownerEmail = this.firstString(item.ownerEmail).toLowerCase();
+            const apartmentId = (0, values_1.firstString)(item.id, item.apartmentId);
+            const ownerEmail = (0, values_1.firstString)(item.ownerEmail).toLowerCase();
             const resolvedOwnerId = ownerEmail ? userIdByEmail.get(ownerEmail) : undefined;
             if (!apartmentId || !resolvedOwnerId)
                 return item;
-            const ownerId = this.firstString(item.ownerId);
+            const ownerId = (0, values_1.firstString)(item.ownerId);
             if (ownerId)
                 return item;
             return {
@@ -259,7 +259,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         if (data.editLocked === true) {
             throw new common_1.ForbiddenException('This building is locked by the platform administrator');
         }
-        const status = this.firstString(data.status).toLowerCase();
+        const status = (0, values_1.firstString)(data.status).toLowerCase();
         if (['pending', 'rejected', 'cancelled', 'canceled'].includes(status)) {
             throw new common_1.ForbiddenException('Apartments can be added only after the building request is approved');
         }
@@ -276,17 +276,25 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
     }
     async countBuildingApartments(buildingId, excludeApartmentId) {
         const db = this.firebaseAdminService.firestore;
-        const [byBuildingId, byLegacyHouseId] = await Promise.all([
-            db.collection('apartments').where('buildingId', '==', buildingId).get(),
-            db.collection('apartments').where('houseId', '==', buildingId).get(),
+        const [byBuildingIdCount, byLegacyHouseId, excluded] = await Promise.all([
+            db.collection('apartments').where('buildingId', '==', buildingId).count().get(),
+            (0, legacy_scope_1.legacyScopeQuery)(() => db.collection('apartments').where('houseId', '==', buildingId).select('buildingId').get()),
+            excludeApartmentId ? db.collection('apartments').doc(excludeApartmentId).get() : Promise.resolve(null),
         ]);
-        const ids = new Set();
-        for (const doc of [...byBuildingId.docs, ...byLegacyHouseId.docs]) {
-            if (excludeApartmentId && doc.id === excludeApartmentId)
-                continue;
-            ids.add(doc.id);
+        let total = byBuildingIdCount.data().count;
+        for (const doc of byLegacyHouseId.docs) {
+            const ownBuildingId = (0, values_1.firstString)(doc.data().buildingId);
+            if (!ownBuildingId)
+                total += 1;
         }
-        return ids.size;
+        if (excluded?.exists) {
+            const data = excluded.data();
+            const belongsHere = (0, values_1.firstString)(data.buildingId) === buildingId
+                || (!(0, values_1.firstString)(data.buildingId) && (0, values_1.firstString)(data.houseId) === buildingId);
+            if (belongsHere)
+                total -= 1;
+        }
+        return Math.max(0, total);
     }
     async assertBuildingApartmentCapacity(params) {
         const limit = this.getBuildingApartmentLimit(params.building);
@@ -302,18 +310,18 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         return this.apartmentAccessService.assertApartmentBuildingEditableForStaff(user, apartment);
     }
     buildFormerOwnerArchiveUpdate(apartmentId, apartment) {
-        const ownerId = this.firstString(apartment.ownerId);
-        const ownerEmail = this.firstString(apartment.ownerEmail).toLowerCase();
+        const ownerId = (0, values_1.firstString)(apartment.ownerId);
+        const ownerEmail = (0, values_1.firstString)(apartment.ownerEmail).toLowerCase();
         if (!ownerId && !ownerEmail)
             return {};
         const update = {
             formerOwners: firestore_1.FieldValue.arrayUnion({
                 ownerId: ownerId || null,
                 ownerEmail: ownerEmail || null,
-                owner: this.firstString(apartment.owner) || null,
-                ownerFirstName: this.firstString(apartment.ownerFirstName) || null,
-                ownerLastName: this.firstString(apartment.ownerLastName) || null,
-                ownerContractNumber: this.firstString(apartment.ownerContractNumber) || null,
+                owner: (0, values_1.firstString)(apartment.owner) || null,
+                ownerFirstName: (0, values_1.firstString)(apartment.ownerFirstName) || null,
+                ownerLastName: (0, values_1.firstString)(apartment.ownerLastName) || null,
+                ownerContractNumber: (0, values_1.firstString)(apartment.ownerContractNumber) || null,
                 ownerStartedAt: apartment.ownerAcceptedAt ?? apartment.ownerInvitedAt ?? null,
                 ownerAcceptedAt: apartment.ownerAcceptedAt ?? null,
                 removedFromApartmentId: apartmentId,
@@ -931,7 +939,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         }
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'apartments:import', user.uid), 5, 60_000);
         if (!rl.allowed)
-            throw new common_1.BadRequestException('Too many requests');
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
         const db = this.firebaseAdminService.firestore;
         const importBuildingData = await this.getApprovedBuildingOrThrow(buildingId, companyId);
         const fileSize = file.size ?? file.buffer?.length ?? 0;
@@ -1058,6 +1066,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                     normalizedNumber: normalizedApartmentNumber,
                     companyId,
                     companyIds: [companyId],
+                    apartmentScopeVersion: 2,
                     storageApartmentId: apartmentRef.id,
                     readableId,
                     createdAt: firestore_1.FieldValue.serverTimestamp(),
@@ -1149,7 +1158,12 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                     waterReadings.coldmeterwater = coldGroup;
                 }
                 writeOperations.push((batch) => {
-                    batch.set(apartmentRef, { ...apartmentData, waterReadings });
+                    batch.set(apartmentRef, {
+                        ...apartmentData,
+                        waterReadings,
+                        memberKeys: (0, apartment_members_1.computeApartmentMemberKeys)(apartmentData),
+                        memberKeysVersion: apartment_members_1.MEMBER_KEYS_VERSION,
+                    });
                 });
                 importedApartmentNumbers.add(normalizedApartmentNumber);
                 importedApartmentIds.push(apartmentRef.id);
@@ -1171,7 +1185,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                 ...this.getApartmentStorageFolders(companyId, buildingId, apartment.id),
             ], 'imported apartment')));
         }
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'apartments.import',
             status: 'success',
@@ -1184,7 +1198,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                 skippedDuplicates: results.skippedDuplicates.length,
                 rowErrors: results.errors.length,
             },
-        });
+        }), 'audit');
         return { success: true, results };
     }
     mapApartmentDoc(id, data) {
@@ -1228,7 +1242,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             }
             const [byArray, byLegacy] = await Promise.all([
                 db.collection('apartments').where('companyIds', 'array-contains', companyId).get(),
-                db.collection('apartments').where('companyId', '==', companyId).get(),
+                (0, legacy_scope_1.legacyScopeQuery)(() => db.collection('apartments').where('companyId', '==', companyId).get()),
             ]);
             const merged = new Map();
             for (const doc of [...byArray.docs, ...byLegacy.docs]) {
@@ -1245,7 +1259,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             const scopedCompanyId = this.effectiveStaffCompanyId(user);
             const [byArray, byLegacy] = await Promise.all([
                 db.collection('apartments').where('companyIds', 'array-contains', scopedCompanyId).get(),
-                db.collection('apartments').where('companyId', '==', scopedCompanyId).get(),
+                (0, legacy_scope_1.legacyScopeQuery)(() => db.collection('apartments').where('companyId', '==', scopedCompanyId).get()),
             ]);
             const merged = new Map();
             for (const doc of [...byArray.docs, ...byLegacy.docs]) {
@@ -1261,7 +1275,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         }
         else if ((0, role_constants_1.isPropertyMemberRole)(user.role)) {
             const accessibleApartmentIds = await this.getAccessibleApartmentIds(user);
-            accessibleItems = rawItems.filter((item) => accessibleApartmentIds.includes(this.firstString(item.id)));
+            accessibleItems = rawItems.filter((item) => accessibleApartmentIds.includes((0, values_1.firstString)(item.id)));
         }
         else {
             throw new common_1.ForbiddenException('Insufficient permissions');
@@ -1344,6 +1358,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             buildingId,
             companyId,
             companyIds: [companyId],
+            apartmentScopeVersion: 2,
             storageApartmentId: ref.id,
             readableId,
             ...(typeof payload.address === 'string' && payload.address.trim() ? { address: payload.address.trim() } : {}),
@@ -1356,7 +1371,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             createdAt: firestore_1.FieldValue.serverTimestamp(),
             updatedAt: firestore_1.FieldValue.serverTimestamp(),
         };
-        await ref.set(data);
+        await ref.set({ ...data, memberKeys: (0, apartment_members_1.computeApartmentMemberKeys)(data), memberKeysVersion: apartment_members_1.MEMBER_KEYS_VERSION });
         await this.markStorageFolders(ref, [
             ...this.getBuildingStorageFolders(companyId, buildingId),
             ...this.getApartmentStorageFolders(companyId, buildingId, ref.id),
@@ -1417,7 +1432,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                 .get();
             const hasDuplicate = duplicateByNormalizedNumber.docs.some((doc) => doc.id !== apartmentId);
             if (hasDuplicate) {
-                throw new common_1.BadRequestException('РљРІР°СЂС‚РёСЂР° СЃ С‚Р°РєРёРј РЅРѕРјРµСЂРѕРј СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚ РІ СЌС‚РѕРј РґРѕРјРµ');
+                throw new common_1.BadRequestException('Квартира с таким номером уже существует в этом доме');
             }
         }
         const readableId = shouldRegenerateReadableId && updatedCompanyId && updatedBuildingId && updatedNumber
@@ -1713,7 +1728,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         catch (error) {
             this.logger.error('Failed to send owner invitation email', error instanceof Error ? error.stack : String(error));
         }
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             action: 'updateOwner',
             apartmentId,
             actorUid: user.uid,
@@ -1721,7 +1736,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             companyId: user.companyId,
             status: 'success',
             metadata: { ownerEmail: email },
-        });
+        }), 'audit');
         return { success: true, ownerActivated };
     }
     async removeOwner(request, user, apartmentId) {
@@ -1767,7 +1782,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                 this.logger.error(`Failed to detach apartment from owner ${ownerId}`, error instanceof Error ? error.stack : String(error));
             });
         }
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             action: 'removeOwner',
             apartmentId,
             actorUid: user.uid,
@@ -1775,7 +1790,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             companyId: user.companyId,
             status: 'success',
             metadata: { ownerEmail },
-        });
+        }), 'audit');
         return { success: true };
     }
     async addOrInviteTenant(request, user, apartmentId, emailInput, tenantData) {
@@ -2055,7 +2070,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
                 nextPermissions.delete('viewDocuments');
                 nextPermissions.delete('documents');
             }
-            const name = [firstName, lastName].filter(Boolean).join(' ') || this.firstString(tenant.name, tenant.email);
+            const name = [firstName, lastName].filter(Boolean).join(' ') || (0, values_1.firstString)(tenant.name, tenant.email);
             const nextTenant = {
                 ...tenant,
                 name,
@@ -2135,7 +2150,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             ownerId = undefined;
         }
         const ownerInvitationContext = await this.apartmentInvitationService.resolveInvitationContext(apartment);
-        const ownerName = this.firstString(apartment.owner, apartment.ownerName, [this.firstString(apartment.ownerFirstName), this.firstString(apartment.ownerLastName)].filter(Boolean).join(' '));
+        const ownerName = (0, values_1.firstString)(apartment.owner, apartment.ownerName, [(0, values_1.firstString)(apartment.ownerFirstName), (0, values_1.firstString)(apartment.ownerLastName)].filter(Boolean).join(' '));
         await this.apartmentInvitationService.createOwnerInvitationNotification({
             ownerId,
             invitationLink,
@@ -2163,7 +2178,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             ownerInvitationId: invitationId,
             updatedAt: firestore_1.FieldValue.serverTimestamp(),
         }, { merge: true });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             action: 'resendOwnerInvitation',
             apartmentId,
             actorUid: user.uid,
@@ -2171,7 +2186,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             companyId: user.companyId,
             status: 'success',
             metadata: { ownerEmail },
-        });
+        }), 'audit');
         return { success: true };
     }
     async resendTenantInvitation(request, user, apartmentId, tenantEmail) {
@@ -2227,7 +2242,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             ? { ...t, invitedAt: new Date() }
             : t);
         await apartmentRef.set({ tenants: updatedTenants, updatedAt: firestore_1.FieldValue.serverTimestamp() }, { merge: true });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             action: 'resendTenantInvitation',
             apartmentId,
             actorUid: user.uid,
@@ -2235,7 +2250,7 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             companyId: user.companyId,
             status: 'success',
             metadata: { tenantEmail },
-        });
+        }), 'audit');
         return { success: true };
     }
     async getAuditLogs(request, user, apartmentId, limit = 50) {
@@ -2363,6 +2378,11 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         if (batch && eligible > 0) {
             await batch.commit();
         }
+        const db = this.firebaseAdminService.firestore;
+        const [total, canonical] = await Promise.all([
+            db.collection('apartments').count().get(),
+            db.collection('apartments').where('apartmentScopeVersion', '==', 2).count().get(),
+        ]);
         const lastDocId = page.at(-1)?.id;
         return {
             mode: params.apply ? 'applied' : 'dry-run',
@@ -2371,17 +2391,60 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
             updated: params.apply ? eligible : 0,
             alreadyCanonical,
             skipped,
+            remaining: Math.max(0, total.data().count - canonical.data().count),
+            hasMore,
+            nextCursor: hasMore && lastDocId ? this.encodeMigrationCursor(lastDocId) : undefined,
+        };
+    }
+    async migrateMemberKeys(params) {
+        if ((0, role_constants_1.normalizeUserRole)(params.user.role) !== 'PlatformAdmin') {
+            throw new common_1.ForbiddenException('Only platform administrators can run the member keys migration');
+        }
+        await this.enforceRateLimit(params.request, 'apartments:migrate-member-keys', params.user.uid, 10);
+        const db = this.firebaseAdminService.firestore;
+        const limit = Number.isFinite(params.limit) ? Math.min(400, Math.max(1, Math.floor(params.limit))) : 200;
+        const cursorId = this.decodeMigrationCursor(params.cursor);
+        let query = db.collection('apartments').orderBy(firestore_1.FieldPath.documentId()).limit(limit + 1);
+        if (cursorId)
+            query = query.startAfter(cursorId);
+        const snapshot = await query.get();
+        const page = snapshot.docs.slice(0, limit);
+        const hasMore = snapshot.docs.length > limit;
+        const batch = params.apply ? db.batch() : null;
+        let eligible = 0;
+        for (const doc of page) {
+            const data = doc.data();
+            const next = (0, apartment_members_1.computeApartmentMemberKeys)(data);
+            const current = Array.isArray(data.memberKeys) ? data.memberKeys.map(String) : null;
+            if (current && data.memberKeysVersion === apartment_members_1.MEMBER_KEYS_VERSION && current.join('\n') === next.join('\n'))
+                continue;
+            eligible += 1;
+            batch?.set(doc.ref, { memberKeys: next, memberKeysVersion: apartment_members_1.MEMBER_KEYS_VERSION }, { merge: true });
+        }
+        if (batch && eligible > 0)
+            await batch.commit();
+        const [total, done] = await Promise.all([
+            db.collection('apartments').count().get(),
+            db.collection('apartments').where('memberKeysVersion', '==', apartment_members_1.MEMBER_KEYS_VERSION).count().get(),
+        ]);
+        const lastDocId = page.at(-1)?.id;
+        return {
+            mode: params.apply ? 'applied' : 'dry-run',
+            scanned: page.length,
+            eligible,
+            updated: params.apply ? eligible : 0,
+            remaining: Math.max(0, total.data().count - done.data().count),
             hasMore,
             nextCursor: hasMore && lastDocId ? this.encodeMigrationCursor(lastDocId) : undefined,
         };
     }
     buildCanonicalScopePatch(apartment) {
-        const directCompanyId = this.firstString(apartment.companyId);
+        const directCompanyId = (0, values_1.firstString)(apartment.companyId);
         const companyIds = Array.isArray(apartment.companyIds)
             ? apartment.companyIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
             : [];
         const canonicalCompanyId = directCompanyId || companyIds[0] || '';
-        const canonicalBuildingId = this.firstString(apartment.buildingId, apartment.houseId);
+        const canonicalBuildingId = (0, values_1.firstString)(apartment.buildingId, apartment.houseId);
         if (!canonicalCompanyId || !canonicalBuildingId)
             return null;
         const patch = {};
@@ -2390,10 +2453,10 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         if (!Array.isArray(apartment.companyIds) || !companyIds.includes(canonicalCompanyId)) {
             patch.companyIds = Array.from(new Set([...companyIds, canonicalCompanyId]));
         }
-        if (!this.firstString(apartment.buildingId))
+        if (!(0, values_1.firstString)(apartment.buildingId))
             patch.buildingId = canonicalBuildingId;
-        const number = this.firstString(apartment.number, apartment.apartmentNumber);
-        if (number && !this.firstString(apartment.normalizedNumber)) {
+        const number = (0, values_1.firstString)(apartment.number, apartment.apartmentNumber);
+        if (number && !(0, values_1.firstString)(apartment.normalizedNumber)) {
             patch.normalizedNumber = this.normalizeApartmentNumber(number);
         }
         if (apartment.apartmentScopeVersion !== 2)

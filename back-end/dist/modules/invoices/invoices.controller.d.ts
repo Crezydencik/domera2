@@ -33,7 +33,7 @@ export declare class InvoicesController {
             pdfUrl: string;
             companyId: string;
             buildingId: string | null;
-            recipientType: "tenant" | "owner" | "general";
+            recipientType: import("./invoice.types").InvoiceRecipientType;
             createdAt: Date;
             createdByUid: string;
         };
@@ -95,6 +95,10 @@ export declare class InvoicesController {
         }[];
     }>;
     list(user: RequestUser, query: ListInvoicesQueryDto): Promise<{
+        query: Record<string, string | undefined>;
+        items: Array<Record<string, unknown>>;
+        nextCursor: string | null;
+    } | {
         items: Record<string, unknown>[];
         query: Record<string, string | undefined>;
     }>;
@@ -169,8 +173,14 @@ export declare class InvoicesController {
     }>;
     remove(request: Request, user: RequestUser, invoiceId: string): Promise<{
         success: boolean;
+        permanently_deleted: boolean;
+        trash_id?: undefined;
+        expires_at?: undefined;
+    } | {
+        success: boolean;
         trash_id: string;
         expires_at: string;
+        permanently_deleted?: undefined;
     }>;
 }
 export {};

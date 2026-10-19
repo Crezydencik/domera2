@@ -14,5 +14,4 @@ export declare class ApartmentAccessService {
     getAccessibleApartmentIds(user: RequestUser): Promise<string[]>;
     canManageTenants(user: RequestUser, apartment: Record<string, unknown>): boolean;
     hasApartmentOccupant(apartment: Record<string, unknown>): boolean;
-    private firstString;
 }

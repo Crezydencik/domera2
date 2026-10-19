@@ -16,21 +16,95 @@ const role_constants_1 = require("../../../common/auth/role.constants");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const rate_limit_service_1 = require("../../../common/services/rate-limit.service");
 const building_stats_service_1 = require("./building-stats.service");
+const too_many_requests_exception_1 = require("../../../common/errors/too-many-requests.exception");
+const values_1 = require("../../../common/utils/values");
 let BuildingAdminService = class BuildingAdminService {
     constructor(firebaseAdminService, rateLimitService, buildingStatsService) {
         this.firebaseAdminService = firebaseAdminService;
         this.rateLimitService = rateLimitService;
         this.buildingStatsService = buildingStatsService;
     }
+    async migrateCanonicalScope(params) {
+        this.assertPlatformAdmin(params.user);
+        await this.enforceRateLimit(params.request, 'buildings:migrate-canonical-scope', params.user.uid, 5);
+        const db = this.firebaseAdminService.firestore;
+        const limit = Number.isFinite(params.limit) ? Math.min(300, Math.max(1, Math.floor(params.limit))) : 100;
+        const cursorId = this.decodeMigrationCursor(params.cursor);
+        let query = db.collection('buildings').orderBy(firestore_1.FieldPath.documentId()).limit(limit + 1);
+        if (cursorId)
+            query = query.startAfter(cursorId);
+        const snapshot = await query.get();
+        const page = snapshot.docs.slice(0, limit);
+        const hasMore = snapshot.docs.length > limit;
+        const batch = params.apply ? db.batch() : null;
+        const skipped = [];
+        let eligible = 0;
+        let alreadyCanonical = 0;
+        for (const doc of page) {
+            const data = doc.data();
+            const managedBy = data.managedBy && typeof data.managedBy === 'object' ? data.managedBy : {};
+            const directCompanyId = (0, values_1.firstNonEmptyString)(data.companyId);
+            const managedCompanyId = (0, values_1.firstNonEmptyString)(managedBy.companyId);
+            if (directCompanyId && managedCompanyId && directCompanyId !== managedCompanyId) {
+                skipped.push({ buildingId: doc.id, reason: `companyId (${directCompanyId}) differs from managedBy.companyId (${managedCompanyId})` });
+                continue;
+            }
+            const companyId = directCompanyId || managedCompanyId;
+            if (!companyId) {
+                skipped.push({ buildingId: doc.id, reason: 'companyId cannot be resolved' });
+                continue;
+            }
+            const patch = {};
+            if (!directCompanyId)
+                patch.companyId = companyId;
+            if (data.scopeVersion !== 2)
+                patch.scopeVersion = 2;
+            if (Object.keys(patch).length === 0) {
+                alreadyCanonical += 1;
+                continue;
+            }
+            eligible += 1;
+            batch?.set(doc.ref, { ...patch, updatedAt: firestore_1.FieldValue.serverTimestamp() }, { merge: true });
+        }
+        if (batch && eligible > 0)
+            await batch.commit();
+        const [total, canonical] = await Promise.all([
+            db.collection('buildings').count().get(),
+            db.collection('buildings').where('scopeVersion', '==', 2).count().get(),
+        ]);
+        const lastDocId = page.at(-1)?.id;
+        return {
+            mode: params.apply ? 'applied' : 'dry-run',
+            scanned: page.length,
+            eligible,
+            updated: params.apply ? eligible : 0,
+            alreadyCanonical,
+            skipped,
+            remaining: Math.max(0, total.data().count - canonical.data().count),
+            hasMore,
+            nextCursor: hasMore && lastDocId ? Buffer.from(lastDocId, 'utf8').toString('base64url') : undefined,
+        };
+    }
+    decodeMigrationCursor(cursor) {
+        if (!cursor || cursor.length > 512)
+            return undefined;
+        try {
+            const id = Buffer.from(cursor, 'base64url').toString('utf8').trim();
+            return /^[A-Za-z0-9_-]{1,256}$/.test(id) ? id : undefined;
+        }
+        catch {
+            return undefined;
+        }
+    }
     async listAllForAdmin(request, user) {
         this.assertPlatformAdmin(user);
         await this.enforceRateLimit(request, 'buildings:admin-list-all', user.uid, 50);
         const db = this.firebaseAdminService.firestore;
-        const [buildingsSnap, companiesSnap, occupancyStats] = await Promise.all([
+        const [buildingsSnap, companiesSnap] = await Promise.all([
             db.collection('buildings').get(),
             db.collection('companies').get(),
-            this.buildingStatsService.getAllBuildingOccupancyStats(),
         ]);
+        const occupancyStats = await this.buildingStatsService.getStatsForBuildings(buildingsSnap.docs.map((doc) => doc.id));
         const companies = new Map();
         for (const doc of companiesSnap.docs) {
             companies.set(doc.id, doc.data());
@@ -40,12 +114,12 @@ let BuildingAdminService = class BuildingAdminService {
             const managedBy = data.managedBy && typeof data.managedBy === 'object'
                 ? data.managedBy
                 : {};
-            const companyId = this.firstString(data.companyId, managedBy.companyId);
+            const companyId = (0, values_1.firstNonEmptyString)(data.companyId, managedBy.companyId);
             const company = companyId ? companies.get(companyId) : undefined;
-            const companyName = this.firstString(data.companyName, managedBy.companyName, company?.companyName, company?.name, companyId);
-            const companyEmail = this.firstString(data.companyEmail, data.contactEmail, managedBy.companyEmail, managedBy.contactEmail, managedBy.email, company?.companyEmail, company?.contactEmail, company?.email);
-            const companyPhone = this.firstString(data.companyPhone, data.contactPhone, data.phone, managedBy.companyPhone, managedBy.contactPhone, managedBy.phone, company?.companyPhone, company?.contactPhone, company?.phone);
-            const managerName = this.firstString(data.managerName, data.contactName, managedBy.managerName, managedBy.contactName, managedBy.name, company?.managerName, company?.contactName);
+            const companyName = (0, values_1.firstNonEmptyString)(data.companyName, managedBy.companyName, company?.companyName, company?.name, companyId);
+            const companyEmail = (0, values_1.firstNonEmptyString)(data.companyEmail, data.contactEmail, managedBy.companyEmail, managedBy.contactEmail, managedBy.email, company?.companyEmail, company?.contactEmail, company?.email);
+            const companyPhone = (0, values_1.firstNonEmptyString)(data.companyPhone, data.contactPhone, data.phone, managedBy.companyPhone, managedBy.contactPhone, managedBy.phone, company?.companyPhone, company?.contactPhone, company?.phone);
+            const managerName = (0, values_1.firstNonEmptyString)(data.managerName, data.contactName, managedBy.managerName, managedBy.contactName, managedBy.name, company?.managerName, company?.contactName);
             return this.buildingStatsService.applyOccupancyStats(doc.id, {
                 ...data,
                 companyId,
@@ -62,13 +136,19 @@ let BuildingAdminService = class BuildingAdminService {
         this.assertPlatformAdmin(user);
         await this.enforceRateLimit(request, 'buildings:admin-billing-invoices', user.uid, 50);
         const db = this.firebaseAdminService.firestore;
-        const [buildingsSnap, legacySnap] = await Promise.all([
-            db.collection('buildings').get(),
-            db.collection('platform_billing_invoices').get(),
-        ]);
-        const buildingInvoiceSnaps = await Promise.all(buildingsSnap.docs.map((buildingDoc) => buildingDoc.ref.collection('platform_billing_invoices').get()));
+        const group = db.collectionGroup('platform_billing_invoices');
+        let docs;
+        try {
+            docs = (await group.orderBy('createdAt', 'desc').limit(500).get()).docs;
+        }
+        catch (error) {
+            const code = error?.code;
+            if (code !== 9 && !/requires an index|FAILED_PRECONDITION/i.test(String(error?.message)))
+                throw error;
+            docs = (await group.get()).docs;
+        }
         const itemsByPath = new Map();
-        for (const doc of [...buildingInvoiceSnaps.flatMap((snap) => snap.docs), ...legacySnap.docs]) {
+        for (const doc of docs) {
             itemsByPath.set(doc.ref.path, {
                 ...doc.data(),
                 id: doc.id,
@@ -117,15 +197,7 @@ let BuildingAdminService = class BuildingAdminService {
     async enforceRateLimit(request, scope, discriminator, limit) {
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, scope, discriminator), limit, 60_000);
         if (!rl.allowed)
-            throw new common_1.BadRequestException('Too many requests');
-    }
-    firstString(...values) {
-        for (const value of values) {
-            if (typeof value === 'string' && value.trim()) {
-                return value.trim();
-            }
-        }
-        return '';
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
     }
     dateSortValue(value) {
         if (value instanceof Date) {

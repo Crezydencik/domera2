@@ -3,7 +3,7 @@ import { ROUTES } from "@/shared/lib/routes";
 
 const appConfig = {
   name: "Domera",
-  apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") || "/api",
+  apiBaseUrl: appendApiPath(process.env.NEXT_PUBLIC_API_BASE_URL) || "/api",
 };
 
 const DEFAULT_API_TIMEOUT_MS = process.env.NODE_ENV === "production" ? 30_000 : 8_000;
@@ -50,6 +50,12 @@ function hasBrowserAuthHints() {
       item.startsWith("domera_role=") ||
       item.startsWith("domera_accountType="),
     );
+}
+
+function appendApiPath(value?: string) {
+  const baseUrl = value?.trim().replace(/\/+$/, "");
+  if (!baseUrl || (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://"))) return undefined;
+  return baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
 }
 
 function isPublicAuthPath(path: string) {

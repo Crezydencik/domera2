@@ -14,6 +14,8 @@ const common_1 = require("@nestjs/common");
 const role_constants_1 = require("../../../common/auth/role.constants");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const invitation_token_1 = require("../../../common/utils/invitation-token");
+const apartment_members_1 = require("../../../common/utils/apartment-members");
+const values_1 = require("../../../common/utils/values");
 let ApartmentAccessService = class ApartmentAccessService {
     constructor(firebaseAdminService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -58,7 +60,7 @@ let ApartmentAccessService = class ApartmentAccessService {
     async assertApartmentBuildingEditableForStaff(user, apartment) {
         if (!this.isStaff(user))
             return;
-        const buildingId = this.firstString(apartment.buildingId, apartment.houseId);
+        const buildingId = (0, values_1.firstString)(apartment.buildingId, apartment.houseId);
         if (!buildingId)
             return;
         const buildingSnap = await this.firebaseAdminService.firestore.collection('buildings').doc(buildingId).get();
@@ -76,53 +78,10 @@ let ApartmentAccessService = class ApartmentAccessService {
         }
     }
     async getAccessibleApartmentIds(user) {
-        const apartmentIds = new Set();
-        const addApartmentId = (value) => {
-            if (typeof value === 'string' && value.trim()) {
-                apartmentIds.add(value.trim());
-            }
-        };
-        addApartmentId(user.apartmentId);
-        const userSnap = await this.firebaseAdminService.firestore.collection('users').doc(user.uid).get();
-        const userData = userSnap.exists ? userSnap.data() : {};
-        addApartmentId(userData.apartmentId);
-        if (Array.isArray(userData.apartmentIds)) {
-            for (const apartmentId of userData.apartmentIds) {
-                addApartmentId(apartmentId);
-            }
-        }
-        const normalizedEmail = (0, invitation_token_1.normalizeEmail)((typeof user.email === 'string' ? user.email : typeof userData.email === 'string' ? userData.email : '') ?? '');
-        if (normalizedEmail) {
-            const [residentSnap, residentEmailSnap, ownerIdSnap, ownerEmailSnap] = await Promise.all([
-                this.firebaseAdminService.firestore.collection('apartments').where('residentId', '==', user.uid).get(),
-                this.firebaseAdminService.firestore.collection('apartments').where('residentEmail', '==', normalizedEmail).get(),
-                this.firebaseAdminService.firestore.collection('apartments').where('ownerId', '==', user.uid).get(),
-                this.firebaseAdminService.firestore.collection('apartments').where('ownerEmail', '==', normalizedEmail).get(),
-            ]);
-            for (const snap of [residentSnap, residentEmailSnap]) {
-                for (const doc of snap.docs) {
-                    apartmentIds.add(doc.id);
-                }
-            }
-            for (const snap of [ownerIdSnap, ownerEmailSnap]) {
-                for (const doc of snap.docs) {
-                    const apartment = doc.data();
-                    if (apartment.ownerActivated === true) {
-                        apartmentIds.add(doc.id);
-                    }
-                }
-            }
-        }
-        const candidateIds = Array.from(apartmentIds);
-        if (candidateIds.length === 0)
-            return [];
-        const refs = candidateIds.map((id) => this.firebaseAdminService.firestore.collection('apartments').doc(id));
-        const snaps = await this.firebaseAdminService.firestore.getAll(...refs);
+        const candidates = await (0, apartment_members_1.findCandidateApartments)(this.firebaseAdminService.firestore, user);
         const normalizedUserEmail = (0, invitation_token_1.normalizeEmail)(user.email ?? '');
-        return snaps
-            .filter((snap) => snap.exists)
-            .filter((snap) => {
-            const apartment = snap.data();
+        return Array.from(candidates.entries())
+            .filter(([, apartment]) => {
             const ownerId = typeof apartment.ownerId === 'string' ? apartment.ownerId : '';
             const ownerEmail = typeof apartment.ownerEmail === 'string' ? (0, invitation_token_1.normalizeEmail)(apartment.ownerEmail) : '';
             const isResident = false;
@@ -151,7 +110,7 @@ let ApartmentAccessService = class ApartmentAccessService {
             });
             return isResident || isOwner || isTenant;
         })
-            .map((snap) => snap.id);
+            .map(([apartmentId]) => apartmentId);
     }
     canManageTenants(user, apartment) {
         if (this.isStaff(user)) {
@@ -189,17 +148,6 @@ let ApartmentAccessService = class ApartmentAccessService {
             return ((typeof record.userId === 'string' && record.userId.trim().length > 0) ||
                 (typeof record.email === 'string' && record.email.trim().length > 0));
         });
-    }
-    firstString(...values) {
-        for (const value of values) {
-            if (typeof value === 'string' && value.trim()) {
-                return value.trim();
-            }
-            if (typeof value === 'number' && Number.isFinite(value)) {
-                return String(value);
-            }
-        }
-        return '';
     }
 };
 exports.ApartmentAccessService = ApartmentAccessService;

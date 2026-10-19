@@ -56,7 +56,6 @@ export declare class BuildingCreationRequestService {
     private effectiveManagementCompanyId;
     private assertManagementCompanyScope;
     private enforceRateLimit;
-    private firstString;
     private optionalNonNegativeNumber;
     private getCompanySummary;
     private getCompanyCreationAccess;

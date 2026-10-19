@@ -24,6 +24,15 @@ let BuildingsAdminController = class BuildingsAdminController {
     constructor(buildingAdminService) {
         this.buildingAdminService = buildingAdminService;
     }
+    migrateCanonicalScope(request, user, cursor, limit, apply) {
+        return this.buildingAdminService.migrateCanonicalScope({
+            request,
+            user,
+            cursor,
+            limit: limit ? Number(limit) : undefined,
+            apply: apply === 'true',
+        });
+    }
     listAllForAdmin(request, user) {
         return this.buildingAdminService.listAllForAdmin(request, user);
     }
@@ -35,6 +44,18 @@ let BuildingsAdminController = class BuildingsAdminController {
     }
 };
 exports.BuildingsAdminController = BuildingsAdminController;
+__decorate([
+    (0, common_1.Post)('admin/migrate/canonical-scope'),
+    (0, swagger_1.ApiOperation)({ summary: 'Preview or apply a bounded canonical building scope migration (platform admin only)' }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Query)('cursor')),
+    __param(3, (0, common_1.Query)('limit')),
+    __param(4, (0, common_1.Query)('apply')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, String, String]),
+    __metadata("design:returntype", void 0)
+], BuildingsAdminController.prototype, "migrateCanonicalScope", null);
 __decorate([
     (0, common_1.Get)('admin/all'),
     (0, swagger_1.ApiOperation)({ summary: 'List all buildings for platform administrators' }),

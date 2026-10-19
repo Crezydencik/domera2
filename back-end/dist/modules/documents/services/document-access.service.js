@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const role_constants_1 = require("../../../common/auth/role.constants");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const document_helper_service_1 = require("./document-helper.service");
+const apartment_members_1 = require("../../../common/utils/apartment-members");
 let DocumentAccessService = class DocumentAccessService {
     constructor(firebaseAdminService, helperService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -154,40 +155,8 @@ let DocumentAccessService = class DocumentAccessService {
             documentDate <= access.until);
     }
     async resolveMemberApartments(user) {
-        const db = this.firebaseAdminService.firestore;
-        const apartmentMap = new Map();
-        const userEmail = this.helperService.firstString(user.email).toLowerCase();
-        const userSnap = await db.collection('users').doc(user.uid).get();
-        const userData = userSnap.exists ? userSnap.data() : {};
-        const apartmentIds = new Set();
-        const addApartmentId = (value) => {
-            const apartmentId = this.helperService.firstString(value);
-            if (apartmentId)
-                apartmentIds.add(apartmentId);
-        };
-        addApartmentId(user.apartmentId);
-        addApartmentId(userData.apartmentId);
-        if (Array.isArray(userData.apartmentIds)) {
-            userData.apartmentIds.forEach(addApartmentId);
-        }
-        const addSnap = (snap) => {
-            for (const doc of snap.docs)
-                apartmentMap.set(doc.id, doc.data());
-        };
-        const apartmentRefs = Array.from(apartmentIds).map((id) => db.collection('apartments').doc(id));
-        const directSnaps = apartmentRefs.length > 0 ? await db.getAll(...apartmentRefs) : [];
-        for (const snap of directSnaps) {
-            if (snap.exists)
-                apartmentMap.set(snap.id, snap.data());
-        }
-        await Promise.all([
-            db.collection('apartments').where('residentId', '==', user.uid).get().then(addSnap),
-            db.collection('apartments').where('ownerId', '==', user.uid).get().then(addSnap),
-            db.collection('apartments').where('formerOwnerIds', 'array-contains', user.uid).get().then(addSnap),
-            userEmail ? db.collection('apartments').where('ownerEmail', '==', userEmail).get().then(addSnap) : Promise.resolve(),
-            userEmail ? db.collection('apartments').where('formerOwnerEmails', 'array-contains', userEmail).get().then(addSnap) : Promise.resolve(),
-        ]);
-        return Array.from(apartmentMap.entries()).map(([id, data]) => ({ id, data }));
+        const candidates = await (0, apartment_members_1.findCandidateApartments)(this.firebaseAdminService.firestore, user);
+        return Array.from(candidates.entries()).map(([id, data]) => ({ id, data: data }));
     }
     async canAccessDocument(user, document, memberApartments) {
         const scope = this.helperService.firstString(document.scope);

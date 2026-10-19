@@ -36,7 +36,6 @@ export declare class MeterReadingReminderService {
     private normalizePeriod;
     private buildingCompanyId;
     private buildingCompanyName;
-    private firstString;
     private parseAutoReminderDeliveryKey;
     private emailLanguage;
     private periodLabel;

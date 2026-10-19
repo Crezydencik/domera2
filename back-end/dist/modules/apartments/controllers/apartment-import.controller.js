@@ -23,6 +23,7 @@ const roles_guard_1 = require("../../../common/auth/roles.guard");
 const apartments_service_1 = require("../apartments.service");
 const import_apartments_dto_1 = require("../dto/import-apartments.dto");
 const import_apartments_response_dto_1 = require("../dto/import-apartments-response.dto");
+const building_stats_invalidation_interceptor_1 = require("../../../common/interceptors/building-stats-invalidation.interceptor");
 const APARTMENT_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
 const APARTMENT_IMPORT_EXTENSIONS = new Set(['.csv', '.json', '.xml', '.xlsx']);
 const APARTMENT_IMPORT_MIME_TYPES = new Set([
@@ -99,6 +100,7 @@ __decorate([
 exports.ApartmentImportController = ApartmentImportController = __decorate([
     (0, swagger_1.ApiTags)('Apartments'),
     (0, common_1.Controller)('apartments'),
+    (0, common_1.UseInterceptors)(building_stats_invalidation_interceptor_1.BuildingStatsInvalidationInterceptor),
     (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('ManagementCompany', 'Accountant'),
     (0, swagger_1.ApiBearerAuth)(),

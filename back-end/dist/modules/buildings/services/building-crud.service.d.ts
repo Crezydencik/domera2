@@ -63,7 +63,6 @@ export declare class BuildingCrudService {
     private effectiveManagementCompanyId;
     private assertManagementCompanyScope;
     private enforceRateLimit;
-    private firstString;
     private isBuildingCreationRequestStatus;
     private getCompanySummary;
     private buildCompanyBuildingLinkPatch;

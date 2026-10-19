@@ -8,6 +8,27 @@ export declare class BuildingAdminService {
     private readonly rateLimitService;
     private readonly buildingStatsService;
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, buildingStatsService: BuildingStatsService);
+    migrateCanonicalScope(params: {
+        request: Request;
+        user: RequestUser;
+        cursor?: string;
+        limit?: number;
+        apply: boolean;
+    }): Promise<{
+        mode: string;
+        scanned: number;
+        eligible: number;
+        updated: number;
+        alreadyCanonical: number;
+        skipped: {
+            buildingId: string;
+            reason: string;
+        }[];
+        remaining: number;
+        hasMore: boolean;
+        nextCursor: string | undefined;
+    }>;
+    private decodeMigrationCursor;
     listAllForAdmin(request: Request, user: RequestUser): Promise<{
         items: {
             apartmentLimit: number;
@@ -30,6 +51,5 @@ export declare class BuildingAdminService {
     }>;
     private assertPlatformAdmin;
     private enforceRateLimit;
-    private firstString;
     private dateSortValue;
 }

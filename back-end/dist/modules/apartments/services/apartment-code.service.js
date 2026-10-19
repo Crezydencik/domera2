@@ -13,10 +13,11 @@ exports.ApartmentCodeService = void 0;
 const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
+const ttl_cache_1 = require("../../../common/utils/ttl-cache");
 let ApartmentCodeService = class ApartmentCodeService {
     constructor(firebaseAdminService) {
         this.firebaseAdminService = firebaseAdminService;
-        this.contextCache = new Map();
+        this.contextCache = new ttl_cache_1.TtlCache({ ttlMs: 10 * 60 * 1000, maxEntries: 500 });
     }
     buildReadableCode(value, length, fallback) {
         const normalized = String(value ?? '')
@@ -42,23 +43,19 @@ let ApartmentCodeService = class ApartmentCodeService {
         return Array.from((0, node_crypto_1.randomBytes)(length), (byte) => String(byte % 10)).join('');
     }
     async getApartmentCodeContext(companyId, buildingId) {
-        const cacheKey = `${companyId}:${buildingId}`;
-        const cached = this.contextCache.get(cacheKey);
-        if (cached)
-            return cached;
-        const db = this.firebaseAdminService.firestore;
-        const [companySnap, buildingSnap] = await Promise.all([
-            db.collection('companies').doc(companyId).get(),
-            db.collection('buildings').doc(buildingId).get(),
-        ]);
-        const company = companySnap.exists ? companySnap.data() : {};
-        const building = buildingSnap.exists ? buildingSnap.data() : {};
-        const context = {
-            companyCode: this.buildReadableCode(company.companyName ?? company.name ?? companyId, 3, 'COM'),
-            buildingCode: this.buildReadableCode(building.name ?? building.title ?? building.address ?? buildingId, 4, 'HOME'),
-        };
-        this.contextCache.set(cacheKey, context);
-        return context;
+        return this.contextCache.getOrLoad(`${companyId}:${buildingId}`, async () => {
+            const db = this.firebaseAdminService.firestore;
+            const [companySnap, buildingSnap] = await Promise.all([
+                db.collection('companies').doc(companyId).get(),
+                db.collection('buildings').doc(buildingId).get(),
+            ]);
+            const company = companySnap.exists ? companySnap.data() : {};
+            const building = buildingSnap.exists ? buildingSnap.data() : {};
+            return {
+                companyCode: this.buildReadableCode(company.companyName ?? company.name ?? companyId, 3, 'COM'),
+                buildingCode: this.buildReadableCode(building.name ?? building.title ?? building.address ?? buildingId, 4, 'HOME'),
+            };
+        });
     }
     buildApartmentReadableId(context, apartmentNumber) {
         return [

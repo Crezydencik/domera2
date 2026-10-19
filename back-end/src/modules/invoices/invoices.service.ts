@@ -1117,15 +1117,21 @@ export class InvoicesService {
     // Previously this loaded every apartment of the company first and then probed each of them.
     if (user && this.isStaff(user)) {
       const staffCompanyId = firstString(user.companyId);
-      const byIdSnapshot = await this.firebaseAdminService.firestore
-        .collectionGroup('invoices')
-        .where('id', '==', normalizedInvoiceId)
-        .limit(5)
-        .get();
-      const preferred = byIdSnapshot.docs.find((doc) => doc.data().companyId === staffCompanyId) ?? byIdSnapshot.docs[0];
-      if (preferred) {
-        if (byIdSnapshot.size > 1) this.logger.warn(`invoice.lookup.duplicate_id invoiceId=${normalizedInvoiceId}`);
-        return this.invoiceLocationFromDoc(preferred);
+      try {
+        const byIdSnapshot = await this.firebaseAdminService.firestore
+          .collectionGroup('invoices')
+          .where('id', '==', normalizedInvoiceId)
+          .limit(5)
+          .get();
+        const preferred = byIdSnapshot.docs.find((doc) => doc.data().companyId === staffCompanyId) ?? byIdSnapshot.docs[0];
+        if (preferred) {
+          if (byIdSnapshot.size > 1) this.logger.warn(`invoice.lookup.duplicate_id invoiceId=${normalizedInvoiceId}`);
+          return this.invoiceLocationFromDoc(preferred);
+        }
+      } catch (error) {
+        // A newly deployed collection-group index can take time to build. Fall
+        // back to the apartment-scoped lookup so invoice actions remain usable.
+        this.logger.warn(`invoice.lookup.group_query_failed invoiceId=${normalizedInvoiceId} reason=${errorMessage(error)}`);
       }
     }
 
@@ -3616,47 +3622,78 @@ export class InvoicesService {
     const trashId = `invoice_${invoiceId}_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
     const trashRef = this.getBuildingTrashCollection(buildingId).doc(trashId);
     const invoicePath = ref.path;
+    let deletedPermanently = false;
 
-    await this.firebaseAdminService.firestore.runTransaction(async (transaction) => {
-      const invoiceSnap = await transaction.get(ref);
-      if (!invoiceSnap.exists) {
-        throw new NotFoundException('Invoice not found');
-      }
+    try {
+      await this.firebaseAdminService.firestore.runTransaction(async (transaction) => {
+        const invoiceSnap = await transaction.get(ref);
+        if (!invoiceSnap.exists) {
+          throw new NotFoundException('Invoice not found');
+        }
+        // Keep the original Firestore data in the trash. `current` is a UI-facing
+        // projection and may contain computed fields whose values are undefined.
+        const originalInvoiceData = invoiceSnap.data() as Record<string, unknown>;
 
-      transaction.set(trashRef, {
-        id: trashId,
-        type: 'invoice',
-        originalInvoiceId: invoiceId,
-        originalInvoicePath: invoicePath,
-        invoiceData: {
-          ...current,
-          id: invoiceId,
+        transaction.set(trashRef, {
+          id: trashId,
+          type: 'invoice',
+          originalInvoiceId: invoiceId,
+          originalInvoicePath: invoicePath,
+          invoiceData: {
+            ...originalInvoiceData,
+            id: invoiceId,
+            apartmentId,
+            buildingId,
+            companyId,
+            invoicePath,
+          },
           apartmentId,
           buildingId,
           companyId,
-          invoicePath,
-        },
-        apartmentId,
-        buildingId,
-        companyId,
-        externalId: externalId || null,
-        externalIdKey: externalIdKey || null,
-        recipientType,
-        storagePath: storagePath || null,
-        storageBucket: storageBucket || null,
-        pdfUrl: firstString(current.pdfUrl) || null,
-        deletedAt: now,
-        deletedByUid: user.uid,
-        deletedByRole: user.role,
-        expiresAt,
-        retentionDays: INVOICE_TRASH_RETENTION_DAYS,
+          externalId: externalId || null,
+          externalIdKey: externalIdKey || null,
+          recipientType,
+          storagePath: storagePath || null,
+          storageBucket: storageBucket || null,
+          pdfUrl: firstString(current.pdfUrl) || null,
+          deletedAt: now,
+          deletedByUid: user.uid,
+          deletedByRole: user.role,
+          expiresAt,
+          retentionDays: INVOICE_TRASH_RETENTION_DAYS,
+        });
+        transaction.delete(ref);
+        if (externalIdKey && apartmentId) {
+          transaction.delete(this.getApartmentInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey));
+          transaction.delete(this.getApartmentPendingInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey));
+        }
       });
-      transaction.delete(ref);
-      if (externalIdKey && apartmentId) {
-        transaction.delete(this.getApartmentInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey));
-        transaction.delete(this.getApartmentPendingInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey));
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+
+      // Deletion must not leave a user unable to correct and re-upload an invoice
+      // because the optional building-trash write is unavailable.
+      this.logger.error(`invoice.delete.trash_failed invoiceId=${invoiceId} reason=${errorMessage(error)}`);
+      try {
+        await ref.delete();
+        await Promise.all([
+          externalIdKey && apartmentId
+            ? this.getApartmentInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey).delete()
+            : Promise.resolve(),
+          externalIdKey && apartmentId
+            ? this.getApartmentPendingInvoiceExternalIdsCollection(apartmentId).doc(externalIdKey).delete()
+            : Promise.resolve(),
+        ]);
+      } catch (permanentDeleteError) {
+        const reason = errorMessage(permanentDeleteError);
+        this.logger.error(`invoice.delete.permanent_failed invoiceId=${invoiceId} reason=${reason}`);
+        if (process.env.NODE_ENV !== 'production') {
+          throw new BadRequestException(`Invoice could not be deleted: ${reason}`);
+        }
+        throw permanentDeleteError;
       }
-    });
+      deletedPermanently = true;
+    }
 
     await Promise.allSettled([
       apartmentId
@@ -3664,6 +3701,13 @@ export class InvoicesService {
         : Promise.resolve(),
       deleteQueryDocs(this.firebaseAdminService.firestore.collection('invoice_public_links').where('invoiceId', '==', invoiceId)),
     ]);
+
+    if (deletedPermanently && storagePath) {
+      runInBackground((storageBucket
+        ? this.firebaseAdminService.storage.bucket(storageBucket)
+        : this.firebaseAdminService.storageBucket
+      ).file(storagePath).delete({ ignoreNotFound: true }), 'invoice_file_delete');
+    }
 
     runInBackground(this.auditLogService.write({
       request,
@@ -3675,13 +3719,14 @@ export class InvoicesService {
       apartmentId: typeof current.apartmentId === 'string' ? current.apartmentId : undefined,
       metadata: {
         invoiceId,
-        trashId,
-        expiresAt: expiresAt.toISOString(),
+        ...(deletedPermanently ? { deletionMode: 'permanent' } : { trashId, expiresAt: expiresAt.toISOString() }),
         hadPdf: typeof current.pdfUrl === 'string' && current.pdfUrl.length > 0,
         hadStorageFile: Boolean(storagePath),
       },
     }), 'audit');
 
-    return { success: true, trash_id: trashId, expires_at: expiresAt.toISOString() };
+    return deletedPermanently
+      ? { success: true, permanently_deleted: true }
+      : { success: true, trash_id: trashId, expires_at: expiresAt.toISOString() };
   }
 }

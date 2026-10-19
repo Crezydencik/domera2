@@ -30,7 +30,7 @@ const success_response_dto_1 = require("../../common/dto/success-response.dto");
 const upload_invoice_dto_1 = require("./dto/upload-invoice.dto");
 const invoice_upload_auth_guard_1 = require("./invoice-upload-auth.guard");
 const INVOICE_ZIP_MAX_BYTES = 500 * 1024 * 1024;
-const INVOICE_BATCH_MAX_FILES = 50;
+const INVOICE_BATCH_MAX_FILES = 200;
 const INVOICE_ITEMS_MAX_BYTES = 1 * 1024 * 1024;
 function invoiceBatchFileFilter(_request, file, callback) {
     const name = file.originalname?.toLowerCase() ?? '';
@@ -208,7 +208,14 @@ let InvoicesController = class InvoicesController {
         return this.invoicesService.purgeTrash(request, user, trashId);
     }
     remove(request, user, invoiceId) {
-        return this.invoicesService.remove(request, user, invoiceId);
+        return this.invoicesService.remove(request, user, invoiceId).catch((error) => {
+            console.error(`invoice.delete.request_failed invoiceId=${invoiceId}`, error);
+            if (process.env.NODE_ENV !== 'production' && !(error instanceof common_1.HttpException)) {
+                const message = error instanceof Error ? error.message : String(error);
+                throw new common_1.BadRequestException(`Invoice deletion failed: ${message}`);
+            }
+            throw error;
+        });
     }
 };
 exports.InvoicesController = InvoicesController;
@@ -303,6 +310,8 @@ __decorate([
     (0, swagger_1.ApiQuery)({ name: 'companyId', required: false, type: String }),
     (0, swagger_1.ApiQuery)({ name: 'apartmentId', required: false, type: String }),
     (0, swagger_1.ApiQuery)({ name: 'buildingId', required: false, type: String }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number, description: 'Enables pagination (1-200)' }),
+    (0, swagger_1.ApiQuery)({ name: 'cursor', required: false, type: String, description: 'nextCursor from the previous page' }),
     (0, swagger_1.ApiOkResponse)({
         description: 'Invoice list returned.',
         type: invoice_response_dto_1.ListInvoicesResponseDto,

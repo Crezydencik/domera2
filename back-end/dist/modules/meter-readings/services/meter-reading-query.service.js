@@ -16,6 +16,7 @@ const firebase_admin_service_1 = require("../../../common/infrastructure/firebas
 const meter_reading_access_service_1 = require("./meter-reading-access.service");
 const meter_reading_building_service_1 = require("./meter-reading-building.service");
 const meter_reading_helper_service_1 = require("./meter-reading-helper.service");
+const firestore_dates_1 = require("../../../common/utils/firestore-dates");
 let MeterReadingQueryService = class MeterReadingQueryService {
     constructor(firebaseAdminService, accessService, buildingService, helperService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -95,7 +96,15 @@ let MeterReadingQueryService = class MeterReadingQueryService {
     filterByPeriod(items, period) {
         if (!period)
             return items;
-        return items.filter((item) => Number(item.month) === period.month && Number(item.year) === period.year);
+        const key = `${period.year}-${String(period.month).padStart(2, '0')}`;
+        return items.filter((item) => {
+            const month = Number(item.month);
+            const year = Number(item.year);
+            if (Number.isFinite(month) && Number.isFinite(year) && month > 0) {
+                return month === period.month && year === period.year;
+            }
+            return ((0, firestore_dates_1.firestoreDateToIso)(item.submittedAt ?? item.createdAt) ?? '').slice(0, 7) === key;
+        });
     }
 };
 exports.MeterReadingQueryService = MeterReadingQueryService;

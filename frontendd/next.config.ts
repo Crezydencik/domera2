@@ -27,7 +27,7 @@ function appendApiPath(value?: string) {
 }
 
 const backendApiBaseUrl =
-  normalizeApiBaseUrl(process.env.API_BASE_URL) ??
+  appendApiPath(process.env.API_BASE_URL) ??
   appendApiPath(process.env.BACKEND_URL) ??
   (process.env.NODE_ENV === "production" ? "https://domeraback.vercel.app/api" : "http://127.0.0.1:4000/api");
 const firebaseProjectId = process.env.FIREBASE_PROJECT_ID?.trim() || "domera-eb224";

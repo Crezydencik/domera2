@@ -24,6 +24,8 @@ const auth_profile_provisioning_service_1 = require("./services/auth-profile-pro
 const auth_session_service_1 = require("./services/auth-session.service");
 const firebase_identity_toolkit_service_1 = require("./services/firebase-identity-toolkit.service");
 const registration_code_service_1 = require("./services/registration-code.service");
+const firebase_auth_guard_1 = require("../../common/auth/firebase-auth.guard");
+const background_1 = require("../../common/utils/background");
 const EMAIL_CHANGE_TTL_MS = 30 * 60 * 1000;
 const EMAIL_CHANGE_COLLECTION = 'email_change_requests';
 let AuthService = class AuthService {
@@ -123,12 +125,12 @@ let AuthService = class AuthService {
             email: authResult.email ?? email,
         });
         if ((0, role_constants_1.resolveAccountType)({ role: profile.role, accountType: profile.accountType }) === 'ManagementCompany') {
-            void this.profileProvisioningService.ensureManagementCompanyDocument({
+            (0, background_1.runInBackground)(this.profileProvisioningService.ensureManagementCompanyDocument({
                 uid: authResult.localId,
                 email: authResult.email ?? email,
             }).catch((error) => {
                 console.error('Failed to hydrate management company during login:', error);
-            });
+            }), 'company_provisioning');
         }
         const session = await this.authSessionService.createSessionCookieFromTrustedLogin({
             idToken: authResult.idToken,
@@ -137,13 +139,13 @@ let AuthService = class AuthService {
             rememberMe: input.rememberMe,
             profile,
         });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'auth.login',
             status: 'success',
             targetEmail: email,
             metadata: { rememberMe: Boolean(input.rememberMe) },
-        });
+        }), 'audit');
         return {
             userId: authResult.localId,
             email: authResult.email ?? email,
@@ -174,6 +176,7 @@ let AuthService = class AuthService {
                 email,
                 password: input.password,
                 displayName: fullName || undefined,
+                emailVerified: true,
             });
             uid = created.uid;
             createdUid = created.uid;
@@ -232,13 +235,13 @@ let AuthService = class AuthService {
             userId: uid,
             email,
         });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'auth.register',
             status: 'success',
             targetEmail: email,
             metadata: { accountType },
-        });
+        }), 'audit');
         return {
             userId: uid,
             email,
@@ -291,13 +294,13 @@ let AuthService = class AuthService {
         if (errorMessage) {
             throw this.createServiceError(`Failed to send verification email: ${errorMessage}`, 500);
         }
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'auth.email_change_request',
             status: 'success',
             targetEmail: nextEmail,
             metadata: { previousEmail: currentEmail, targetUserId: user.uid },
-        });
+        }), 'audit');
         return {
             success: true,
             userId: user.uid,
@@ -354,6 +357,7 @@ let AuthService = class AuthService {
         const currentUserData = userSnap.exists ? userSnap.data() : {};
         await this.firebaseAdminService.auth.updateUser(uid, { email: nextEmail });
         await this.firebaseAdminService.auth.revokeRefreshTokens(uid);
+        firebase_auth_guard_1.FirebaseAuthGuard.invalidateUser(uid);
         await userRef.set({
             uid,
             email: nextEmail,
@@ -371,13 +375,13 @@ let AuthService = class AuthService {
             email: nextEmail,
         });
         await ref.set({ status: 'confirmed', confirmedAt: new Date(), updatedAt: new Date() }, { merge: true });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'auth.email_change_confirm',
             status: 'success',
             targetEmail: nextEmail,
             metadata: { previousEmail: currentEmail, targetUserId: uid },
-        });
+        }), 'audit');
         return { success: true, userId: uid, email: nextEmail };
     }
     async changePassword(request, user, input) {
@@ -392,6 +396,7 @@ let AuthService = class AuthService {
         });
         await this.firebaseAdminService.auth.updateUser(user.uid, { password: input.newPassword });
         await this.firebaseAdminService.auth.revokeRefreshTokens(user.uid);
+        firebase_auth_guard_1.FirebaseAuthGuard.invalidateUser(user.uid);
         await this.firebaseAdminService.firestore.collection('users').doc(user.uid).set({
             uid: user.uid,
             updatedAt: new Date(),
@@ -406,13 +411,13 @@ let AuthService = class AuthService {
             userId: user.uid,
             email,
         });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'auth.password_change',
             status: 'success',
             targetEmail: email,
             metadata: { targetUserId: user.uid },
-        });
+        }), 'audit');
         return { success: true, userId: user.uid, email, session };
     }
 };

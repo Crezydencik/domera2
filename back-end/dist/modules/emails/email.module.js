@@ -10,6 +10,7 @@ exports.EmailModule = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const email_controller_1 = require("./controllers/email.controller");
+const mailing_cron_1 = require("./jobs/mailing-cron");
 const email_log_service_1 = require("./services/email-log.service");
 const email_service_1 = require("./services/email.service");
 const email_template_service_1 = require("./services/email-template.service");
@@ -20,8 +21,8 @@ exports.EmailModule = EmailModule;
 exports.EmailModule = EmailModule = __decorate([
     (0, common_1.Module)({
         imports: [config_1.ConfigModule],
-        controllers: [email_controller_1.EmailController],
-        providers: [email_service_1.EmailService, email_log_service_1.EmailLogService, email_template_service_1.EmailTemplateService, email_transport_service_1.EmailTransportService],
+        controllers: [email_controller_1.EmailController, mailing_cron_1.MailingCronController],
+        providers: [email_service_1.EmailService, email_log_service_1.EmailLogService, email_template_service_1.EmailTemplateService, email_transport_service_1.EmailTransportService, mailing_cron_1.MailingResumeJob],
         exports: [email_service_1.EmailService, email_log_service_1.EmailLogService],
     })
 ], EmailModule);

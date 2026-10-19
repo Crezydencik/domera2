@@ -4,6 +4,20 @@ import { BuildingAdminService } from '../services/building-admin.service';
 export declare class BuildingsAdminController {
     private readonly buildingAdminService;
     constructor(buildingAdminService: BuildingAdminService);
+    migrateCanonicalScope(request: Request, user: RequestUser, cursor?: string, limit?: string, apply?: string): Promise<{
+        mode: string;
+        scanned: number;
+        eligible: number;
+        updated: number;
+        alreadyCanonical: number;
+        skipped: {
+            buildingId: string;
+            reason: string;
+        }[];
+        remaining: number;
+        hasMore: boolean;
+        nextCursor: string | undefined;
+    }>;
     listAllForAdmin(request: Request, user: RequestUser): Promise<{
         items: {
             apartmentLimit: number;

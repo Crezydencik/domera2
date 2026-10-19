@@ -58,9 +58,12 @@ export declare class EmailController {
         id: string;
     }>;
     sendInformationMailing(user: RequestUser, dto: SendInformationMailingDto): Promise<{
-        recipients: number;
         sent: number;
         failed: number;
+        pending: number;
+        status: "sending" | "completed";
+        mailingId: string;
+        recipients: number;
     }>;
     informationMailingTemplates(user: RequestUser): Promise<{
         items: {

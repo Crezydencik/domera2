@@ -15,6 +15,9 @@ const role_constants_1 = require("../../common/auth/role.constants");
 const firebase_admin_service_1 = require("../../common/infrastructure/firebase/firebase-admin.service");
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
 const buildings_service_1 = require("../buildings/buildings.service");
+const too_many_requests_exception_1 = require("../../common/errors/too-many-requests.exception");
+const firebase_auth_guard_1 = require("../../common/auth/firebase-auth.guard");
+const apartment_members_1 = require("../../common/utils/apartment-members");
 function positiveNumberEnv(name, fallback) {
     const value = Number(process.env[name] ?? fallback);
     return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -377,6 +380,7 @@ let UsersService = class UsersService {
             }
             if (Object.keys(update).length > 1) {
                 await doc.ref.set(update, { merge: true });
+                await (0, apartment_members_1.refreshApartmentMemberKeys)(db, doc.id).catch(() => undefined);
             }
         }));
         this.invalidatePropertyMembershipCache(normalizedUserId, previousEmail, nextEmail);
@@ -491,7 +495,7 @@ let UsersService = class UsersService {
     async enforceRateLimit(request, scope, discriminator, limit) {
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, scope, discriminator), limit, 60_000);
         if (!rl.allowed)
-            throw new common_1.BadRequestException('Too many requests');
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
     }
     async byId(request, user, userId) {
         this.assertAuth(user);
@@ -696,6 +700,7 @@ let UsersService = class UsersService {
             updatedAt: new Date(),
         };
         await ref.set(data, { merge: true });
+        firebase_auth_guard_1.FirebaseAuthGuard.invalidateUser(userId);
         await this.syncLinkedApartmentProfiles(userId, currentData, data);
         return { success: true };
     }
@@ -720,6 +725,7 @@ let UsersService = class UsersService {
         const normalizedPayload = this.normalizeProfilePayload(user, userId, current, payload);
         const nextData = { ...current, ...normalizedPayload, updatedAt: new Date() };
         await ref.set({ ...normalizedPayload, updatedAt: nextData.updatedAt }, { merge: true });
+        firebase_auth_guard_1.FirebaseAuthGuard.invalidateUser(userId);
         await this.syncLinkedApartmentProfiles(userId, current, nextData);
         return { success: true };
     }

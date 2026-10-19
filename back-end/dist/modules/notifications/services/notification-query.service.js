@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const notification_access_service_1 = require("./notification-access.service");
 const notification_repository_service_1 = require("./notification-repository.service");
 const notification_settings_service_1 = require("./notification-settings.service");
+const client_payload_1 = require("../../../common/utils/client-payload");
 let NotificationQueryService = class NotificationQueryService {
     constructor(accessService, repositoryService, settingsService) {
         this.accessService = accessService;
@@ -71,7 +72,7 @@ let NotificationQueryService = class NotificationQueryService {
         await this.accessService.enforceRateLimit(request, 'notifications:create', `${user.uid}:${targetUserId}`, 40);
         const ref = this.repositoryService.userNotificationsCollection(targetUserId).doc();
         const data = {
-            ...payload,
+            ...(0, client_payload_1.sanitizeClientPayload)(payload, { protectedKeys: ['notificationId', 'userId'] }),
             notificationId: ref.id,
             userId: targetUserId,
             read: Boolean(payload.read ?? false),

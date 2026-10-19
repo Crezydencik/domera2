@@ -19,6 +19,11 @@ const role_constants_1 = require("../../common/auth/role.constants");
 const audit_log_service_1 = require("../../common/services/audit-log.service");
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
 const invitation_token_1 = require("../../common/utils/invitation-token");
+const too_many_requests_exception_1 = require("../../common/errors/too-many-requests.exception");
+const firebase_auth_guard_1 = require("../../common/auth/firebase-auth.guard");
+const apartment_members_1 = require("../../common/utils/apartment-members");
+const background_1 = require("../../common/utils/background");
+const values_1 = require("../../common/utils/values");
 let InvitationsService = class InvitationsService {
     constructor(firebaseAdminService, rateLimitService, auditLogService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -28,11 +33,7 @@ let InvitationsService = class InvitationsService {
     async enforceRateLimit(request, scope, discriminator, limit) {
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, scope, discriminator), limit, 60_000);
         if (!rl.allowed) {
-            throw new common_1.BadRequestException({
-                statusCode: 429,
-                message: 'Too many requests',
-                retryAfter: Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 1000)),
-            });
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
         }
     }
     assertStaff(user) {
@@ -152,17 +153,6 @@ let InvitationsService = class InvitationsService {
             throw new common_1.ForbiddenException('Access denied for apartment');
         }
     }
-    firstString(...values) {
-        for (const value of values) {
-            if (typeof value === 'string' && value.trim()) {
-                return value.trim();
-            }
-            if (typeof value === 'number' && Number.isFinite(value)) {
-                return String(value);
-            }
-        }
-        return '';
-    }
     resolveFrontendUrl(request) {
         void request;
         return (process.env.FRONTEND_URL || process.env.APP_URL || 'https://domera.app').replace(/\/+$/, '');
@@ -179,13 +169,13 @@ let InvitationsService = class InvitationsService {
             return {
                 apartmentLabel: '',
                 buildingLabel: '',
-                managerLabel: this.firstString(company.companyName, company.name, fallbackCompanyId),
+                managerLabel: (0, values_1.firstString)(company.companyName, company.name, fallbackCompanyId),
             };
         }
         const apartmentSnap = await db.collection('apartments').doc(apartmentId).get();
         const apartment = apartmentSnap.exists ? apartmentSnap.data() : {};
-        const buildingId = this.firstString(apartment.buildingId, invitation.buildingId);
-        const companyId = this.firstString(apartment.companyId, Array.isArray(apartment.companyIds) ? apartment.companyIds[0] : undefined, fallbackCompanyId);
+        const buildingId = (0, values_1.firstString)(apartment.buildingId, invitation.buildingId);
+        const companyId = (0, values_1.firstString)(apartment.companyId, Array.isArray(apartment.companyIds) ? apartment.companyIds[0] : undefined, fallbackCompanyId);
         const [buildingSnap, companySnap] = await Promise.all([
             buildingId ? db.collection('buildings').doc(buildingId).get() : Promise.resolve(null),
             companyId ? db.collection('companies').doc(companyId).get() : Promise.resolve(null),
@@ -196,9 +186,9 @@ let InvitationsService = class InvitationsService {
             ? building.managedBy
             : {};
         return {
-            apartmentLabel: this.firstString(apartment.number, apartment.apartmentNumber, apartment.label, apartment.name, apartment.address, apartmentId),
-            buildingLabel: this.firstString(apartment.buildingName, apartment.building, building.name, building.title, building.address, buildingId),
-            managerLabel: this.firstString(apartment.managementCompanyName, apartment.companyName, managedBy.companyName, managedBy.name, company.companyName, company.name, companyId),
+            apartmentLabel: (0, values_1.firstString)(apartment.number, apartment.apartmentNumber, apartment.label, apartment.name, apartment.address, apartmentId),
+            buildingLabel: (0, values_1.firstString)(apartment.buildingName, apartment.building, building.name, building.title, building.address, buildingId),
+            managerLabel: (0, values_1.firstString)(apartment.managementCompanyName, apartment.companyName, managedBy.companyName, managedBy.name, company.companyName, company.name, companyId),
         };
     }
     async send(request, user, payload) {
@@ -237,7 +227,7 @@ let InvitationsService = class InvitationsService {
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
             invitedByUid: user.uid,
         });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'invitation.send',
             status: 'success',
@@ -247,7 +237,7 @@ let InvitationsService = class InvitationsService {
             apartmentId,
             invitationId: invitationRef.id,
             targetEmail: email,
-        });
+        }), 'audit');
         return {
             success: true,
             invitationId: invitationRef.id,
@@ -292,7 +282,7 @@ let InvitationsService = class InvitationsService {
             }
         }
         const display = await this.resolveInvitationDisplay(invitation);
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'invitation.resolve',
             status: 'success',
@@ -309,7 +299,7 @@ let InvitationsService = class InvitationsService {
                 role: typeof invitation.role === 'string' ? invitation.role : 'Resident',
                 accountType: typeof invitation.accountType === 'string' ? invitation.accountType : 'Resident',
             },
-        });
+        }), 'audit');
         return {
             invitation: {
                 id: doc.id,
@@ -399,6 +389,7 @@ let InvitationsService = class InvitationsService {
                 ...(apartmentId ? { apartmentId, apartmentIds: firestore_1.FieldValue.arrayUnion(apartmentId) } : {}),
                 updatedAt: new Date().toISOString(),
             }, { merge: true });
+            firebase_auth_guard_1.FirebaseAuthGuard.invalidateUser(uid);
             if (isCompanyMemberInvitation) {
                 const companyRef = db.collection('companies').doc(companyId);
                 const companySnap = await companyRef.get();
@@ -446,6 +437,7 @@ let InvitationsService = class InvitationsService {
                     ownerActivated: true,
                     ownerAcceptedAt: new Date(),
                 }, { merge: true });
+                await (0, apartment_members_1.refreshApartmentMemberKeys)(this.firebaseAdminService.firestore, apartmentId).catch(() => undefined);
             }
             else {
                 const apartmentRef = db.collection('apartments').doc(apartmentId);
@@ -501,6 +493,7 @@ let InvitationsService = class InvitationsService {
                     tenants: resolvedTenants,
                     updatedAt: firestore_1.FieldValue.serverTimestamp(),
                 }, { merge: true });
+                await (0, apartment_members_1.refreshApartmentMemberKeys)(this.firebaseAdminService.firestore, apartmentId).catch(() => undefined);
             }
             const invitationRef = db.collection('invitations').doc(docId);
             await db.runTransaction(async (tx) => {
@@ -553,7 +546,7 @@ let InvitationsService = class InvitationsService {
         const createdUser = await this.firebaseAdminService.auth.createUser({
             email: invitationEmail,
             password,
-            emailVerified: false,
+            emailVerified: true,
         });
         await markAccepted(createdUser.uid, invitationEmail);
         return { success: true, mode: 'registration' };
@@ -573,7 +566,7 @@ let InvitationsService = class InvitationsService {
             .where('companyId', '==', normalizedCompanyId)
             .get();
         const items = snapshot.docs.map((doc) => this.invitationPublicItem(doc));
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'invitation.list',
             status: 'success',
@@ -581,7 +574,7 @@ let InvitationsService = class InvitationsService {
             actorRole: user.role,
             companyId: normalizedCompanyId,
             metadata: { count: items.length },
-        });
+        }), 'audit');
         return { items };
     }
     async findByEmail(request, user, email) {
@@ -599,7 +592,6 @@ let InvitationsService = class InvitationsService {
             return { invitation: null };
         }
         const doc = snapshot.docs[0];
-        const data = doc.data();
         const invitation = this.invitationPublicItem(doc);
         if ((0, role_constants_1.isStaffRole)(user.role)) {
             if (!invitation.companyId || this.effectiveStaffCompanyId(user) !== invitation.companyId) {
@@ -637,7 +629,7 @@ let InvitationsService = class InvitationsService {
         if (status === 'pending' && apartmentId && email) {
             await this.clearPendingApartmentInvite(apartmentId, inviteType, email, normalizedInvitationId);
         }
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'invitation.revoke',
             status: 'success',
@@ -645,7 +637,7 @@ let InvitationsService = class InvitationsService {
             actorRole: user.role,
             companyId,
             invitationId: normalizedInvitationId,
-        });
+        }), 'audit');
         return { success: true };
     }
     async clearPendingApartmentInvite(apartmentId, inviteType, email, invitationId) {
@@ -673,6 +665,7 @@ let InvitationsService = class InvitationsService {
                 ownerInvitationId: null,
                 ownerActivated: null,
             }, { merge: true });
+            await (0, apartment_members_1.refreshApartmentMemberKeys)(this.firebaseAdminService.firestore, apartmentId).catch(() => undefined);
             return;
         }
         const tenants = Array.isArray(apartment.tenants)
@@ -696,6 +689,7 @@ let InvitationsService = class InvitationsService {
             tenants: nextTenants,
             ...(nextTenants.length === 0 ? { residentId: null } : {}),
         }, { merge: true });
+        await (0, apartment_members_1.refreshApartmentMemberKeys)(this.firebaseAdminService.firestore, apartmentId).catch(() => undefined);
     }
 };
 exports.InvitationsService = InvitationsService;

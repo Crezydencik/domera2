@@ -9,15 +9,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CompanyPayloadService = void 0;
 const common_1 = require("@nestjs/common");
 const firestore_1 = require("firebase-admin/firestore");
+const values_1 = require("../../../common/utils/values");
 let CompanyPayloadService = class CompanyPayloadService {
     firstString(...values) {
-        for (const value of values) {
-            if (typeof value === 'string' && value.trim())
-                return value.trim();
-            if (typeof value === 'number' && Number.isFinite(value))
-                return String(value);
-        }
-        return '';
+        return (0, values_1.firstString)(...values);
     }
     toOptionalTrimmedString(value) {
         return typeof value === 'string' && value.trim() ? value.trim() : undefined;

@@ -551,6 +551,13 @@ export class InvoicesController {
     @CurrentUser() user: RequestUser,
     @Param('invoiceId') invoiceId: string,
   ) {
-    return this.invoicesService.remove(request, user, invoiceId);
+    return this.invoicesService.remove(request, user, invoiceId).catch((error: unknown) => {
+      console.error(`invoice.delete.request_failed invoiceId=${invoiceId}`, error);
+      if (process.env.NODE_ENV !== 'production' && !(error instanceof HttpException)) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new BadRequestException(`Invoice deletion failed: ${message}`);
+      }
+      throw error;
+    });
   }
 }

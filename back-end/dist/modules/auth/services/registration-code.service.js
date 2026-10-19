@@ -18,6 +18,7 @@ const audit_log_service_1 = require("../../../common/services/audit-log.service"
 const rate_limit_service_1 = require("../../../common/services/rate-limit.service");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const auth_email_service_1 = require("./auth-email.service");
+const background_1 = require("../../../common/utils/background");
 const CODE_TTL_MS = 10 * 60 * 1000;
 const TOKEN_TTL_MS = 30 * 60 * 1000;
 const MAX_ATTEMPTS = 6;
@@ -65,13 +66,13 @@ let RegistrationCodeService = class RegistrationCodeService {
         if (errorMessage) {
             throw new Error(`Resend error: ${errorMessage}`);
         }
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'auth.register_code.request',
             status: 'success',
             targetEmail: email,
             metadata: { locale },
-        });
+        }), 'audit');
         return { success: true, expiresInSeconds: CODE_TTL_MS / 1000 };
     }
     async verify(request, input) {
@@ -83,26 +84,31 @@ let RegistrationCodeService = class RegistrationCodeService {
         }
         const db = this.firebaseAdminService.firestore;
         const docRef = db.collection(COLLECTION).doc(this.makeDocId(email));
-        const snap = await docRef.get();
-        if (!snap.exists) {
-            this.throwServiceError('Code not found', 404);
-        }
-        const data = snap.data();
         const now = Date.now();
-        const expiresAtMs = data?.expiresAt?.toMillis?.() ?? 0;
-        const attempts = typeof data?.attempts === 'number' ? data.attempts : 0;
-        if (!expiresAtMs || now > expiresAtMs) {
-            await docRef.delete();
+        const outcome = await db.runTransaction(async (tx) => {
+            const snap = await tx.get(docRef);
+            if (!snap.exists)
+                return 'missing';
+            const data = snap.data();
+            const expiresAtMs = data?.expiresAt?.toMillis?.() ?? 0;
+            const attempts = typeof data?.attempts === 'number' ? data.attempts : 0;
+            if (!expiresAtMs || now > expiresAtMs) {
+                tx.delete(docRef);
+                return 'expired';
+            }
+            if (attempts >= MAX_ATTEMPTS || !data.codeHash)
+                return 'locked';
+            tx.update(docRef, { attempts: attempts + 1, updatedAt: new Date(now) });
+            return this.safeEqual(this.hashCode(email, code), data.codeHash) ? 'ok' : 'invalid';
+        });
+        if (outcome === 'missing')
+            this.throwServiceError('Code not found', 404);
+        if (outcome === 'expired')
             this.throwServiceError('Code expired', 410);
-        }
-        if (attempts >= MAX_ATTEMPTS) {
+        if (outcome === 'locked')
             this.throwServiceError('Too many invalid attempts', 429);
-        }
-        const expectedHash = this.hashCode(email, code);
-        if (!this.safeEqual(expectedHash, data.codeHash)) {
-            await docRef.update({ attempts: attempts + 1, updatedAt: new Date(now) });
+        if (outcome === 'invalid')
             this.throwServiceError('Invalid code', 400);
-        }
         const verificationToken = this.generateSecureToken();
         const tokenExpiresAt = now + TOKEN_TTL_MS;
         await docRef.update({
@@ -114,12 +120,12 @@ let RegistrationCodeService = class RegistrationCodeService {
             tokenExpiresAt: new Date(tokenExpiresAt),
             updatedAt: new Date(now),
         });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'auth.register_code.verify',
             status: 'success',
             targetEmail: email,
-        });
+        }), 'audit');
         return {
             success: true,
             verificationToken,

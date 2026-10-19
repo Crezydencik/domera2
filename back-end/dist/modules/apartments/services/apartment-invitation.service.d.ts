@@ -47,5 +47,4 @@ export declare class ApartmentInvitationService {
     }): Promise<void>;
     private buildInvitationLink;
     private revokePendingInvitations;
-    private firstString;
 }

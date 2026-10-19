@@ -21,6 +21,7 @@ export declare class BuildingPayloadService {
         street: string;
         location: string;
         companyId: string;
+        scopeVersion: number;
         managedBy: BuildingCompanySummary;
         apartmentsCount: number;
         apartmentIds: string[];
@@ -84,7 +85,6 @@ export declare class BuildingPayloadService {
             currentValue: number;
         }[];
     };
-    private firstString;
     private firstNumber;
     private normalizeStatus;
     private normalizeMeterCount;

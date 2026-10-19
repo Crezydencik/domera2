@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MeterReadingsModule = void 0;
 const common_1 = require("@nestjs/common");
 const email_module_1 = require("../emails/email.module");
+const internal_cron_controller_1 = require("./controllers/internal-cron.controller");
 const meter_readings_controller_1 = require("./controllers/meter-readings.controller");
 const meter_reading_reminder_job_1 = require("./jobs/meter-reading-reminder.job");
 const electricity_payment_service_1 = require("./services/electricity-payment.service");
@@ -26,7 +27,7 @@ exports.MeterReadingsModule = MeterReadingsModule;
 exports.MeterReadingsModule = MeterReadingsModule = __decorate([
     (0, common_1.Module)({
         imports: [email_module_1.EmailModule],
-        controllers: [meter_readings_controller_1.MeterReadingsController],
+        controllers: [meter_readings_controller_1.MeterReadingsController, internal_cron_controller_1.InternalCronController],
         providers: [
             meter_readings_service_1.MeterReadingsService,
             meter_reading_access_service_1.MeterReadingAccessService,

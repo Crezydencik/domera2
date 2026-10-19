@@ -16,6 +16,7 @@ export declare class NewsController {
         companyId: string;
         title: string;
         createdAt: Date;
+        createdBy: string;
         id: string;
     }>;
     update(request: Request, user: RequestUser, newsId: string, body: Record<string, unknown>): Promise<{

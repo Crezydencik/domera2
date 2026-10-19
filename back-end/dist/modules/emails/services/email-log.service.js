@@ -10,9 +10,19 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 var EmailLogService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EmailLogService = void 0;
+exports.EmailLogService = exports.EMAIL_LOG_TYPES = void 0;
 const common_1 = require("@nestjs/common");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
+exports.EMAIL_LOG_TYPES = [
+    'registrationCode',
+    'passwordReset',
+    'ownerInvitation',
+    'tenantInvitation',
+    'tenantInvitedByOwner',
+    'invoiceGenerated',
+    'meterReadingReminder',
+    'notification',
+];
 let EmailLogService = EmailLogService_1 = class EmailLogService {
     constructor(firebaseAdminService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -40,6 +50,56 @@ let EmailLogService = EmailLogService_1 = class EmailLogService {
             ref = ref.where('buildingId', '==', query.buildingId);
         if (query.apartmentId)
             ref = ref.where('apartmentId', '==', query.apartmentId);
+        try {
+            return await this.getStatsViaAggregation(ref, query.type);
+        }
+        catch (error) {
+            if (!this.isMissingIndexError(error))
+                throw error;
+            this.logger.warn(`email.log.stats.index_missing fallback=full_read reason=${error instanceof Error ? error.message : String(error)}`);
+            return this.getStatsFromDocuments(ref);
+        }
+    }
+    async getStatsViaAggregation(ref, fixedType) {
+        const last30DaysStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const count = async (query) => (await query.count().get()).data().count;
+        const types = fixedType ? [fixedType] : [...exports.EMAIL_LOG_TYPES];
+        const [total, success, last30Total, last30Success, lastSnap, perType] = await Promise.all([
+            count(ref),
+            count(ref.where('status', '==', 'success')),
+            count(ref.where('createdAt', '>=', last30DaysStart)),
+            count(ref.where('status', '==', 'success').where('createdAt', '>=', last30DaysStart)),
+            ref.orderBy('createdAt', 'desc').limit(1).get(),
+            Promise.all(types.map(async (type) => {
+                const typed = fixedType ? ref : ref.where('type', '==', type);
+                const [typeTotal, typeSuccess] = await Promise.all([count(typed), count(typed.where('status', '==', 'success'))]);
+                return { type, total: typeTotal, success: typeSuccess };
+            })),
+        ]);
+        const byType = {};
+        let knownTotal = 0;
+        let knownSuccess = 0;
+        for (const item of perType) {
+            if (item.total === 0)
+                continue;
+            byType[item.type] = { total: item.total, success: item.success, error: item.total - item.success };
+            knownTotal += item.total;
+            knownSuccess += item.success;
+        }
+        if (!fixedType && total > knownTotal) {
+            byType.unknown = { total: total - knownTotal, success: success - knownSuccess, error: total - knownTotal - (success - knownSuccess) };
+        }
+        const lastCreatedAt = lastSnap.docs[0] ? this.toDate(lastSnap.docs[0].data().createdAt) : null;
+        return {
+            total,
+            success,
+            error: total - success,
+            last30Days: { total: last30Total, success: last30Success, error: last30Total - last30Success },
+            byType,
+            lastSentAt: lastCreatedAt ? lastCreatedAt.toISOString() : null,
+        };
+    }
+    async getStatsFromDocuments(ref) {
         const snapshot = await ref.get();
         const now = Date.now();
         const last30DaysStart = now - 30 * 24 * 60 * 60 * 1000;
@@ -88,6 +148,26 @@ let EmailLogService = EmailLogService_1 = class EmailLogService {
             .get();
         return snapshot.docs.some((doc) => doc.data().status === 'success');
     }
+    async successfulDeliveryKeys(deliveryKeys) {
+        const keys = Array.from(new Set(deliveryKeys.map((key) => key.trim()).filter(Boolean)));
+        const found = new Set();
+        const chunks = [];
+        for (let index = 0; index < keys.length; index += 30)
+            chunks.push(keys.slice(index, index + 30));
+        const collection = this.firebaseAdminService.firestore.collection('email_logs');
+        const CONCURRENCY = 5;
+        for (let index = 0; index < chunks.length; index += CONCURRENCY) {
+            const snapshots = await Promise.all(chunks.slice(index, index + CONCURRENCY).map((chunk) => collection.where('deliveryKey', 'in', chunk).get()));
+            for (const snapshot of snapshots) {
+                for (const doc of snapshot.docs) {
+                    const data = doc.data();
+                    if (data.status === 'success' && typeof data.deliveryKey === 'string')
+                        found.add(data.deliveryKey);
+                }
+            }
+        }
+        return found;
+    }
     async getDeliveries(query) {
         let ref = this.firebaseAdminService.firestore.collection('email_logs');
         if (query.type)
@@ -98,9 +178,21 @@ let EmailLogService = EmailLogService_1 = class EmailLogService {
             ref = ref.where('buildingId', '==', query.buildingId);
         if (query.apartmentId)
             ref = ref.where('apartmentId', '==', query.apartmentId);
-        const snapshot = await ref.get();
         const limit = Math.min(5000, Math.max(1, query.limit ?? 200));
         const prefix = query.deliveryKeyPrefix?.trim();
+        const narrowed = prefix
+            ? ref.where('deliveryKey', '>=', prefix).where('deliveryKey', '<', `${prefix}\uf8ff`).limit(5000)
+            : ref.orderBy('createdAt', 'desc').limit(limit);
+        let snapshot;
+        try {
+            snapshot = await narrowed.get();
+        }
+        catch (error) {
+            if (!this.isMissingIndexError(error))
+                throw error;
+            this.logger.warn(`email.log.deliveries.index_missing fallback=full_read reason=${error instanceof Error ? error.message : String(error)}`);
+            snapshot = await ref.get();
+        }
         return snapshot.docs
             .map((doc) => {
             const data = doc.data();
@@ -125,6 +217,11 @@ let EmailLogService = EmailLogService_1 = class EmailLogService {
             .filter((item) => !prefix || item.deliveryKey?.startsWith(prefix))
             .sort((a, b) => (new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()))
             .slice(0, limit);
+    }
+    isMissingIndexError(error) {
+        const code = error?.code;
+        return code === 9 || code === 'failed-precondition'
+            || /requires an index|FAILED_PRECONDITION/i.test(error instanceof Error ? error.message : String(error));
     }
     normalizeType(value) {
         if (value === 'registrationCode' ||

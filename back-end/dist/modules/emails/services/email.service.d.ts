@@ -42,11 +42,25 @@ export declare class EmailService {
     }): Promise<{
         id: string;
     }>;
+    private buildMailingContext;
     sendInformationMailing(companyId: string, dto: SendInformationMailingDto): Promise<{
-        recipients: number;
         sent: number;
         failed: number;
+        pending: number;
+        status: "sending" | "completed";
+        mailingId: string;
+        recipients: number;
     }>;
+    processInformationMailing(history: FirebaseFirestore.DocumentReference, deadlineMs: number): Promise<{
+        sent: number;
+        failed: number;
+        pending: number;
+        status: 'sending' | 'completed';
+    }>;
+    resumePendingMailings(now?: Date): Promise<{
+        resumed: number;
+    }>;
+    private mailingRecipientDocId;
     getInformationMailingTemplates(companyId: string): Promise<{
         items: {
             id: string;
@@ -70,7 +84,9 @@ export declare class EmailService {
         deleted: boolean;
     }>;
     private sanitizeMailingHtml;
+    private getCompanyDocCached;
     private resolveCompanySenderName;
     private resolveCompanyName;
-    private sendInformationRecipient;
+    private findUsersByEmail;
+    private createInformationNotification;
 }

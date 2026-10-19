@@ -13,6 +13,7 @@ exports.NotificationAccessService = void 0;
 const common_1 = require("@nestjs/common");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const rate_limit_service_1 = require("../../../common/services/rate-limit.service");
+const too_many_requests_exception_1 = require("../../../common/errors/too-many-requests.exception");
 let NotificationAccessService = class NotificationAccessService {
     constructor(rateLimitService, firebaseAdminService) {
         this.rateLimitService = rateLimitService;
@@ -43,7 +44,7 @@ let NotificationAccessService = class NotificationAccessService {
     async enforceRateLimit(request, scope, discriminator, limit) {
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, scope, discriminator), limit, 60_000);
         if (!rl.allowed)
-            throw new common_1.BadRequestException('Too many requests');
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
     }
 };
 exports.NotificationAccessService = NotificationAccessService;

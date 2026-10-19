@@ -13,6 +13,8 @@ exports.NewsService = void 0;
 const common_1 = require("@nestjs/common");
 const firebase_admin_service_1 = require("../../common/infrastructure/firebase/firebase-admin.service");
 const rate_limit_service_1 = require("../../common/services/rate-limit.service");
+const too_many_requests_exception_1 = require("../../common/errors/too-many-requests.exception");
+const client_payload_1 = require("../../common/utils/client-payload");
 let NewsService = class NewsService {
     constructor(firebaseAdminService, rateLimitService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -41,7 +43,7 @@ let NewsService = class NewsService {
     async enforceRateLimit(request, scope, discriminator, limit) {
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, scope, discriminator), limit, 60_000);
         if (!rl.allowed)
-            throw new common_1.BadRequestException('Too many requests');
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
     }
     async list(request, user, companyId) {
         this.assertManagement(user);
@@ -81,10 +83,11 @@ let NewsService = class NewsService {
         this.assertCompanyScope(user, companyId);
         await this.enforceRateLimit(request, 'news:create', `${user.uid}:${companyId}`, 30);
         const data = {
-            ...payload,
+            ...(0, client_payload_1.sanitizeClientPayload)(payload, { protectedKeys: ['companyId'] }),
             companyId,
             title,
             createdAt: new Date(),
+            createdBy: user.uid,
         };
         const ref = this.firebaseAdminService.firestore.collection('news').doc();
         await ref.set(data);
@@ -101,7 +104,7 @@ let NewsService = class NewsService {
             throw new common_1.NotFoundException('News not found');
         const current = snap.data();
         this.assertCompanyScope(user, current.companyId);
-        await ref.set({ ...payload, updatedAt: new Date() }, { merge: true });
+        await ref.set({ ...(0, client_payload_1.sanitizeClientPayload)(payload, { protectedKeys: ['companyId', 'companyIds'] }), updatedAt: new Date() }, { merge: true });
         return { success: true };
     }
     async remove(request, user, newsId) {

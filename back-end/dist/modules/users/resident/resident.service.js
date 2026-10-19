@@ -58,7 +58,7 @@ let ResidentService = ResidentService_1 = class ResidentService {
                 resolve(value);
             }, (error) => {
                 clearTimeout(timeout);
-                reject(error);
+                reject(error instanceof Error ? error : new Error(String(error)));
             });
         });
     }

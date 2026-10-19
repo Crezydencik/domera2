@@ -17,6 +17,7 @@ const rate_limit_service_1 = require("../../../common/services/rate-limit.servic
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const auth_email_service_1 = require("./auth-email.service");
 const firebase_identity_toolkit_service_1 = require("./firebase-identity-toolkit.service");
+const background_1 = require("../../../common/utils/background");
 let AuthPasswordResetService = class AuthPasswordResetService {
     constructor(firebaseAdminService, configService, rateLimitService, auditLogService, authEmailService, identityToolkitService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -30,12 +31,12 @@ let AuthPasswordResetService = class AuthPasswordResetService {
         const result = await this.identityToolkitService.call('resetPassword', {
             oobCode,
         });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'auth.password_reset_preview',
             status: 'success',
             targetEmail: result.email,
-        });
+        }), 'audit');
         return {
             email: result.email ? this.normalizeEmail(result.email) : '',
         };
@@ -45,11 +46,11 @@ let AuthPasswordResetService = class AuthPasswordResetService {
             oobCode: input.oobCode,
             newPassword: input.newPassword,
         });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'auth.password_reset_confirm',
             status: 'success',
-        });
+        }), 'audit');
         return { success: true };
     }
     async sendPasswordReset(request, input) {
@@ -68,7 +69,7 @@ let AuthPasswordResetService = class AuthPasswordResetService {
             if (error?.statusCode === 429) {
                 throw error;
             }
-            void this.auditLogService.write({
+            (0, background_1.runInBackground)(this.auditLogService.write({
                 request,
                 action: 'auth.password_reset_send',
                 status: 'error',
@@ -77,7 +78,7 @@ let AuthPasswordResetService = class AuthPasswordResetService {
                     skipped: 'rate-limit-unavailable',
                     providerMessage: error instanceof Error ? error.message : 'unknown',
                 },
-            });
+            }), 'audit');
         }
         const origin = (this.configService.get('APP_URL')?.trim() ||
             this.configService.get('FRONTEND_URL')?.trim() ||
@@ -88,7 +89,7 @@ let AuthPasswordResetService = class AuthPasswordResetService {
         }
         catch (error) {
             const code = error?.code;
-            void this.auditLogService.write({
+            (0, background_1.runInBackground)(this.auditLogService.write({
                 request,
                 action: 'auth.password_reset_send',
                 status: 'success',
@@ -97,7 +98,7 @@ let AuthPasswordResetService = class AuthPasswordResetService {
                     skipped: code === 'auth/user-not-found' ? 'user-not-found' : 'link-generation-failed',
                     providerCode: code,
                 },
-            });
+            }), 'audit');
             return { success: true, message: 'Vēstule nosūtīta' };
         }
         let resetLink = firebaseResetLink;
@@ -113,7 +114,7 @@ let AuthPasswordResetService = class AuthPasswordResetService {
             ({ errorMessage } = await this.authEmailService.sendPasswordReset(email, lang, resetLink));
         }
         catch (error) {
-            void this.auditLogService.write({
+            (0, background_1.runInBackground)(this.auditLogService.write({
                 request,
                 action: 'auth.password_reset_send',
                 status: 'success',
@@ -123,26 +124,26 @@ let AuthPasswordResetService = class AuthPasswordResetService {
                     providerMessage: error instanceof Error ? error.message : 'unknown',
                     lang,
                 },
-            });
+            }), 'audit');
             return { success: true, message: 'Vēstule nosūtīta' };
         }
         if (errorMessage) {
-            void this.auditLogService.write({
+            (0, background_1.runInBackground)(this.auditLogService.write({
                 request,
                 action: 'auth.password_reset_send',
                 status: 'success',
                 targetEmail: email,
                 metadata: { skipped: 'resend-error', providerMessage: errorMessage, lang },
-            });
+            }), 'audit');
             return { success: true, message: 'Vēstule nosūtīta' };
         }
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'auth.password_reset_send',
             status: 'success',
             targetEmail: email,
             metadata: { lang },
-        });
+        }), 'audit');
         return { success: true, message: 'Vēstule nosūtīta' };
     }
     normalizeEmail(email) {

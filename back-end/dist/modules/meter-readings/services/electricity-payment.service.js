@@ -15,6 +15,7 @@ const role_constants_1 = require("../../../common/auth/role.constants");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const audit_log_service_1 = require("../../../common/services/audit-log.service");
 const meter_reading_access_service_1 = require("./meter-reading-access.service");
+const background_1 = require("../../../common/utils/background");
 let ElectricityPaymentService = class ElectricityPaymentService {
     constructor(firebaseAdminService, auditLogService, accessService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -135,7 +136,7 @@ let ElectricityPaymentService = class ElectricityPaymentService {
             createdAt: new Date(),
         };
         await ref.set(payment);
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: staffSubmission ? 'meter_reading.electricity_payment.confirm' : 'meter_reading.electricity_payment.request',
             status: 'success',
@@ -144,7 +145,7 @@ let ElectricityPaymentService = class ElectricityPaymentService {
             companyId: user.companyId,
             apartmentId,
             metadata: { amount: payment.amount, paidKwh: payment.paidKwh },
-        });
+        }), 'audit');
         return { success: true, payment: { ...payment, paidAt: payment.paidAt.toISOString() } };
     }
     async confirm(request, user, paymentId, payload) {
@@ -170,7 +171,7 @@ let ElectricityPaymentService = class ElectricityPaymentService {
             confirmedBy: user.uid,
             confirmedAt: new Date(),
         }, { merge: true });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'meter_reading.electricity_payment.confirm',
             status: 'success',
@@ -179,7 +180,7 @@ let ElectricityPaymentService = class ElectricityPaymentService {
             companyId: user.companyId,
             apartmentId,
             metadata: { paymentId },
-        });
+        }), 'audit');
         return { success: true };
     }
     async remove(request, user, paymentId, apartmentId) {
@@ -200,7 +201,7 @@ let ElectricityPaymentService = class ElectricityPaymentService {
         if (!paymentSnap.exists)
             throw new common_1.NotFoundException('Electricity payment not found');
         await paymentRef.delete();
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'meter_reading.electricity_payment.delete',
             status: 'success',
@@ -209,7 +210,7 @@ let ElectricityPaymentService = class ElectricityPaymentService {
             companyId: user.companyId,
             apartmentId,
             metadata: { paymentId },
-        });
+        }), 'audit');
         return { success: true };
     }
 };

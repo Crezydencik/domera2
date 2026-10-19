@@ -19,6 +19,7 @@ const invitation_token_1 = require("../../../common/utils/invitation-token");
 const email_service_1 = require("../../emails/services/email.service");
 const company_access_service_1 = require("./company-access.service");
 const company_payload_service_1 = require("./company-payload.service");
+const firebase_auth_guard_1 = require("../../../common/auth/firebase-auth.guard");
 let CompanyMemberService = class CompanyMemberService {
     constructor(firebaseAdminService, emailService, accessService, payloadService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -67,6 +68,7 @@ let CompanyMemberService = class CompanyMemberService {
             createdAt: currentUserData.createdAt ?? new Date(),
             updatedAt: new Date(),
         }, { merge: true });
+        firebase_auth_guard_1.FirebaseAuthGuard.invalidateUser(params.targetUid);
         const companyRef = this.firebaseAdminService.firestore.collection('companies').doc(params.companyId);
         const userIds = Array.isArray(params.company.userIds)
             ? params.company.userIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
@@ -316,6 +318,7 @@ let CompanyMemberService = class CompanyMemberService {
                 accountType: firestore_1.FieldValue.delete(),
                 updatedAt: new Date(),
             }, { merge: true });
+            firebase_auth_guard_1.FirebaseAuthGuard.invalidateUser(resolvedMemberId);
         }
         await companyRef.set({
             userIds: userIds.filter((value) => value !== resolvedMemberId),
@@ -416,6 +419,7 @@ let CompanyMemberService = class CompanyMemberService {
             companyId: normalizedCompanyId,
             updatedAt: new Date(),
         }, { merge: true });
+        firebase_auth_guard_1.FirebaseAuthGuard.invalidateUser(normalizedMemberId);
         await companyRef.set({
             memberPermissions: {
                 ...memberPermissions,

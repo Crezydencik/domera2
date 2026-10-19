@@ -11,8 +11,9 @@ const firebase_admin_service_1 = require("./common/infrastructure/firebase/fireb
 const performance_metrics_interceptor_1 = require("./common/interceptors/performance-metrics.interceptor");
 const role_constants_1 = require("./common/auth/role.constants");
 const app_module_1 = require("./app.module");
+const csrf_origin_middleware_1 = require("./common/security/csrf-origin.middleware");
 const SESSION_COOKIE_NAME = '__session';
-const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED === 'true';
+const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED !== 'false';
 function normalizeOrigin(value) {
     return value.trim().replace(/\/+$/, '');
 }
@@ -160,6 +161,8 @@ async function createApp() {
             credentials: true,
         },
     });
+    app.use(csrf_origin_middleware_1.securityHeadersMiddleware);
+    app.use((0, csrf_origin_middleware_1.createCsrfOriginMiddleware)((origin) => isAllowedRequestOrigin(origin, allowedOrigins)));
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new common_1.ValidationPipe({
         whitelist: true,

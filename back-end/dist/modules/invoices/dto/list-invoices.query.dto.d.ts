@@ -3,4 +3,6 @@ export declare class ListInvoicesQueryDto {
     apartmentId?: string;
     buildingId?: string;
     recipientType?: string;
+    limit?: string;
+    cursor?: string;
 }

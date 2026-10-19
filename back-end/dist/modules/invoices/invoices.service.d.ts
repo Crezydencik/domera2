@@ -4,30 +4,23 @@ import { FirebaseAdminService } from '../../common/infrastructure/firebase/fireb
 import { RateLimitService } from '../../common/services/rate-limit.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { EmailService } from '../emails/services/email.service';
-type UploadedInvoiceFile = {
-    fieldname?: string;
-    buffer: Buffer;
-    originalname?: string;
-    mimetype?: string;
-    size?: number;
-};
-type InvoiceRecipientType = 'owner' | 'tenant' | 'general';
-type InvoicePdfPayload = {
-    buffer: Buffer;
-    fileName: string;
-    contentType: string;
-};
+import type { UploadedInvoiceFile, InvoiceRecipientType, InvoicePdfPayload } from './invoice.types';
+import { InvoicePdfStorageService } from './services/invoice-pdf-storage.service';
+import { InvoiceUploadHistoryService } from './services/invoice-upload-history.service';
+import { InvoiceZipExtractor } from './services/invoice-zip-extractor';
 export declare class InvoicesService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
     private readonly auditLogService;
     private readonly emailService;
+    private readonly pdfStorage;
+    private readonly uploadHistory;
+    private readonly zipExtractor;
     private readonly logger;
-    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService);
+    constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService, pdfStorage: InvoicePdfStorageService, uploadHistory: InvoiceUploadHistoryService, zipExtractor: InvoiceZipExtractor);
     private assertAuthenticated;
     private isStaff;
     private requireStaffCompanyId;
-    private firstString;
     private normalizeSource;
     private normalizeStatus;
     private normalizeRecipientType;
@@ -44,13 +37,11 @@ export declare class InvoicesService {
     private validatePdfFile;
     private normalizeFileName;
     private normalizeLookupValue;
-    private sanitizePathSegment;
     private buildInvoiceId;
     private hashExternalId;
     private extractCompanyIds;
     private getCompanyApartmentContexts;
     private getApiKeyBuildingIds;
-    private apiCredentialMetadata;
     private resolveLookupBuildingId;
     private findApartmentByField;
     private apartmentHasContractNumber;
@@ -65,8 +56,6 @@ export declare class InvoicesService {
     private getApartmentPendingInvoiceExternalIdsCollection;
     private getApartmentInvoicePublicLinksCollection;
     private removeLinkedMeterReading;
-    private getApartmentInvoiceUploadHistoryCollection;
-    private getLegacyBuildingInvoiceUploadHistoryCollection;
     private getBuildingTrashCollection;
     private resolveInvoiceApartmentId;
     private invoiceApartmentCompanyId;
@@ -89,40 +78,19 @@ export declare class InvoicesService {
     private findInvoiceDocument;
     private resolveTargetCompanyId;
     private resolveResidentContext;
-    private buildStoragePath;
-    private buildPendingApprovalStoragePath;
-    private buildFirebaseDownloadUrl;
-    private sanitizePdfFileName;
-    private resolveInvoicePdfFileName;
-    private assertSafeProxyUrl;
-    private downloadInvoicePdfFromUrl;
-    private resolveInvoicePdfPayload;
     private resolvePublicAppBaseUrl;
     private authenticatedInvoiceViewLink;
     private resolveInvoiceEmailLanguage;
     private resolveInvoiceEmailAmount;
     private resolveInvoiceRecipient;
     private sendApprovedInvoiceEmail;
-    private saveInvoicePdf;
-    private errorMessage;
     private parseJson;
-    private isZipFile;
-    private pathBaseName;
-    private findZipEndOfCentralDirectory;
-    private readZipEntryContent;
-    private extractZipInvoiceBatch;
     private expandBatchArchives;
     private parseBatchItems;
     private parseFileIndex;
     private resolveBatchFile;
     private hasApartmentLookup;
     private mergeBatchItemPayload;
-    private writeUploadHistory;
-    private uploadHistoryStatusFromResults;
-    private updateUploadHistoryForApproval;
-    private reconcileUploadHistoryDoc;
-    private firestoreDateToIso;
-    private firestoreDateToMillis;
     upload(request: Request, user: RequestUser, file: UploadedInvoiceFile, payload: Record<string, unknown>): Promise<{
         success: boolean;
         approval_id: string;
@@ -236,9 +204,17 @@ export declare class InvoicesService {
         };
     }>;
     list(user: RequestUser, query: Record<string, string | undefined>): Promise<{
+        query: Record<string, string | undefined>;
+        items: Array<Record<string, unknown>>;
+        nextCursor: string | null;
+    } | {
         items: Record<string, unknown>[];
         query: Record<string, string | undefined>;
     }>;
+    private listStaffInvoicesViaCollectionGroup;
+    private encodeInvoiceCursor;
+    private decodeInvoiceCursor;
+    private isMissingIndexError;
     byId(user: RequestUser, invoiceId: string, includePdfUrl?: boolean): Promise<Record<string, unknown>>;
     pdf(user: RequestUser, invoiceId: string): Promise<InvoicePdfPayload>;
     resendEmail(request: Request, user: RequestUser, invoiceId: string): Promise<{
@@ -263,8 +239,13 @@ export declare class InvoicesService {
     }>;
     remove(request: Request, user: RequestUser, invoiceId: string): Promise<{
         success: boolean;
+        permanently_deleted: boolean;
+        trash_id?: undefined;
+        expires_at?: undefined;
+    } | {
+        success: boolean;
         trash_id: string;
         expires_at: string;
+        permanently_deleted?: undefined;
     }>;
 }
-export {};

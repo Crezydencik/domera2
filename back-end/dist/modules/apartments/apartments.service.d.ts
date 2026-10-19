@@ -27,7 +27,6 @@ export declare class ApartmentsService {
     private readonly logger;
     constructor(firebaseAdminService: FirebaseAdminService, rateLimitService: RateLimitService, auditLogService: AuditLogService, emailService: EmailService, apartmentsRepository: ApartmentsRepository, apartmentAccessService: ApartmentAccessService, apartmentCodeService: ApartmentCodeService, apartmentInvitationService: ApartmentInvitationService, apartmentMeterService: ApartmentMeterService, apartmentStorageService: ApartmentStorageService);
     private enforceRateLimit;
-    private firstString;
     private compareApartmentOrder;
     private sortApartmentItems;
     private timestampMillis;
@@ -123,6 +122,7 @@ export declare class ApartmentsService {
         buildingId: string;
         companyId: string;
         companyIds: string[];
+        apartmentScopeVersion: number;
         storageApartmentId: string;
         readableId: string;
         id: string;
@@ -220,6 +220,22 @@ export declare class ApartmentsService {
             apartmentId: string;
             reason: string;
         }[];
+        remaining: number;
+        hasMore: boolean;
+        nextCursor: string | undefined;
+    }>;
+    migrateMemberKeys(params: {
+        request: Request;
+        user: RequestUser;
+        cursor?: string;
+        limit?: number;
+        apply: boolean;
+    }): Promise<{
+        mode: string;
+        scanned: number;
+        eligible: number;
+        updated: number;
+        remaining: number;
         hasMore: boolean;
         nextCursor: string | undefined;
     }>;

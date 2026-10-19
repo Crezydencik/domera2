@@ -11,8 +11,6 @@ const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const schedule_1 = require("@nestjs/schedule");
 const common_module_1 = require("./common/common.module");
-const domain_event_bus_1 = require("./common/events/domain-event-bus");
-const in_memory_domain_event_bus_1 = require("./common/events/in-memory-domain-event-bus");
 const firebase_admin_module_1 = require("./common/infrastructure/firebase/firebase-admin.module");
 const apartments_module_1 = require("./modules/apartments/apartments.module");
 const auth_module_1 = require("./modules/auth/auth.module");
@@ -25,7 +23,7 @@ const invitations_module_1 = require("./modules/invitations/invitations.module")
 const meter_readings_module_1 = require("./modules/meter-readings/meter-readings.module");
 const news_module_1 = require("./modules/news/news.module");
 const notifications_module_1 = require("./modules/notifications/notifications.module");
-const projects_module_1 = require("./modules/notifications/projects/projects.module");
+const projects_module_1 = require("./modules/projects/projects.module");
 const support_module_1 = require("./modules/support/support.module");
 const users_module_1 = require("./modules/users/users.module");
 let AppModule = class AppModule {
@@ -55,13 +53,6 @@ exports.AppModule = AppModule = __decorate([
             news_module_1.NewsModule,
             support_module_1.SupportModule,
             users_module_1.UsersModule,
-        ],
-        providers: [
-            in_memory_domain_event_bus_1.InMemoryDomainEventBus,
-            {
-                provide: domain_event_bus_1.DOMAIN_EVENT_BUS,
-                useExisting: in_memory_domain_event_bus_1.InMemoryDomainEventBus,
-            },
         ],
     })
 ], AppModule);

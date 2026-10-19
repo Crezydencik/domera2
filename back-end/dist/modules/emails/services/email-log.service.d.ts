@@ -1,5 +1,6 @@
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 export type EmailLogType = 'registrationCode' | 'passwordReset' | 'ownerInvitation' | 'tenantInvitation' | 'tenantInvitedByOwner' | 'invoiceGenerated' | 'meterReadingReminder' | 'notification';
+export declare const EMAIL_LOG_TYPES: readonly ["registrationCode", "passwordReset", "ownerInvitation", "tenantInvitation", "tenantInvitedByOwner", "invoiceGenerated", "meterReadingReminder", "notification"];
 export type EmailLogStatus = 'success' | 'error';
 export type EmailLogInput = {
     type: EmailLogType;
@@ -54,7 +55,10 @@ export declare class EmailLogService {
         }>;
         lastSentAt: string | null;
     }>;
+    private getStatsViaAggregation;
+    private getStatsFromDocuments;
     hasSuccessfulDeliveryKey(deliveryKey: string): Promise<boolean>;
+    successfulDeliveryKeys(deliveryKeys: string[]): Promise<Set<string>>;
     getDeliveries(query: {
         type?: EmailLogType;
         companyId?: string;
@@ -63,6 +67,7 @@ export declare class EmailLogService {
         deliveryKeyPrefix?: string;
         limit?: number;
     }): Promise<EmailDeliveryLogItem[]>;
+    private isMissingIndexError;
     private normalizeType;
     private toDate;
 }

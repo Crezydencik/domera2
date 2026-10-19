@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.BuildingPlatformNotificationService = void 0;
 const common_1 = require("@nestjs/common");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
+const platform_admins_1 = require("../../../common/utils/platform-admins");
 let BuildingPlatformNotificationService = class BuildingPlatformNotificationService {
     constructor(firebaseAdminService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -61,17 +62,8 @@ let BuildingPlatformNotificationService = class BuildingPlatformNotificationServ
             batch.set(this.platformAdminCreationRequestNotificationRef(admin.id, requestId), { read: true, readAt, updatedAt: readAt }, { merge: true });
         }
     }
-    async getPlatformAdminDocs() {
-        const db = this.firebaseAdminService.firestore;
-        const [byRole, byAccountType] = await Promise.all([
-            db.collection('users').where('role', '==', 'PlatformAdmin').get(),
-            db.collection('users').where('accountType', '==', 'PlatformAdmin').get(),
-        ]);
-        const admins = new Map();
-        for (const doc of [...byRole.docs, ...byAccountType.docs]) {
-            admins.set(doc.id, doc);
-        }
-        return Array.from(admins.values());
+    getPlatformAdminDocs() {
+        return (0, platform_admins_1.getPlatformAdminDocs)(this.firebaseAdminService.firestore);
     }
     platformAdminCreationRequestNotificationRef(adminId, requestId) {
         return this.firebaseAdminService.firestore

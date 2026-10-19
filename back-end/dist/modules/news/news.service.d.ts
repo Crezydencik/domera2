@@ -22,6 +22,7 @@ export declare class NewsService {
         companyId: string;
         title: string;
         createdAt: Date;
+        createdBy: string;
         id: string;
     }>;
     update(request: Request, user: RequestUser, newsId: string, payload: Record<string, unknown>): Promise<{

@@ -91,7 +91,13 @@ export async function deleteInvoiceAction(invoiceId: string): Promise<InvoiceAct
     method: "DELETE",
   }));
   if (result.success) {
-    revalidateBillingViews();
+    // A successful backend deletion must not be reported as failed just because
+    // Next.js cache invalidation is unavailable for this Server Action.
+    try {
+      revalidateBillingViews();
+    } catch {
+      // The client calls router.refresh() after a successful result.
+    }
   }
   return result;
 }

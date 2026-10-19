@@ -18,7 +18,7 @@ const firebase_admin_service_1 = require("../infrastructure/firebase/firebase-ad
 const role_constants_1 = require("./role.constants");
 const SESSION_COOKIE_NAME = '__session';
 const CHECK_REVOKED_TOKENS = process.env.FIREBASE_CHECK_REVOKED !== 'false';
-const AUTH_CACHE_TTL_MS = Math.max(0, Number(process.env.FIREBASE_AUTH_CACHE_TTL_MS ?? (CHECK_REVOKED_TOKENS ? 0 : 60000)));
+const AUTH_CACHE_TTL_MS = Math.max(0, Number(process.env.FIREBASE_AUTH_CACHE_TTL_MS ?? (CHECK_REVOKED_TOKENS ? 30000 : 60000)));
 const USER_PROFILE_CACHE_TTL_MS = Math.max(0, Number(process.env.FIREBASE_USER_PROFILE_CACHE_TTL_MS ?? 60000));
 const AUTH_CACHE_MAX_ENTRIES = Math.max(50, Number(process.env.FIREBASE_AUTH_CACHE_MAX_ENTRIES ?? 1000));
 const USER_PROFILE_CACHE_MAX_ENTRIES = Math.max(50, Number(process.env.FIREBASE_USER_PROFILE_CACHE_MAX_ENTRIES ?? 1000));
@@ -58,7 +58,7 @@ let FirebaseAuthGuard = FirebaseAuthGuard_1 = class FirebaseAuthGuard {
             let accountType = (0, role_constants_1.resolveAccountType)({ role, accountType: decoded.accountType });
             let companyId = toOptionalString(decoded.companyId);
             let apartmentId = toOptionalString(decoded.apartmentId);
-            if (!role || !accountType || !companyId || !apartmentId) {
+            if (this.needsProfileHydration(role, accountType, companyId, apartmentId)) {
                 try {
                     const profile = await this.getUserProfileHydration(decoded.uid);
                     if (profile) {
@@ -85,6 +85,26 @@ let FirebaseAuthGuard = FirebaseAuthGuard_1 = class FirebaseAuthGuard {
         catch {
             throw new common_1.UnauthorizedException('Invalid authentication token');
         }
+    }
+    static invalidateUser(uid) {
+        if (!uid)
+            return;
+        FirebaseAuthGuard_1.userProfileCache.delete(uid);
+        for (const [key, entry] of FirebaseAuthGuard_1.authCache) {
+            if (entry.uid === uid)
+                FirebaseAuthGuard_1.authCache.delete(key);
+        }
+    }
+    needsProfileHydration(role, accountType, companyId, apartmentId) {
+        if (!role || !accountType)
+            return true;
+        if ((0, role_constants_1.isPlatformAdminRole)(role))
+            return false;
+        if ((0, role_constants_1.isStaffRole)(role))
+            return !companyId;
+        if ((0, role_constants_1.isPropertyMemberRole)(role))
+            return !apartmentId;
+        return false;
     }
     extractToken(headers) {
         const authHeader = headers.authorization;
@@ -119,6 +139,7 @@ let FirebaseAuthGuard = FirebaseAuthGuard_1 = class FirebaseAuthGuard {
         const entry = {
             expiresAt: now + AUTH_CACHE_TTL_MS,
             promise: promise.then((decoded) => {
+                entry.uid = decoded.uid;
                 const tokenExpiresAt = typeof decoded.exp === 'number' ? decoded.exp * 1000 : entry.expiresAt;
                 entry.expiresAt = Math.min(entry.expiresAt, tokenExpiresAt);
                 return decoded;

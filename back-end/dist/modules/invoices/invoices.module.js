@@ -14,6 +14,9 @@ const invoices_controller_1 = require("./invoices.controller");
 const invoices_service_1 = require("./invoices.service");
 const invoice_upload_auth_guard_1 = require("./invoice-upload-auth.guard");
 const email_module_1 = require("../emails/email.module");
+const invoice_pdf_storage_service_1 = require("./services/invoice-pdf-storage.service");
+const invoice_upload_history_service_1 = require("./services/invoice-upload-history.service");
+const invoice_zip_extractor_1 = require("./services/invoice-zip-extractor");
 let InvoicesModule = class InvoicesModule {
 };
 exports.InvoicesModule = InvoicesModule;
@@ -21,6 +24,14 @@ exports.InvoicesModule = InvoicesModule = __decorate([
     (0, common_1.Module)({
         imports: [email_module_1.EmailModule],
         controllers: [invoices_controller_1.InvoicesController],
-        providers: [invoices_service_1.InvoicesService, firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard, invoice_upload_auth_guard_1.InvoiceUploadAuthGuard],
+        providers: [
+            invoices_service_1.InvoicesService,
+            invoice_pdf_storage_service_1.InvoicePdfStorageService,
+            invoice_upload_history_service_1.InvoiceUploadHistoryService,
+            invoice_zip_extractor_1.InvoiceZipExtractor,
+            firebase_auth_guard_1.FirebaseAuthGuard,
+            roles_guard_1.RolesGuard,
+            invoice_upload_auth_guard_1.InvoiceUploadAuthGuard,
+        ],
     })
 ], InvoicesModule);

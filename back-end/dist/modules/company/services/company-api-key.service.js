@@ -16,6 +16,8 @@ const firebase_admin_service_1 = require("../../../common/infrastructure/firebas
 const audit_log_service_1 = require("../../../common/services/audit-log.service");
 const company_access_service_1 = require("./company-access.service");
 const company_payload_service_1 = require("./company-payload.service");
+const legacy_scope_1 = require("../../../common/utils/legacy-scope");
+const background_1 = require("../../../common/utils/background");
 let CompanyApiKeyService = class CompanyApiKeyService {
     constructor(firebaseAdminService, auditLogService, accessService, payloadService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -77,7 +79,7 @@ let CompanyApiKeyService = class CompanyApiKeyService {
     async getCompanyBuildingContexts(companyId) {
         const db = this.firebaseAdminService.firestore;
         const [arraySnap, directSnap] = await Promise.all([
-            db.collection('buildings').where('managedBy.companyId', '==', companyId).get(),
+            (0, legacy_scope_1.legacyScopeQuery)(() => db.collection('buildings').where('managedBy.companyId', '==', companyId).get()),
             db.collection('buildings').where('companyId', '==', companyId).get(),
         ]);
         const contexts = new Map();
@@ -189,7 +191,7 @@ let CompanyApiKeyService = class CompanyApiKeyService {
             createdByRole: user.role,
         };
         await ref.set(data);
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'company.api_key.create',
             status: 'success',
@@ -206,7 +208,7 @@ let CompanyApiKeyService = class CompanyApiKeyService {
                 permission,
                 scopes,
             },
-        });
+        }), 'audit');
         return {
             success: true,
             apiKey,
@@ -237,7 +239,7 @@ let CompanyApiKeyService = class CompanyApiKeyService {
             throw new common_1.ForbiddenException('Access denied for API key');
         }
         await ref.delete();
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'company.api_key.delete',
             status: 'success',
@@ -250,7 +252,7 @@ let CompanyApiKeyService = class CompanyApiKeyService {
                 buildingId: typeof data.buildingId === 'string' ? data.buildingId : ref.parent.parent?.id ?? null,
                 label: typeof data.label === 'string' ? data.label : null,
             },
-        });
+        }), 'audit');
         return { success: true, keyId: normalizedKeyId };
     }
 };

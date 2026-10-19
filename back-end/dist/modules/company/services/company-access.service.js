@@ -13,6 +13,7 @@ exports.CompanyAccessService = void 0;
 const common_1 = require("@nestjs/common");
 const rate_limit_service_1 = require("../../../common/services/rate-limit.service");
 const company_payload_service_1 = require("./company-payload.service");
+const too_many_requests_exception_1 = require("../../../common/errors/too-many-requests.exception");
 let CompanyAccessService = class CompanyAccessService {
     constructor(rateLimitService, payloadService) {
         this.rateLimitService = rateLimitService;
@@ -25,7 +26,7 @@ let CompanyAccessService = class CompanyAccessService {
     async enforceRateLimit(request, scope, discriminator, limit) {
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, scope, discriminator), limit, 60_000);
         if (!rl.allowed)
-            throw new common_1.BadRequestException('Too many requests');
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
     }
     listMemberIds(value) {
         return Array.isArray(value)

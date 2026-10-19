@@ -1,13 +1,32 @@
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { EmailLogService } from '../../emails/services/email-log.service';
 import { EmailService } from '../../emails/services/email.service';
+export type ReminderRunSummary = {
+    skipped?: 'already_running';
+    resynced: boolean;
+    dueBuildings: number;
+    processedBuildings: number;
+    sent: number;
+    failed: number;
+};
 export declare class MeterReadingReminderJob {
     private readonly firebaseAdminService;
     private readonly emailService;
     private readonly emailLogService;
     private readonly logger;
+    private running;
+    private lastFullResyncAt;
     constructor(firebaseAdminService: FirebaseAdminService, emailService: EmailService, emailLogService: EmailLogService);
-    sendConfiguredReminders(): Promise<void>;
+    cronTick(): Promise<void>;
+    sendConfiguredReminders(now?: Date): Promise<ReminderRunSummary>;
+    private claimBuilding;
+    private resyncSchedulesIfStale;
+    private processBuilding;
+    computeNextRunAt(building: Record<string, unknown>, now: Date, retrySoon?: boolean): Date;
+    private reminderConfigHash;
+    private zonedTimeToUtc;
+    private timeZoneOffsetMs;
+    private toMillis;
     private periodsForBuilding;
     private normalizePeriod;
     private buildingCompanyName;

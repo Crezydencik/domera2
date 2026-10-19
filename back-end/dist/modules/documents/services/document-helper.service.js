@@ -9,15 +9,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DocumentHelperService = void 0;
 const common_1 = require("@nestjs/common");
 const document_types_1 = require("../types/document.types");
+const values_1 = require("../../../common/utils/values");
 let DocumentHelperService = class DocumentHelperService {
     firstString(...values) {
-        for (const value of values) {
-            if (typeof value === 'string' && value.trim())
-                return value.trim();
-            if (typeof value === 'number' && Number.isFinite(value))
-                return String(value);
-        }
-        return '';
+        return (0, values_1.firstString)(...values);
     }
     normalizeScope(value) {
         const raw = this.firstString(value);

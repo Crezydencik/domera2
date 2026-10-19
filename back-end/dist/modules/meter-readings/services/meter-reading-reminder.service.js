@@ -16,6 +16,8 @@ const company_payload_service_1 = require("../../company/services/company-payloa
 const email_log_service_1 = require("../../emails/services/email-log.service");
 const email_service_1 = require("../../emails/services/email.service");
 const meter_reading_access_service_1 = require("./meter-reading-access.service");
+const legacy_scope_1 = require("../../../common/utils/legacy-scope");
+const values_1 = require("../../../common/utils/values");
 let MeterReadingReminderService = class MeterReadingReminderService {
     constructor(firebaseAdminService, emailService, emailLogService, accessService, companyPayloadService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -37,7 +39,7 @@ let MeterReadingReminderService = class MeterReadingReminderService {
         }
         const [snap1, snap2] = await Promise.all([
             db.collection('buildings').where('companyId', '==', companyId).limit(1).get(),
-            db.collection('buildings').where('managedBy.companyId', '==', companyId).limit(1).get(),
+            (0, legacy_scope_1.legacyScopeQuery)(() => db.collection('buildings').where('managedBy.companyId', '==', companyId).limit(1).get()),
         ]);
         const buildingsSnapshot = !snap1.empty ? snap1 : snap2;
         if (buildingsSnapshot.empty) {
@@ -63,7 +65,7 @@ let MeterReadingReminderService = class MeterReadingReminderService {
     async sendManualReminder(user, payload) {
         this.accessService.assertAuthenticated(user);
         const companyId = this.accessService.requireStaffCompanyId(user);
-        const buildingId = this.firstString(payload.buildingId);
+        const buildingId = (0, values_1.firstString)(payload.buildingId);
         if (!buildingId) {
             throw new common_1.BadRequestException('buildingId is required');
         }
@@ -101,7 +103,7 @@ let MeterReadingReminderService = class MeterReadingReminderService {
         };
         for (const apartmentDoc of apartmentsSnapshot.docs) {
             const apartment = apartmentDoc.data();
-            const to = this.firstString(apartment.residentEmail, apartment.ownerEmail);
+            const to = (0, values_1.firstString)(apartment.residentEmail, apartment.ownerEmail);
             if (!to) {
                 result.skippedNoEmail += 1;
                 continue;
@@ -120,8 +122,8 @@ let MeterReadingReminderService = class MeterReadingReminderService {
                     buildingId,
                     apartmentId: apartmentDoc.id,
                     brandName: this.buildingCompanyName(building),
-                    buildingName: this.firstString(building.name, building.address, buildingId),
-                    apartmentNumber: this.firstString(apartment.apartment, apartment.apartmentNumber, apartment.number),
+                    buildingName: (0, values_1.firstString)(building.name, building.address, buildingId),
+                    apartmentNumber: (0, values_1.firstString)(apartment.apartment, apartment.apartmentNumber, apartment.number),
                     periodLabel: period ? this.periodLabel(period, now) : undefined,
                     deadline: period ? this.periodDateLabel(period.endDate, period.monthly, now) : undefined,
                     reminderStage,
@@ -138,7 +140,7 @@ let MeterReadingReminderService = class MeterReadingReminderService {
     async resendMissingAutoReminder(user, payload) {
         this.accessService.assertAuthenticated(user);
         const companyId = this.accessService.requireStaffCompanyId(user);
-        const deliveryKey = this.firstString(payload.deliveryKey);
+        const deliveryKey = (0, values_1.firstString)(payload.deliveryKey);
         const parsed = this.parseAutoReminderDeliveryKey(deliveryKey);
         if (!parsed) {
             throw new common_1.BadRequestException('Valid automatic reminder deliveryKey is required');
@@ -183,7 +185,7 @@ let MeterReadingReminderService = class MeterReadingReminderService {
                 result.skippedAlreadySent += 1;
                 continue;
             }
-            const to = this.firstString(apartment.residentEmail, apartment.ownerEmail);
+            const to = (0, values_1.firstString)(apartment.residentEmail, apartment.ownerEmail);
             if (!to) {
                 result.skippedNoEmail += 1;
                 continue;
@@ -202,8 +204,8 @@ let MeterReadingReminderService = class MeterReadingReminderService {
                     apartmentId: apartmentDoc.id,
                     deliveryKey: apartmentDeliveryKey,
                     brandName: this.buildingCompanyName(building),
-                    buildingName: this.firstString(building.name, building.address, buildingId),
-                    apartmentNumber: this.firstString(apartment.apartment, apartment.apartmentNumber, apartment.number),
+                    buildingName: (0, values_1.firstString)(building.name, building.address, buildingId),
+                    apartmentNumber: (0, values_1.firstString)(apartment.apartment, apartment.apartmentNumber, apartment.number),
                     periodLabel: period ? this.periodLabel(period, now) : undefined,
                     deadline: period ? this.periodDateLabel(period.endDate, period.monthly, now) : undefined,
                     reminderStage: kind,
@@ -230,8 +232,8 @@ let MeterReadingReminderService = class MeterReadingReminderService {
         if (!source || typeof source !== 'object')
             return null;
         const period = source;
-        const startDate = this.firstString(period.startDate);
-        const endDate = this.firstString(period.endDate);
+        const startDate = (0, values_1.firstString)(period.startDate);
+        const endDate = (0, values_1.firstString)(period.endDate);
         if (!startDate || !endDate)
             return null;
         return { startDate, endDate, monthly: Boolean(period.monthly) };
@@ -240,22 +242,13 @@ let MeterReadingReminderService = class MeterReadingReminderService {
         const managedBy = building.managedBy && typeof building.managedBy === 'object'
             ? building.managedBy
             : {};
-        return this.firstString(building.companyId, managedBy.companyId);
+        return (0, values_1.firstString)(building.companyId, managedBy.companyId);
     }
     buildingCompanyName(building) {
         const managedBy = building.managedBy && typeof building.managedBy === 'object'
             ? building.managedBy
             : {};
-        return this.firstString(managedBy.companyName, building.companyName, building.managementCompanyName, managedBy.name);
-    }
-    firstString(...values) {
-        for (const value of values) {
-            if (typeof value === 'string' && value.trim())
-                return value.trim();
-            if (typeof value === 'number' && Number.isFinite(value))
-                return String(value);
-        }
-        return '';
+        return (0, values_1.firstString)(managedBy.companyName, building.companyName, building.managementCompanyName, managedBy.name);
     }
     parseAutoReminderDeliveryKey(value) {
         const [prefix, buildingId, utility, kind, targetDate] = value.split(':');

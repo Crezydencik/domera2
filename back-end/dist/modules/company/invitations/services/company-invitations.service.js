@@ -17,6 +17,9 @@ const rate_limit_service_1 = require("../../../../common/services/rate-limit.ser
 const invitation_token_1 = require("../../../../common/utils/invitation-token");
 const role_constants_1 = require("../../../../common/auth/role.constants");
 const company_access_service_1 = require("../../services/company-access.service");
+const too_many_requests_exception_1 = require("../../../../common/errors/too-many-requests.exception");
+const firebase_auth_guard_1 = require("../../../../common/auth/firebase-auth.guard");
+const background_1 = require("../../../../common/utils/background");
 let CompanyInvitationsService = class CompanyInvitationsService {
     constructor(firebaseAdminService, rateLimitService, auditLogService, companyAccessService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -50,7 +53,7 @@ let CompanyInvitationsService = class CompanyInvitationsService {
         }
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'company-invitations:list', user.uid), 30, 60_000);
         if (!rl.allowed) {
-            throw new common_1.BadRequestException('Too many requests');
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
         }
         this.assertCompanyScope(user, companyId);
         const db = this.firebaseAdminService.firestore;
@@ -99,7 +102,7 @@ let CompanyInvitationsService = class CompanyInvitationsService {
         }
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'company-invitation:send', user.uid), 10, 60_000);
         if (!rl.allowed)
-            throw new common_1.BadRequestException('Too many requests');
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
         this.assertCompanyScope(user, companyId);
         const db = this.firebaseAdminService.firestore;
         const companySnap = await db.collection('companies').doc(companyId).get();
@@ -127,7 +130,7 @@ let CompanyInvitationsService = class CompanyInvitationsService {
             createdAt: new Date(),
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         });
-        void this.auditLogService.write({
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'company_invitation.send',
             status: 'success',
@@ -137,7 +140,7 @@ let CompanyInvitationsService = class CompanyInvitationsService {
             invitationId: invitationRef.id,
             targetEmail: email,
             metadata: { role, buildingId },
-        });
+        }), 'audit');
         return { success: true, invitationId: invitationRef.id };
     }
     async accept(request, user, payload) {
@@ -149,7 +152,7 @@ let CompanyInvitationsService = class CompanyInvitationsService {
             throw new common_1.BadRequestException('invitationId is required');
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'company-invitation:accept', user.uid), 10, 60_000);
         if (!rl.allowed)
-            throw new common_1.BadRequestException('Too many requests');
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
         const db = this.firebaseAdminService.firestore;
         const invitationRef = db.collection('company_invitations').doc(invitationId);
         const invitationSnap = await invitationRef.get();
@@ -227,7 +230,8 @@ let CompanyInvitationsService = class CompanyInvitationsService {
             }, { merge: true });
             tx.set(invitationRef, { status: 'accepted', acceptedAt: new Date(), acceptedByUid: user.uid }, { merge: true });
         });
-        void this.auditLogService.write({
+        firebase_auth_guard_1.FirebaseAuthGuard.invalidateUser(user.uid);
+        (0, background_1.runInBackground)(this.auditLogService.write({
             request,
             action: 'company_invitation.accept',
             status: 'success',
@@ -240,7 +244,7 @@ let CompanyInvitationsService = class CompanyInvitationsService {
                 buildingId: typeof invitation.buildingId === 'string' ? invitation.buildingId : undefined,
                 role: invitedRole,
             },
-        });
+        }), 'audit');
         return { success: true };
     }
 };

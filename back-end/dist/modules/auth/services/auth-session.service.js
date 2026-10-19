@@ -16,6 +16,7 @@ const firestore_1 = require("firebase-admin/firestore");
 const role_constants_1 = require("../../../common/auth/role.constants");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const auth_profile_provisioning_service_1 = require("./auth-profile-provisioning.service");
+const background_1 = require("../../../common/utils/background");
 let AuthSessionService = class AuthSessionService {
     constructor(firebaseAdminService, configService, profileProvisioningService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -38,7 +39,7 @@ let AuthSessionService = class AuthSessionService {
             accountType = 'PlatformAdmin';
             companyId = undefined;
             apartmentId = undefined;
-            void this.firebaseAdminService.firestore.collection('users').doc(input.userId).set({
+            (0, background_1.runInBackground)(this.firebaseAdminService.firestore.collection('users').doc(input.userId).set({
                 uid: input.userId,
                 email,
                 role,
@@ -47,7 +48,7 @@ let AuthSessionService = class AuthSessionService {
                 updatedAt: new Date(),
             }, { merge: true }).catch((error) => {
                 console.error('Failed to update platform admin profile during login:', error);
-            });
+            }), 'firestore_write');
         }
         const ttlMs = this.getSessionTtlMs(input.rememberMe);
         const sessionCookie = await this.createFirebaseSessionCookie(input.idToken, ttlMs);

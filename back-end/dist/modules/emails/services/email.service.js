@@ -16,6 +16,15 @@ const email_log_service_1 = require("./email-log.service");
 const email_template_service_1 = require("./email-template.service");
 const email_transport_service_1 = require("./email-transport.service");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
+const concurrency_1 = require("../../../common/utils/concurrency");
+const ttl_cache_1 = require("../../../common/utils/ttl-cache");
+const mailing_html_1 = require("../../../common/utils/mailing-html");
+const node_crypto_1 = require("node:crypto");
+const COMPANY_DOC_CACHE = new ttl_cache_1.TtlCache({ ttlMs: 60_000, maxEntries: 500 });
+const MAILING_INLINE_BUDGET_MS = Math.max(2_000, Number(process.env.MAILING_INLINE_BUDGET_MS ?? 20_000));
+const MAILING_CHUNK_SIZE = 25;
+const MAILING_LEASE_MS = 3 * 60 * 1000;
+const MAILING_CONCURRENCY = Math.min(20, Math.max(1, Number(process.env.MAILING_CONCURRENCY ?? 5) || 5));
 let EmailService = EmailService_1 = class EmailService {
     constructor(transportService, templateService, emailLogService, firebaseAdminService) {
         this.transportService = transportService;
@@ -113,12 +122,7 @@ let EmailService = EmailService_1 = class EmailService {
             deliveryKey: dto.deliveryKey,
         });
     }
-    async sendInformationMailing(companyId, dto) {
-        const title = dto.title.trim();
-        const message = dto.message.trim();
-        const messageHtml = this.sanitizeMailingHtml(dto.messageHtml);
-        if (!title || !message)
-            throw new Error('Title and message are required');
+    async buildMailingContext(companyId, languageOverride) {
         const companySnapshot = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
         const company = companySnapshot.exists ? companySnapshot.data() : {};
         const invoiceSettings = company.invoiceSettings && typeof company.invoiceSettings === 'object'
@@ -132,21 +136,32 @@ let EmailService = EmailService_1 = class EmailService {
             accentColor: typeof invoiceSettings.accentColor === 'string' ? invoiceSettings.accentColor : undefined,
             logoDataUrl: invoiceSettings.logoHidden === true ? undefined : typeof invoiceSettings.logoDataUrl === 'string' ? invoiceSettings.logoDataUrl : undefined,
         };
-        const language = dto.language ?? (invoiceSettings.language === 'lv' || invoiceSettings.language === 'en' || invoiceSettings.language === 'ru'
-            ? invoiceSettings.language
-            : 'lv');
+        const language = (languageOverride === 'lv' || languageOverride === 'en' || languageOverride === 'ru')
+            ? languageOverride
+            : (invoiceSettings.language === 'lv' || invoiceSettings.language === 'en' || invoiceSettings.language === 'ru'
+                ? invoiceSettings.language
+                : 'lv');
         const actionCopy = language === 'lv'
             ? { label: 'Atvērt paziņojumus', footer: 'Šis ir automātiski sagatavots e-pasta sūtījums, lūdzam uz to neatbildēt.' }
             : language === 'en'
                 ? { label: 'Open notifications', footer: `This is an automated information message from ${companyName}.` }
                 : { label: 'Открыть уведомления', footer: `Это автоматическое информационное сообщение ${companyName}.` };
         const notificationsUrl = `${(process.env.FRONTEND_URL || process.env.APP_URL || 'https://domera.app').replace(/\/+$/, '')}/notifications`;
+        return { companyName, branding, language: language, actionCopy, notificationsUrl };
+    }
+    async sendInformationMailing(companyId, dto) {
+        const title = dto.title.trim();
+        const message = dto.message.trim();
+        const messageHtml = this.sanitizeMailingHtml(dto.messageHtml);
+        if (!title || !message)
+            throw new common_1.BadRequestException('Title and message are required');
+        const { language } = await this.buildMailingContext(companyId, dto.language);
         const audience = dto.audience ?? 'all';
         const buildingIds = new Set((dto.buildingIds ?? []).map((id) => id.trim()).filter(Boolean));
         const apartmentIds = new Set((dto.apartmentIds ?? []).map((id) => id.trim()).filter(Boolean));
         const specificRecipientMode = dto.specificRecipientMode ?? 'select';
         if (audience === 'specific' && specificRecipientMode === 'select' && apartmentIds.size === 0)
-            throw new Error('Select at least one apartment');
+            throw new common_1.BadRequestException('Select at least one apartment');
         const apartmentRecipientModes = dto.apartmentRecipientModes ?? {};
         const apartments = await this.firebaseAdminService.firestore
             .collection('apartments')
@@ -191,25 +206,125 @@ let EmailService = EmailService_1 = class EmailService {
                 }
             }
         }
-        const settled = await Promise.allSettled(Array.from(recipients.entries()).map(([to, context]) => this.sendInformationRecipient({
-            to,
-            title,
-            message,
-            messageHtml,
-            actionLabel: actionCopy.label,
-            actionLink: notificationsUrl,
-            brandName: companyName,
-            footer: actionCopy.footer,
-            language,
+        const db = this.firebaseAdminService.firestore;
+        const history = db.collection('companies').doc(companyId).collection('information_mailings').doc();
+        const now = new Date();
+        await history.set({
             companyId,
-            buildingId: context.buildingId,
-            apartmentId: context.apartmentId,
-            deliveryKey: `mailing-${Date.now()}`,
-        }, branding)));
-        const sent = settled.filter((item) => item.status === 'fulfilled').length;
-        const history = this.firebaseAdminService.firestore.collection('companies').doc(companyId).collection('information_mailings').doc();
-        await history.set({ title, message, messageHtml, audience, buildingIds: Array.from(buildingIds), apartmentIds: Array.from(apartmentIds), recipients: recipients.size, sent, failed: recipients.size - sent, createdAt: new Date() });
-        return { recipients: recipients.size, sent, failed: recipients.size - sent };
+            title, message, messageHtml: messageHtml ?? null, language, audience,
+            buildingIds: Array.from(buildingIds), apartmentIds: Array.from(apartmentIds),
+            recipients: recipients.size, sent: 0, failed: 0, pending: recipients.size,
+            status: recipients.size > 0 ? 'sending' : 'completed',
+            nextAttemptAt: now,
+            createdAt: now,
+        });
+        const entries = Array.from(recipients.entries());
+        for (let index = 0; index < entries.length; index += 400) {
+            const batch = db.batch();
+            for (const [to, context] of entries.slice(index, index + 400)) {
+                batch.set(history.collection('recipients').doc(this.mailingRecipientDocId(to)), {
+                    to, buildingId: context.buildingId ?? null, apartmentId: context.apartmentId ?? null, status: 'pending',
+                });
+            }
+            await batch.commit();
+        }
+        const progress = await this.processInformationMailing(history, Date.now() + MAILING_INLINE_BUDGET_MS);
+        return { mailingId: history.id, recipients: recipients.size, ...progress };
+    }
+    async processInformationMailing(history, deadlineMs) {
+        const snap = await history.get();
+        const data = snap.data();
+        if (!data)
+            return { sent: 0, failed: 0, pending: 0, status: 'completed' };
+        const companyId = String(data.companyId ?? history.parent.parent?.id ?? '');
+        const title = String(data.title ?? '');
+        const message = String(data.message ?? '');
+        const messageHtml = typeof data.messageHtml === 'string' ? data.messageHtml : undefined;
+        const context = await this.buildMailingContext(companyId, typeof data.language === 'string' ? data.language : undefined);
+        const recipientsRef = history.collection('recipients');
+        while (Date.now() < deadlineMs) {
+            const pendingSnap = await recipientsRef.where('status', '==', 'pending').limit(MAILING_CHUNK_SIZE).get();
+            if (pendingSnap.empty)
+                break;
+            const items = pendingSnap.docs.map((doc) => ({ ref: doc.ref, ...doc.data() }));
+            const deliveryKey = (to) => `mailing:${history.id}:${to}`;
+            const alreadySent = await this.emailLogService.successfulDeliveryKeys(items.map((item) => deliveryKey(item.to)));
+            const usersByEmail = await this.findUsersByEmail(items.map((item) => item.to));
+            const results = await (0, concurrency_1.mapWithConcurrency)(items, MAILING_CONCURRENCY, async (item) => {
+                if (alreadySent.has(deliveryKey(item.to)))
+                    return 'sent';
+                await this.sendNotification({
+                    to: item.to,
+                    title,
+                    message,
+                    messageHtml,
+                    actionLabel: context.actionCopy.label,
+                    actionLink: context.notificationsUrl,
+                    brandName: context.companyName,
+                    footer: context.actionCopy.footer,
+                    language: context.language,
+                    companyId,
+                    buildingId: item.buildingId ?? undefined,
+                    apartmentId: item.apartmentId ?? undefined,
+                    deliveryKey: deliveryKey(item.to),
+                }, context.branding);
+                await this.createInformationNotification(usersByEmail.get(item.to), {
+                    title, message, companyName: context.companyName, companyId,
+                    buildingId: item.buildingId ?? undefined, apartmentId: item.apartmentId ?? undefined,
+                });
+                return 'sent';
+            });
+            const batch = this.firebaseAdminService.firestore.batch();
+            results.forEach((result, index) => {
+                batch.set(items[index].ref, {
+                    status: result.status === 'fulfilled' ? 'sent' : 'failed',
+                    ...(result.status === 'rejected' ? { error: String(result.reason?.message ?? result.reason).slice(0, 300) } : {}),
+                    processedAt: new Date(),
+                }, { merge: true });
+            });
+            await batch.commit();
+        }
+        const count = async (status) => (await recipientsRef.where('status', '==', status).count().get()).data().count;
+        const [sent, failed, pending] = await Promise.all([count('sent'), count('failed'), count('pending')]);
+        const status = pending > 0 ? 'sending' : 'completed';
+        await history.set({
+            sent, failed, pending, status,
+            nextAttemptAt: pending > 0 ? new Date() : null,
+            leaseUntil: null,
+            ...(status === 'completed' ? { completedAt: new Date() } : {}),
+        }, { merge: true });
+        return { sent, failed, pending, status };
+    }
+    async resumePendingMailings(now = new Date()) {
+        const db = this.firebaseAdminService.firestore;
+        const deadline = Date.now() + MAILING_INLINE_BUDGET_MS;
+        const due = await db.collectionGroup('information_mailings')
+            .where('status', '==', 'sending')
+            .where('nextAttemptAt', '<=', now)
+            .limit(10)
+            .get();
+        let resumed = 0;
+        for (const doc of due.docs) {
+            if (Date.now() >= deadline)
+                break;
+            const claimed = await db.runTransaction(async (tx) => {
+                const fresh = await tx.get(doc.ref);
+                const next = fresh.data()?.nextAttemptAt;
+                const nextMs = next instanceof Date ? next.getTime() : next?.toMillis?.() ?? 0;
+                if (fresh.data()?.status !== 'sending' || nextMs > now.getTime())
+                    return false;
+                tx.set(doc.ref, { nextAttemptAt: new Date(now.getTime() + MAILING_LEASE_MS), leaseUntil: new Date(now.getTime() + MAILING_LEASE_MS) }, { merge: true });
+                return true;
+            });
+            if (!claimed)
+                continue;
+            await this.processInformationMailing(doc.ref, deadline);
+            resumed += 1;
+        }
+        return { resumed };
+    }
+    mailingRecipientDocId(email) {
+        return (0, node_crypto_1.createHash)('sha256').update(email).digest('hex').slice(0, 40);
     }
     async getInformationMailingTemplates(companyId) {
         const snapshot = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).collection('information_mailing_templates').orderBy('createdAt', 'desc').limit(50).get();
@@ -220,7 +335,7 @@ let EmailService = EmailService_1 = class EmailService {
         const title = dto.title.trim();
         const message = dto.message.trim();
         if (!name || !title || !message)
-            throw new Error('Template name, title and message are required');
+            throw new common_1.BadRequestException('Template name, title and message are required');
         const ref = this.firebaseAdminService.firestore.collection('companies').doc(companyId).collection('information_mailing_templates').doc();
         const data = { name, title, message, messageHtml: this.sanitizeMailingHtml(dto.messageHtml), createdAt: new Date() };
         await ref.set(data);
@@ -238,28 +353,19 @@ let EmailService = EmailService_1 = class EmailService {
         return { id, deleted: true };
     }
     sanitizeMailingHtml(value) {
-        if (!value)
-            return undefined;
-        return value.slice(0, 20_000).replace(/<(\/)?([a-z0-9]+)([^>]*)>/gi, (_match, closing, tag, attributes) => {
-            const name = tag.toLowerCase();
-            if (!['b', 'strong', 'i', 'em', 'u', 'p', 'div', 'br', 'ul', 'ol', 'li', 'a'].includes(name))
-                return '';
-            if (closing)
-                return `</${name}>`;
-            if (name === 'a') {
-                const href = /href\s*=\s*["']([^"']+)["']/i.exec(attributes)?.[1] ?? '';
-                return /^https?:\/\//i.test(href) ? `<a href="${href.replace(/"/g, '&quot;')}" style="color:#2563eb;text-decoration:underline;text-underline-offset:2px;">` : '<a>';
-            }
-            const align = /text-align\s*:\s*(left|center|right|justify)/i.exec(attributes)?.[1];
-            return align && (name === 'p' || name === 'div') ? `<${name} style="text-align:${align.toLowerCase()}">` : `<${name}>`;
+        return (0, mailing_html_1.sanitizeMailingHtml)(value);
+    }
+    getCompanyDocCached(companyId) {
+        return COMPANY_DOC_CACHE.getOrLoad(companyId, async () => {
+            const snapshot = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
+            return snapshot.exists ? snapshot.data() : undefined;
         });
     }
     async resolveCompanySenderName(preferredName, companyId) {
         if (!companyId?.trim())
             return undefined;
         try {
-            const snapshot = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
-            const company = snapshot.exists ? snapshot.data() : undefined;
+            const company = await this.getCompanyDocCached(companyId);
             const emailBrandName = company?.emailBrandName;
             if (typeof emailBrandName === 'string' && emailBrandName.trim())
                 return emailBrandName.trim();
@@ -282,8 +388,7 @@ let EmailService = EmailService_1 = class EmailService {
         if (!companyId?.trim())
             return undefined;
         try {
-            const snapshot = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
-            const company = snapshot.exists ? snapshot.data() : undefined;
+            const company = await this.getCompanyDocCached(companyId);
             const companyName = company?.companyName;
             if (typeof companyName === 'string' && companyName.trim())
                 return companyName.trim();
@@ -295,36 +400,47 @@ let EmailService = EmailService_1 = class EmailService {
             return undefined;
         }
     }
-    async sendInformationRecipient(dto, branding) {
-        const result = await this.sendNotification(dto, branding);
-        try {
-            const userSnapshot = await this.firebaseAdminService.firestore
-                .collection('users')
-                .where('email', '==', dto.to.toLowerCase())
-                .limit(1)
-                .get();
-            const user = userSnapshot.docs[0];
-            if (user) {
-                const notification = user.ref.collection('notifications').doc();
-                await notification.set({
-                    notificationId: notification.id,
-                    title: dto.title,
-                    message: dto.message,
-                    channel: 'Information',
-                    type: 'information-mailing',
-                    read: false,
-                    companyName: branding.companyName || 'Domera',
-                    companyId: dto.companyId,
-                    buildingId: dto.buildingId,
-                    apartmentId: dto.apartmentId,
-                    createdAt: new Date(),
-                });
+    async findUsersByEmail(emails) {
+        const result = new Map();
+        const users = this.firebaseAdminService.firestore.collection('users');
+        for (let index = 0; index < emails.length; index += 30) {
+            try {
+                const snapshot = await users.where('email', 'in', emails.slice(index, index + 30)).get();
+                for (const doc of snapshot.docs) {
+                    const rawEmail = doc.data().email;
+                    const email = typeof rawEmail === 'string' ? rawEmail.toLowerCase() : '';
+                    if (email && !result.has(email))
+                        result.set(email, doc.ref);
+                }
+            }
+            catch (error) {
+                this.logger.warn(`information_mailing.user_lookup_failed reason=${error instanceof Error ? error.message : String(error)}`);
             }
         }
-        catch (error) {
-            this.logger.warn(`Email sent to ${dto.to}, but in-app notification could not be created: ${error instanceof Error ? error.message : String(error)}`);
-        }
         return result;
+    }
+    async createInformationNotification(userRef, params) {
+        if (!userRef)
+            return;
+        try {
+            const notification = userRef.collection('notifications').doc();
+            await notification.set({
+                notificationId: notification.id,
+                title: params.title,
+                message: params.message,
+                channel: 'Information',
+                type: 'information-mailing',
+                read: false,
+                companyName: params.companyName || 'Domera',
+                companyId: params.companyId,
+                buildingId: params.buildingId,
+                apartmentId: params.apartmentId,
+                createdAt: new Date(),
+            });
+        }
+        catch (error) {
+            this.logger.warn(`E-mail sent, but in-app notification could not be created: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 };
 exports.EmailService = EmailService;

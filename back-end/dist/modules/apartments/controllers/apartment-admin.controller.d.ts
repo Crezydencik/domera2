@@ -29,6 +29,16 @@ export declare class ApartmentAdminController {
             apartmentId: string;
             reason: string;
         }[];
+        remaining: number;
+        hasMore: boolean;
+        nextCursor: string | undefined;
+    }>;
+    memberKeysMigration(request: Request, user: RequestUser, cursor?: string, limit?: string, apply?: string): Promise<{
+        mode: string;
+        scanned: number;
+        eligible: number;
+        updated: number;
+        remaining: number;
         hasMore: boolean;
         nextCursor: string | undefined;
     }>;

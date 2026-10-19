@@ -1,7 +1,7 @@
 import { Request } from 'express';
+import { RequestUser } from '../../common/auth/request-user.type';
 import { FirebaseAdminService } from '../../common/infrastructure/firebase/firebase-admin.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
-import { RequestUser } from '../../common/auth/request-user.type';
 export declare class ProjectsService {
     private readonly firebaseAdminService;
     private readonly rateLimitService;
@@ -22,6 +22,7 @@ export declare class ProjectsService {
         companyId: string;
         title: string;
         createdAt: Date;
+        createdBy: string;
         id: string;
     }>;
     update(request: Request, user: RequestUser, projectId: string, payload: Record<string, unknown>): Promise<{

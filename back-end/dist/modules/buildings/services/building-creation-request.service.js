@@ -19,6 +19,9 @@ const building_payload_service_1 = require("./building-payload.service");
 const building_storage_service_1 = require("./building-storage.service");
 const building_platform_billing_service_1 = require("./building-platform-billing.service");
 const building_platform_notification_service_1 = require("./building-platform-notification.service");
+const too_many_requests_exception_1 = require("../../../common/errors/too-many-requests.exception");
+const meter_reminder_schedule_1 = require("../../../common/utils/meter-reminder-schedule");
+const values_1 = require("../../../common/utils/values");
 let BuildingCreationRequestService = class BuildingCreationRequestService {
     constructor(firebaseAdminService, rateLimitService, buildingPayloadService, buildingStorageService, platformBillingService, platformNotificationService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -48,7 +51,7 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
     async requestCreationAccess(request, user, payload) {
         this.assertManagement(user);
         this.assertManagementCompanyMutation(user);
-        const normalizedCompanyId = this.firstString(payload.companyId, this.effectiveManagementCompanyId(user));
+        const normalizedCompanyId = (0, values_1.firstNonEmptyString)(payload.companyId, this.effectiveManagementCompanyId(user));
         if (!normalizedCompanyId)
             throw new common_1.BadRequestException('companyId is required');
         this.assertManagementCompanyScope(user, normalizedCompanyId);
@@ -58,7 +61,7 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
             ? payload.building
             : payload;
         const buildingPayload = this.buildingPayloadService.normalizeBuildingPayload(rawBuilding, normalizedCompanyId, companySummary);
-        const explicitRequestId = this.firstString(payload.requestId, rawBuilding.requestId, rawBuilding.buildingId, rawBuilding.id);
+        const explicitRequestId = (0, values_1.firstNonEmptyString)(payload.requestId, rawBuilding.requestId, rawBuilding.buildingId, rawBuilding.id);
         const db = this.firebaseAdminService.firestore;
         let reusableBuildingRef;
         let reusableBuildingData;
@@ -69,11 +72,11 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
                 throw new common_1.BadRequestException('Building request was not found');
             }
             const existingData = existingSnap.data();
-            const existingCompanyId = this.firstString(existingData.companyId, existingData.managedBy?.companyId);
+            const existingCompanyId = (0, values_1.firstNonEmptyString)(existingData.companyId, existingData.managedBy?.companyId);
             if (existingCompanyId !== normalizedCompanyId) {
                 throw new common_1.ForbiddenException('Access denied for building request');
             }
-            const existingStatus = this.firstString(existingData.status).toLowerCase();
+            const existingStatus = (0, values_1.firstNonEmptyString)(existingData.status).toLowerCase();
             if (existingStatus === 'pending') {
                 return { success: true, alreadyPending: true, status: 'pending', requestId: explicitRequestId };
             }
@@ -87,9 +90,9 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
             const sameCompanyBuildings = await db.collection('buildings').where('companyId', '==', normalizedCompanyId).get();
             const existingPendingBuilding = sameCompanyBuildings.docs.find((doc) => {
                 const data = doc.data();
-                return (this.firstString(data.status).toLowerCase() === 'pending'
-                    && this.firstString(data.name, data.title).toLowerCase() === buildingPayload.name.toLowerCase()
-                    && this.firstString(data.address, data.street, data.location).toLowerCase() === buildingPayload.address.toLowerCase());
+                return ((0, values_1.firstNonEmptyString)(data.status).toLowerCase() === 'pending'
+                    && (0, values_1.firstNonEmptyString)(data.name, data.title).toLowerCase() === buildingPayload.name.toLowerCase()
+                    && (0, values_1.firstNonEmptyString)(data.address, data.street, data.location).toLowerCase() === buildingPayload.address.toLowerCase());
             });
             if (existingPendingBuilding) {
                 return { success: true, alreadyPending: true, status: 'pending' };
@@ -101,8 +104,8 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
         const requestedAt = new Date();
         const requesterSnap = await db.collection('users').doc(user.uid).get();
         const requesterData = requesterSnap.exists ? requesterSnap.data() : {};
-        const requesterEmail = this.firstString(user.email, requesterData.email);
-        const requesterName = this.firstString(requesterData.fullName, [requesterData.firstName, requesterData.lastName].filter((value) => typeof value === 'string' && value.trim()).join(' '), requesterEmail, user.uid);
+        const requesterEmail = (0, values_1.firstNonEmptyString)(user.email, requesterData.email);
+        const requesterName = (0, values_1.firstNonEmptyString)(requesterData.fullName, [requesterData.firstName, requesterData.lastName].filter((value) => typeof value === 'string' && value.trim()).join(' '), requesterEmail, user.uid);
         const pendingBuildingData = {
             ...buildingPayload,
             requestId,
@@ -183,14 +186,14 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
         const pendingBuildingData = pendingBuildingSnap.exists
             ? pendingBuildingSnap.data()
             : undefined;
-        if (pendingBuildingData && this.firstString(pendingBuildingData.status).toLowerCase() === 'pending') {
-            const companyId = this.firstString(pendingBuildingData.companyId, pendingBuildingData.managedBy?.companyId);
+        if (pendingBuildingData && (0, values_1.firstNonEmptyString)(pendingBuildingData.status).toLowerCase() === 'pending') {
+            const companyId = (0, values_1.firstNonEmptyString)(pendingBuildingData.companyId, pendingBuildingData.managedBy?.companyId);
             if (!companyId)
                 throw new common_1.BadRequestException('companyId is missing for request');
-            const requestedBy = this.firstString(pendingBuildingData.requestedBy);
+            const requestedBy = (0, values_1.firstNonEmptyString)(pendingBuildingData.requestedBy);
             const reviewedAt = new Date();
             const requestStatus = approved ? 'approved' : 'rejected';
-            const reviewComment = this.firstString(options.reviewComment, options.rejectionComment, options.comment);
+            const reviewComment = (0, values_1.firstNonEmptyString)(options.reviewComment, options.rejectionComment, options.comment);
             const subscriptionPricePerApartment = this.optionalNonNegativeNumber(options.subscriptionPricePerApartment ?? pendingBuildingData.subscriptionPricePerApartment, 'subscriptionPricePerApartment');
             const companySummary = await this.getCompanySummary(companyId);
             const normalizedBuilding = this.buildingPayloadService.normalizeBuildingPayload(pendingBuildingData, companyId, companySummary);
@@ -207,7 +210,7 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
                         companyId,
                         companyName: companySummary.companyName,
                         requestedBy,
-                        requesterEmail: this.firstString(pendingBuildingData.requesterEmail),
+                        requesterEmail: (0, values_1.firstNonEmptyString)(pendingBuildingData.requesterEmail),
                         buildingId: pendingBuildingRef.id,
                         buildingName: normalizedBuilding.name,
                         buildingAddress: normalizedBuilding.address,
@@ -280,6 +283,8 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
                     updatedAt: reviewedAt,
                 }, { merge: true });
             }
+            if (approved)
+                (0, meter_reminder_schedule_1.markMeterReminderScheduleDue)(db, batch, normalizedRequestId, reviewedAt);
             await this.platformNotificationService.markCreationRequestNotificationsRead(batch, normalizedRequestId, reviewedAt);
             await batch.commit();
             if (approved) {
@@ -314,12 +319,12 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
         const pendingBuildingData = pendingBuildingSnap.exists
             ? pendingBuildingSnap.data()
             : undefined;
-        if (pendingBuildingData && this.firstString(pendingBuildingData.status).toLowerCase() === 'pending') {
-            const companyId = this.firstString(pendingBuildingData.companyId, pendingBuildingData.managedBy?.companyId);
+        if (pendingBuildingData && (0, values_1.firstNonEmptyString)(pendingBuildingData.status).toLowerCase() === 'pending') {
+            const companyId = (0, values_1.firstNonEmptyString)(pendingBuildingData.companyId, pendingBuildingData.managedBy?.companyId);
             if (!companyId)
                 throw new common_1.BadRequestException('companyId is missing for request');
             this.assertManagementCompanyScope(user, companyId);
-            const requestedBy = this.firstString(pendingBuildingData.requestedBy);
+            const requestedBy = (0, values_1.firstNonEmptyString)(pendingBuildingData.requestedBy);
             if (requestedBy && requestedBy !== user.uid && user.role !== 'Accountant') {
                 throw new common_1.ForbiddenException('Only the requester can cancel this building creation request');
             }
@@ -371,7 +376,7 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
         }
     }
     effectiveManagementCompanyId(user) {
-        const companyId = this.firstString(user.companyId);
+        const companyId = (0, values_1.firstNonEmptyString)(user.companyId);
         if (companyId)
             return companyId;
         if (user.role === 'ManagementCompany')
@@ -386,15 +391,7 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
     async enforceRateLimit(request, scope, discriminator, limit) {
         const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, scope, discriminator), limit, 60_000);
         if (!rl.allowed)
-            throw new common_1.BadRequestException('Too many requests');
-    }
-    firstString(...values) {
-        for (const value of values) {
-            if (typeof value === 'string' && value.trim()) {
-                return value.trim();
-            }
-        }
-        return '';
+            throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
     }
     optionalNonNegativeNumber(value, fieldName) {
         if (value === undefined || value === null || value === '') {
@@ -411,9 +408,9 @@ let BuildingCreationRequestService = class BuildingCreationRequestService {
         const data = snap.exists ? snap.data() : {};
         return {
             companyId,
-            companyName: this.firstString(data.companyName, data.name) || companyId,
-            companyEmail: this.firstString(data.companyEmail, data.contactEmail, data.email) || undefined,
-            companyPhone: this.firstString(data.companyPhone, data.contactPhone, data.phone) || undefined,
+            companyName: (0, values_1.firstNonEmptyString)(data.companyName, data.name) || companyId,
+            companyEmail: (0, values_1.firstNonEmptyString)(data.companyEmail, data.contactEmail, data.email) || undefined,
+            companyPhone: (0, values_1.firstNonEmptyString)(data.companyPhone, data.contactPhone, data.phone) || undefined,
         };
     }
     async getCompanyCreationAccess(companyId) {

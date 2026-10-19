@@ -17,7 +17,6 @@ export declare class InvitationsService {
     private apartmentCompanyId;
     private isActiveApartmentMember;
     private assertCanUseApartment;
-    private firstString;
     private resolveFrontendUrl;
     private resolveInvitationDisplay;
     send(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{

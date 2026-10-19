@@ -13,6 +13,7 @@ exports.BuildingPayloadService = void 0;
 const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
+const values_1 = require("../../../common/utils/values");
 let BuildingPayloadService = class BuildingPayloadService {
     constructor(firebaseAdminService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -31,8 +32,8 @@ let BuildingPayloadService = class BuildingPayloadService {
         throw new common_1.BadRequestException('Failed to generate a unique building ID');
     }
     normalizeBuildingPayload(payload, companyId, companySummary, existing) {
-        const name = this.firstString(payload.name, payload.title, existing?.name, existing?.title);
-        const address = this.firstString(payload.address, payload.street, payload.location, existing?.address, existing?.street, existing?.location);
+        const name = (0, values_1.firstNonEmptyString)(payload.name, payload.title, existing?.name, existing?.title);
+        const address = (0, values_1.firstNonEmptyString)(payload.address, payload.street, payload.location, existing?.address, existing?.street, existing?.location);
         if (!name) {
             throw new common_1.BadRequestException('name is required');
         }
@@ -50,14 +51,15 @@ let BuildingPayloadService = class BuildingPayloadService {
             name,
             title: name,
             address,
-            country: this.firstString(payload.country, existing?.country),
-            city: this.firstString(payload.city, existing?.city),
-            postalCode: this.firstString(payload.postalCode, payload.zipCode, existing?.postalCode, existing?.zipCode),
-            houseNumber: this.firstString(payload.houseNumber, existing?.houseNumber),
-            comment: this.firstString(payload.comment, payload.buildingComment, existing?.comment, existing?.buildingComment),
+            country: (0, values_1.firstNonEmptyString)(payload.country, existing?.country),
+            city: (0, values_1.firstNonEmptyString)(payload.city, existing?.city),
+            postalCode: (0, values_1.firstNonEmptyString)(payload.postalCode, payload.zipCode, existing?.postalCode, existing?.zipCode),
+            houseNumber: (0, values_1.firstNonEmptyString)(payload.houseNumber, existing?.houseNumber),
+            comment: (0, values_1.firstNonEmptyString)(payload.comment, payload.buildingComment, existing?.comment, existing?.buildingComment),
             street: address,
             location: address,
             companyId,
+            scopeVersion: 2,
             managedBy: companySummary,
             apartmentsCount,
             apartmentIds,
@@ -69,14 +71,6 @@ let BuildingPayloadService = class BuildingPayloadService {
                 ? payload.buildingMainMeterEntries
                 : existing?.buildingMainMeterEntries),
         };
-    }
-    firstString(...values) {
-        for (const value of values) {
-            if (typeof value === 'string' && value.trim()) {
-                return value.trim();
-            }
-        }
-        return '';
     }
     firstNumber(...values) {
         for (const value of values) {
@@ -220,8 +214,8 @@ let BuildingPayloadService = class BuildingPayloadService {
             if (!entry || typeof entry !== 'object')
                 return null;
             const item = entry;
-            const monthKey = this.firstString(item.monthKey);
-            const readingDate = this.firstString(item.readingDate);
+            const monthKey = (0, values_1.firstNonEmptyString)(item.monthKey);
+            const readingDate = (0, values_1.firstNonEmptyString)(item.readingDate);
             const currentValue = this.optionalNumber(item.currentValue);
             const coldCurrentValue = this.optionalNumber(item.coldCurrentValue);
             const hotCurrentValue = this.optionalNumber(item.hotCurrentValue);

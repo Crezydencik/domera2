@@ -39,3 +39,16 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], ListInvoicesQueryDto.prototype, "recipientType", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Page size (1-200). When omitted, all invoices are returned (legacy behaviour).' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.Matches)(/^\d{1,3}$/),
+    __metadata("design:type", String)
+], ListInvoicesQueryDto.prototype, "limit", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Opaque cursor from the previous page (`nextCursor`).' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(1024),
+    __metadata("design:type", String)
+], ListInvoicesQueryDto.prototype, "cursor", void 0);

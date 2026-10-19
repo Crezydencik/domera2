@@ -6,6 +6,8 @@ export declare class FirebaseAuthGuard implements CanActivate {
     private static readonly userProfileCache;
     constructor(firebaseAdminService: FirebaseAdminService);
     canActivate(context: ExecutionContext): Promise<boolean>;
+    static invalidateUser(uid: string | undefined | null): void;
+    private needsProfileHydration;
     private extractToken;
     private verifyToken;
     private verifyTokenUncached;

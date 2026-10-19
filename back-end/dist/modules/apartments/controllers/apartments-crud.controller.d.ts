@@ -32,6 +32,7 @@ export declare class ApartmentsCrudController {
         buildingId: string;
         companyId: string;
         companyIds: string[];
+        apartmentScopeVersion: number;
         storageApartmentId: string;
         readableId: string;
         id: string;

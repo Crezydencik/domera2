@@ -6,6 +6,7 @@ export declare class DocumentListService {
     private readonly firebaseAdminService;
     private readonly accessService;
     private readonly helperService;
+    private readonly logger;
     constructor(firebaseAdminService: FirebaseAdminService, accessService: DocumentAccessService, helperService: DocumentHelperService);
     list(user: RequestUser, filters?: {
         apartmentId?: string;
@@ -29,4 +30,9 @@ export declare class DocumentListService {
             downloadUrl: string;
         }[];
     }>;
+    private scopedCandidates;
+    private apartmentCandidates;
+    private globalCandidates;
+    private sortNewestFirst;
+    private isMissingIndexError;
 }

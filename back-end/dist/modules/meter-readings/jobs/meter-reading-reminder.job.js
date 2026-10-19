@@ -13,96 +13,295 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MeterReadingReminderJob = void 0;
 const common_1 = require("@nestjs/common");
 const schedule_1 = require("@nestjs/schedule");
+const node_crypto_1 = require("node:crypto");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
+const meter_reminder_schedule_1 = require("../../../common/utils/meter-reminder-schedule");
 const email_log_service_1 = require("../../emails/services/email-log.service");
 const email_service_1 = require("../../emails/services/email.service");
 const meter_reading_types_1 = require("../types/meter-reading.types");
+const DAY_MS = 24 * 60 * 60 * 1000;
+const CLAIM_LEASE_MS = 10 * 60 * 1000;
+const RETRY_AFTER_FAILURE_MS = Math.max(60_000, Number(process.env.METER_REMINDER_RETRY_MS ?? 5 * 60 * 1000));
+const FULL_RESYNC_INTERVAL_MS = Math.max(5 * 60_000, Number(process.env.METER_REMINDER_RESYNC_MS ?? 60 * 60 * 1000));
+const IDLE_RECHECK_MS = 30 * DAY_MS;
+const LOOKAHEAD_DAYS = 62;
+const MAX_BUILDINGS_PER_RUN = 50;
+const META_DOC = { collection: 'system_jobs', id: 'meter_reminder_schedule' };
 let MeterReadingReminderJob = MeterReadingReminderJob_1 = class MeterReadingReminderJob {
     constructor(firebaseAdminService, emailService, emailLogService) {
         this.firebaseAdminService = firebaseAdminService;
         this.emailService = emailService;
         this.emailLogService = emailLogService;
         this.logger = new common_1.Logger(MeterReadingReminderJob_1.name);
+        this.running = false;
+        this.lastFullResyncAt = 0;
     }
-    async sendConfiguredReminders() {
-        const now = new Date();
-        const localNow = this.localDateTimeParts(now);
+    async cronTick() {
+        if (process.env.METER_REMINDER_CRON_DISABLED === 'true')
+            return;
+        await this.sendConfiguredReminders();
+    }
+    async sendConfiguredReminders(now = new Date()) {
+        const summary = { resynced: false, dueBuildings: 0, processedBuildings: 0, sent: 0, failed: 0 };
+        if (this.running)
+            return { ...summary, skipped: 'already_running' };
+        this.running = true;
         try {
             const db = this.firebaseAdminService.firestore;
-            const buildingsSnapshot = await db.collection('buildings').get();
-            for (const buildingDoc of buildingsSnapshot.docs) {
-                const building = buildingDoc.data();
-                const periods = this.periodsForBuilding(building);
-                const dueReminders = periods
-                    .map(({ period, kind, utility }) => {
-                    const targetDate = this.dueReminderTargetDate(period, kind, localNow);
-                    if (!targetDate)
-                        return null;
-                    return {
-                        utility,
-                        kind,
-                        period,
-                        targetDate,
-                        scheduledTime: this.reminderConfigForKind(period.reminders ?? this.normalizeReminders(null), kind).time,
-                        deliveryKey: this.deliveryKey(buildingDoc.id, utility, kind, targetDate),
-                    };
-                })
-                    .filter((reminder) => Boolean(reminder));
-                if (dueReminders.length === 0)
-                    continue;
-                const apartmentsSnapshot = await db
-                    .collection('apartments')
-                    .where('buildingId', '==', buildingDoc.id)
-                    .get();
-                const alertSummaries = new Map();
-                for (const aptDoc of apartmentsSnapshot.docs) {
-                    const apartment = aptDoc.data();
-                    const residentEmail = apartment.residentEmail || apartment.ownerEmail;
-                    if (!residentEmail)
+            summary.resynced = await this.resyncSchedulesIfStale(now);
+            const dueSnapshot = await db
+                .collection(meter_reminder_schedule_1.METER_REMINDER_SCHEDULE_COLLECTION)
+                .where('nextRunAt', '<=', now)
+                .limit(MAX_BUILDINGS_PER_RUN)
+                .get();
+            summary.dueBuildings = dueSnapshot.size;
+            for (const scheduleDoc of dueSnapshot.docs) {
+                const buildingId = scheduleDoc.id;
+                try {
+                    if (!(await this.claimBuilding(scheduleDoc.ref, now)))
                         continue;
-                    for (const dueReminder of dueReminders) {
-                        if (dueReminder.kind !== 'start' && this.hasCurrentMonthReading(apartment, dueReminder.utility, localNow)) {
-                            continue;
-                        }
-                        const apartmentDeliveryKey = `${dueReminder.deliveryKey}:${aptDoc.id}`;
-                        if (await this.emailLogService.hasSuccessfulDeliveryKey(apartmentDeliveryKey)) {
-                            continue;
-                        }
-                        try {
-                            await this.emailService.sendMeterReadingReminder({
-                                to: residentEmail,
-                                language: this.emailLanguage(apartment.language),
-                                submissionLink: '',
-                                companyId: this.buildingCompanyId(building),
-                                buildingId: buildingDoc.id,
-                                apartmentId: aptDoc.id,
-                                deliveryKey: apartmentDeliveryKey,
-                                brandName: this.buildingCompanyName(building),
-                                buildingName: building.name || building.address || buildingDoc.id,
-                                apartmentNumber: apartment.apartment || apartment.apartmentNumber || '',
-                                periodLabel: this.periodLabel(dueReminder.period, localNow),
-                                deadline: this.deadlineLabel(dueReminder.period, localNow),
-                                reminderStage: dueReminder.kind,
-                                daysUntilDeadline: this.daysUntilDeadline(dueReminder.period, localNow),
-                            });
-                            if (dueReminder.scheduledTime < localNow.time) {
-                                this.alertSummary(alertSummaries, dueReminder, true).sent += 1;
-                            }
-                        }
-                        catch (error) {
-                            const summary = this.alertSummary(alertSummaries, dueReminder, dueReminder.scheduledTime < localNow.time);
-                            summary.failed += 1;
-                            summary.failures.push(`${apartment.apartment || apartment.apartmentNumber || aptDoc.id}: ${this.errorMessage(error)}`);
-                            this.logger.warn(`meter_reading_reminder.send_failed buildingId=${buildingDoc.id} apartmentId=${aptDoc.id} reason=${this.errorMessage(error)}`);
-                        }
+                    const buildingSnap = await db.collection('buildings').doc(buildingId).get();
+                    if (!buildingSnap.exists) {
+                        await scheduleDoc.ref.delete();
+                        continue;
                     }
+                    const building = buildingSnap.data();
+                    const result = await this.processBuilding(buildingId, building, now);
+                    summary.processedBuildings += 1;
+                    summary.sent += result.sent;
+                    summary.failed += result.failed;
+                    await scheduleDoc.ref.set({
+                        buildingId,
+                        nextRunAt: this.computeNextRunAt(building, now, result.failed > 0),
+                        configHash: this.reminderConfigHash(building),
+                        lastRunAt: now,
+                        lastRunSent: result.sent,
+                        lastRunFailed: result.failed,
+                        leaseUntil: null,
+                    }, { merge: true });
                 }
-                await this.sendManagementAlerts(buildingDoc.id, building, alertSummaries, localNow);
+                catch (error) {
+                    this.logger.warn(`meter_reading_reminder.building_failed buildingId=${buildingId} reason=${this.errorMessage(error)}`);
+                    await scheduleDoc.ref
+                        .set({ nextRunAt: new Date(now.getTime() + RETRY_AFTER_FAILURE_MS), leaseUntil: null }, { merge: true })
+                        .catch(() => undefined);
+                }
             }
         }
         catch (error) {
             this.logger.error('Error sending configured meter reading reminders:', error);
         }
+        finally {
+            this.running = false;
+        }
+        return summary;
+    }
+    async claimBuilding(ref, now) {
+        const db = this.firebaseAdminService.firestore;
+        return db.runTransaction(async (tx) => {
+            const snap = await tx.get(ref);
+            const nextRunAt = this.toMillis(snap.data()?.nextRunAt);
+            if (nextRunAt === null || nextRunAt > now.getTime())
+                return false;
+            tx.set(ref, { nextRunAt: new Date(now.getTime() + CLAIM_LEASE_MS), leaseUntil: new Date(now.getTime() + CLAIM_LEASE_MS) }, { merge: true });
+            return true;
+        });
+    }
+    async resyncSchedulesIfStale(now) {
+        if (now.getTime() - this.lastFullResyncAt < FULL_RESYNC_INTERVAL_MS)
+            return false;
+        const db = this.firebaseAdminService.firestore;
+        const metaRef = db.collection(META_DOC.collection).doc(META_DOC.id);
+        const claimed = await db.runTransaction(async (tx) => {
+            const snap = await tx.get(metaRef);
+            const last = this.toMillis(snap.data()?.lastFullResyncAt) ?? 0;
+            if (now.getTime() - last < FULL_RESYNC_INTERVAL_MS) {
+                this.lastFullResyncAt = last;
+                return false;
+            }
+            tx.set(metaRef, { lastFullResyncAt: now }, { merge: true });
+            return true;
+        });
+        if (!claimed)
+            return false;
+        this.lastFullResyncAt = now.getTime();
+        const buildingsSnapshot = await db.collection('buildings').select('readingConfig').get();
+        const scheduleCollection = db.collection(meter_reminder_schedule_1.METER_REMINDER_SCHEDULE_COLLECTION);
+        const refs = buildingsSnapshot.docs.map((doc) => scheduleCollection.doc(doc.id));
+        const existing = new Map();
+        for (let index = 0; index < refs.length; index += 300) {
+            const snaps = await db.getAll(...refs.slice(index, index + 300));
+            for (const snap of snaps)
+                if (snap.exists)
+                    existing.set(snap.id, snap.data());
+        }
+        let batch = db.batch();
+        let pending = 0;
+        for (const buildingDoc of buildingsSnapshot.docs) {
+            const configHash = this.reminderConfigHash(buildingDoc.data());
+            const current = existing.get(buildingDoc.id);
+            if (current && current.configHash === configHash)
+                continue;
+            batch.set(scheduleCollection.doc(buildingDoc.id), { buildingId: buildingDoc.id, nextRunAt: now }, { merge: true });
+            pending += 1;
+            if (pending >= 400) {
+                await batch.commit();
+                batch = db.batch();
+                pending = 0;
+            }
+        }
+        if (pending > 0)
+            await batch.commit();
+        return true;
+    }
+    async processBuilding(buildingId, building, now) {
+        const db = this.firebaseAdminService.firestore;
+        const localNow = this.localDateTimeParts(now);
+        const dueReminders = this.periodsForBuilding(building)
+            .map(({ period, kind, utility }) => {
+            const targetDate = this.dueReminderTargetDate(period, kind, localNow);
+            if (!targetDate)
+                return null;
+            return {
+                utility,
+                kind,
+                period,
+                targetDate,
+                scheduledTime: this.reminderConfigForKind(period.reminders ?? this.normalizeReminders(null), kind).time,
+                deliveryKey: this.deliveryKey(buildingId, utility, kind, targetDate),
+            };
+        })
+            .filter((reminder) => Boolean(reminder));
+        if (dueReminders.length === 0)
+            return { sent: 0, failed: 0 };
+        const apartmentsSnapshot = await db
+            .collection('apartments')
+            .where('buildingId', '==', buildingId)
+            .get();
+        const candidates = [];
+        for (const aptDoc of apartmentsSnapshot.docs) {
+            const apartment = aptDoc.data();
+            const residentEmail = apartment.residentEmail || apartment.ownerEmail;
+            if (!residentEmail)
+                continue;
+            for (const dueReminder of dueReminders) {
+                if (dueReminder.kind !== 'start' && this.hasCurrentMonthReading(apartment, dueReminder.utility, localNow)) {
+                    continue;
+                }
+                candidates.push({
+                    aptDoc,
+                    apartment,
+                    residentEmail,
+                    dueReminder,
+                    apartmentDeliveryKey: `${dueReminder.deliveryKey}:${aptDoc.id}`,
+                });
+            }
+        }
+        const alreadySent = await this.emailLogService.successfulDeliveryKeys(candidates.map((candidate) => candidate.apartmentDeliveryKey));
+        const alertSummaries = new Map();
+        let sent = 0;
+        let failed = 0;
+        for (const { aptDoc, apartment, residentEmail, dueReminder, apartmentDeliveryKey } of candidates) {
+            if (alreadySent.has(apartmentDeliveryKey))
+                continue;
+            try {
+                await this.emailService.sendMeterReadingReminder({
+                    to: residentEmail,
+                    language: this.emailLanguage(apartment.language),
+                    submissionLink: '',
+                    companyId: this.buildingCompanyId(building),
+                    buildingId,
+                    apartmentId: aptDoc.id,
+                    deliveryKey: apartmentDeliveryKey,
+                    brandName: this.buildingCompanyName(building),
+                    buildingName: building.name || building.address || buildingId,
+                    apartmentNumber: apartment.apartment || apartment.apartmentNumber || '',
+                    periodLabel: this.periodLabel(dueReminder.period, localNow),
+                    deadline: this.deadlineLabel(dueReminder.period, localNow),
+                    reminderStage: dueReminder.kind,
+                    daysUntilDeadline: this.daysUntilDeadline(dueReminder.period, localNow),
+                });
+                sent += 1;
+                if (dueReminder.scheduledTime < localNow.time) {
+                    this.alertSummary(alertSummaries, dueReminder, true).sent += 1;
+                }
+            }
+            catch (error) {
+                failed += 1;
+                const summary = this.alertSummary(alertSummaries, dueReminder, dueReminder.scheduledTime < localNow.time);
+                summary.failed += 1;
+                summary.failures.push(`${apartment.apartment || apartment.apartmentNumber || aptDoc.id}: ${this.errorMessage(error)}`);
+                this.logger.warn(`meter_reading_reminder.send_failed buildingId=${buildingId} apartmentId=${aptDoc.id} reason=${this.errorMessage(error)}`);
+            }
+        }
+        await this.sendManagementAlerts(buildingId, building, alertSummaries, localNow);
+        return { sent, failed };
+    }
+    computeNextRunAt(building, now, retrySoon = false) {
+        const nowMs = now.getTime();
+        const retryAt = retrySoon ? nowMs + RETRY_AFTER_FAILURE_MS : Number.POSITIVE_INFINITY;
+        const periods = this.periodsForBuilding(building);
+        const today = this.localDateTimeParts(now);
+        let best = Number.POSITIVE_INFINITY;
+        for (let offset = 0; offset <= LOOKAHEAD_DAYS && periods.length > 0; offset += 1) {
+            const dayUtc = new Date(Date.UTC(today.year, today.month - 1, today.day + offset));
+            const day = {
+                date: dayUtc.toISOString().slice(0, 10),
+                day: dayUtc.getUTCDate(),
+                month: dayUtc.getUTCMonth() + 1,
+                year: dayUtc.getUTCFullYear(),
+                time: '23:59',
+            };
+            for (const { period, kind } of periods) {
+                if (!this.dueReminderTargetDate(period, kind, day))
+                    continue;
+                const { time } = this.reminderConfigForKind(period.reminders ?? this.normalizeReminders(null), kind);
+                const at = this.zonedTimeToUtc(day.year, day.month, day.day, time);
+                if (at > nowMs && at < best)
+                    best = at;
+            }
+            if (best !== Number.POSITIVE_INFINITY)
+                break;
+        }
+        const next = Math.min(best, retryAt);
+        return new Date(Number.isFinite(next) ? next : nowMs + IDLE_RECHECK_MS);
+    }
+    reminderConfigHash(building) {
+        const normalized = this.periodsForBuilding(building)
+            .filter(({ kind }) => kind === 'start')
+            .map(({ utility, period }) => ({ utility, period }));
+        return (0, node_crypto_1.createHash)('sha1').update(JSON.stringify(normalized)).digest('hex');
+    }
+    zonedTimeToUtc(year, month, day, time) {
+        const [hour, minute] = time.split(':').map(Number);
+        const wallClock = Date.UTC(year, month - 1, day, hour ?? 0, minute ?? 0);
+        let guess = wallClock;
+        for (let i = 0; i < 2; i += 1) {
+            guess = wallClock - this.timeZoneOffsetMs(new Date(guess));
+        }
+        return guess;
+    }
+    timeZoneOffsetMs(date) {
+        const parts = new Intl.DateTimeFormat('en-GB', {
+            timeZone: meter_reading_types_1.METER_READING_PERIOD_TIME_ZONE,
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+        }).formatToParts(date);
+        const v = Object.fromEntries(parts.map((part) => [part.type, Number(part.value)]));
+        const asUtc = Date.UTC(v.year, v.month - 1, v.day, v.hour, v.minute, v.second);
+        return asUtc - Math.floor(date.getTime() / 1000) * 1000;
+    }
+    toMillis(value) {
+        if (value instanceof Date)
+            return value.getTime();
+        if (value && typeof value === 'object' && typeof value.toMillis === 'function') {
+            return value.toMillis();
+        }
+        if (typeof value === 'string' || typeof value === 'number') {
+            const millis = new Date(value).getTime();
+            return Number.isFinite(millis) ? millis : null;
+        }
+        return null;
     }
     periodsForBuilding(building) {
         const readingConfig = building.readingConfig && typeof building.readingConfig === 'object'
@@ -408,7 +607,7 @@ __decorate([
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
-], MeterReadingReminderJob.prototype, "sendConfiguredReminders", null);
+], MeterReadingReminderJob.prototype, "cronTick", null);
 exports.MeterReadingReminderJob = MeterReadingReminderJob = MeterReadingReminderJob_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [firebase_admin_service_1.FirebaseAdminService,

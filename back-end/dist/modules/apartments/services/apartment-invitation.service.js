@@ -17,6 +17,7 @@ const node_crypto_1 = require("node:crypto");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const invitation_token_1 = require("../../../common/utils/invitation-token");
 const apartments_repository_1 = require("../repositories/apartments.repository");
+const values_1 = require("../../../common/utils/values");
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 let ApartmentInvitationService = ApartmentInvitationService_1 = class ApartmentInvitationService {
     constructor(firebaseAdminService, apartmentsRepository) {
@@ -89,16 +90,16 @@ let ApartmentInvitationService = ApartmentInvitationService_1 = class ApartmentI
         };
     }
     async resolveInvitationContext(apartment) {
-        const buildingId = this.firstString(apartment.buildingId);
+        const buildingId = (0, values_1.firstString)(apartment.buildingId);
         let building = {};
         if (buildingId) {
             const buildingSnap = await this.firebaseAdminService.firestore.collection('buildings').doc(buildingId).get();
             building = buildingSnap.exists ? buildingSnap.data() : {};
         }
         return {
-            companyName: this.firstString(apartment.managementCompanyName, apartment.companyName, building.managedBy?.companyName, building.managedBy?.name, 'Property Management'),
-            buildingName: this.firstString(apartment.buildingAddress, building.address, building.street, building.location, apartment.buildingName, apartment.building, building.name, building.title),
-            apartmentNumber: this.firstString(apartment.number, apartment.apartmentNumber, apartment.label, apartment.name),
+            companyName: (0, values_1.firstString)(apartment.managementCompanyName, apartment.companyName, building.managedBy?.companyName, building.managedBy?.name, 'Property Management'),
+            buildingName: (0, values_1.firstString)(apartment.buildingAddress, building.address, building.street, building.location, apartment.buildingName, apartment.building, building.name, building.title),
+            apartmentNumber: (0, values_1.firstString)(apartment.number, apartment.apartmentNumber, apartment.label, apartment.name),
         };
     }
     async createOwnerInvitationNotification(params) {
@@ -115,10 +116,10 @@ let ApartmentInvitationService = ApartmentInvitationService_1 = class ApartmentI
                 userId: params.ownerId,
                 type: 'owner-invitation',
                 channel: 'Invitation',
-                title: 'РџСЂРёРіР»Р°С€РµРЅРёРµ РІР»Р°РґРµР»СЊС†Р°',
-                description: `Р’Р°СЃ РїСЂРёРіР»Р°СЃРёР»Рё СѓРїСЂР°РІР»СЏС‚СЊ РєРІР°СЂС‚РёСЂРѕР№ ${params.apartmentNumber || ''}${params.buildingName ? ` (${params.buildingName})` : ''}.`,
+                title: 'Приглашение владельца',
+                description: `Вас пригласили управлять квартирой ${params.apartmentNumber || ''}${params.buildingName ? ` (${params.buildingName})` : ''}.`,
                 actionHref: this.buildInvitationActionHref(params.invitationLink),
-                actionLabel: 'РџСЂРёРЅСЏС‚СЊ РїСЂРёРіР»Р°С€РµРЅРёРµ',
+                actionLabel: 'Принять приглашение',
                 apartmentNumber: params.apartmentNumber || null,
                 buildingName: params.buildingName || null,
                 companyName: params.companyName || null,
@@ -144,10 +145,10 @@ let ApartmentInvitationService = ApartmentInvitationService_1 = class ApartmentI
                 userId: params.tenantId,
                 type: 'tenant-invitation',
                 channel: 'Invitation',
-                title: 'Р”РѕСЃС‚СѓРї Рє РєРІР°СЂС‚РёСЂРµ',
-                description: `Р’Р°Рј РІС‹РґР°РЅ РґРѕСЃС‚СѓРї Рє РєРІР°СЂС‚РёСЂРµ ${params.apartmentNumber || ''}${params.buildingName ? ` (${params.buildingName})` : ''}.`,
+                title: 'Доступ к квартире',
+                description: `Вам выдан доступ к квартире ${params.apartmentNumber || ''}${params.buildingName ? ` (${params.buildingName})` : ''}.`,
                 actionHref: this.buildInvitationActionHref(params.invitationLink),
-                actionLabel: 'РџСЂРёРЅСЏС‚СЊ РґРѕСЃС‚СѓРї',
+                actionLabel: 'Принять доступ',
                 apartmentNumber: params.apartmentNumber || null,
                 buildingName: params.buildingName || null,
                 companyName: params.companyName || null,
@@ -179,17 +180,6 @@ let ApartmentInvitationService = ApartmentInvitationService_1 = class ApartmentI
                 revokedAt: firestore_1.FieldValue.serverTimestamp(),
             });
         }));
-    }
-    firstString(...values) {
-        for (const value of values) {
-            if (typeof value === 'string' && value.trim()) {
-                return value.trim();
-            }
-            if (typeof value === 'number' && Number.isFinite(value)) {
-                return String(value);
-            }
-        }
-        return '';
     }
 };
 exports.ApartmentInvitationService = ApartmentInvitationService;

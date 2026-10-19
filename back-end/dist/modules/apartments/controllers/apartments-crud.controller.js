@@ -22,6 +22,7 @@ const roles_guard_1 = require("../../../common/auth/roles.guard");
 const role_constants_1 = require("../../../common/auth/role.constants");
 const apartments_service_1 = require("../apartments.service");
 const create_apartment_dto_1 = require("../dto/create-apartment.dto");
+const building_stats_invalidation_interceptor_1 = require("../../../common/interceptors/building-stats-invalidation.interceptor");
 let ApartmentsCrudController = class ApartmentsCrudController {
     constructor(apartmentsService) {
         this.apartmentsService = apartmentsService;
@@ -118,6 +119,7 @@ __decorate([
 exports.ApartmentsCrudController = ApartmentsCrudController = __decorate([
     (0, swagger_1.ApiTags)('Apartments'),
     (0, common_1.Controller)('apartments'),
+    (0, common_1.UseInterceptors)(building_stats_invalidation_interceptor_1.BuildingStatsInvalidationInterceptor),
     (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('ManagementCompany', 'Accountant'),
     (0, swagger_1.ApiBearerAuth)(),

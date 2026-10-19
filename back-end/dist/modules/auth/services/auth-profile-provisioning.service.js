@@ -15,6 +15,7 @@ const config_1 = require("@nestjs/config");
 const firestore_1 = require("firebase-admin/firestore");
 const role_constants_1 = require("../../../common/auth/role.constants");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
+const background_1 = require("../../../common/utils/background");
 let AuthProfileProvisioningService = class AuthProfileProvisioningService {
     constructor(firebaseAdminService, configService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -163,9 +164,9 @@ let AuthProfileProvisioningService = class AuthProfileProvisioningService {
             await ref.set(nextData, { merge: true });
         }
         if (current.storageFoldersStatus !== 'ready') {
-            void this.ensureCompanyStorageFolders(ref, input.uid).catch((error) => {
+            (0, background_1.runInBackground)(this.ensureCompanyStorageFolders(ref, input.uid).catch((error) => {
                 console.error('Failed to schedule management company storage folders:', error);
-            });
+            }), 'storage_folders');
         }
         return nextData;
     }
