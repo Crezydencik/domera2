@@ -114,15 +114,20 @@ let BuildingStatsService = class BuildingStatsService {
         };
     }
     isApartmentOccupied(apartment) {
-        const residentId = typeof apartment.residentId === 'string' ? apartment.residentId.trim() : '';
-        if (residentId) {
-            return true;
-        }
-        if (apartment.ownerActivated === true || apartment.ownerActivated === 'true') {
+        const hasActiveOwner = (apartment.ownerActivated === true || apartment.ownerActivated === 'true') &&
+            ((typeof apartment.ownerId === 'string' && apartment.ownerId.trim().length > 0) ||
+                (typeof apartment.ownerEmail === 'string' && apartment.ownerEmail.trim().length > 0));
+        if (hasActiveOwner) {
             return true;
         }
         const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
-        return tenants.some((tenant) => tenant && typeof tenant === 'object');
+        return tenants.some((tenant) => {
+            if (!tenant || typeof tenant !== 'object')
+                return false;
+            const record = tenant;
+            const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : '';
+            return !['removed', 'deleted', 'revoked', 'inactive'].includes(status) && (record.activated === true || Boolean(record.acceptedAt) || Boolean(record.activatedAt) || status === 'active' || status === 'accepted');
+        });
     }
     firstNumber(...values) {
         for (const value of values) {

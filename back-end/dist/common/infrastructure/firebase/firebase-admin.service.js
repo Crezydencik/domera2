@@ -16,6 +16,10 @@ const app_1 = require("firebase-admin/app");
 const auth_1 = require("firebase-admin/auth");
 const firestore_1 = require("firebase-admin/firestore");
 const storage_1 = require("firebase-admin/storage");
+const concurrency_1 = require("../../utils/concurrency");
+const STORAGE_FOLDER_CREATE_CONCURRENCY = 2;
+const STORAGE_RATE_LIMIT_RETRIES = 4;
+const STORAGE_RATE_LIMIT_DELAY_MS = 500;
 const normalizePrivateKey = (value) => {
     const trimmed = value.trim();
     const unwrapped = (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
@@ -64,25 +68,33 @@ let FirebaseAdminService = class FirebaseAdminService {
             throw new Error('Storage folder path is required');
         }
         const markerPath = `${normalized}/.keep`;
-        try {
-            await this.storageBucket.file(markerPath).save('', {
-                metadata: { contentType: 'application/x-directory' },
-            });
-        }
-        catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to create storage folder ${folderPath}: ${message}`);
+        for (let attempt = 0;; attempt += 1) {
+            try {
+                await this.storageBucket.file(markerPath).save('', {
+                    metadata: { contentType: 'application/x-directory' },
+                });
+                return;
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                const isRateLimited = /\b429\b|rate.?limit|too many requests/i.test(message);
+                if (!isRateLimited || attempt >= STORAGE_RATE_LIMIT_RETRIES) {
+                    throw new Error(`Failed to create storage folder ${folderPath}: ${message}`);
+                }
+                await new Promise((resolve) => setTimeout(resolve, STORAGE_RATE_LIMIT_DELAY_MS * 2 ** attempt));
+            }
         }
     }
     async createStorageFolders(folderPaths) {
         if (!Array.isArray(folderPaths) || folderPaths.length === 0) {
             return;
         }
-        const results = await Promise.allSettled(folderPaths.map((path) => this.createStorageFolder(path)));
+        const uniquePaths = Array.from(new Set(folderPaths.map((path) => String(path ?? '').trim()).filter(Boolean)));
+        const results = await (0, concurrency_1.mapWithConcurrency)(uniquePaths, STORAGE_FOLDER_CREATE_CONCURRENCY, (path) => this.createStorageFolder(path));
         const errors = results
             .map((result, index) => {
             if (result.status === 'rejected') {
-                return `${folderPaths[index]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`;
+                return `${uniquePaths[index]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`;
             }
             return null;
         })

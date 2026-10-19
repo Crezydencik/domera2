@@ -805,7 +805,9 @@ export default async function ApartmentDetailsPage({
               ownerData={{
                 email: ownerEmail,
                 userId: typeof apartment.ownerId === "string" ? apartment.ownerId : undefined,
-                activated: Boolean(apartment.ownerActivated) || Boolean(apartment.ownerAcceptedAt),
+                activated:
+                  (apartment.ownerActivated === true || apartment.ownerActivated === "true") &&
+                  Boolean(ownerEmail && ownerEmail !== "—"),
                 invitedAt: formatPossibleDate(apartment.ownerInvitedAt ?? baseApartment.ownerInvitedAt),
               }}
               inviteHistory={Array.isArray(apartment.ownerInviteHistory) ? apartment.ownerInviteHistory : []}

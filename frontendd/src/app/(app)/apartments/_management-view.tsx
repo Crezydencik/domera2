@@ -50,14 +50,21 @@ function compareApartmentOrder(a: Record<string, unknown>, b: Record<string, unk
 type ApartmentOccupancyStatus = "occupied" | "pending" | "vacant";
 
 function isActiveOccupant(record: Record<string, unknown>) {
-  if (record.activated === true || record.acceptedAt || record.activatedAt) return true;
   const status = typeof record.status === "string" ? record.status.trim().toLowerCase() : "";
+  if (["removed", "deleted", "revoked", "inactive"].includes(status)) return false;
+  if (record.activated === true || record.acceptedAt || record.activatedAt) return true;
   return status === "active" || status === "accepted";
+}
+
+function hasCurrentOwner(record: Record<string, unknown>) {
+  return hasReadableText(record.ownerId) || hasReadableText(record.ownerEmail);
 }
 
 function getApartmentOccupancyStatus(apartment: Record<string, unknown>): ApartmentOccupancyStatus {
   const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
-  const ownerActivated = apartment.ownerActivated === true || apartment.ownerActivated === "true" || Boolean(apartment.ownerAcceptedAt);
+  const ownerActivated =
+    (apartment.ownerActivated === true || apartment.ownerActivated === "true") &&
+    hasCurrentOwner(apartment);
   const activeTenant = tenants.some((tenant) => tenant && typeof tenant === "object" && isActiveOccupant(tenant as Record<string, unknown>));
   const pendingTenant = tenants.some((tenant) => {
     if (!tenant || typeof tenant !== "object") return false;
@@ -234,13 +241,12 @@ export function ApartmentsManagementView({
   const managementMenuApartments: ManagementActionApartment[] = useMemo(() => filteredApartments.map((item) => {
     const residentIdValue = item.residentId;
     const residentId = hasReadableText(residentIdValue) ? residentIdValue.trim() : undefined;
-    const resolvedOwnerFromResident = residentId ? residentById.get(residentId) : undefined;
     const occupancyStatus = getApartmentOccupancyStatus(item);
-    const rawOwner = hasReadableText(item.owner)
+    const rawOwner = hasCurrentOwner(item) && hasReadableText(item.owner)
       ? String(item.owner)
       : hasReadableText(item.ownerEmail)
         ? String(item.ownerEmail)
-        : resolvedOwnerFromResident?.fullName || "";
+        : "";
 
     return {
       id: String(item.id ?? item.apartmentId ?? item.number ?? "—"),
@@ -271,14 +277,22 @@ export function ApartmentsManagementView({
     const residentId = hasReadableText(residentIdValue) ? residentIdValue.trim() : undefined;
     const resolvedOwnerFromResident = residentId ? residentById.get(residentId) : undefined;
     const residentName = resolvedOwnerFromResident?.fullName;
-    const rawOwner = hasReadableText(item.owner)
+    const rawOwner = hasCurrentOwner(item) && hasReadableText(item.owner)
       ? String(item.owner)
       : hasReadableText(item.ownerEmail)
         ? String(item.ownerEmail)
-        : resolvedOwnerFromResident?.fullName || "";
+        : "";
     const owner = rawOwner && !looksLikeOpaqueId(rawOwner) ? rawOwner : t("common.notSpecified");
     const tenantNames = Array.isArray(item.tenants)
       ? item.tenants
+          .filter((tenant) => {
+            if (!tenant || typeof tenant !== "object") return false;
+            const tenantRecord = tenant as Record<string, unknown>;
+            const status = typeof tenantRecord.status === "string"
+              ? tenantRecord.status.trim().toLowerCase()
+              : "";
+            return !["removed", "deleted", "revoked", "inactive"].includes(status);
+          })
           .map((tenant) => {
             if (!tenant || typeof tenant !== "object") return "";
             const record = tenant as Record<string, unknown>;

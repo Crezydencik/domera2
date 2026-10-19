@@ -38,7 +38,7 @@ export declare class InvoicesController {
             createdByUid: string;
         };
     }>;
-    upload(request: Request, user: RequestUser, uploadedFiles: UploadedBinaryFile[] | undefined, body: Record<string, unknown>): Promise<{
+    upload(request: Request, user: RequestUser, uploadedFiles: UploadedBinaryFile[] | undefined, body: Record<string, unknown>): Promise<Record<string, unknown>> | Promise<{
         success: boolean;
         approval_id: string;
         company_id: string;

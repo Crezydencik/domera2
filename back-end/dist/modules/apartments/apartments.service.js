@@ -33,6 +33,7 @@ const apartment_members_1 = require("../../common/utils/apartment-members");
 const background_1 = require("../../common/utils/background");
 const ttl_cache_1 = require("../../common/utils/ttl-cache");
 const values_1 = require("../../common/utils/values");
+const concurrency_1 = require("../../common/utils/concurrency");
 const OWNER_UID_BY_EMAIL = new ttl_cache_1.TtlCache({ ttlMs: 5 * 60 * 1000, maxEntries: 5000 });
 const APARTMENT_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
 const APARTMENT_IMPORT_MAX_ROWS = 5_000;
@@ -1180,10 +1181,13 @@ let ApartmentsService = ApartmentsService_1 = class ApartmentsService {
         if (importedApartmentIds.length > 0) {
             await this.apartmentsRepository.commitInChunks(writeOperations);
             await db.collection('buildings').doc(buildingId).set({ apartmentIds: firestore_1.FieldValue.arrayUnion(...importedApartmentIds) }, { merge: true });
-            await Promise.all(importedApartmentStorageFolders.map((apartment) => this.markStorageFolders(db.collection('apartments').doc(apartment.id), [
-                ...this.getBuildingStorageFolders(companyId, buildingId),
-                ...this.getApartmentStorageFolders(companyId, buildingId, apartment.id),
-            ], 'imported apartment')));
+            try {
+                await this.firebaseAdminService.createStorageFolders(this.getBuildingStorageFolders(companyId, buildingId));
+            }
+            catch (error) {
+                this.logger.error(`Failed to create shared storage folders for imported apartments in building ${buildingId}`, error instanceof Error ? error.stack : String(error));
+            }
+            await (0, concurrency_1.mapWithConcurrency)(importedApartmentStorageFolders, 2, (apartment) => this.markStorageFolders(db.collection('apartments').doc(apartment.id), this.getApartmentStorageFolders(companyId, buildingId, apartment.id), 'imported apartment'));
         }
         (0, background_1.runInBackground)(this.auditLogService.write({
             request,

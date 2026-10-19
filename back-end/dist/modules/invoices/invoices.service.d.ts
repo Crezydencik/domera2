@@ -24,6 +24,9 @@ export declare class InvoicesService {
     private normalizeSource;
     private normalizeStatus;
     private normalizeRecipientType;
+    private readChunkNumber;
+    private invoiceChunkPrefix;
+    uploadZipChunk(request: Request, user: RequestUser, file: UploadedInvoiceFile, payload: Record<string, unknown>): Promise<Record<string, unknown>>;
     private externalDedupeValue;
     private isActiveTenantRecord;
     private hasActiveTenant;

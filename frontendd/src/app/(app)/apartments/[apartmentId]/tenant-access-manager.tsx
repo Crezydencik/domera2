@@ -73,6 +73,19 @@ function isTenantConfirmed(tenant: Record<string, unknown>) {
   return status === "accepted" || status === "active";
 }
 
+function isRemovedTenant(tenant: unknown) {
+  if (!tenant || typeof tenant !== "object") return false;
+  const tenantRecord = tenant as Record<string, unknown>;
+  const status = typeof tenantRecord.status === "string"
+    ? tenantRecord.status.trim().toLowerCase()
+    : "";
+  return ["removed", "deleted", "revoked", "inactive"].includes(status);
+}
+
+function tenantIdentifier(tenant: Record<string, unknown>) {
+  return String(tenant.userId ?? tenant.email ?? "");
+}
+
 function splitTenantName(value: unknown) {
   const parts = String(value ?? "").trim().split(/\s+/).filter(Boolean);
   return {
@@ -287,14 +300,19 @@ export function TenantAccessManager({
 
   const columnsWithActions = tenantColumns ? [...tenantColumns, t("ownerTable.actions")] : undefined;
   const activeTab = canManageOwner ? tab : "tenants";
-  const hasTenants = Array.isArray(tenantsState) && tenantsState.length > 0;
+  // Removed tenants stay in Firestore as history, but must not be shown as
+  // current tenants or block adding that person again.
+  const visibleTenants = Array.isArray(tenantsState)
+    ? tenantsState.filter((tenant) => !isRemovedTenant(tenant))
+    : [];
+  const hasTenants = visibleTenants.length > 0;
 
   const rowsWithActions = hasTenants
-    ? tenantsState.map((tenant: any, idx: number) => {
+    ? visibleTenants.map((tenant: any, idx: number) => {
         const nameFromFullName = splitTenantName(tenant?.name ?? tenant?.email);
         const firstName = tenant?.firstName ?? nameFromFullName.firstName;
         const lastName = tenant?.lastName ?? nameFromFullName.lastName;
-        const tenantId = tenant?.userId || tenant?.email || "";
+        const tenantId = tenantIdentifier(tenant ?? {});
         const tenantEmail = normalizeSearchText(tenant?.email);
         const tenantName = normalizeSearchText(`${tenant?.firstName ?? ""} ${tenant?.lastName ?? ""}`.trim() || tenant?.name);
         const tenantConfirmed = isTenantConfirmed(tenant ?? {});
@@ -335,8 +353,8 @@ export function TenantAccessManager({
                   onConfirm: async () => {
                     try {
                       await resendApartmentTenantInvitation(apartmentId, tenantEmail);
-                      setTenantsState((current: any[]) => current.map((item, itemIndex) => {
-                        if (itemIndex !== idx) return item;
+                      setTenantsState((current: any[]) => current.map((item) => {
+                        if (tenantIdentifier(item ?? {}) !== tenantId) return item;
                         return {
                           ...item,
                           status: "Pending",
@@ -394,7 +412,7 @@ export function TenantAccessManager({
                 onConfirm: async () => {
                   try {
                     await removeApartmentTenant(apartmentId, tenantId);
-                    setTenantsState((prev: any[]) => prev.filter((_, i) => i !== idx));
+                    setTenantsState((prev: any[]) => prev.filter((item) => tenantIdentifier(item ?? {}) !== tenantId));
                     notifications.success(t("alerts.deleteSuccess"));
                     router.refresh();
                   } catch {
@@ -719,7 +737,7 @@ export function TenantAccessManager({
                 for (const tenant of tenantsState) {
                   if (tenant && typeof tenant === 'object') {
                     const tenantRecord = tenant as Record<string, unknown>;
-                    if (typeof tenantRecord.email === 'string' && normalizedEmail === tenantRecord.email.toLowerCase()) {
+                    if (!isRemovedTenant(tenantRecord) && typeof tenantRecord.email === 'string' && normalizedEmail === tenantRecord.email.toLowerCase()) {
                       notifications.error(t("errors.emailCantBeTenantEmail"));
                       return;
                     }

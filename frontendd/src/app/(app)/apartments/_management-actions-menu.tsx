@@ -327,13 +327,14 @@ export function ApartmentsManagementActionsMenu({
         const name = textValue(record.owner, fallbackName, email);
         const tenants = Array.isArray(record.tenants) ? record.tenants : [];
         const occupied =
-          booleanValue(record.ownerActivated) ||
-          Boolean(textValue(record.ownerAcceptedAt)) ||
+          (booleanValue(record.ownerActivated) && Boolean(textValue(record.ownerId, record.ownerEmail))) ||
           tenants.some((tenant) => {
             if (!tenant || typeof tenant !== "object") return false;
             const tenantRecord = tenant as Record<string, unknown>;
             const status = textValue(tenantRecord.status).toLowerCase();
-            return booleanValue(tenantRecord.activated) || Boolean(textValue(tenantRecord.acceptedAt, tenantRecord.activatedAt)) || status === "active" || status === "accepted";
+            return !["removed", "deleted", "revoked", "inactive"].includes(status) && (
+              booleanValue(tenantRecord.activated) || Boolean(textValue(tenantRecord.acceptedAt, tenantRecord.activatedAt)) || status === "active" || status === "accepted"
+            );
           });
         const pendingInvitation = pendingInvitationsByApartment.get(apartmentId);
         const invitationId = pendingInvitation?.id;

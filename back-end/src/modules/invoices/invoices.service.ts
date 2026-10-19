@@ -30,6 +30,10 @@ import { InvoicePdfStorageService } from './services/invoice-pdf-storage.service
 import { InvoiceUploadHistoryService } from './services/invoice-upload-history.service';
 import { InvoiceZipExtractor } from './services/invoice-zip-extractor';
 
+const INVOICE_UPLOAD_CHUNK_MAX_BYTES = 24 * 1024 * 1024;
+const INVOICE_UPLOAD_CHUNK_MAX_COUNT = 25;
+const INVOICE_UPLOAD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$/;
+
 @Injectable()
 export class InvoicesService {
   private readonly logger = new Logger(InvoicesService.name);
@@ -78,6 +82,150 @@ export class InvoicesService {
     return INVOICE_RECIPIENT_TYPES.has(normalized as InvoiceRecipientType)
       ? (normalized as InvoiceRecipientType)
       : 'general';
+  }
+
+  private readChunkNumber(value: unknown, name: string, min: number, max: number): number {
+    const raw = firstString(value);
+    if (!/^\d+$/.test(raw)) {
+      throw new BadRequestException(`${name} must be an integer`);
+    }
+
+    const parsed = Number(raw);
+    if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+      throw new BadRequestException(`${name} is out of range`);
+    }
+
+    return parsed;
+  }
+
+  private invoiceChunkPrefix(companyId: string, userId: string, uploadId: string): string {
+    // The user identity is hashed so raw Firebase UIDs or API-key labels never become object paths.
+    const actorHash = createHash('sha256').update(userId).digest('hex').slice(0, 32);
+    const safeCompanyId = this.pdfStorage.sanitizePathSegment(companyId);
+    return `companies/${safeCompanyId}/invoice_import_chunks/${actorHash}/${uploadId}`;
+  }
+
+  /**
+   * Receives a ZIP in pieces below Cloud Run's HTTP/1 request limit.  The original `items` JSON is
+   * deliberately passed through untouched on the final chunk, so existing invoice integrations do
+   * not need to change their billing payload.
+   */
+  async uploadZipChunk(
+    request: Request,
+    user: RequestUser,
+    file: UploadedInvoiceFile,
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    this.assertAuthenticated(user);
+    const companyId = this.requireStaffCompanyId(user);
+    const uploadId = firstString(payload.uploadId);
+    if (!INVOICE_UPLOAD_ID_PATTERN.test(uploadId)) {
+      throw new BadRequestException('uploadId must be a 16-128 character opaque identifier');
+    }
+
+    const chunkTotal = this.readChunkNumber(payload.chunkTotal, 'chunkTotal', 1, INVOICE_UPLOAD_CHUNK_MAX_COUNT);
+    const chunkIndex = this.readChunkNumber(payload.chunkIndex, 'chunkIndex', 0, chunkTotal - 1);
+    const chunkSize = file.size ?? file.buffer?.length ?? 0;
+    if (!file.buffer || chunkSize <= 0 || chunkSize !== file.buffer.length) {
+      throw new BadRequestException('ZIP chunk is empty or invalid');
+    }
+    if (chunkSize > INVOICE_UPLOAD_CHUNK_MAX_BYTES) {
+      throw new BadRequestException('Each ZIP chunk must be 24 MiB or smaller');
+    }
+    if (!this.zipExtractor.isZipFile(file)) {
+      throw new BadRequestException('Chunked upload accepts ZIP files only');
+    }
+    if (payload.items !== undefined && chunkIndex !== chunkTotal - 1) {
+      throw new BadRequestException('items JSON may only be sent with the final ZIP chunk');
+    }
+
+    await this.rateLimitService.enforce(request, 'invoice:upload-chunk', user.uid, 40, 60_000);
+
+    const prefix = this.invoiceChunkPrefix(companyId, user.uid, uploadId);
+    const chunkPath = `${prefix}/parts/${String(chunkIndex).padStart(3, '0')}`;
+    const chunkFile = this.firebaseAdminService.storageBucket.file(chunkPath);
+    const [alreadyExists] = await chunkFile.exists();
+    if (alreadyExists) {
+      throw new ConflictException(`ZIP chunk ${chunkIndex} was already uploaded`);
+    }
+
+    // Do not persist the final chunk until all earlier chunks exist.  Otherwise an accidental
+    // out-of-order final request could make a retry impossible without creating a new uploadId.
+    if (chunkIndex === chunkTotal - 1 && chunkTotal > 1) {
+      const earlierParts = Array.from(
+        { length: chunkTotal - 1 },
+        (_, index) => this.firebaseAdminService.storageBucket.file(`${prefix}/parts/${String(index).padStart(3, '0')}`),
+      );
+      const missingEarlier = (await Promise.all(earlierParts.map(async (part, index) => {
+        const [exists] = await part.exists();
+        return exists ? null : index;
+      }))).filter((index): index is number => index !== null);
+      if (missingEarlier.length > 0) {
+        throw new BadRequestException(`Upload chunks must be sent in order; missing: ${missingEarlier.join(', ')}`);
+      }
+    }
+
+    await chunkFile.save(file.buffer, {
+      resumable: false,
+      metadata: {
+        contentType: 'application/octet-stream',
+        metadata: {
+          uploadId,
+          companyId,
+          actorUidHash: createHash('sha256').update(user.uid).digest('hex').slice(0, 32),
+          chunkIndex: String(chunkIndex),
+          chunkTotal: String(chunkTotal),
+          originalName: this.pdfStorage.sanitizePathSegment(firstString(file.originalname, 'invoices.zip')),
+        },
+      },
+    });
+
+    if (chunkIndex !== chunkTotal - 1) {
+      return {
+        success: true,
+        upload_id: uploadId,
+        received_chunk: chunkIndex,
+        remaining_chunks: chunkTotal - chunkIndex - 1,
+      };
+    }
+
+    const partPaths = Array.from({ length: chunkTotal }, (_, index) => `${prefix}/parts/${String(index).padStart(3, '0')}`);
+    const partFiles = partPaths.map((path) => this.firebaseAdminService.storageBucket.file(path));
+    const present = await Promise.all(partFiles.map(async (part, index) => {
+      const [exists] = await part.exists();
+      return exists ? null : index;
+    }));
+    const missing = present.filter((index): index is number => index !== null);
+    if (missing.length > 0) {
+      throw new BadRequestException(`Missing ZIP chunks: ${missing.join(', ')}`);
+    }
+
+    const assembledPath = `${prefix}/assembled.zip`;
+    const assembledFile = this.firebaseAdminService.storageBucket.file(assembledPath);
+    try {
+      await this.firebaseAdminService.storageBucket.combine(partFiles, assembledFile);
+      const [archive] = await assembledFile.download();
+      if (archive.length > 500 * 1024 * 1024) {
+        throw new BadRequestException('ZIP archive is too large');
+      }
+
+      return await this.uploadBatch(request, user, [{
+        fieldname: 'files',
+        buffer: archive,
+        originalname: firstString(file.originalname, 'invoices.zip'),
+        mimetype: 'application/zip',
+        size: archive.length,
+      }], payload);
+    } finally {
+      // Chunks may contain invoice data.  Never retain a partial or assembled archive after the request.
+      await Promise.all([...partFiles, assembledFile].map(async (temporaryFile) => {
+        try {
+          await temporaryFile.delete({ ignoreNotFound: true });
+        } catch (error) {
+          this.logger.warn(`invoice.upload_chunk.cleanup_failed path=${temporaryFile.name} reason=${errorMessage(error)}`);
+        }
+      }));
+    }
   }
 
   private externalDedupeValue(externalId: string, recipientType: InvoiceRecipientType): string {

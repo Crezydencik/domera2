@@ -130,9 +130,19 @@ function filterApartmentsByBuildings(items: UnknownRecord[], buildings: Building
 }
 
 function isOccupiedApartment(item: UnknownRecord): boolean {
-  if (typeof item.residentId === "string" && item.residentId.trim()) return true;
-  if (item.ownerActivated === true || item.ownerActivated === "true") return true;
-  return Array.isArray(item.tenants) && item.tenants.some((tenant) => tenant && typeof tenant === "object");
+  const hasActiveOwner =
+    (item.ownerActivated === true || item.ownerActivated === "true") &&
+    (typeof item.ownerId === "string" && item.ownerId.trim() || typeof item.ownerEmail === "string" && item.ownerEmail.trim());
+  if (hasActiveOwner) return true;
+
+  return Array.isArray(item.tenants) && item.tenants.some((tenant) => {
+    if (!tenant || typeof tenant !== "object") return false;
+    const record = tenant as UnknownRecord;
+    const status = typeof record.status === "string" ? record.status.trim().toLowerCase() : "";
+    return !["removed", "deleted", "revoked", "inactive"].includes(status) && (
+      record.activated === true || Boolean(record.acceptedAt) || Boolean(record.activatedAt) || status === "active" || status === "accepted"
+    );
+  });
 }
 
 // Registry pages already receive the complete apartment list. Deriving these

@@ -224,6 +224,17 @@ export class InvoicesController {
         || mimetype === 'multipart/x-zip';
     });
 
+    const isChunkedUpload = uploadBody.uploadId !== undefined
+      || uploadBody.chunkIndex !== undefined
+      || uploadBody.chunkTotal !== undefined;
+    if (isChunkedUpload) {
+      if (files.length !== 1 || !isZip) {
+        throw new BadRequestException('Chunked upload accepts exactly one ZIP chunk');
+      }
+
+      return this.invoicesService.uploadZipChunk(request, user, files[0]!, uploadBody);
+    }
+
     if (files.length === 1 && !isZip && !hasBatchMetadata) {
       return this.invoicesService.upload(request, user, files[0]!, uploadBody);
     }

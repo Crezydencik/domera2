@@ -33,6 +33,7 @@ import { MEMBER_KEYS_VERSION, computeApartmentMemberKeys } from '../../common/ut
 import { runInBackground } from '../../common/utils/background';
 import { TtlCache } from '../../common/utils/ttl-cache';
 import { firstString } from '../../common/utils/values';
+import { mapWithConcurrency } from '../../common/utils/concurrency';
 
 const OWNER_UID_BY_EMAIL = new TtlCache<string, string | null>({ ttlMs: 5 * 60 * 1000, maxEntries: 5000 });
 const APARTMENT_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
@@ -1433,12 +1434,25 @@ export class ApartmentsService {
         { merge: true },
       );
 
-      await Promise.all(importedApartmentStorageFolders.map((apartment) =>
-        this.markStorageFolders(db.collection('apartments').doc(apartment.id), [
-          ...this.getBuildingStorageFolders(companyId, buildingId),
-          ...this.getApartmentStorageFolders(companyId, buildingId, apartment.id),
-        ], 'imported apartment'),
-      ));
+      // Building folders are shared. Creating them once, then processing apartments
+      // in a small queue avoids hundreds of simultaneous Cloud Storage writes.
+      try {
+        await this.firebaseAdminService.createStorageFolders(this.getBuildingStorageFolders(companyId, buildingId));
+      } catch (error) {
+        // Storage markers are optional scaffolding. The imported apartments remain
+        // usable and their own folder status is recorded below for later repair.
+        this.logger.error(
+          `Failed to create shared storage folders for imported apartments in building ${buildingId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+      await mapWithConcurrency(importedApartmentStorageFolders, 2, (apartment) =>
+        this.markStorageFolders(
+          db.collection('apartments').doc(apartment.id),
+          this.getApartmentStorageFolders(companyId, buildingId, apartment.id),
+          'imported apartment',
+        ),
+      );
     }
 
     runInBackground(this.auditLogService.write({
