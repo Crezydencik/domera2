@@ -989,7 +989,7 @@ export function InvoicesWorkspace({
     setLivePendingApprovalsError(undefined);
 
     try {
-      const response = await getPendingInvoiceApprovals({ companyId, limit: 100 });
+      const response = await getPendingInvoiceApprovals({ companyId, limit: 1000 });
       setLivePendingApprovals(Array.isArray(response.items) ? response.items : []);
     } catch (error) {
       setLivePendingApprovalsError(error instanceof Error ? error.message : "");
