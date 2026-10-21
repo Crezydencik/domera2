@@ -1730,6 +1730,7 @@ export class InvoicesService {
     user: RequestUser,
     file: UploadedInvoiceFile,
     payload: Record<string, unknown>,
+    options: { skipRateLimit?: boolean } = {},
   ) {
     this.assertAuthenticated(user);
     if (!this.isStaff(user)) {
@@ -1770,13 +1771,17 @@ export class InvoicesService {
     try {
       this.validatePdfFile(file);
 
-      const rl = await this.rateLimitService.consume(
-        this.rateLimitService.buildKey(request, 'invoice:upload', user.uid),
-        60,
-        60_000,
-      );
-      if (!rl.allowed) {
-        throw new TooManyRequestsException(rl.resetAt);
+      // A batch has its own request-level limit. Charging its individual files again would make
+      // batches above 60 files fail partway through despite the documented 200-file batch limit.
+      if (!options.skipRateLimit) {
+        const rl = await this.rateLimitService.consume(
+          this.rateLimitService.buildKey(request, 'invoice:upload', user.uid),
+          60,
+          60_000,
+        );
+        if (!rl.allowed) {
+          throw new TooManyRequestsException(rl.resetAt);
+        }
       }
 
       const externalId = firstString(payload.externalId, payload.external_id);
@@ -2814,7 +2819,7 @@ export class InvoicesService {
         try {
           const result = await this.upload(request, user, job.file, {
             ...job.payload,
-          });
+          }, { skipRateLimit: true });
           const uploadResult = result as {
             invoice_id?: string;
             approval_id?: string;
