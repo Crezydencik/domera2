@@ -2179,7 +2179,7 @@ export class InvoicesService {
       companyId: firstString(query.companyId),
       buildingId: firstString(query.buildingId, query.building_id),
     });
-    const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50));
+    const limit = Math.min(1000, Math.max(1, Number(query.limit ?? 50) || 50));
 
     const snapshots = await Promise.all(
       buildingIds.map(async (buildingId) => ({

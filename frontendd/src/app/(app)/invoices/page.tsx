@@ -35,7 +35,7 @@ export default async function InvoicesPage({
   const pendingApprovals =
     data.role === "managementCompany" && data.companyId
       ? await loadInvoiceList(
-          `/invoices/pending-approvals?companyId=${encodeURIComponent(data.companyId)}&limit=100`,
+          `/invoices/pending-approvals?companyId=${encodeURIComponent(data.companyId)}&limit=1000`,
         )
       : { items: [] };
 
