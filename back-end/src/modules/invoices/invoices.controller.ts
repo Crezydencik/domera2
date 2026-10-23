@@ -417,6 +417,20 @@ export class InvoicesController {
     return this.invoicesService.cancelPendingApprovals(request, user, body);
   }
 
+  @Post('delete-all')
+  @UseGuards(FirebaseAuthGuard, RolesGuard)
+  @Roles(...STAFF_ROLES)
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Delete multiple invoices' })
+  @ApiOkResponse({ description: 'Invoices deleted.' })
+  deleteInvoices(
+    @Req() request: Request,
+    @CurrentUser() user: RequestUser,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.invoicesService.deleteInvoices(request, user, body);
+  }
+
   @Delete('pending-approvals/:approvalId')
   @UseGuards(FirebaseAuthGuard, RolesGuard)
   @Roles(...STAFF_ROLES)

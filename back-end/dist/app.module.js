@@ -21,6 +21,7 @@ const email_module_1 = require("./modules/emails/email.module");
 const invoices_module_1 = require("./modules/invoices/invoices.module");
 const invitations_module_1 = require("./modules/invitations/invitations.module");
 const meter_readings_module_1 = require("./modules/meter-readings/meter-readings.module");
+const messages_module_1 = require("./modules/messages/messages.module");
 const news_module_1 = require("./modules/news/news.module");
 const notifications_module_1 = require("./modules/notifications/notifications.module");
 const projects_module_1 = require("./modules/projects/projects.module");
@@ -48,6 +49,7 @@ exports.AppModule = AppModule = __decorate([
             apartments_module_1.ApartmentsModule,
             invoices_module_1.InvoicesModule,
             meter_readings_module_1.MeterReadingsModule,
+            messages_module_1.MessagesModule,
             notifications_module_1.NotificationsModule,
             projects_module_1.ProjectsModule,
             news_module_1.NewsModule,

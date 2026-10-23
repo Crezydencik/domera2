@@ -7,6 +7,7 @@ import { EmailService } from '../../emails/services/email.service';
 import { MeterReadingAccessService } from './meter-reading-access.service';
 import { legacyScopeQuery } from '../../../common/utils/legacy-scope';
 import { firstString } from '../../../common/utils/values';
+import { meterKeyUtility, meterReadingKeysIn } from '../types/meter-reading.types';
 
 type UtilityKind = 'water' | 'electricity';
 type ReminderKind = 'start' | 'end' | 'close';
@@ -359,9 +360,8 @@ export class MeterReadingReminderService {
 
   private hasCurrentMonthReading(apartment: Record<string, unknown>, utility: UtilityKind, now: Date) {
     const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
-    const keys = utility === 'water'
-      ? ['coldmeterwater', 'hotmeterwater']
-      : ['electricitymeter'];
+    // Все счётчики этого ресурса, включая дополнительные (coldmeterwater_2 …).
+    const keys = meterReadingKeysIn(wr).filter((key) => meterKeyUtility(key) === utility);
 
     return keys.some((key) => {
       const group = wr[key] as Record<string, unknown> | undefined;

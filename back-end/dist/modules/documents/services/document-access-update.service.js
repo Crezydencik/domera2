@@ -105,8 +105,17 @@ let DocumentAccessUpdateService = class DocumentAccessUpdateService {
                         throw new common_1.ForbiddenException(buildingId ? 'Access denied for building' : 'Company scope is required');
                     }
                 }
-                else if (!companyId && user.companyId) {
-                    companyId = user.companyId;
+                else {
+                    if (!companyId && user.companyId)
+                        companyId = user.companyId;
+                    buildingId = this.helperService.firstString(body.buildingId, current.buildingId);
+                    if (buildingId) {
+                        const building = await this.metadataService.getBuilding(buildingId);
+                        if (this.metadataService.resolveCompanyId(building, '') !== this.accessService.requireStaffCompanyId(user)) {
+                            throw new common_1.ForbiddenException('Access denied for building');
+                        }
+                        buildingName = this.helperService.firstString(building.name, building.address, buildingId);
+                    }
                 }
             }
             else {

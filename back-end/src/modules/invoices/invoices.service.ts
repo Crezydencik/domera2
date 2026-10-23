@@ -23,10 +23,11 @@ import { findCandidateApartments } from '../../common/utils/apartment-members';
 import { sanitizeClientPayload } from '../../common/utils/client-payload';
 import { runInBackground } from '../../common/utils/background';
 import { firstString, errorMessage } from '../../common/utils/values';
-import { INVOICE_PROTECTED_FIELDS, MAX_INVOICE_PDF_BYTES, MAX_INVOICE_BATCH_FILES, INVOICE_BATCH_UPLOAD_CONCURRENCY, INVOICE_TRASH_RETENTION_DAYS, INVOICE_STATUSES, INVOICE_RECIPIENT_TYPES, UPLOAD_SOURCES, INVOICE_METER_READING_KEYS } from './invoice.types';
+import { INVOICE_PROTECTED_FIELDS, MAX_INVOICE_PDF_BYTES, MAX_INVOICE_BATCH_FILES, INVOICE_BATCH_UPLOAD_CONCURRENCY, INVOICE_TRASH_RETENTION_DAYS, INVOICE_STATUSES, INVOICE_RECIPIENT_TYPES, UPLOAD_SOURCES } from './invoice.types';
 import type { UploadedInvoiceFile, InvoiceUploadRequest, InvoiceUploadSource, InvoiceRecipientType, ResolvedApartment, UploadHistoryInput, InvoiceDocumentLocation, PendingInvoiceApprovalLocation, ApartmentInvoiceContext, InvoiceMeterReadingKey, InvoicePdfPayload } from './invoice.types';
 import { firestoreDateToIso, firestoreDateToMillis } from '../../common/utils/firestore-dates';
 import { InvoicePdfStorageService } from './services/invoice-pdf-storage.service';
+import { MeterReadingKey, meterReadingKeysIn } from '../meter-readings/types/meter-reading.types';
 import { InvoiceUploadHistoryService } from './services/invoice-upload-history.service';
 import { InvoiceZipExtractor } from './services/invoice-zip-extractor';
 
@@ -281,7 +282,7 @@ export class InvoicesService {
   private parseAmount(value: unknown): number {
     const raw = typeof value === 'string' ? value.replace(',', '.').trim() : value;
     const amount = Number(raw);
-    if (!Number.isFinite(amount) || amount < 0) {
+    if (!Number.isFinite(amount)) {
       throw new BadRequestException('Invalid invoice amount');
     }
 
@@ -744,10 +745,10 @@ export class InvoicesService {
 
       const apartment = apartmentSnap.data() as Record<string, unknown>;
       const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
-      let foundKey: InvoiceMeterReadingKey | null = null;
+      let foundKey: InvoiceMeterReadingKey | MeterReadingKey | null = null;
       let foundGroup: Record<string, unknown> | null = null;
 
-      for (const key of INVOICE_METER_READING_KEYS) {
+      for (const key of meterReadingKeysIn(wr)) {
         const group = wr[key] as Record<string, unknown> | undefined;
         if (!group || !Array.isArray(group.history)) continue;
         const hasReading = (group.history as Record<string, unknown>[]).some((entry) => firstString(entry.id) === readingId);
@@ -2563,11 +2564,63 @@ export class InvoicesService {
           success: true,
         };
       } catch (error) {
+        // A user may have already cancelled one file manually before cancelling
+        // the containing API batch. The desired end state is still reached, so
+        // treat a missing approval as an idempotent successful deletion.
+        if (error instanceof NotFoundException) {
+          return {
+            approval_id: approvalId,
+            success: true,
+            already_deleted: true,
+          };
+        }
         return {
           approval_id: approvalId,
           success: false,
           error: errorMessage(error),
         };
+      }
+    });
+
+    const processed = results.filter((item) => item.success).length;
+    return {
+      success: processed === results.length,
+      total: results.length,
+      processed,
+      failed: results.length - processed,
+      results,
+    };
+  }
+
+  async deleteInvoices(request: Request, user: RequestUser, payload: Record<string, unknown>) {
+    const raw = payload.invoiceIds ?? payload.invoice_ids ?? payload.ids;
+    const invoiceIds = Array.isArray(raw)
+      ? Array.from(new Set(raw.map((value) => firstString(value)).filter(Boolean)))
+      : [];
+    if (invoiceIds.length === 0) {
+      throw new BadRequestException('invoiceIds are required');
+    }
+    if (invoiceIds.length > 200) {
+      throw new BadRequestException('A maximum of 200 invoices can be deleted at once');
+    }
+    const rateLimit = await this.rateLimitService.consume(
+      this.rateLimitService.buildKey(request, 'invoice:delete-batch', user.uid),
+      10,
+      60_000,
+    );
+    if (!rateLimit.allowed) throw new TooManyRequestsException(rateLimit.resetAt);
+
+    const results = await this.processApprovalIds(invoiceIds, async (invoiceId) => {
+      try {
+        await this.remove(request, user, invoiceId, { skipRateLimit: true });
+        return { invoice_id: invoiceId, success: true };
+      } catch (error) {
+        // Deleting a package is idempotent: a manually deleted invoice already
+        // satisfies the requested end state.
+        if (error instanceof NotFoundException) {
+          return { invoice_id: invoiceId, success: true, already_deleted: true };
+        }
+        return { invoice_id: invoiceId, success: false, error: errorMessage(error) };
       }
     });
 
@@ -3726,21 +3779,23 @@ export class InvoicesService {
     return { success: true };
   }
 
-  async remove(request: Request, user: RequestUser, invoiceId: string) {
+  async remove(request: Request, user: RequestUser, invoiceId: string, options: { skipRateLimit?: boolean } = {}) {
     this.assertAuthenticated(user);
     if (!this.isStaff(user)) {
       throw new ForbiddenException('Insufficient permissions');
     }
 
     const [rl, invoice] = await Promise.all([
-      this.rateLimitService.consume(
-        this.rateLimitService.buildKey(request, 'invoice:delete', `${user.uid}:${invoiceId}`),
-        20,
-        60_000,
-      ),
+      options.skipRateLimit
+        ? Promise.resolve(undefined)
+        : this.rateLimitService.consume(
+          this.rateLimitService.buildKey(request, 'invoice:delete', `${user.uid}:${invoiceId}`),
+          20,
+          60_000,
+        ),
       this.findInvoiceDocument(invoiceId, user),
     ]);
-    if (!rl.allowed) throw new TooManyRequestsException(rl.resetAt);
+    if (rl && !rl.allowed) throw new TooManyRequestsException(rl.resetAt);
 
     const ref = invoice.ref;
     const current = invoice.data;

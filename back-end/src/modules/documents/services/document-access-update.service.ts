@@ -113,8 +113,17 @@ export class DocumentAccessUpdateService {
           if (!companyId || this.accessService.requireStaffCompanyId(user) !== companyId) {
             throw new ForbiddenException(buildingId ? 'Access denied for building' : 'Company scope is required');
           }
-        } else if (!companyId && user.companyId) {
-          companyId = user.companyId;
+        } else {
+          if (!companyId && user.companyId) companyId = user.companyId;
+          // Архив остаётся в том же здании (или в выбранном, если оно компании).
+          buildingId = this.helperService.firstString(body.buildingId, current.buildingId);
+          if (buildingId) {
+            const building = await this.metadataService.getBuilding(buildingId);
+            if (this.metadataService.resolveCompanyId(building, '') !== this.accessService.requireStaffCompanyId(user)) {
+              throw new ForbiddenException('Access denied for building');
+            }
+            buildingName = this.helperService.firstString(building.name, building.address, buildingId);
+          }
         }
       } else {
         buildingId = this.helperService.firstString(body.buildingId, current.buildingId);

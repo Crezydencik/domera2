@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateMeterReadingDto = void 0;
 const class_validator_1 = require("class-validator");
+const meter_reading_types_1 = require("../types/meter-reading.types");
 const swagger_1 = require("@nestjs/swagger");
 class CreateMeterReadingDto {
 }
@@ -26,9 +27,12 @@ __decorate([
     __metadata("design:type", String)
 ], CreateMeterReadingDto.prototype, "meterId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ enum: ['coldmeterwater', 'hotmeterwater', 'electricitymeter'], description: 'Optional meter group key.' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 'coldmeterwater',
+        description: 'Optional meter group key: coldmeterwater, hotmeterwater, electricitymeter; extra water meters — coldmeterwater_2 … coldmeterwater_9, hotmeterwater_2 … hotmeterwater_9.',
+    }),
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsIn)(['coldmeterwater', 'hotmeterwater', 'electricitymeter']),
+    (0, class_validator_1.Matches)(meter_reading_types_1.METER_READING_KEY_PATTERN, { message: 'meterKey must be a meter group key' }),
     __metadata("design:type", String)
 ], CreateMeterReadingDto.prototype, "meterKey", void 0);
 __decorate([

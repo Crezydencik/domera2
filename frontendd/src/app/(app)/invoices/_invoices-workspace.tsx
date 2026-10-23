@@ -15,6 +15,7 @@ import {
   approvePendingInvoiceApprovalsAction,
   cancelPendingInvoiceApprovalAction,
   cancelPendingInvoiceApprovalsAction,
+  deleteInvoicesAction,
   uploadInvoiceAction,
 } from "@/shared/actions/billing";
 import { getPendingInvoiceApprovals } from "@/shared/api/billing";
@@ -40,6 +41,11 @@ type PendingApprovalGroup = {
   id: string;
   items: RawRecord[];
   primary: RawRecord;
+};
+type HistoryBatchDeletionTarget = {
+  historyIds: string[];
+  approvalIds: string[];
+  invoiceIds: string[];
 };
 
 type InvoiceQueueItem = {
@@ -141,6 +147,9 @@ const COPY = {
     approvalCancellingAll: "Cancelling all...",
     approvalCancelledAll: "All API invoices cancelled.",
     approvalCancelAllFailed: "Could not cancel all API invoices.",
+    deleteSelectedPackages: "Delete selected packages",
+    deleteSelectedPackagesConfirm: "Delete the selected import packages? Their invoices and files will be removed.",
+    selectedPackagesDeleted: "Selected import packages deleted.",
     building: "Building",
     apartment: "Apartment",
     apartmentShort: "Apt.",
@@ -215,6 +224,7 @@ const COPY = {
     colFile: "File",
     colDate: "Date",
     colSource: "Source",
+    actions: "Actions",
   },
   ru: {
     importTitle: "Ручной импорт счетов",
@@ -336,6 +346,7 @@ const COPY = {
     colFile: "Файл",
     colDate: "Дата",
     colSource: "Источник",
+    actions: "Действия",
     approvalButton: "API счета",
     approvalModalTitle: "API счета на одобрение",
     approvalModalDescription: "Одобрите счета перед прикреплением к квартирам.",
@@ -365,6 +376,9 @@ const COPY = {
     approvalCancellingAll: "Отменяем всё...",
     approvalCancelledAll: "Все API счета отменены.",
     approvalCancelAllFailed: "Не удалось отменить все API счета.",
+    deleteSelectedPackages: "Удалить выбранные пакеты",
+    deleteSelectedPackagesConfirm: "Удалить выбранные пакеты импорта? Их счета и файлы будут удалены.",
+    selectedPackagesDeleted: "Выбранные пакеты импорта удалены.",
   },
   lv: {
     importTitle: "Manuala rekinu importesana",
@@ -441,6 +455,9 @@ const COPY = {
     approvalCancellingAll: "Atcel visus...",
     approvalCancelledAll: "Visi API rekini atcelti.",
     approvalCancelAllFailed: "Neizdevas atcelt visus API rekinus.",
+    deleteSelectedPackages: "Dzest izveletos pakotnes",
+    deleteSelectedPackagesConfirm: "Dzest izveletas gaidosas importa pakotnes? To rekinI un faili tiks dzesti.",
+    selectedPackagesDeleted: "Izveletas importa pakotnes ir izdzestas.",
     building: "Eka",
     apartment: "Dzivoklis",
     apartmentShort: "Dz.",
@@ -515,6 +532,7 @@ const COPY = {
     colFile: "Fails",
     colDate: "Datums",
     colSource: "Avots",
+    actions: "Darbības",
   },
 } as const;
 
@@ -965,6 +983,8 @@ export function InvoicesWorkspace({
   const [loadingPendingApprovals, setLoadingPendingApprovals] = useState(false);
   const [approvalConfirmationIds, setApprovalConfirmationIds] = useState<string[] | null>(null);
   const [cancellationConfirmationTarget, setCancellationConfirmationTarget] = useState<PendingApprovalGroup | "all" | null>(null);
+  const [historyBatchDeletionTarget, setHistoryBatchDeletionTarget] = useState<HistoryBatchDeletionTarget | null>(null);
+  const [selectedHistoryPackageIds, setSelectedHistoryPackageIds] = useState<Set<string>>(() => new Set());
   const [notificationMode, setNotificationMode] = useState<"notify" | "none">("notify");
   const [notificationRecipientMode, setNotificationRecipientMode] = useState<"all" | "select">("all");
   const [selectedNotificationApprovalIds, setSelectedNotificationApprovalIds] = useState<Set<string>>(() => new Set());
@@ -1393,6 +1413,73 @@ export function InvoicesWorkspace({
     }
   }
 
+  function historyApprovalIds(item: RawRecord) {
+    const metadata = asRecord(item.metadata);
+    const results = Array.isArray(metadata.results) ? metadata.results.map(asRecord) : [];
+    return Array.from(new Set([
+      firstString(item.approvalId, metadata.approvalId),
+      ...results.map((result) => firstString(result.approval_id, result.approvalId)),
+    ].filter(Boolean)));
+  }
+
+  function historyInvoiceIds(item: RawRecord) {
+    const metadata = asRecord(item.metadata);
+    const results = Array.isArray(metadata.results) ? metadata.results.map(asRecord) : [];
+    return Array.from(new Set([
+      firstString(item.invoiceId, metadata.invoiceId),
+      ...results.map((result) => firstString(result.invoice_id, result.invoiceId)),
+    ].filter(Boolean)));
+  }
+
+  function toggleHistoryPackageSelection(historyId: string) {
+    setSelectedHistoryPackageIds((current) => {
+      const next = new Set(current);
+      if (next.has(historyId)) next.delete(historyId); else next.add(historyId);
+      return next;
+    });
+  }
+
+  function requestSelectedHistoryPackageDeletion() {
+    const selectedItems = filteredUploadHistory.filter((item) => selectedHistoryPackageIds.has(firstString(item.id)));
+    const approvalIds = Array.from(new Set(selectedItems.flatMap(historyApprovalIds)));
+    const invoiceIds = Array.from(new Set(selectedItems.flatMap(historyInvoiceIds)));
+    if (!approvalIds.length && !invoiceIds.length) return;
+    setHistoryBatchDeletionTarget({
+      historyIds: selectedItems.map((item) => firstString(item.id)).filter(Boolean),
+      approvalIds,
+      invoiceIds,
+    });
+  }
+
+  async function handleSelectedHistoryPackageDeletion(target: HistoryBatchDeletionTarget) {
+    setCancellingAllApprovals(true);
+    try {
+      if (target.approvalIds.length) {
+        const response = await cancelPendingInvoiceApprovalsAction(target.approvalIds);
+        if (!response.success) {
+          throw new Error(response.message || `${copy.approvalCancelAllFailed} ${response.processed ?? 0}/${response.total ?? target.approvalIds.length}`);
+        }
+      }
+      if (target.invoiceIds.length) {
+        const response = await deleteInvoicesAction(target.invoiceIds);
+        if (!response.success) {
+          throw new Error(response.message || `${copy.deleteSelectedPackages} ${response.processed ?? 0}/${response.total ?? target.invoiceIds.length}`);
+        }
+      }
+      setSelectedHistoryPackageIds((current) => {
+        const next = new Set(current);
+        target.historyIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      notifications.success(copy.selectedPackagesDeleted);
+      refreshPendingApprovals();
+    } catch (error) {
+      notifications.error(error instanceof Error ? error.message : copy.approvalCancelAllFailed);
+    } finally {
+      setCancellingAllApprovals(false);
+    }
+  }
+
   function handleDrop(event: React.DragEvent<HTMLLabelElement>) {
     event.preventDefault();
     setDragActive(false);
@@ -1658,6 +1745,9 @@ export function InvoicesWorkspace({
     const historyBuildingId = firstString(item.buildingId, metadata.buildingId);
     const apiName = firstString(item.apiName, metadata.apiName, metadata.apiKeyLabel, metadata.apiKeyId);
     const rawHistoryId = firstString(item.id);
+    const packageApprovalIds = historyApprovalIds(item);
+    const packageInvoiceIds = historyInvoiceIds(item);
+    const canDeletePackage = rawHistoryId.length > 0 && (packageApprovalIds.length > 0 || packageInvoiceIds.length > 0);
     const fallbackLabel = source.toLowerCase() === "api" && rawHistoryId.startsWith("batch_")
       ? firstString(buildingLabelById.get(historyBuildingId), historyBuildingId, "API")
       : rawHistoryId;
@@ -1709,6 +1799,17 @@ export function InvoicesWorkspace({
       ) : (
         <QueueStatusBadge key={`${index}-ready`} status="ready" copy={copy} />
       ),
+      <div key={`${index}-history-select`} className="flex justify-end">
+        {canDeletePackage ? (
+          <input
+            type="checkbox"
+            checked={selectedHistoryPackageIds.has(rawHistoryId)}
+            onChange={() => toggleHistoryPackageSelection(rawHistoryId)}
+            aria-label={copy.deleteSelectedPackages}
+            className="h-4 w-4 rounded border-slate-300 text-rose-600"
+          />
+        ) : <span className="text-slate-300">—</span>}
+      </div>,
     ];
   });
   const historyRowDetails = filteredUploadHistory.map((item) => {
@@ -1828,6 +1929,26 @@ export function InvoicesWorkspace({
               }}>
                 <FiX className="h-4 w-4" aria-hidden="true" />
                 {cancellationConfirmationTarget === "all" ? copy.approvalCancelAll : copy.approvalCancel}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {canImport && historyBatchDeletionTarget ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-4" onClick={() => setHistoryBatchDeletionTarget(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <h2 className="text-lg font-semibold text-slate-950">{copy.deleteSelectedPackages}</h2>
+            <p className="mt-2 text-sm text-slate-600">{copy.deleteSelectedPackagesConfirm}</p>
+            <div className="mt-5 flex justify-end gap-3">
+              <Button type="button" variant="secondary" onClick={() => setHistoryBatchDeletionTarget(null)} disabled={cancellingAllApprovals}>{copy.close}</Button>
+              <Button type="button" variant="danger" disabled={cancellingAllApprovals} onClick={() => {
+                const target = historyBatchDeletionTarget;
+                setHistoryBatchDeletionTarget(null);
+                void handleSelectedHistoryPackageDeletion(target);
+              }}>
+                <FiTrash2 className="h-4 w-4" aria-hidden="true" />
+                {copy.deleteSelectedPackages}
               </Button>
             </div>
           </div>
@@ -2391,8 +2512,20 @@ export function InvoicesWorkspace({
             </div>
           ) : historyRows.length ? (
             <div>
+              <div className="mb-3 flex justify-end">
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  onClick={requestSelectedHistoryPackageDeletion}
+                  disabled={selectedHistoryPackageIds.size === 0 || cancellingAllApprovals}
+                >
+                  <FiTrash2 className="h-4 w-4" aria-hidden="true" />
+                  {copy.deleteSelectedPackages}{selectedHistoryPackageIds.size ? ` (${selectedHistoryPackageIds.size})` : ""}
+                </Button>
+              </div>
               <DataTable
-                columns={[copy.colInvoice, copy.colFile, copy.colSource, copy.colDate, copy.colStatus]}
+                columns={[copy.colInvoice, copy.colFile, copy.colSource, copy.colDate, copy.colStatus, copy.actions]}
                 rows={historyRows}
                 desktopRowDetails={historyRowDetails}
                 pageSize={25}

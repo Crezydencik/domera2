@@ -456,6 +456,11 @@ class SaveInformationMailingTemplateDto {
 }
 exports.SaveInformationMailingTemplateDto = SaveInformationMailingTemplateDto;
 __decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], SaveInformationMailingTemplateDto.prototype, "id", void 0);
+__decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], SaveInformationMailingTemplateDto.prototype, "name", void 0);

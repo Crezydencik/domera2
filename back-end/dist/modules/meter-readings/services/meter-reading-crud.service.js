@@ -98,10 +98,8 @@ let MeterReadingCrudService = class MeterReadingCrudService {
         if (typeof payload.linkedInvoiceExternalId === 'string' && payload.linkedInvoiceExternalId.trim()) {
             reading.linkedInvoiceExternalId = payload.linkedInvoiceExternalId.trim();
         }
-        const preferredKey = meter_reading_types_1.METER_READING_KEYS.includes(payload.meterKey)
-            ? payload.meterKey
-            : undefined;
-        const resolveKey = (wr) => meter_reading_types_1.METER_READING_KEYS.find((k) => wr[k]?.meterId === meterId)
+        const preferredKey = (0, meter_reading_types_1.isMeterReadingKey)(payload.meterKey) ? payload.meterKey : undefined;
+        const resolveKey = (wr) => (0, meter_reading_types_1.meterReadingKeysIn)(wr).find((k) => wr[k]?.meterId === meterId)
             ?? preferredKey
             ?? 'coldmeterwater';
         const initialKey = resolveKey((apartment.waterReadings ?? {}));
@@ -213,7 +211,7 @@ let MeterReadingCrudService = class MeterReadingCrudService {
             let key = null;
             let group = null;
             let index = -1;
-            for (const candidate of meter_reading_types_1.METER_READING_KEYS) {
+            for (const candidate of (0, meter_reading_types_1.meterReadingKeysIn)(wr)) {
                 const candidateGroup = wr[candidate];
                 if (!candidateGroup || !Array.isArray(candidateGroup.history))
                     continue;
@@ -301,7 +299,7 @@ let MeterReadingCrudService = class MeterReadingCrudService {
             let key = null;
             let group = null;
             let entry = null;
-            for (const candidate of meter_reading_types_1.METER_READING_KEYS) {
+            for (const candidate of (0, meter_reading_types_1.meterReadingKeysIn)(wr)) {
                 const candidateGroup = wr[candidate];
                 if (!candidateGroup || !Array.isArray(candidateGroup.history))
                     continue;

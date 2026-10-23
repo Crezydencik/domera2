@@ -62,7 +62,7 @@ let MeterReadingHelperService = class MeterReadingHelperService {
         const buildingId = typeof apartment.buildingId === 'string' ? apartment.buildingId : '';
         const buildingName = buildingInfo?.name ?? '';
         const buildingAddress = buildingInfo?.address ?? (typeof apartment.address === 'string' ? apartment.address : '');
-        for (const key of meter_reading_types_1.METER_READING_KEYS) {
+        for (const key of (0, meter_reading_types_1.meterReadingKeysIn)(wr)) {
             const group = wr[key];
             if (!group || !Array.isArray(group.history))
                 continue;

@@ -42,6 +42,17 @@ export declare class EmailService {
     }): Promise<{
         id: string;
     }>;
+    sendInboxReply(params: {
+        companyId: string;
+        to: string;
+        subject: string;
+        message: string;
+        buildingId?: string;
+        apartmentId?: string;
+        deliveryKey?: string;
+    }): Promise<{
+        id: string;
+    }>;
     private buildMailingContext;
     sendInformationMailing(companyId: string, dto: SendInformationMailingDto): Promise<{
         sent: number;
@@ -70,8 +81,16 @@ export declare class EmailService {
         name: string;
         title: string;
         message: string;
-        messageHtml: string | undefined;
+        messageHtml: string | null;
+        updatedAt: Date;
+        id: string;
+    } | {
+        name: string;
+        title: string;
+        message: string;
+        messageHtml: string | null;
         createdAt: Date;
+        updatedAt: Date;
         id: string;
     }>;
     getInformationMailingHistory(companyId: string): Promise<{

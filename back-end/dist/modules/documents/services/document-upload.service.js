@@ -71,6 +71,16 @@ let DocumentUploadService = DocumentUploadService_1 = class DocumentUploadServic
                 else if (!companyId) {
                     throw new common_1.BadRequestException('companyId is required');
                 }
+                else {
+                    buildingId = this.helperService.firstString(body.buildingId);
+                    if (buildingId) {
+                        const building = await this.metadataService.getBuilding(buildingId);
+                        if (this.metadataService.resolveCompanyId(building, '') !== this.accessService.requireStaffCompanyId(user)) {
+                            throw new common_1.ForbiddenException('Access denied for building');
+                        }
+                        buildingName = this.helperService.firstString(building.name, building.address, buildingId);
+                    }
+                }
             }
             else {
                 buildingId = this.helperService.firstString(body.buildingId);

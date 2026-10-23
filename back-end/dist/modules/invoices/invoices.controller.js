@@ -184,6 +184,9 @@ let InvoicesController = class InvoicesController {
     cancelPendingApprovals(request, user, body) {
         return this.invoicesService.cancelPendingApprovals(request, user, body);
     }
+    deleteInvoices(request, user, body) {
+        return this.invoicesService.deleteInvoices(request, user, body);
+    }
     cancelPendingApproval(request, user, approvalId) {
         return this.invoicesService.cancelPendingApproval(request, user, approvalId);
     }
@@ -433,6 +436,20 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, Object]),
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "cancelPendingApprovals", null);
+__decorate([
+    (0, common_1.Post)('delete-all'),
+    (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(...role_constants_1.STAFF_ROLES),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete multiple invoices' }),
+    (0, swagger_1.ApiOkResponse)({ description: 'Invoices deleted.' }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, Object]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "deleteInvoices", null);
 __decorate([
     (0, common_1.Delete)('pending-approvals/:approvalId'),
     (0, common_1.UseGuards)(firebase_auth_guard_1.FirebaseAuthGuard, roles_guard_1.RolesGuard),

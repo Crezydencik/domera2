@@ -12,6 +12,7 @@ import { getApartmentDetailsPageData } from "@/shared/server/page-loaders/apartm
 import { requireManagementCompanyBuildings } from "@/shared/server/management-building-access";
 import { ROUTES } from "@/shared/lib/routes";
 import { ApartmentDocumentsBlock } from "./apartment-documents-block";
+import { ApartmentEditButton } from "./apartment-edit-button";
 import { ApartmentFullInfoDialog } from "./apartment-full-info-dialog";
 import { ApartmentSelector } from "./apartment-selector";
 import { TenantAccessManager } from "./tenant-access-manager";
@@ -461,6 +462,33 @@ export default async function ApartmentDetailsPage({
     />
   );
 
+  const apartmentEditButton = data.role === "managementCompany" ? (
+    <ApartmentEditButton
+      apartmentId={resolvedApartmentId}
+      initialValue={{
+        number: apartmentLabel === "—" ? "" : apartmentLabel,
+        address: address === t("common.addressNotSpecified") ? "" : address,
+        floor: floor === t("common.notSpecified") ? "" : floor,
+        area: area === t("common.notSpecified") ? "" : area,
+        declaredResidents: formatDetailValue(apartment.declaredResidents ?? baseApartment.declaredResidents, ""),
+      }}
+      labels={{
+        edit: t("details.edit"),
+        title: t("details.editTitle", { apartment: apartmentLabel }),
+        number: t("management.dialogs.apartmentInfo.fields.number"),
+        address: t("common.address"),
+        floor: t("common.floor"),
+        area: t("common.area"),
+        declaredResidents: t("management.dialogs.apartmentInfo.fields.declaredResidents"),
+        save: ui("save"),
+        cancel: ui("cancel"),
+        saving: t("details.saving"),
+        success: t("details.editSuccess"),
+        error: t("details.editError"),
+      }}
+    />
+  ) : null;
+
   const tenants = Array.isArray(apartment.tenants) ? apartment.tenants : [];
   const tenantRows = tenants.map((tenant, index) => {
         const record = (tenant ?? {}) as UnknownRecord;
@@ -791,7 +819,10 @@ export default async function ApartmentDetailsPage({
                   <p className="text-lg font-medium text-slate-900">{ownerEmail}</p>
                 </div>
               </div>
-              {fullInfoDialog}
+              <div className="mt-6 flex flex-wrap gap-3">
+                {apartmentEditButton}
+                {fullInfoDialog}
+              </div>
             </div>
           </SectionCard>
         </div>

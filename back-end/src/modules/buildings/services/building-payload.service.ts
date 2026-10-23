@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { FirebaseAdminService } from '../../../common/infrastructure/firebase/firebase-admin.service';
 import { firstNonEmptyString } from '../../../common/utils/values';
+import { MAX_WATER_METERS_PER_KIND } from '../../meter-readings/types/meter-reading.types';
 
 export type BuildingCompanySummary = {
   companyId: string;
@@ -130,7 +131,8 @@ export class BuildingPayloadService {
 
   private normalizeMeterCount(...values: unknown[]) {
     const count = this.firstNumber(...values);
-    return count < 0 ? 0 : Math.floor(count);
+    // Ключи групп в квартире: coldmeterwater … coldmeterwater_9 — больше 9 счётчиков одного вида не храним.
+    return count < 0 ? 0 : Math.min(MAX_WATER_METERS_PER_KIND, Math.floor(count));
   }
 
   private normalizeSubscriptionTermMonths(...values: unknown[]) {

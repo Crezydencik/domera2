@@ -29,6 +29,7 @@ const values_1 = require("../../common/utils/values");
 const invoice_types_1 = require("./invoice.types");
 const firestore_dates_1 = require("../../common/utils/firestore-dates");
 const invoice_pdf_storage_service_1 = require("./services/invoice-pdf-storage.service");
+const meter_reading_types_1 = require("../meter-readings/types/meter-reading.types");
 const invoice_upload_history_service_1 = require("./services/invoice-upload-history.service");
 const invoice_zip_extractor_1 = require("./services/invoice-zip-extractor");
 const INVOICE_UPLOAD_CHUNK_MAX_BYTES = 24 * 1024 * 1024;
@@ -234,7 +235,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
     parseAmount(value) {
         const raw = typeof value === 'string' ? value.replace(',', '.').trim() : value;
         const amount = Number(raw);
-        if (!Number.isFinite(amount) || amount < 0) {
+        if (!Number.isFinite(amount)) {
             throw new common_1.BadRequestException('Invalid invoice amount');
         }
         return Math.round(amount * 100) / 100;
@@ -579,7 +580,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             const wr = (apartment.waterReadings ?? {});
             let foundKey = null;
             let foundGroup = null;
-            for (const key of invoice_types_1.INVOICE_METER_READING_KEYS) {
+            for (const key of (0, meter_reading_types_1.meterReadingKeysIn)(wr)) {
                 const group = wr[key];
                 if (!group || !Array.isArray(group.history))
                     continue;
@@ -1294,7 +1295,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         }
         return { ...payload, ...item };
     }
-    async upload(request, user, file, payload) {
+    async upload(request, user, file, payload, options = {}) {
         this.assertAuthenticated(user);
         if (!this.isStaff(user)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
@@ -1324,9 +1325,11 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         let invoiceReserved = false;
         try {
             this.validatePdfFile(file);
-            const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'invoice:upload', user.uid), 60, 60_000);
-            if (!rl.allowed) {
-                throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
+            if (!options.skipRateLimit) {
+                const rl = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'invoice:upload', user.uid), 60, 60_000);
+                if (!rl.allowed) {
+                    throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
+                }
             }
             const externalId = (0, values_1.firstString)(payload.externalId, payload.external_id);
             if (!externalId) {
@@ -1675,7 +1678,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
             companyId: (0, values_1.firstString)(query.companyId),
             buildingId: (0, values_1.firstString)(query.buildingId, query.building_id),
         });
-        const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50));
+        const limit = Math.min(1000, Math.max(1, Number(query.limit ?? 50) || 50));
         const snapshots = await Promise.all(buildingIds.map(async (buildingId) => ({
             buildingId,
             snap: await this.firebaseAdminService.firestore
@@ -2010,11 +2013,53 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
                 };
             }
             catch (error) {
+                if (error instanceof common_1.NotFoundException) {
+                    return {
+                        approval_id: approvalId,
+                        success: true,
+                        already_deleted: true,
+                    };
+                }
                 return {
                     approval_id: approvalId,
                     success: false,
                     error: (0, values_1.errorMessage)(error),
                 };
+            }
+        });
+        const processed = results.filter((item) => item.success).length;
+        return {
+            success: processed === results.length,
+            total: results.length,
+            processed,
+            failed: results.length - processed,
+            results,
+        };
+    }
+    async deleteInvoices(request, user, payload) {
+        const raw = payload.invoiceIds ?? payload.invoice_ids ?? payload.ids;
+        const invoiceIds = Array.isArray(raw)
+            ? Array.from(new Set(raw.map((value) => (0, values_1.firstString)(value)).filter(Boolean)))
+            : [];
+        if (invoiceIds.length === 0) {
+            throw new common_1.BadRequestException('invoiceIds are required');
+        }
+        if (invoiceIds.length > 200) {
+            throw new common_1.BadRequestException('A maximum of 200 invoices can be deleted at once');
+        }
+        const rateLimit = await this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'invoice:delete-batch', user.uid), 10, 60_000);
+        if (!rateLimit.allowed)
+            throw new too_many_requests_exception_1.TooManyRequestsException(rateLimit.resetAt);
+        const results = await this.processApprovalIds(invoiceIds, async (invoiceId) => {
+            try {
+                await this.remove(request, user, invoiceId, { skipRateLimit: true });
+                return { invoice_id: invoiceId, success: true };
+            }
+            catch (error) {
+                if (error instanceof common_1.NotFoundException) {
+                    return { invoice_id: invoiceId, success: true, already_deleted: true };
+                }
+                return { invoice_id: invoiceId, success: false, error: (0, values_1.errorMessage)(error) };
             }
         });
         const processed = results.filter((item) => item.success).length;
@@ -2205,7 +2250,7 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
                 try {
                     const result = await this.upload(request, user, job.file, {
                         ...job.payload,
-                    });
+                    }, { skipRateLimit: true });
                     const uploadResult = result;
                     results.push({
                         index: job.index,
@@ -2936,16 +2981,18 @@ let InvoicesService = InvoicesService_1 = class InvoicesService {
         }), 'audit');
         return { success: true };
     }
-    async remove(request, user, invoiceId) {
+    async remove(request, user, invoiceId, options = {}) {
         this.assertAuthenticated(user);
         if (!this.isStaff(user)) {
             throw new common_1.ForbiddenException('Insufficient permissions');
         }
         const [rl, invoice] = await Promise.all([
-            this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'invoice:delete', `${user.uid}:${invoiceId}`), 20, 60_000),
+            options.skipRateLimit
+                ? Promise.resolve(undefined)
+                : this.rateLimitService.consume(this.rateLimitService.buildKey(request, 'invoice:delete', `${user.uid}:${invoiceId}`), 20, 60_000),
             this.findInvoiceDocument(invoiceId, user),
         ]);
-        if (!rl.allowed)
+        if (rl && !rl.allowed)
             throw new too_many_requests_exception_1.TooManyRequestsException(rl.resetAt);
         const ref = invoice.ref;
         const current = invoice.data;

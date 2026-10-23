@@ -7,7 +7,7 @@ import { FirebaseAdminService } from '../../../common/infrastructure/firebase/fi
 import { AuditLogService } from '../../../common/services/audit-log.service';
 import { RateLimitService } from '../../../common/services/rate-limit.service';
 import { buildMeterHistorySnapshot } from '../../../common/utils/meter-reading-history';
-import { MeterReadingKey, METER_READING_KEYS } from '../types/meter-reading.types';
+import { MeterReadingKey, isMeterReadingKey, meterReadingKeysIn } from '../types/meter-reading.types';
 import { MeterReadingAccessService } from './meter-reading-access.service';
 import { MeterReadingBuildingService } from './meter-reading-building.service';
 import { MeterReadingHelperService } from './meter-reading-helper.service';
@@ -106,11 +106,9 @@ export class MeterReadingCrudService {
       reading.linkedInvoiceExternalId = payload.linkedInvoiceExternalId.trim();
     }
 
-    const preferredKey = METER_READING_KEYS.includes(payload.meterKey as MeterReadingKey)
-      ? payload.meterKey as MeterReadingKey
-      : undefined;
+    const preferredKey = isMeterReadingKey(payload.meterKey) ? payload.meterKey : undefined;
     const resolveKey = (wr: Record<string, unknown>): MeterReadingKey =>
-      METER_READING_KEYS.find((k) => (wr[k] as Record<string, unknown> | undefined)?.meterId === meterId)
+      meterReadingKeysIn(wr).find((k) => (wr[k] as Record<string, unknown> | undefined)?.meterId === meterId)
       ?? preferredKey
       ?? 'coldmeterwater';
     const initialKey = resolveKey((apartment.waterReadings ?? {}) as Record<string, unknown>);
@@ -249,7 +247,7 @@ export class MeterReadingCrudService {
       let key: MeterReadingKey | null = null;
       let group: Record<string, unknown> | null = null;
       let index = -1;
-      for (const candidate of METER_READING_KEYS) {
+      for (const candidate of meterReadingKeysIn(wr)) {
         const candidateGroup = wr[candidate] as Record<string, unknown> | undefined;
         if (!candidateGroup || !Array.isArray(candidateGroup.history)) continue;
         const idx = (candidateGroup.history as Record<string, unknown>[]).findIndex((h) => String(h.id ?? '') === readingId);
@@ -350,7 +348,7 @@ export class MeterReadingCrudService {
       let key: MeterReadingKey | null = null;
       let group: Record<string, unknown> | null = null;
       let entry: Record<string, unknown> | null = null;
-      for (const candidate of METER_READING_KEYS) {
+      for (const candidate of meterReadingKeysIn(wr)) {
         const candidateGroup = wr[candidate] as Record<string, unknown> | undefined;
         if (!candidateGroup || !Array.isArray(candidateGroup.history)) continue;
         const match = (candidateGroup.history as Record<string, unknown>[]).find((h) => String(h.id ?? '') === readingId);

@@ -12,6 +12,7 @@ import { EmailModule } from './modules/emails/email.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
 import { MeterReadingsModule } from './modules/meter-readings/meter-readings.module';
+import { MessagesModule } from './modules/messages/messages.module';
 import { NewsModule } from './modules/news/news.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProjectsModule } from './modules/projects/projects.module';
@@ -36,6 +37,7 @@ import { UsersModule } from './modules/users/users.module';
     ApartmentsModule,
     InvoicesModule,
     MeterReadingsModule,
+    MessagesModule,
     NotificationsModule,
     ProjectsModule,
     NewsModule,

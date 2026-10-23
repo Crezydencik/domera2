@@ -163,6 +163,26 @@ export class EmailService {
     );
   }
 
+  /** Ответ УК на обращение жильца: письмо в стиле компании со ссылкой в кабинет. */
+  async sendInboxReply(params: { companyId: string; to: string; subject: string; message: string; buildingId?: string; apartmentId?: string; deliveryKey?: string }) {
+    const context = await this.buildMailingContext(params.companyId);
+    const prefix = context.language === 'lv' ? 'Atbilde' : context.language === 'en' ? 'Re' : 'Ответ';
+    return this.sendNotification({
+      to: params.to,
+      title: `${prefix}: ${params.subject}`.slice(0, 220),
+      message: params.message,
+      actionLabel: context.actionCopy.label,
+      actionLink: context.notificationsUrl,
+      brandName: context.companyName,
+      footer: context.actionCopy.footer,
+      language: context.language,
+      companyId: params.companyId,
+      buildingId: params.buildingId,
+      apartmentId: params.apartmentId,
+      deliveryKey: params.deliveryKey,
+    }, context.branding);
+  }
+
   /** Branding, language and copy for a company's information mailing (re-derived when resuming). */
   private async buildMailingContext(companyId: string, languageOverride?: string) {
     const companySnapshot = await this.firebaseAdminService.firestore.collection('companies').doc(companyId).get();
@@ -392,8 +412,21 @@ export class EmailService {
     const title = dto.title.trim();
     const message = dto.message.trim();
     if (!name || !title || !message) throw new BadRequestException('Template name, title and message are required');
-    const ref = this.firebaseAdminService.firestore.collection('companies').doc(companyId).collection('information_mailing_templates').doc();
-    const data = { name, title, message, messageHtml: this.sanitizeMailingHtml(dto.messageHtml), createdAt: new Date() };
+    if (name.length > 120 || title.length > 250 || message.length > 20000) throw new BadRequestException('Template is too long');
+    const collection = this.firebaseAdminService.firestore.collection('companies').doc(companyId).collection('information_mailing_templates');
+    const messageHtml = this.sanitizeMailingHtml(dto.messageHtml) ?? null;
+    const now = new Date();
+    // С id — правка существующего шаблона этой компании (путь уже ограничен компанией).
+    const id = dto.id?.trim();
+    if (id) {
+      const ref = collection.doc(id);
+      const snapshot = await ref.get();
+      if (!snapshot.exists) throw new BadRequestException('Template not found');
+      await ref.set({ name, title, message, messageHtml, updatedAt: now }, { merge: true });
+      return { id, ...(snapshot.data() as Record<string, unknown>), name, title, message, messageHtml, updatedAt: now };
+    }
+    const ref = collection.doc();
+    const data = { name, title, message, messageHtml, createdAt: now, updatedAt: now };
     await ref.set(data);
     return { id: ref.id, ...data };
   }

@@ -3,8 +3,12 @@
   "private": true,
   "scripts": {
     "build": "npm --prefix frontendd run build",
-    "dev": "node tools/dev-all.cjs",
+    "dev": "node tools/dev-all.cjs frontendd",
+    "dev2": "node tools/dev-all.cjs frontend-v2",
     "dev:backend": "npm --prefix back-end run start:dev",
-    "dev:frontend": "npm --prefix frontendd run dev"
+    "dev:frontend": "npm --prefix frontendd run dev",
+    "dev:frontend2": "npm --prefix frontend-v2 run dev",
+    "build2": "npm --prefix frontend-v2 run build",
+    "prod2": "node tools/dev-all.cjs frontend-v2 --prod"
   }
 }

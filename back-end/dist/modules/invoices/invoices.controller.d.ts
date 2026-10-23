@@ -139,11 +139,40 @@ export declare class InvoicesController {
         results: ({
             approval_id: string;
             success: boolean;
+            already_deleted?: undefined;
+            error?: undefined;
+        } | {
+            approval_id: string;
+            success: boolean;
+            already_deleted: boolean;
             error?: undefined;
         } | {
             approval_id: string;
             success: boolean;
             error: string;
+            already_deleted?: undefined;
+        })[];
+    }>;
+    deleteInvoices(request: Request, user: RequestUser, body: Record<string, unknown>): Promise<{
+        success: boolean;
+        total: number;
+        processed: number;
+        failed: number;
+        results: ({
+            invoice_id: string;
+            success: boolean;
+            already_deleted?: undefined;
+            error?: undefined;
+        } | {
+            invoice_id: string;
+            success: boolean;
+            already_deleted: boolean;
+            error?: undefined;
+        } | {
+            invoice_id: string;
+            success: boolean;
+            error: string;
+            already_deleted?: undefined;
         })[];
     }>;
     cancelPendingApproval(request: Request, user: RequestUser, approvalId: string): Promise<{

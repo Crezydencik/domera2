@@ -6,6 +6,7 @@ import { METER_REMINDER_SCHEDULE_COLLECTION } from '../../../common/utils/meter-
 import { EmailLogService } from '../../emails/services/email-log.service';
 import { EmailService } from '../../emails/services/email.service';
 import { METER_READING_PERIOD_TIME_ZONE } from '../types/meter-reading.types';
+import { meterKeyUtility, meterReadingKeysIn } from '../types/meter-reading.types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** How long a claimed building is hidden from other instances while it is being processed. */
@@ -670,9 +671,8 @@ export class MeterReadingReminderJob {
 
   private hasCurrentMonthReading(apartment: Record<string, unknown>, utility: UtilityKind, localNow: LocalDateTimeParts) {
     const wr = (apartment.waterReadings ?? {}) as Record<string, unknown>;
-    const keys = utility === 'water'
-      ? ['coldmeterwater', 'hotmeterwater']
-      : ['electricitymeter'];
+    // Все счётчики этого ресурса, включая дополнительные (coldmeterwater_2 …).
+    const keys = meterReadingKeysIn(wr).filter((key) => meterKeyUtility(key) === utility);
     const currentMonth = `${localNow.year}-${String(localNow.month).padStart(2, '0')}`;
 
     return keys.some((key) => {

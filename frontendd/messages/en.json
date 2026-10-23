@@ -1060,9 +1060,17 @@
             "hint": "Apartment exports include all available backend fields, even if they are not visible in the table.",
             "formatLabel": "File format",
             "scopeLabel": "What to export",
+            "apartmentsLabel": "Apartments to export",
+            "selectedApartments": "Selected apartments: {count}",
+            "selectAll": "Select all",
+            "clearAll": "Clear selection",
             "submit": "Export",
             "exporting": "Exporting...",
             "formats": {
+              "xlsx": {
+                "label": "Excel (.xlsx)",
+                "description": "Exports apartments to an Excel workbook with cadastral, owner, and meter columns."
+              },
               "json": {
                 "label": "JSON",
                 "description": "Best for full exports with nested fields preserved."
@@ -1320,6 +1328,11 @@
       "basicInfo": "Apartment basic information",
       "apartmentInfo": "Apartment information",
       "more": "More",
+      "edit": "Edit",
+      "editTitle": "Edit apartment № {apartment}",
+      "saving": "Saving...",
+      "editSuccess": "Apartment information saved.",
+      "editError": "Could not save apartment information.",
       "yourApartment": "Your apartment",
       "owner": "Owner",
       "ownerEmail": "Owner email",

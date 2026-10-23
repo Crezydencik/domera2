@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { ReadingConfigOverride } from '../types/apartment.types';
+import { MAX_WATER_METERS_PER_KIND, isMeterReadingKey, waterMeterKey } from '../../meter-readings/types/meter-reading.types';
 
 @Injectable()
 export class ApartmentMeterService {
@@ -47,26 +48,21 @@ export class ApartmentMeterService {
       : count(readingConfig.coldWaterMetersPerResident);
 
     const waterReadings: Record<string, unknown> = {};
-    if (hotWaterMeters > 0) {
-      waterReadings.hotmeterwater = {
-        meterId: randomUUID(),
-        serialNumber: '',
-        checkDueDate: '',
-        history: [],
-        apartmentId,
-        buildingId,
-      };
-    }
-    if (coldWaterMeters > 0) {
-      waterReadings.coldmeterwater = {
-        meterId: randomUUID(),
-        serialNumber: '',
-        checkDueDate: '',
-        history: [],
-        apartmentId,
-        buildingId,
-      };
-    }
+    // Столько групп, сколько счётчиков задано зданием (или квартирой): coldmeterwater, coldmeterwater_2, …
+    const addWaterMeters = (base: 'coldmeterwater' | 'hotmeterwater', meters: number) => {
+      for (let index = 1; index <= Math.min(meters, MAX_WATER_METERS_PER_KIND); index += 1) {
+        waterReadings[waterMeterKey(base, index)] = {
+          meterId: randomUUID(),
+          serialNumber: '',
+          checkDueDate: '',
+          history: [],
+          apartmentId,
+          buildingId,
+        };
+      }
+    };
+    addWaterMeters('hotmeterwater', hotWaterMeters);
+    addWaterMeters('coldmeterwater', coldWaterMeters);
     if (electricityEnabled && readingConfig.electricityUserSetsDigits !== true) {
       waterReadings.electricitymeter = {
         meterId: randomUUID(),
@@ -87,11 +83,10 @@ export class ApartmentMeterService {
       return undefined;
     }
 
-    const allowedMeterKeys = new Set(['coldmeterwater', 'hotmeterwater', 'electricitymeter']);
     const patch: Record<string, unknown> = {};
 
     for (const [meterKey, rawMeter] of Object.entries(value as Record<string, unknown>)) {
-      if (!allowedMeterKeys.has(meterKey) || !rawMeter || typeof rawMeter !== 'object' || Array.isArray(rawMeter)) {
+      if (!isMeterReadingKey(meterKey) || !rawMeter || typeof rawMeter !== 'object' || Array.isArray(rawMeter)) {
         continue;
       }
 

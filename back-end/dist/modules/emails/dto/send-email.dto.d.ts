@@ -117,6 +117,7 @@ export declare class SendInformationMailingDto {
     language?: EmailLanguage;
 }
 export declare class SaveInformationMailingTemplateDto {
+    id?: string;
     name: string;
     title: string;
     message: string;

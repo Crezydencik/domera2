@@ -1,7 +1,8 @@
+import { MeterReadingKey } from '../types/meter-reading.types';
 export declare class CreateMeterReadingDto {
     apartmentId: string;
     meterId: string;
-    meterKey?: 'coldmeterwater' | 'hotmeterwater' | 'electricitymeter';
+    meterKey?: MeterReadingKey;
     meterDigits?: number;
     previousValue: number;
     currentValue: number;

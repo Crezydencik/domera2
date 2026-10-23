@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ApartmentMeterService = void 0;
 const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
+const meter_reading_types_1 = require("../../meter-readings/types/meter-reading.types");
 let ApartmentMeterService = class ApartmentMeterService {
     normalizeReadingConfigOverride(payload) {
         const raw = payload.readingConfigOverride;
@@ -43,26 +44,20 @@ let ApartmentMeterService = class ApartmentMeterService {
             ? readingConfigOverride.coldWaterMeters
             : count(readingConfig.coldWaterMetersPerResident);
         const waterReadings = {};
-        if (hotWaterMeters > 0) {
-            waterReadings.hotmeterwater = {
-                meterId: (0, node_crypto_1.randomUUID)(),
-                serialNumber: '',
-                checkDueDate: '',
-                history: [],
-                apartmentId,
-                buildingId,
-            };
-        }
-        if (coldWaterMeters > 0) {
-            waterReadings.coldmeterwater = {
-                meterId: (0, node_crypto_1.randomUUID)(),
-                serialNumber: '',
-                checkDueDate: '',
-                history: [],
-                apartmentId,
-                buildingId,
-            };
-        }
+        const addWaterMeters = (base, meters) => {
+            for (let index = 1; index <= Math.min(meters, meter_reading_types_1.MAX_WATER_METERS_PER_KIND); index += 1) {
+                waterReadings[(0, meter_reading_types_1.waterMeterKey)(base, index)] = {
+                    meterId: (0, node_crypto_1.randomUUID)(),
+                    serialNumber: '',
+                    checkDueDate: '',
+                    history: [],
+                    apartmentId,
+                    buildingId,
+                };
+            }
+        };
+        addWaterMeters('hotmeterwater', hotWaterMeters);
+        addWaterMeters('coldmeterwater', coldWaterMeters);
         if (electricityEnabled && readingConfig.electricityUserSetsDigits !== true) {
             waterReadings.electricitymeter = {
                 meterId: (0, node_crypto_1.randomUUID)(),
@@ -80,10 +75,9 @@ let ApartmentMeterService = class ApartmentMeterService {
         if (!value || typeof value !== 'object' || Array.isArray(value)) {
             return undefined;
         }
-        const allowedMeterKeys = new Set(['coldmeterwater', 'hotmeterwater', 'electricitymeter']);
         const patch = {};
         for (const [meterKey, rawMeter] of Object.entries(value)) {
-            if (!allowedMeterKeys.has(meterKey) || !rawMeter || typeof rawMeter !== 'object' || Array.isArray(rawMeter)) {
+            if (!(0, meter_reading_types_1.isMeterReadingKey)(meterKey) || !rawMeter || typeof rawMeter !== 'object' || Array.isArray(rawMeter)) {
                 continue;
             }
             const meter = rawMeter;

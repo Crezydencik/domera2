@@ -53,7 +53,7 @@ type InvitationListRow = {
   contractNumber?: string;
 };
 
-type ExportFormat = "csv" | "json";
+type ExportFormat = "csv" | "json" | "xlsx";
 type ExportScope = "apartments" | "meterReadings" | "apartmentsAndMeterReadings";
 type AddTab = "resident" | "apartment";
 type RawRecord = Record<string, unknown>;
@@ -99,6 +99,100 @@ function toCsv(records: RawRecord[]) {
   }
 
   return lines.join("\n");
+}
+
+const APARTMENT_XLSX_BASE_HEADERS = [
+  "Kadastra numurs", "Adrese", "Domājamā daļa", "Daļa (kopīpašums)", "",
+  "Īpašnieks", "E pasts Reķiniem", "DZ", "Stavs", "DZ t", "Apkure", "Apkure",
+  "Dekl iedz", "Kartsais NR", "Aukstais NR", "",
+] as const;
+
+function objectValue(value: unknown): RawRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as RawRecord : {};
+}
+
+function displayMonth(reading: RawRecord) {
+  const month = Number(reading.month);
+  const year = Number(reading.year);
+  if (Number.isInteger(month) && month >= 1 && month <= 12 && Number.isInteger(year)) {
+    return `${year}-${String(month).padStart(2, "0")}`;
+  }
+
+  const submittedAt = textValue(reading.submittedAt, reading.createdAt);
+  return /^\d{4}-\d{2}/.test(submittedAt) ? submittedAt.slice(0, 7) : submittedAt;
+}
+
+function meterReadingsByMonth(record: RawRecord, meterKey: "hotmeterwater" | "coldmeterwater") {
+  const meter = objectValue(objectValue(record.waterReadings)[meterKey]);
+  const history = Array.isArray(meter.history) ? meter.history.map(objectValue) : [];
+  const readings = history
+    .sort((left, right) => {
+      const leftMonth = displayMonth(left);
+      const rightMonth = displayMonth(right);
+      if (leftMonth !== rightMonth) return leftMonth.localeCompare(rightMonth);
+      return Date.parse(textValue(left.submittedAt, left.createdAt)) - Date.parse(textValue(right.submittedAt, right.createdAt));
+    })
+    .reduce((result, reading) => {
+      const month = displayMonth(reading);
+      if (month) result.set(month, textValue(reading.currentValue, reading.value, reading.reading));
+      return result;
+    }, new Map<string, string>());
+  return readings;
+}
+
+function apartmentExportRow(record: RawRecord, months: string[]) {
+  const waterReadings = objectValue(record.waterReadings);
+  const hotMeter = objectValue(waterReadings.hotmeterwater);
+  const coldMeter = objectValue(waterReadings.coldmeterwater);
+  const hotReadings = meterReadingsByMonth(record, "hotmeterwater");
+  const coldReadings = meterReadingsByMonth(record, "coldmeterwater");
+
+  return [
+    textValue(record.cadastralNumber),
+    textValue(record.address, record.street, record.buildingAddress),
+    textValue(record.cadastralPart),
+    textValue(record.commonPropertyShare),
+    "",
+    textValue(record.owner, record.ownerName, record.ownerFullName),
+    textValue(record.ownerEmail, record.invoiceEmail, record.billingEmail),
+    textValue(record.number, record.apartmentNumber),
+    textValue(record.floor, record.level),
+    textValue(record.apartmentType, record.type),
+    textValue(record.heatingArea),
+    textValue(record.managementArea),
+    textValue(record.declaredResidents, record.declaredCount, record.registeredResidents, record.registeredCount),
+    textValue(hotMeter.serialNumber, hotMeter.number),
+    textValue(coldMeter.serialNumber, coldMeter.number),
+    "",
+    ...months.flatMap((month) => [
+      hotReadings.get(month) ?? "",
+      hotReadings.has(month) ? month : "",
+      coldReadings.get(month) ?? "",
+      coldReadings.has(month) ? month : "",
+    ]),
+  ];
+}
+
+async function downloadApartmentXlsx(records: RawRecord[]) {
+  const XLSX = await import("xlsx");
+  const months = Array.from(new Set(records.flatMap((record) => [
+    ...meterReadingsByMonth(record, "hotmeterwater").keys(),
+    ...meterReadingsByMonth(record, "coldmeterwater").keys(),
+  ]))).sort((left, right) => left.localeCompare(right));
+  const headers = [
+    ...APARTMENT_XLSX_BASE_HEADERS,
+    ...months.flatMap(() => ["Kartsais", "menesis", "Aukstais", "menesis"]),
+  ];
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...records.map((record) => apartmentExportRow(record, months))]);
+  worksheet["!cols"] = [
+    { wch: 20 }, { wch: 32 }, { wch: 18 }, { wch: 22 }, { wch: 3 }, { wch: 28 }, { wch: 30 },
+    { wch: 10 }, { wch: 9 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 16 },
+    { wch: 16 }, { wch: 3 },
+    ...months.flatMap(() => [{ wch: 13 }, { wch: 12 }, { wch: 13 }, { wch: 12 }]),
+  ];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Dzīvokļi");
+  XLSX.writeFile(workbook, "domera-dzivokli.xlsx", { compression: true });
 }
 
 function downloadBlob(content: BlobPart, type: string, fileName: string) {
@@ -246,6 +340,7 @@ export function ApartmentsManagementActionsMenu({
   const [loadingBulkRevokeInvites, setLoadingBulkRevokeInvites] = useState(false);
   const [loadingBulkInvites, setLoadingBulkInvites] = useState(false);
   const [loadingExport, setLoadingExport] = useState(false);
+  const [selectedExportApartmentIds, setSelectedExportApartmentIds] = useState<string[]>([]);
   const [invitations, setInvitations] = useState<InvitationRecord[]>([]);
   const [selectedInvitationRowKeys, setSelectedInvitationRowKeys] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -381,6 +476,12 @@ export function ApartmentsManagementActionsMenu({
     [selectedInvitationRows],
   );
   const allActionableInvitationRowsSelected = actionableInvitationRows.length > 0 && selectedInvitationRows.length === actionableInvitationRows.length;
+  const exportApartmentChoices = useMemo(() => apartmentRecords.map((record, index) => {
+    const id = textValue(record.id, record.apartmentId, record.readableId, record.number) || `apartment-${index}`;
+    const number = textValue(record.number, record.apartmentNumber, record.readableId, id);
+    const address = textValue(record.address, record.street, record.buildingAddress);
+    return { id, label: address ? `${number} — ${address}` : number };
+  }), [apartmentRecords]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -554,33 +655,46 @@ export function ApartmentsManagementActionsMenu({
     }
   }
 
-  async function fetchMeterReadingsForExport() {
+  async function fetchMeterReadingsForExport(selectedApartmentIds: Set<string>) {
     if (!companyId) {
       throw new Error(t("errors.companyMissing"));
     }
 
     const response = await apiFetch<{ items?: RawRecord[] }>(`/meter-readings?companyId=${encodeURIComponent(companyId)}`);
     const items = Array.isArray(response.items) ? response.items : [];
-    const visibleApartmentIds = new Set(
-      apartmentRecords
-        .map((record) => (typeof record.id === "string" && record.id.trim() ? record.id.trim() : undefined))
-        .filter((value): value is string => Boolean(value)),
-    );
-
-    if (!visibleApartmentIds.size) {
+    if (!selectedApartmentIds.size) {
       return items;
     }
 
     return items.filter((item) => {
       const apartmentId = typeof item.apartmentId === "string" ? item.apartmentId.trim() : "";
-      return apartmentId ? visibleApartmentIds.has(apartmentId) : true;
+      return apartmentId ? selectedApartmentIds.has(apartmentId) : false;
     });
   }
 
+  function openExportModal() {
+    setSelectedExportApartmentIds(exportApartmentChoices.map((apartment) => apartment.id));
+    setExportOpen(true);
+    setOpen(false);
+  }
+
+  function toggleExportApartment(apartmentId: string) {
+    setSelectedExportApartmentIds((current) => (
+      current.includes(apartmentId)
+        ? current.filter((id) => id !== apartmentId)
+        : [...current, apartmentId]
+    ));
+  }
+
   async function handleExport() {
-    if (!apartmentRecords.length && exportScope !== "meterReadings") {
+    const selectedIds = new Set(selectedExportApartmentIds);
+    const selectedApartments = apartmentRecords.filter((record, index) => {
+      const id = textValue(record.id, record.apartmentId, record.readableId, record.number) || `apartment-${index}`;
+      return selectedIds.has(id);
+    });
+
+    if (!selectedApartments.length) {
       notifications.info(t("feedback.nothingToExport"));
-      setExportOpen(false);
       return;
     }
 
@@ -593,11 +707,13 @@ export function ApartmentsManagementActionsMenu({
         format: exportFormat,
       };
 
-      const apartmentsData = apartmentRecords.map((record) => ({ ...record }));
+      const apartmentsData = selectedApartments.map((record) => ({ ...record }));
       const meterReadingsData =
         exportScope === "apartments"
           ? []
-          : await fetchMeterReadingsForExport();
+          : await fetchMeterReadingsForExport(new Set(
+            selectedApartments.map((record) => textValue(record.id, record.apartmentId, record.readableId, record.number)).filter(Boolean),
+          ));
 
       if (exportScope === "apartments" || exportScope === "apartmentsAndMeterReadings") {
         exportPayload.apartments = apartmentsData;
@@ -606,7 +722,9 @@ export function ApartmentsManagementActionsMenu({
         exportPayload.meterReadings = meterReadingsData;
       }
 
-      if (exportFormat === "json") {
+      if (exportFormat === "xlsx") {
+        await downloadApartmentXlsx(apartmentsData);
+      } else if (exportFormat === "json") {
         downloadBlob(
           JSON.stringify(exportPayload, null, 2),
           "application/json;charset=utf-8;",
@@ -952,7 +1070,7 @@ export function ApartmentsManagementActionsMenu({
         {open && (
           <div className="absolute right-0 z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-[0_18px_45px_rgba(15,23,42,0.16)]">
             <div className="px-2">
-              <button type="button" onClick={() => { setExportOpen(true); setOpen(false); }} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+              <button type="button" onClick={openExportModal} className="group flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50">
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition group-hover:bg-white group-hover:text-slate-800"><DownloadIcon /></span>
                 <span>{t("items.export")}</span>
               </button>
@@ -1146,11 +1264,44 @@ export function ApartmentsManagementActionsMenu({
           <div className="space-y-3">
             <p className="text-sm font-semibold text-slate-900">{t("dialogs.export.formatLabel")}</p>
             <div className="grid gap-2 sm:grid-cols-2">
-              {(["json", "csv"] as const).map((format) => (
+              {(["xlsx", "json", "csv"] as const).map((format) => (
                 <label key={format} className={`cursor-pointer rounded-2xl border px-4 py-3 text-sm transition ${exportFormat === format ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>
                   <input type="radio" name="export-format" value={format} checked={exportFormat === format} onChange={() => setExportFormat(format)} className="sr-only" />
                   <span className="font-medium">{t(`dialogs.export.formats.${format}.label`)}</span>
                   <span className="mt-1 block text-xs text-slate-500">{t(`dialogs.export.formats.${format}.description`)}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-slate-900">{t("dialogs.export.apartmentsLabel")}</p>
+              <button
+                type="button"
+                onClick={() => setSelectedExportApartmentIds(
+                  selectedExportApartmentIds.length === exportApartmentChoices.length
+                    ? []
+                    : exportApartmentChoices.map((apartment) => apartment.id),
+                )}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+              >
+                {selectedExportApartmentIds.length === exportApartmentChoices.length
+                  ? t("dialogs.export.clearAll")
+                  : t("dialogs.export.selectAll")}
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">{t("dialogs.export.selectedApartments", { count: selectedExportApartmentIds.length })}</p>
+            <div className="max-h-48 space-y-1 overflow-y-auto rounded-2xl border border-slate-200 p-2">
+              {exportApartmentChoices.map((apartment) => (
+                <label key={apartment.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    checked={selectedExportApartmentIds.includes(apartment.id)}
+                    onChange={() => toggleExportApartment(apartment.id)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{apartment.label}</span>
                 </label>
               ))}
             </div>

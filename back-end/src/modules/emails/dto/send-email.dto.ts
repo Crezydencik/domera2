@@ -355,6 +355,10 @@ export class SendInformationMailingDto {
 }
 
 export class SaveInformationMailingTemplateDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+
   @IsString()
   name!: string;
 

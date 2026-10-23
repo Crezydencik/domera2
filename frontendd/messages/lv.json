@@ -1139,9 +1139,17 @@
             "hint": "Dzīvokļu eksports ietver visus pieejamos backend laukus, arī tos, kas tabulā nav redzami.",
             "formatLabel": "Faila formāts",
             "scopeLabel": "Ko eksportēt",
+            "apartmentsLabel": "Dzīvokļi eksportēšanai",
+            "selectedApartments": "Izvēlēti dzīvokļi: {count}",
+            "selectAll": "Izvēlēties visus",
+            "clearAll": "Notīrīt izvēli",
             "submit": "Eksportēt",
             "exporting": "Eksportē...",
             "formats": {
+              "xlsx": {
+                "label": "Excel (.xlsx)",
+                "description": "Dzīvokļu eksports Excel formātā ar kadastra, īpašnieka un skaitītāju kolonnām."
+              },
               "json": {
                 "label": "JSON",
                 "description": "Vislabāk pilnam eksportam ar saglabātiem ligzdotiem laukiem."
@@ -1399,6 +1407,11 @@
       "basicInfo": "Dzīvokļa pamatinformācija",
       "apartmentInfo": "Dzīvokļa informācija",
       "more": "Vairāk",
+      "edit": "Rediģēt",
+      "editTitle": "Rediģēt dzīvokli № {apartment}",
+      "saving": "Saglabā...",
+      "editSuccess": "Dzīvokļa informācija saglabāta.",
+      "editError": "Neizdevās saglabāt dzīvokļa informāciju.",
       "yourApartment": "Jūsu dzīvoklis",
       "owner": "Īpašnieks",
       "ownerEmail": "Īpašnieka e-pasts",

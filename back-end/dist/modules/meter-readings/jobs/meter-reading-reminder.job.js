@@ -19,6 +19,7 @@ const meter_reminder_schedule_1 = require("../../../common/utils/meter-reminder-
 const email_log_service_1 = require("../../emails/services/email-log.service");
 const email_service_1 = require("../../emails/services/email.service");
 const meter_reading_types_1 = require("../types/meter-reading.types");
+const meter_reading_types_2 = require("../types/meter-reading.types");
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CLAIM_LEASE_MS = 10 * 60 * 1000;
 const RETRY_AFTER_FAILURE_MS = Math.max(60_000, Number(process.env.METER_REMINDER_RETRY_MS ?? 5 * 60 * 1000));
@@ -547,9 +548,7 @@ let MeterReadingReminderJob = MeterReadingReminderJob_1 = class MeterReadingRemi
     }
     hasCurrentMonthReading(apartment, utility, localNow) {
         const wr = (apartment.waterReadings ?? {});
-        const keys = utility === 'water'
-            ? ['coldmeterwater', 'hotmeterwater']
-            : ['electricitymeter'];
+        const keys = (0, meter_reading_types_2.meterReadingKeysIn)(wr).filter((key) => (0, meter_reading_types_2.meterKeyUtility)(key) === utility);
         const currentMonth = `${localNow.year}-${String(localNow.month).padStart(2, '0')}`;
         return keys.some((key) => {
             const group = wr[key];

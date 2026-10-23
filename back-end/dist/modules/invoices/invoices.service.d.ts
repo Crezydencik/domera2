@@ -94,7 +94,9 @@ export declare class InvoicesService {
     private resolveBatchFile;
     private hasApartmentLookup;
     private mergeBatchItemPayload;
-    upload(request: Request, user: RequestUser, file: UploadedInvoiceFile, payload: Record<string, unknown>): Promise<{
+    upload(request: Request, user: RequestUser, file: UploadedInvoiceFile, payload: Record<string, unknown>, options?: {
+        skipRateLimit?: boolean;
+    }): Promise<{
         success: boolean;
         approval_id: string;
         company_id: string;
@@ -151,11 +153,40 @@ export declare class InvoicesService {
         results: ({
             approval_id: string;
             success: boolean;
+            already_deleted?: undefined;
+            error?: undefined;
+        } | {
+            approval_id: string;
+            success: boolean;
+            already_deleted: boolean;
             error?: undefined;
         } | {
             approval_id: string;
             success: boolean;
             error: string;
+            already_deleted?: undefined;
+        })[];
+    }>;
+    deleteInvoices(request: Request, user: RequestUser, payload: Record<string, unknown>): Promise<{
+        success: boolean;
+        total: number;
+        processed: number;
+        failed: number;
+        results: ({
+            invoice_id: string;
+            success: boolean;
+            already_deleted?: undefined;
+            error?: undefined;
+        } | {
+            invoice_id: string;
+            success: boolean;
+            already_deleted: boolean;
+            error?: undefined;
+        } | {
+            invoice_id: string;
+            success: boolean;
+            error: string;
+            already_deleted?: undefined;
         })[];
     }>;
     uploadBatch(request: Request, user: RequestUser, files: UploadedInvoiceFile[], payload: Record<string, unknown>): Promise<{
@@ -240,7 +271,9 @@ export declare class InvoicesService {
     purgeTrash(request: Request, user: RequestUser, trashId: string): Promise<{
         success: boolean;
     }>;
-    remove(request: Request, user: RequestUser, invoiceId: string): Promise<{
+    remove(request: Request, user: RequestUser, invoiceId: string, options?: {
+        skipRateLimit?: boolean;
+    }): Promise<{
         success: boolean;
         permanently_deleted: boolean;
         trash_id?: undefined;

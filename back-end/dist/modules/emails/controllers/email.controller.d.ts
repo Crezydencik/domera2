@@ -74,8 +74,16 @@ export declare class EmailController {
         name: string;
         title: string;
         message: string;
-        messageHtml: string | undefined;
+        messageHtml: string | null;
+        updatedAt: Date;
+        id: string;
+    } | {
+        name: string;
+        title: string;
+        message: string;
+        messageHtml: string | null;
         createdAt: Date;
+        updatedAt: Date;
         id: string;
     }>;
     deleteInformationMailingTemplate(user: RequestUser, templateId: string): Promise<{

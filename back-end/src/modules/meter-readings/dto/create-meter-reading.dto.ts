@@ -1,4 +1,5 @@
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString, Matches, Min } from 'class-validator';
+import { METER_READING_KEY_PATTERN, MeterReadingKey } from '../types/meter-reading.types';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateMeterReadingDto {
@@ -10,10 +11,13 @@ export class CreateMeterReadingDto {
   @IsString()
   meterId!: string;
 
-  @ApiPropertyOptional({ enum: ['coldmeterwater', 'hotmeterwater', 'electricitymeter'], description: 'Optional meter group key.' })
+  @ApiPropertyOptional({
+    example: 'coldmeterwater',
+    description: 'Optional meter group key: coldmeterwater, hotmeterwater, electricitymeter; extra water meters — coldmeterwater_2 … coldmeterwater_9, hotmeterwater_2 … hotmeterwater_9.',
+  })
   @IsOptional()
-  @IsIn(['coldmeterwater', 'hotmeterwater', 'electricitymeter'])
-  meterKey?: 'coldmeterwater' | 'hotmeterwater' | 'electricitymeter';
+  @Matches(METER_READING_KEY_PATTERN, { message: 'meterKey must be a meter group key' })
+  meterKey?: MeterReadingKey;
 
   @ApiPropertyOptional({ description: 'Electricity meter digit count.' })
   @IsOptional()

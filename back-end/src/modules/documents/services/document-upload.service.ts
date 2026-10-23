@@ -66,6 +66,16 @@ export class DocumentUploadService {
           }
         } else if (!companyId) {
           throw new BadRequestException('companyId is required');
+        } else {
+          // Архив УК можно привязать к зданию компании, чтобы он показывался в этом здании.
+          buildingId = this.helperService.firstString(body.buildingId);
+          if (buildingId) {
+            const building = await this.metadataService.getBuilding(buildingId);
+            if (this.metadataService.resolveCompanyId(building, '') !== this.accessService.requireStaffCompanyId(user)) {
+              throw new ForbiddenException('Access denied for building');
+            }
+            buildingName = this.helperService.firstString(building.name, building.address, buildingId);
+          }
         }
       } else {
         buildingId = this.helperService.firstString(body.buildingId);

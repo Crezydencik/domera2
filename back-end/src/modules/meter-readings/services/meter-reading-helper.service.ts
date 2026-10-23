@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { RequestUser } from '../../../common/auth/request-user.type';
-import { METER_READING_KEYS, METER_READING_PERIOD_TIME_ZONE } from '../types/meter-reading.types';
+import { METER_READING_PERIOD_TIME_ZONE, meterReadingKeysIn } from '../types/meter-reading.types';
 
 @Injectable()
 export class MeterReadingHelperService {
@@ -72,7 +72,7 @@ export class MeterReadingHelperService {
     const buildingName = buildingInfo?.name ?? '';
     const buildingAddress = buildingInfo?.address ?? (typeof apartment.address === 'string' ? apartment.address : '');
 
-    for (const key of METER_READING_KEYS) {
+    for (const key of meterReadingKeysIn(wr)) {
       const group = wr[key] as Record<string, unknown> | undefined;
       if (!group || !Array.isArray(group.history)) continue;
       const serialNumber = typeof group.serialNumber === 'string' ? group.serialNumber : '';

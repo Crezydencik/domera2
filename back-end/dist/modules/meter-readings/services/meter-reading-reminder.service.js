@@ -18,6 +18,7 @@ const email_service_1 = require("../../emails/services/email.service");
 const meter_reading_access_service_1 = require("./meter-reading-access.service");
 const legacy_scope_1 = require("../../../common/utils/legacy-scope");
 const values_1 = require("../../../common/utils/values");
+const meter_reading_types_1 = require("../types/meter-reading.types");
 let MeterReadingReminderService = class MeterReadingReminderService {
     constructor(firebaseAdminService, emailService, emailLogService, accessService, companyPayloadService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -311,9 +312,7 @@ let MeterReadingReminderService = class MeterReadingReminderService {
     }
     hasCurrentMonthReading(apartment, utility, now) {
         const wr = (apartment.waterReadings ?? {});
-        const keys = utility === 'water'
-            ? ['coldmeterwater', 'hotmeterwater']
-            : ['electricitymeter'];
+        const keys = (0, meter_reading_types_1.meterReadingKeysIn)(wr).filter((key) => (0, meter_reading_types_1.meterKeyUtility)(key) === utility);
         return keys.some((key) => {
             const group = wr[key];
             if (!group || !Array.isArray(group.history))

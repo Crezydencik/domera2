@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
 const firebase_admin_service_1 = require("../../../common/infrastructure/firebase/firebase-admin.service");
 const values_1 = require("../../../common/utils/values");
+const meter_reading_types_1 = require("../../meter-readings/types/meter-reading.types");
 let BuildingPayloadService = class BuildingPayloadService {
     constructor(firebaseAdminService) {
         this.firebaseAdminService = firebaseAdminService;
@@ -90,7 +91,7 @@ let BuildingPayloadService = class BuildingPayloadService {
     }
     normalizeMeterCount(...values) {
         const count = this.firstNumber(...values);
-        return count < 0 ? 0 : Math.floor(count);
+        return count < 0 ? 0 : Math.min(meter_reading_types_1.MAX_WATER_METERS_PER_KIND, Math.floor(count));
     }
     normalizeSubscriptionTermMonths(...values) {
         const months = this.firstNumber(...values);

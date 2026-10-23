@@ -86,6 +86,15 @@ export async function cancelPendingInvoiceApprovalsAction(approvalIds: string[])
   return response;
 }
 
+export async function deleteInvoicesAction(invoiceIds: string[]) {
+  const response = await apiFetch<BatchMutationResponse>("/invoices/delete-all", {
+    method: "POST",
+    body: JSON.stringify({ invoiceIds }),
+  });
+  revalidateBillingViews();
+  return response;
+}
+
 export async function deleteInvoiceAction(invoiceId: string): Promise<InvoiceActionResult> {
   const result = await runInvoiceAction(() => apiFetch<{ success?: boolean }>(`/invoices/${encodeURIComponent(invoiceId)}`, {
     method: "DELETE",
